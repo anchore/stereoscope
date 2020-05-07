@@ -2,6 +2,40 @@ package file
 
 import "testing"
 
+func TestPath_Normalize(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "Trim Right Whitespace",
+			path:     "/some/path ",
+			expected: "/some/path",
+		},
+		{
+			name:     "Trim Left Whitespace",
+			path:     "   /some/path ",
+			expected: "/some/path",
+		},
+		{
+			name:     "Trim extra slashes",
+			path:     "/some/path////",
+			expected: "/some/path",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := Path(c.path).Normalize()
+			expected := Path(c.expected)
+			if got != expected {
+				t.Errorf("Didn't normalize correctly ('%v' != '%v')", got, expected)
+			}
+		})
+	}
+}
+
 func TestPath_AllPaths(t *testing.T) {
 	path := Path("/some/path/to/a/file.txt")
 	expected := []Path{
