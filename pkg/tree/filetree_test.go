@@ -13,11 +13,11 @@ func TestFileTree_AddPath(t *testing.T) {
 		t.Fatal("could not add path", err)
 	}
 
-	if len(tr.pathToFileNode) != 5 {
-		t.Fatal("unexpected file count", len(tr.pathToFileNode))
+	if len(tr.pathToFileRef) != 5 {
+		t.Fatal("unexpected file count", len(tr.pathToFileRef))
 	}
 
-	if *tr.Node(path) != fileNode {
+	if *tr.File(path) != fileNode {
 		t.Fatal("expected pointed to the newly created fileNode")
 	}
 
@@ -53,11 +53,11 @@ func TestFileTree_RemovePath(t *testing.T) {
 		t.Fatal("unexpected node count", len(tr.tree.Nodes()), tr.tree.Nodes())
 	}
 
-	if len(tr.pathToFileNode) != 3 {
-		t.Fatal("unexpected file count", len(tr.pathToFileNode))
+	if len(tr.pathToFileRef) != 3 {
+		t.Fatal("unexpected file count", len(tr.pathToFileRef))
 	}
 
-	if tr.Node(path) != nil {
+	if tr.File(path) != nil {
 		t.Fatal("expected file to be missing")
 	}
 

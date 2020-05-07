@@ -32,15 +32,15 @@ func (c *FileCatalog) Add(f file.Reference, m file.Metadata, s *Layer) {
 	}
 }
 
-func (c *FileCatalog) FileContents(f file.Reference) ([]byte, error) {
-	reader, err := c.FileReader(f)
+func (c *FileCatalog) FileContent(f file.Reference) ([]byte, error) {
+	reader, err := c.fileReader(f)
 	if err != nil {
 		return []byte{}, err
 	}
 	return ioutil.ReadAll(reader)
 }
 
-func (c *FileCatalog) FileReader(f file.Reference) (io.ReadCloser, error) {
+func (c *FileCatalog) fileReader(f file.Reference) (io.ReadCloser, error) {
 	entry, ok := c.catalog[f.ID()]
 	if !ok {
 		return nil, fmt.Errorf("could not find file: %+v", f.Path)

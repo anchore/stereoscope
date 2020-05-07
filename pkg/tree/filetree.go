@@ -7,20 +7,20 @@ import (
 )
 
 type FileTree struct {
-	pathToFileNode map[node.ID]file.Reference
-	tree           *tree
+	pathToFileRef map[node.ID]file.Reference
+	tree          *tree
 }
 
 func NewFileTree() *FileTree {
 	return &FileTree{
-		tree:           newTree(),
-		pathToFileNode: make(map[node.ID]file.Reference),
+		tree:          newTree(),
+		pathToFileRef: make(map[node.ID]file.Reference),
 	}
 }
 
 func (t *FileTree) Copy() (*FileTree, error) {
 	dest := NewFileTree()
-	for _, fileNode := range t.pathToFileNode {
+	for _, fileNode := range t.pathToFileRef {
 		_, err := dest.AddPath(fileNode.Path)
 		if err != nil {
 			return nil, err
@@ -34,40 +34,52 @@ func (t *FileTree) Copy() (*FileTree, error) {
 }
 
 func (t *FileTree) HasPath(path file.Path) bool {
-	_, ok := t.pathToFileNode[path.ID()]
+	_, ok := t.pathToFileRef[path.ID()]
 	return ok
 }
 
-func (t *FileTree) NodeByPathId(id node.ID) file.Reference {
-	return t.pathToFileNode[id]
+func (t *FileTree) FileByPathId(id node.ID) file.Reference {
+	return t.pathToFileRef[id]
 }
 
-// TODO: this can be a stand alone function
 func (t *FileTree) VisitorFn(fn func(file.Reference)) func(node.Node) {
 	return func(node node.Node) {
-		fn(t.NodeByPathId(node.ID()))
+		fn(t.FileByPathId(node.ID()))
 	}
 }
 
-// TODO: this can be a stand alone function
 func (t *FileTree) ConditionFn(fn func(file.Reference) bool) func(node.Node) bool {
 	return func(node node.Node) bool {
-		return fn(t.NodeByPathId(node.ID()))
+		return fn(t.FileByPathId(node.ID()))
 	}
 }
 
-func (t *FileTree) Nodes() []file.Reference {
-	files := make([]file.Reference, len(t.pathToFileNode))
+func (t *FileTree) AllFiles() []file.Reference {
+	files := make([]file.Reference, len(t.pathToFileRef))
 	idx := 0
-	for _, f := range t.pathToFileNode {
+	for _, f := range t.pathToFileRef {
 		files[idx] = f
 		idx++
 	}
 	return files
 }
 
-func (t *FileTree) Node(path file.Path) *file.Reference {
-	if value, ok := t.pathToFileNode[path.ID()]; ok {
+func (t *FileTree) Files(paths []file.Path) ([]file.Reference, error) {
+	files := make([]file.Reference, len(paths))
+	idx := 0
+	for _, path := range paths {
+		f := t.File(path)
+		if f == nil {
+			return nil, fmt.Errorf("could not find path: %+v", path)
+		}
+		files[idx] = *f
+		idx++
+	}
+	return files, nil
+}
+
+func (t *FileTree) File(path file.Path) *file.Reference {
+	if value, ok := t.pathToFileRef[path.ID()]; ok {
 		return &value
 	}
 	return nil
@@ -75,26 +87,26 @@ func (t *FileTree) Node(path file.Path) *file.Reference {
 
 // TODO: put under test
 func (t *FileTree) SetFile(f file.Reference) error {
-	original, ok := t.pathToFileNode[f.Path.ID()]
+	original, ok := t.pathToFileRef[f.Path.ID()]
 
 	if !ok {
 		return fmt.Errorf("file does not already exist in tree (cannot replace)")
 	}
-	delete(t.pathToFileNode, original.Path.ID())
-	t.pathToFileNode[f.Path.ID()] = f
+	delete(t.pathToFileRef, original.Path.ID())
+	t.pathToFileRef[f.Path.ID()] = f
 
 	return nil
 }
 
 func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
-	if f, ok := t.pathToFileNode[path.ID()]; ok {
+	if f, ok := t.pathToFileRef[path.ID()]; ok {
 		return f, nil
 	}
 
 	parent, err := path.ParentPath()
 	var parentNode *file.Reference
 	if err == nil {
-		if pNode, ok := t.pathToFileNode[parent.ID()]; !ok {
+		if pNode, ok := t.pathToFileRef[parent.ID()]; !ok {
 			pNode, err = t.AddPath(parent)
 			if err != nil {
 				return file.Reference{}, err
@@ -116,7 +128,7 @@ func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 		if err != nil {
 			return file.Reference{}, err
 		}
-		t.pathToFileNode[f.Path.ID()] = f
+		t.pathToFileRef[f.Path.ID()] = f
 	}
 
 	return f, nil
@@ -128,11 +140,17 @@ func (t *FileTree) RemovePath(path file.Path) error {
 		return err
 	}
 	for _, n := range removedNodes {
-		delete(t.pathToFileNode, n.ID())
+		delete(t.pathToFileRef, n.ID())
 	}
 	return nil
 }
 
 func (t *FileTree) Reader() Reader {
 	return t.tree
+}
+
+func (t *FileTree) Walk(fn func(f file.Reference)) {
+	visitor := t.VisitorFn(fn)
+	w := NewDepthFirstWalker(t.Reader(), visitor)
+	w.WalkAll()
 }

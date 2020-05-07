@@ -1,6 +1,8 @@
 package tree
 
-import "github.com/anchore/stereoscope/pkg/tree/node"
+import (
+	"github.com/anchore/stereoscope/pkg/tree/node"
+)
 
 type Reader interface {
 	Node(id node.ID) node.Node

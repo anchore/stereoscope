@@ -5,47 +5,24 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"io"
 )
 
 type Image struct {
-	Content   v1.Image
-	Layers    []Layer
-	Catalog   FileCatalog
-	Structure *tree.FileTree
+	// The image metadata and content source
+	Content      v1.Image
+	// Ordered listing of Layers
+	Layers       []Layer
+	// A {file.Reference -> (file.Metadata, Layer, Path)} mapping for all files in all layers
+	FileCatalog  FileCatalog
+	// Squashed FileTree of file.Reference's
+	SquashedTree *tree.FileTree
 }
 
 func NewImage(image v1.Image) *Image {
 	return &Image{
-		Content: image,
-		Catalog: NewFileCatalog(),
+		Content:     image,
+		FileCatalog: NewFileCatalog(),
 	}
-}
-
-func (i *Image) getFileNode(path file.Path) (file.Reference, error) {
-	fileNode := i.Structure.Node(path)
-	if fileNode == nil {
-		return file.Reference{}, fmt.Errorf("could not find file path in squashed tree")
-	}
-	return *fileNode, nil
-}
-
-func (i *Image) GetFileReader(path file.Path) (io.ReadCloser, error) {
-	fileNode, err := i.getFileNode(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return i.Catalog.FileReader(fileNode)
-}
-
-func (i *Image) GetFileReaderFromLayer(path file.Path, layer *Layer) (io.ReadCloser, error) {
-	fileNode := layer.Structure.Node(path)
-	if fileNode == nil {
-		return nil, fmt.Errorf("could not find file path in layer tree")
-	}
-
-	return i.Catalog.FileReader(*fileNode)
 }
 
 func (i *Image) Read() error {
@@ -58,22 +35,60 @@ func (i *Image) Read() error {
 	}
 
 	for idx, v1Layer := range v1Layers {
-		l, err := ReadLayer(uint(idx), v1Layer, &i.Catalog)
+		l, err := ReadLayer(uint(idx), v1Layer, &i.FileCatalog)
 		if err != nil {
 			return err
 		}
-		unionTree.PushTree(l.Structure)
+		unionTree.PushTree(l.Tree)
 		layers = append(layers, l)
 	}
 
-	// TODO: squashing should be an optional step
+	// TODO: side effects are bad, but we don't want getting an image to necessarily read from disk, yes?
+	i.Layers = layers
+	return nil
+}
+
+func (i *Image) Squash() error {
+	var unionTree = tree.NewUnionTree()
+	for _, layer := range i.Layers {
+		unionTree.PushTree(layer.Tree)
+	}
 	squashedTree, err := unionTree.Squash()
 	if err != nil {
 		return err
 	}
-
-	i.Layers = layers
-	i.Structure = squashedTree
-
+	// TODO: side effects are bad, but this optional info belongs to the Image obj.
+	i.SquashedTree = squashedTree
 	return nil
+}
+
+
+func (i *Image) SquashedFileContents(path file.Path) (string, error) {
+	if i.SquashedTree == nil {
+		return "", fmt.Errorf("no squash tree found")
+	}
+
+	fileReference := i.SquashedTree.File(path)
+	if fileReference == nil {
+		return "", fmt.Errorf("could not find file path in squashed Tree")
+	}
+
+	content, err := i.FileCatalog.FileContent(*fileReference)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+func (i *Image) LayerFileContents(path file.Path, layer *Layer) (string, error) {
+	fileReference := layer.Tree.File(path)
+	if fileReference == nil {
+		return "", fmt.Errorf("could not find file path in layer Tree")
+	}
+
+	content, err := i.FileCatalog.FileContent(*fileReference)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }

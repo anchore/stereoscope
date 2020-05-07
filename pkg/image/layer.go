@@ -11,9 +11,9 @@ import (
 )
 
 type Layer struct {
-	Index     uint
-	Content   v1.Layer
-	Structure *tree.FileTree
+	Index   uint
+	Content v1.Layer
+	Tree    *tree.FileTree
 }
 
 func ReadLayer(index uint, content v1.Layer, catalog *FileCatalog) (Layer, error) {
@@ -38,9 +38,9 @@ func ReadLayer(index uint, content v1.Layer, catalog *FileCatalog) (Layer, error
 		}
 	}
 	return Layer{
-		Index:     index,
-		Content:   content,
-		Structure: fileTree,
+		Index:   index,
+		Content: content,
+		Tree:    fileTree,
 	}, nil
 }
 

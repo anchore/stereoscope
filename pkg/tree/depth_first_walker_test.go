@@ -93,7 +93,7 @@ func TestDFS_Walk_ShouldTerminate(t *testing.T) {
 
 	h := WalkConditions{
 		ShouldTerminate: func(path node.Node) bool {
-			if tr.NodeByPathId(path.ID()).Path == terminatePath {
+			if tr.FileByPathId(path.ID()).Path == terminatePath {
 				return true
 			}
 			return false
@@ -128,7 +128,7 @@ func TestDFS_Walk_ShouldVisit(t *testing.T) {
 	h := WalkConditions{
 		ShouldTerminate: nil,
 		ShouldVisit: func(path node.Node) bool {
-			if tr.NodeByPathId(path.ID()).Path == skipPath {
+			if tr.FileByPathId(path.ID()).Path == skipPath {
 				return false
 			}
 			return true
@@ -160,7 +160,7 @@ func TestDFS_Walk_ShouldPruneBranch(t *testing.T) {
 		ShouldTerminate: nil,
 		ShouldVisit:     nil,
 		ShouldContinueBranch: func(path node.Node) bool {
-			if tr.NodeByPathId(path.ID()).Path == prunePath {
+			if tr.FileByPathId(path.ID()).Path == prunePath {
 				return false
 			}
 			return true

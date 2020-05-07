@@ -31,7 +31,7 @@ func TestUnionFileTree_Squash(t *testing.T) {
 		t.Fatal("cloud not squash trees", err)
 	}
 
-	nodes := squashed.Nodes()
+	nodes := squashed.AllFiles()
 	if len(nodes) != 13 {
 		t.Fatal("unexpected squashed tree number of nodes", len(nodes))
 	}
@@ -40,11 +40,11 @@ func TestUnionFileTree_Squash(t *testing.T) {
 		t.Fatal("original and new node ids changed after squash")
 	}
 
-	if squashed.Node(newNode.Path).Id != newNode.Id {
+	if squashed.File(newNode.Path).Id != newNode.Id {
 		t.Fatal("failed to overwrite a path in the squash tree")
 	}
 
-	if squashed.Node("/home/wagoodman/more").Id != top.Node("/home/wagoodman/more").Id {
+	if squashed.File("/home/wagoodman/more").Id != top.File("/home/wagoodman/more").Id {
 		t.Fatal("implicit file if did not track to squash")
 	}
 
