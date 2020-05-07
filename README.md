@@ -1,4 +1,4 @@
-# Stereoscope
+# Stereoscope (TDB Name)
 
 **This is a Prototype! Using this in production will end in tragedy**
 
@@ -14,8 +14,9 @@ go run examples/basic.go tarball://centos.tar
 ```
 
 ## Why the name?
+(This is just a working title)
 
-A stereoscope is a device that takes multiple flat, two-dimensional images to create an impression of a single three-dimensional image. This library takes a container image and gives it depth and detail.
+A stereoscope is a device that takes multiple flat, two-dimensional images to create an impression of a single three-dimensional image. This library takes a container image and provides the user with usable file tree manipulation and a content API (i.e. depth and detail, like a stereoscope).
 
 ## TODO:
 

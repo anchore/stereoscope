@@ -2,7 +2,7 @@ package file
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/stereoscope/tree/node"
+	"github.com/anchore/stereoscope/pkg/tree/node"
 	"hash/fnv"
 	"path"
 	"strings"

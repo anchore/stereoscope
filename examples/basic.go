@@ -2,21 +2,17 @@ package main
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/stereoscope"
-	"github.com/anchore/stereoscope/stereoscope/file"
-	"github.com/anchore/stereoscope/stereoscope/tree"
+	"github.com/anchore/stereoscope"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/tree"
 	"io/ioutil"
 	"os"
 )
 
-
 func main() {
-
-	client := stereoscope.NewClient()
-
 	// pass a path to an image tar as an argument:
 	//    tarball://./path/to.tar
-	image, err := client.GetImage(os.Args[1])
+	image, err := stereoscope.GetImage(os.Args[1])
 	if err != nil {
 		panic(err)
 	}
@@ -43,7 +39,7 @@ func main() {
 
 		fmt.Println("layer", id, ":")
 
-		visitor := image.Structure.VisitorFn(func(f *file.File){
+		visitor := image.Structure.VisitorFn(func(f file.Reference) {
 			fmt.Println("   ", f.Path)
 		})
 		w := tree.NewDepthFirstWalker(l.Structure.Reader(), visitor)
@@ -52,7 +48,7 @@ func main() {
 	}
 
 	// Show the filetree for the squashed image
-	visitor := image.Structure.VisitorFn(func(f *file.File){
+	visitor := image.Structure.VisitorFn(func(f file.Reference) {
 		fmt.Println("   ", f.Path)
 	})
 	w := tree.NewDepthFirstWalker(image.Structure.Reader(), visitor)

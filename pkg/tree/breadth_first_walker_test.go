@@ -1,8 +1,8 @@
 package tree
 
 import (
-	"github.com/anchore/stereoscope/stereoscope/file"
-	"github.com/anchore/stereoscope/stereoscope/tree/node"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/tree/node"
 	"testing"
 )
 
@@ -14,7 +14,7 @@ func bfsTestTree() *FileTree {
 	return tr
 }
 
-func assertExpectedTraversal(t *testing.T, expected []file.Path, actual []*file.File) {
+func assertExpectedTraversal(t *testing.T, expected []file.Path, actual []file.Reference) {
 	if len(actual) != len(expected) {
 		t.Errorf("Did not traverse all nodes (expected %d, got %d)", len(expected), len(actual))
 	}
@@ -40,8 +40,8 @@ func TestBFS_WalkAll(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 
@@ -64,8 +64,8 @@ func TestBFS_Walk(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 
@@ -86,8 +86,8 @@ func TestBFS_Walk_ShouldTerminate(t *testing.T) {
 		file.Path("/home/wagoodman/more"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 
@@ -121,8 +121,8 @@ func TestBFS_Walk_ShouldVisit(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 
@@ -155,8 +155,8 @@ func TestBFS_Walk_ShouldContinueBranch(t *testing.T) {
 		file.Path("/home/wagoodman/more/file.txt"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 

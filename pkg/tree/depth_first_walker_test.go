@@ -1,9 +1,10 @@
 package tree
 
 import (
-	"github.com/anchore/stereoscope/stereoscope/file"
-	"github.com/anchore/stereoscope/stereoscope/tree/node"
 	"testing"
+
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
 func dfsTestTree() *FileTree {
@@ -28,8 +29,8 @@ func TestDFS_WalkAll(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 
@@ -63,8 +64,8 @@ func TestDFS_Walk(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 
@@ -85,8 +86,8 @@ func TestDFS_Walk_ShouldTerminate(t *testing.T) {
 		file.Path("/home/wagoodman/more/file.txt"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 
@@ -119,8 +120,8 @@ func TestDFS_Walk_ShouldVisit(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 
@@ -150,8 +151,8 @@ func TestDFS_Walk_ShouldPruneBranch(t *testing.T) {
 		prunePath,
 	}
 
-	actual := make([]*file.File, 0)
-	visitor := tr.VisitorFn(func(f *file.File) {
+	actual := make([]file.Reference, 0)
+	visitor := tr.VisitorFn(func(f file.Reference) {
 		actual = append(actual, f)
 	})
 

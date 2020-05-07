@@ -1,6 +1,6 @@
 package tree
 
-import "github.com/anchore/stereoscope/stereoscope/tree/node"
+import "github.com/anchore/stereoscope/pkg/tree/node"
 
 type Walker interface {
 	WalkAll()

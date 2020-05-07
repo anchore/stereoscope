@@ -1,7 +1,7 @@
 package tree
 
 import (
-	"github.com/anchore/stereoscope/stereoscope/file"
+	"github.com/anchore/stereoscope/pkg/file"
 	"testing"
 )
 
@@ -17,7 +17,7 @@ func TestFileTree_AddPath(t *testing.T) {
 		t.Fatal("unexpected file count", len(tr.pathToFileNode))
 	}
 
-	if tr.Node(path) != fileNode {
+	if *tr.Node(path) != fileNode {
 		t.Fatal("expected pointed to the newly created fileNode")
 	}
 

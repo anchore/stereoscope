@@ -1,28 +1,29 @@
 package tree
 
 import (
-	"github.com/anchore/stereoscope/stereoscope/tree/node"
+	"github.com/anchore/stereoscope/pkg/tree/node"
 	"sort"
 )
 
-type BreadthFirstWalker struct {
+// DepthFirstWalker implements stateful depth-first tree traversal.
+type DepthFirstWalker struct {
 	visitor    Visitor
 	tree       Reader
-	queue      node.Queue
+	stack      node.Stack
 	visited    node.Set
 	conditions WalkConditions
 }
 
-func NewBreadthFirstWalker(reader Reader, visitor Visitor) *BreadthFirstWalker {
-	return &BreadthFirstWalker{
+func NewDepthFirstWalker(reader Reader, visitor Visitor) *DepthFirstWalker {
+	return &DepthFirstWalker{
 		visitor: visitor,
 		tree:    reader,
 		visited: node.NewIDSet(),
 	}
 }
 
-func NewBreadthFirstWalkerWithConditions(reader Reader, visitor Visitor, conditions WalkConditions) *BreadthFirstWalker {
-	return &BreadthFirstWalker{
+func NewDepthFirstWalkerWithConditions(reader Reader, visitor Visitor, conditions WalkConditions) *DepthFirstWalker {
+	return &DepthFirstWalker{
 		visitor:    visitor,
 		tree:       reader,
 		visited:    node.NewIDSet(),
@@ -30,12 +31,11 @@ func NewBreadthFirstWalkerWithConditions(reader Reader, visitor Visitor, conditi
 	}
 }
 
-func (w *BreadthFirstWalker) Walk(from node.Node) node.Node {
-	w.queue.Enqueue(from)
+func (w *DepthFirstWalker) Walk(from node.Node) node.Node {
+	w.stack.Push(from)
 
-	for w.queue.Size() > 0 {
-		current := w.queue.Dequeue()
-
+	for w.stack.Size() > 0 {
+		current := w.stack.Pop()
 		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(current) {
 			return current
 		}
@@ -55,9 +55,9 @@ func (w *BreadthFirstWalker) Walk(from node.Node) node.Node {
 
 		// enqueue children
 		children := w.tree.Children(current)
-		sort.Sort(children)
+		sort.Sort(sort.Reverse(children))
 		for _, child := range children {
-			w.queue.Enqueue(child)
+			w.stack.Push(child)
 		}
 
 	}
@@ -65,15 +65,12 @@ func (w *BreadthFirstWalker) Walk(from node.Node) node.Node {
 	return nil
 }
 
-func (w *BreadthFirstWalker) WalkAll() {
+func (w *DepthFirstWalker) WalkAll() {
 	for _, from := range w.tree.Roots() {
-		if w.Visited(from) {
-			continue
-		}
 		w.Walk(from)
 	}
 }
 
-func (w *BreadthFirstWalker) Visited(n node.Node) bool {
+func (w *DepthFirstWalker) Visited(n node.Node) bool {
 	return w.visited.Contains(n.ID())
 }

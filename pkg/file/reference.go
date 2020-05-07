@@ -16,26 +16,26 @@ func init() {
 
 type ID uint64
 
-type File struct {
+type Reference struct {
 	Id   ID
 	Path Path
 }
 
-func NewFile(path Path) *File {
+func NewFileReference(path Path) Reference {
 	i, err := uuidGen.NextID()
 	if err != nil {
 		panic(err)
 	}
-	return &File{
+	return Reference{
 		Path: path,
 		Id:   ID(i),
 	}
 }
 
-func (f *File) ID() ID {
+func (f *Reference) ID() ID {
 	return f.Id
 }
 
-func (f *File) String() string {
+func (f *Reference) String() string {
 	return fmt.Sprintf("[%v] %v", f.Id, f.Path)
 }

@@ -2,19 +2,19 @@ package tree
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/stereoscope/file"
-	"github.com/anchore/stereoscope/stereoscope/tree/node"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
 type FileTree struct {
-	pathToFileNode map[node.ID]*file.File
+	pathToFileNode map[node.ID]file.Reference
 	tree           *tree
 }
 
 func NewFileTree() *FileTree {
 	return &FileTree{
 		tree:           newTree(),
-		pathToFileNode: make(map[node.ID]*file.File),
+		pathToFileNode: make(map[node.ID]file.Reference),
 	}
 }
 
@@ -34,29 +34,30 @@ func (t *FileTree) Copy() (*FileTree, error) {
 }
 
 func (t *FileTree) HasPath(path file.Path) bool {
-	return t.pathToFileNode[path.ID()] != nil
+	_, ok := t.pathToFileNode[path.ID()]
+	return ok
 }
 
-func (t *FileTree) NodeByPathId(id node.ID) *file.File {
+func (t *FileTree) NodeByPathId(id node.ID) file.Reference {
 	return t.pathToFileNode[id]
 }
 
 // TODO: this can be a stand alone function
-func (t *FileTree) VisitorFn(fn func(*file.File)) func(node.Node) {
+func (t *FileTree) VisitorFn(fn func(file.Reference)) func(node.Node) {
 	return func(node node.Node) {
 		fn(t.NodeByPathId(node.ID()))
 	}
 }
 
 // TODO: this can be a stand alone function
-func (t *FileTree) ConditionFn(fn func(*file.File) bool) func(node.Node) bool {
+func (t *FileTree) ConditionFn(fn func(file.Reference) bool) func(node.Node) bool {
 	return func(node node.Node) bool {
 		return fn(t.NodeByPathId(node.ID()))
 	}
 }
 
-func (t *FileTree) Nodes() []*file.File {
-	files := make([]*file.File, len(t.pathToFileNode))
+func (t *FileTree) Nodes() []file.Reference {
+	files := make([]file.Reference, len(t.pathToFileNode))
 	idx := 0
 	for _, f := range t.pathToFileNode {
 		files[idx] = f
@@ -65,12 +66,15 @@ func (t *FileTree) Nodes() []*file.File {
 	return files
 }
 
-func (t *FileTree) Node(path file.Path) *file.File {
-	return t.pathToFileNode[path.ID()]
+func (t *FileTree) Node(path file.Path) *file.Reference {
+	if value, ok := t.pathToFileNode[path.ID()]; ok {
+		return &value
+	}
+	return nil
 }
 
 // TODO: put under test
-func (t *FileTree) SetFile(f *file.File) error {
+func (t *FileTree) SetFile(f file.Reference) error {
 	original, ok := t.pathToFileNode[f.Path.ID()]
 
 	if !ok {
@@ -82,24 +86,26 @@ func (t *FileTree) SetFile(f *file.File) error {
 	return nil
 }
 
-func (t *FileTree) AddPath(path file.Path) (*file.File, error) {
+func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 	if f, ok := t.pathToFileNode[path.ID()]; ok {
 		return f, nil
 	}
 
 	parent, err := path.ParentPath()
-	var parentNode *file.File
+	var parentNode *file.Reference
 	if err == nil {
-		var ok bool
-		if parentNode, ok = t.pathToFileNode[parent.ID()]; !ok {
-			parentNode, err = t.AddPath(parent)
+		if pNode, ok := t.pathToFileNode[parent.ID()]; !ok {
+			pNode, err = t.AddPath(parent)
 			if err != nil {
-				return nil, err
+				return file.Reference{}, err
 			}
+			parentNode = &pNode
+		} else {
+			parentNode = &pNode
 		}
 	}
 
-	f := file.NewFile(path)
+	f := file.NewFileReference(path)
 	if !t.tree.HasNode(path.ID()) {
 		var err error
 		if parentNode == nil {
@@ -108,7 +114,7 @@ func (t *FileTree) AddPath(path file.Path) (*file.File, error) {
 			err = t.tree.AddChild(parentNode.Path, f.Path)
 		}
 		if err != nil {
-			return nil, err
+			return file.Reference{}, err
 		}
 		t.pathToFileNode[f.Path.ID()] = f
 	}

@@ -2,8 +2,8 @@ package image
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/stereoscope/file"
-	"github.com/anchore/stereoscope/stereoscope/tree"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/tree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"io"
 )
@@ -22,10 +22,18 @@ func NewImage(image v1.Image) *Image {
 	}
 }
 
-func (i *Image) GetFileReader(path file.Path) (io.ReadCloser, error) {
+func (i *Image) getFileNode(path file.Path) (file.Reference, error) {
 	fileNode := i.Structure.Node(path)
 	if fileNode == nil {
-		return nil, fmt.Errorf("could not find file path in squashed tree")
+		return file.Reference{}, fmt.Errorf("could not find file path in squashed tree")
+	}
+	return *fileNode, nil
+}
+
+func (i *Image) GetFileReader(path file.Path) (io.ReadCloser, error) {
+	fileNode, err := i.getFileNode(path)
+	if err != nil {
+		return nil, err
 	}
 
 	return i.Catalog.FileReader(fileNode)
@@ -34,10 +42,10 @@ func (i *Image) GetFileReader(path file.Path) (io.ReadCloser, error) {
 func (i *Image) GetFileReaderFromLayer(path file.Path, layer *Layer) (io.ReadCloser, error) {
 	fileNode := layer.Structure.Node(path)
 	if fileNode == nil {
-		return nil, fmt.Errorf("could not find file path in squashed tree")
+		return nil, fmt.Errorf("could not find file path in layer tree")
 	}
 
-	return i.Catalog.FileReader(fileNode)
+	return i.Catalog.FileReader(*fileNode)
 }
 
 func (i *Image) Read() error {

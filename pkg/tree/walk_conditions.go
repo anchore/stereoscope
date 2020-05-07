@@ -1,6 +1,6 @@
 package tree
 
-import "github.com/anchore/stereoscope/stereoscope/tree/node"
+import "github.com/anchore/stereoscope/pkg/tree/node"
 
 type WalkConditions struct {
 	// Return true when the walker should stop traversing (before visiting current node)

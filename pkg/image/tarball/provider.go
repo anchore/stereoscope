@@ -1,7 +1,7 @@
 package tarball
 
 import (
-	"github.com/anchore/stereoscope/stereoscope/image"
+	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
