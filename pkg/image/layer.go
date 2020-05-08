@@ -1,86 +1,52 @@
 package image
 
 import (
-	"archive/tar"
-	"fmt"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"io"
-	"path"
 )
 
 type Layer struct {
 	Index   uint
 	Content v1.Layer
 	Tree    *tree.FileTree
+	// note: this is a reference to all files in the image, not just this layer
+	fileCatalog *FileCatalog
 }
 
-func ReadLayer(index uint, content v1.Layer, catalog *FileCatalog) (Layer, error) {
-	layer := Layer{
-		Content: content,
-	}
-	fileTree := tree.NewFileTree()
-
-	reader, err := content.Uncompressed()
-	if err != nil {
-		return Layer{}, err
-	}
-	tarReader := tar.NewReader(reader)
-
-	for metadata := range enumerateFileMetadata(tarReader) {
-		fileNode, err := fileTree.AddPath(file.Path(metadata.Path))
-
-		catalog.Add(fileNode, metadata, &layer)
-
-		if err != nil {
-			return Layer{}, err
-		}
-	}
+func NewLayer(index uint, content v1.Layer) Layer {
 	return Layer{
 		Index:   index,
 		Content: content,
-		Tree:    fileTree,
-	}, nil
+	}
 }
 
-func enumerateFileMetadata(tarReader *tar.Reader) <-chan file.Metadata {
-	result := make(chan file.Metadata)
-	go func() {
-		for {
-			header, err := tarReader.Next()
-			if err == io.EOF {
-				break
-			} else if err != nil {
-				panic(err)
-			}
+func (l *Layer) Read(catalog *FileCatalog) error {
+	// TODO: side effects are bad
+	l.Tree = tree.NewFileTree()
+	l.fileCatalog = catalog
 
-			// always ensure relative path notations are not parsed as part of the filename
-			name := path.Clean(file.DirSeparator + header.Name)
-			if name == "." {
-				continue
-			}
+	reader, err := l.Content.Uncompressed()
+	if err != nil {
+		return err
+	}
 
-			switch header.Typeflag {
-			case tar.TypeXGlobalHeader:
-				panic(fmt.Errorf("unexptected tar file: (XGlobalHeader): type=%v name=%s", header.Typeflag, name))
-			case tar.TypeXHeader:
-				panic(fmt.Errorf("unexptected tar file (XHeader): type=%v name=%s", header.Typeflag, name))
-			default:
-				result <- file.Metadata{
-					Path:     name,
-					TarPath:  header.Name,
-					TypeFlag: header.Typeflag,
-					Linkname: header.Linkname,
-					Size:     header.FileInfo().Size(),
-					Mode:     header.FileInfo().Mode(),
-					Uid:      header.Uid,
-					Gid:      header.Gid,
-					IsDir:    header.FileInfo().IsDir(),
-				}
-			}
+	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
+		fileNode, err := l.Tree.AddPath(file.Path(metadata.Path))
+
+		catalog.Add(fileNode, metadata, l)
+
+		if err != nil {
+			return err
 		}
-		close(result)
-	}()
-	return result
+	}
+	return nil
+}
+
+func (l *Layer) FileContents(path file.Path) (string, error) {
+	return fetchFileContents(l.Tree, l.fileCatalog, path)
+}
+
+func (l *Layer) MultipleFileContents(paths ...file.Path) (map[file.Reference]string, error) {
+	return fetchMultipleFileContents(l.Tree, l.fileCatalog, paths...)
 }

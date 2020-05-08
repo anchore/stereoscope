@@ -1,10 +1,8 @@
 package image
 
 import (
-	"archive/tar"
 	"fmt"
 	"github.com/anchore/stereoscope/pkg/file"
-	"io"
 	"io/ioutil"
 )
 
@@ -32,47 +30,70 @@ func (c *FileCatalog) Add(f file.Reference, m file.Metadata, s *Layer) {
 	}
 }
 
-func (c *FileCatalog) FileContent(f file.Reference) ([]byte, error) {
-	reader, err := c.fileReader(f)
-	if err != nil {
-		return []byte{}, err
+func (c *FileCatalog) Get(f file.Reference) (FileCatalogEntry, error) {
+	value, ok := c.catalog[f.ID()]
+	if !ok {
+		return FileCatalogEntry{}, fmt.Errorf("could not find file")
 	}
-	return ioutil.ReadAll(reader)
+	return *value, nil
 }
 
-func (c *FileCatalog) fileReader(f file.Reference) (io.ReadCloser, error) {
+func (c *FileCatalog) FileContents(f file.Reference) (string, error) {
 	entry, ok := c.catalog[f.ID()]
 	if !ok {
-		return nil, fmt.Errorf("could not find file: %+v", f.Path)
+		return "", fmt.Errorf("could not find file: %+v", f.Path)
 	}
-	source, err := entry.Source.Content.Uncompressed()
+	sourceTarReader, err := entry.Source.Content.Uncompressed()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return extractFileFromTar(source, entry.Metadata.TarPath)
+	fileReader, err := file.ReaderFromTar(sourceTarReader, entry.Metadata.TarHeaderName)
+	if err != nil {
+		return "", err
+	}
+	bytes, err := ioutil.ReadAll(fileReader)
+	return string(bytes), err
 }
 
-type tarFile struct {
-	io.Reader
-	io.Closer
-}
-
-func extractFileFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) {
-	tf := tar.NewReader(reader)
-	for {
-		hdr, err := tf.Next()
-		if err == io.EOF {
-			break
-		}
+func (c *FileCatalog) buildTarContentsRequests(files ...file.Reference) (map[*Layer]file.TarContentsRequest, error) {
+	allRequests := make(map[*Layer]file.TarContentsRequest)
+	for _, f := range files {
+		record, err := c.Get(f)
 		if err != nil {
 			return nil, err
 		}
-		if hdr.Name == tarPath {
-			return tarFile{
-				Reader: tf,
-				Closer: reader,
-			}, nil
+		layer := record.Source
+		if _, ok := allRequests[layer]; !ok {
+			allRequests[layer] = make(file.TarContentsRequest)
+		}
+		allRequests[layer][record.Metadata.TarHeaderName] = f
+	}
+	return allRequests, nil
+}
+
+func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Reference]string, error) {
+	allRequests, err := c.buildTarContentsRequests(files...)
+	if err != nil {
+		return nil, err
+	}
+
+	allResults := make(map[file.Reference]string)
+	for layer, request := range allRequests {
+		sourceTarReader, err := layer.Content.Uncompressed()
+		if err != nil {
+			return nil, err
+		}
+		layerResults, err := file.ContentsFromTar(sourceTarReader, request)
+		if err != nil {
+			return nil, err
+		}
+		for fileRef, content := range layerResults {
+			if _, ok := allResults[fileRef]; ok {
+				return nil, fmt.Errorf("duplicate entries: %+v", fileRef)
+			}
+			allResults[fileRef] = content
 		}
 	}
-	return nil, fmt.Errorf("file %s not found in tar", tarPath)
+
+	return allResults, nil
 }

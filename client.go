@@ -6,7 +6,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/image/tarball"
 )
 
-
 func GetImage(imgStr string) (*image.Image, error) {
 	source, location := image.ParseImageSpec(imgStr)
 
