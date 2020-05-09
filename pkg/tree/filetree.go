@@ -145,6 +145,21 @@ func (t *FileTree) RemovePath(path file.Path) error {
 	return nil
 }
 
+func (t *FileTree) RemoveChildPaths(path file.Path) error {
+	removedNodes := make(node.Nodes, 0)
+	for _, child := range t.tree.Children(path) {
+		nodes, err := t.tree.RemoveNode(child)
+		if err != nil {
+			return err
+		}
+		removedNodes = append(removedNodes, nodes...)
+	}
+	for _, n := range removedNodes {
+		delete(t.pathToFileRef, n.ID())
+	}
+	return nil
+}
+
 func (t *FileTree) Reader() Reader {
 	return t.tree
 }

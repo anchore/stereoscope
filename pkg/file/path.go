@@ -3,27 +3,20 @@ package file
 import (
 	"fmt"
 	"github.com/anchore/stereoscope/pkg/tree/node"
-	"hash/fnv"
 	"path"
 	"strings"
 )
 
 const (
-	whiteoutPrefix       = ".wh."
-	opaqueWhiteoutPrefix = whiteoutPrefix + whiteoutPrefix + ".opq"
-	DirSeparator         = "/"
+	WhiteoutPrefix = ".wh."
+	OpaqueWhiteout = WhiteoutPrefix + WhiteoutPrefix + ".opq"
+	DirSeparator   = "/"
 )
 
 type Path string
 
 func (p Path) ID() node.ID {
-	sanitized := p.Normalize()
-	h := fnv.New64a()
-	_, err := h.Write([]byte(sanitized))
-	if err != nil {
-		panic(err)
-	}
-	return node.ID(h.Sum64())
+	return node.ID(p.Normalize())
 }
 
 func (p Path) Normalize() Path {
@@ -34,20 +27,24 @@ func (p Path) Basename() string {
 	return path.Base(string(p))
 }
 
+func (p Path) IsDirWhiteout() bool {
+	return p.Basename() == OpaqueWhiteout
+}
+
 func (p Path) IsWhiteout() bool {
-	return strings.HasPrefix(p.Basename(), whiteoutPrefix)
+	return strings.HasPrefix(p.Basename(), WhiteoutPrefix)
 }
 
 func (p Path) UnWhiteoutPath() (Path, error) {
 	basename := p.Basename()
-	if strings.HasPrefix(basename, opaqueWhiteoutPrefix) {
+	if strings.HasPrefix(basename, OpaqueWhiteout) {
 		return p.ParentPath()
 	}
 	parent, err := p.ParentPath()
 	if err != nil {
 		return "", err
 	}
-	return Path(path.Join(string(parent), strings.TrimPrefix(basename, whiteoutPrefix))), nil
+	return Path(path.Join(string(parent), strings.TrimPrefix(basename, WhiteoutPrefix))), nil
 }
 
 func (p Path) ParentPath() (Path, error) {

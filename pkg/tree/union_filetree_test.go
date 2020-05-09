@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"github.com/anchore/stereoscope/pkg/file"
 	"testing"
 )
 
@@ -46,6 +47,47 @@ func TestUnionFileTree_Squash(t *testing.T) {
 
 	if squashed.File("/home/wagoodman/more").Id != top.File("/home/wagoodman/more").Id {
 		t.Fatal("implicit file if did not track to squash")
+	}
+
+}
+
+func TestUnionFileTree_Squash_whiteout(t *testing.T) {
+	ut := NewUnionTree()
+	base := NewFileTree()
+
+	base.AddPath("/some/stuff-1.txt")
+	base.AddPath("/some/stuff-2.txt")
+	base.AddPath("/other/things-1.txt")
+
+
+	top := NewFileTree()
+	top.AddPath("/some/"+file.OpaqueWhiteout)
+	top.AddPath("/other/"+file.WhiteoutPrefix+"things-1.txt")
+
+	ut.PushTree(base)
+	ut.PushTree(top)
+
+
+	squashed, err := ut.Squash()
+	if err != nil {
+		t.Fatal("cloud not squash trees", err)
+	}
+
+	nodes := squashed.AllFiles()
+	if len(nodes) != 3 {
+		t.Fatal("unexpected squashed tree number of nodes", len(nodes))
+	}
+
+	expectedPaths := []string{
+		"/",
+		"/some",
+		"/other",
+	}
+
+	for _, path := range expectedPaths {
+		if !squashed.HasPath(file.Path(path)) {
+			t.Errorf("expected '%v' but not found", path )
+		}
 	}
 
 }

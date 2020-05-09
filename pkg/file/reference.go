@@ -2,17 +2,9 @@ package file
 
 import (
 	"fmt"
-	"github.com/sony/sonyflake"
-	"time"
 )
 
-var uuidGen *sonyflake.Sonyflake
-
-func init() {
-	var st sonyflake.Settings
-	st.StartTime = time.Now()
-	uuidGen = sonyflake.NewSonyflake(st)
-}
+var nextId = 0
 
 type ID uint64
 
@@ -22,13 +14,10 @@ type Reference struct {
 }
 
 func NewFileReference(path Path) Reference {
-	i, err := uuidGen.NextID()
-	if err != nil {
-		panic(err)
-	}
+	nextId++
 	return Reference{
 		Path: path,
-		Id:   ID(i),
+		Id:   ID(nextId),
 	}
 }
 

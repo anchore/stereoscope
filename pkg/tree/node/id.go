@@ -1,6 +1,6 @@
 package node
 
-type ID uint64
+type ID string
 
 type Set map[ID]struct{}
 

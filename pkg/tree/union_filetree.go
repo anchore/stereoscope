@@ -2,6 +2,7 @@ package tree
 
 import (
 	"github.com/anchore/stereoscope/pkg/file"
+	"path"
 )
 
 type UnionFileTree struct {
@@ -41,9 +42,25 @@ func (u *UnionFileTree) Squash() (*FileTree, error) {
 			ShouldContinueBranch: refTree.ConditionFn(func(f file.Reference) bool {
 				return !f.Path.IsWhiteout()
 			}),
+			ShouldVisit: refTree.ConditionFn(func(f file.Reference) bool {
+				return !f.Path.IsDirWhiteout()
+			}),
 		}
 
 		visitor := refTree.VisitorFn(func(f file.Reference) {
+
+			// opaque whiteouts must be processed first
+			opaqueWhiteoutChild := file.Path(path.Join(string(f.Path), file.OpaqueWhiteout))
+			if refTree.HasPath(opaqueWhiteoutChild) {
+				err := squashedTree.RemoveChildPaths(f.Path)
+				if err != nil {
+					// TODO: replace
+					panic(err)
+				}
+
+				return
+			}
+
 			if f.Path.IsWhiteout() {
 				lowerPath, err := f.Path.UnWhiteoutPath()
 				if err != nil {
