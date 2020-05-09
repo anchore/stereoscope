@@ -40,18 +40,17 @@ func main() {
 	}
 
 	////////////////////////////////////////////////////////////////
-	// Fetch file contents from the (squashed) image
-	content, err := image.SquashedFileContents("/etc/centos-release")
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(content)
-
-
-	////////////////////////////////////////////////////////////////
 	// Show the squashed tree
 	image.SquashedTree.Walk(func(f file.Reference) {
 		fmt.Println("   ", f.Path)
 	})
+
+	////////////////////////////////////////////////////////////////
+	// Fetch file contents from the (squashed) image
+	content, err := image.FileContents("/etc/centos-release")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(content)
 
 }

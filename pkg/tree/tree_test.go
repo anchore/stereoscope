@@ -38,7 +38,7 @@ func TestTree_AddRoot(t *testing.T) {
 			t.Fatal(fmt.Sprintf("could not add root node (%v)", id), err)
 		}
 
-		if !tr.HasNode(toId(id)){
+		if !tr.HasNode(toId(id)) {
 			t.Errorf("could not find root node (%v)", id)
 		}
 
@@ -227,7 +227,7 @@ func TestTree_RemoveNode_Root(t *testing.T) {
 		t.Fatal("unexpected length of tree nodes", len(nodes))
 	}
 
-	for _, id := range []int{0,1,2,3} {
+	for _, id := range []int{0, 1, 2, 3} {
 		if tr.HasNode(toId(id)) {
 			t.Fatal("node should no longer be part of the tree", id)
 		}

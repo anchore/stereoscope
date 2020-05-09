@@ -1,8 +1,9 @@
 package tree
 
 import (
-	"github.com/anchore/stereoscope/pkg/file"
 	"path"
+
+	"github.com/anchore/stereoscope/pkg/file"
 )
 
 type UnionFileTree struct {

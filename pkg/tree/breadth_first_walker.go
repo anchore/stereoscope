@@ -1,8 +1,9 @@
 package tree
 
 import (
-	"github.com/anchore/stereoscope/pkg/tree/node"
 	"sort"
+
+	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
 type BreadthFirstWalker struct {

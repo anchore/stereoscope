@@ -2,9 +2,10 @@ package file
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/tree/node"
 	"path"
 	"strings"
+
+	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
 const (

@@ -59,14 +59,12 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 	base.AddPath("/some/stuff-2.txt")
 	base.AddPath("/other/things-1.txt")
 
-
 	top := NewFileTree()
-	top.AddPath("/some/"+file.OpaqueWhiteout)
-	top.AddPath("/other/"+file.WhiteoutPrefix+"things-1.txt")
+	top.AddPath("/some/" + file.OpaqueWhiteout)
+	top.AddPath("/other/" + file.WhiteoutPrefix + "things-1.txt")
 
 	ut.PushTree(base)
 	ut.PushTree(top)
-
 
 	squashed, err := ut.Squash()
 	if err != nil {
@@ -86,7 +84,7 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 
 	for _, path := range expectedPaths {
 		if !squashed.HasPath(file.Path(path)) {
-			t.Errorf("expected '%v' but not found", path )
+			t.Errorf("expected '%v' but not found", path)
 		}
 	}
 

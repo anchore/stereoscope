@@ -2,11 +2,12 @@ package image
 
 import (
 	"fmt"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 )
 
-func fetchFileContents(filetree *tree.FileTree,  fileCatalog *FileCatalog, path file.Path) (string, error) {
+func fetchFileContents(filetree *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (string, error) {
 	fileReference := filetree.File(path)
 	if fileReference == nil {
 		return "", fmt.Errorf("could not find file path in Tree: %s", path)

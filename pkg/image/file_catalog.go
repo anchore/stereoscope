@@ -2,8 +2,9 @@ package image
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/file"
 	"io/ioutil"
+
+	"github.com/anchore/stereoscope/pkg/file"
 )
 
 type FileCatalogEntry struct {

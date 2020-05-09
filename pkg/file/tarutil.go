@@ -3,10 +3,11 @@ package file
 import (
 	"archive/tar"
 	"fmt"
-	"github.com/anchore/stereoscope/internal"
 	"io"
 	"io/ioutil"
 	"path"
+
+	"github.com/anchore/stereoscope/internal"
 )
 
 type tarFile struct {
@@ -48,7 +49,7 @@ func ContentsFromTar(reader io.ReadCloser, tarHeaderNames TarContentsRequest) (m
 		if err != nil {
 			return nil, err
 		}
-		if fileRef, ok := tarHeaderNames[hdr.Name]; ok{
+		if fileRef, ok := tarHeaderNames[hdr.Name]; ok {
 			bytes, err := ioutil.ReadAll(tarReader)
 			if err != nil {
 				return nil, fmt.Errorf("could not read file: %s: %+v", hdr.Name, err)
@@ -63,7 +64,7 @@ func ContentsFromTar(reader io.ReadCloser, tarHeaderNames TarContentsRequest) (m
 		for _, name := range result {
 			resultSet.Add(name)
 		}
-		for name, _ := range tarHeaderNames {
+		for name := range tarHeaderNames {
 			if !resultSet.Contains(name) {
 				missingNames = append(missingNames, name)
 			}
