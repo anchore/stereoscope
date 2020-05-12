@@ -1,9 +1,10 @@
 package docker
 
 import (
+	"sync"
+
 	"github.com/docker/docker/client"
 	"golang.org/x/net/context"
-	"sync"
 )
 
 var instance *client.Client

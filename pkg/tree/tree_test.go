@@ -10,9 +10,13 @@ type testNode struct {
 	Id node.ID
 }
 
-func newTestNode(id node.ID) *testNode {
+func toId(i interface{}) node.ID {
+	return node.ID(fmt.Sprintf("%v", i))
+}
+
+func newTestNode(id interface{}) *testNode {
 	return &testNode{
-		Id: id,
+		Id: toId(id),
 	}
 }
 
@@ -25,7 +29,7 @@ func (n *testNode) Copy() node.Node {
 }
 
 func TestTree_AddRoot(t *testing.T) {
-	rootIds := []node.ID{1, 3}
+	rootIds := []int{1, 3}
 	tr := newTree()
 
 	for _, id := range rootIds {
@@ -34,14 +38,14 @@ func TestTree_AddRoot(t *testing.T) {
 			t.Fatal(fmt.Sprintf("could not add root node (%v)", id), err)
 		}
 
-		if !tr.HasNode(id) {
+		if !tr.HasNode(toId(id)) {
 			t.Errorf("could not find root node (%v)", id)
 		}
 
 		found := false
 	roots:
 		for _, root := range tr.Roots() {
-			if root.ID() == id {
+			if root.ID() == toId(id) {
 				found = true
 				break roots
 			}
@@ -223,8 +227,8 @@ func TestTree_RemoveNode_Root(t *testing.T) {
 		t.Fatal("unexpected length of tree nodes", len(nodes))
 	}
 
-	for _, id := range []node.ID{0, 1, 2, 3} {
-		if tr.HasNode(id) {
+	for _, id := range []int{0, 1, 2, 3} {
+		if tr.HasNode(toId(id)) {
 			t.Fatal("node should no longer be part of the tree", id)
 		}
 	}

@@ -25,8 +25,8 @@ func TestDFS_WalkAll(t *testing.T) {
 		file.Path("/home/wagoodman/more"),
 		file.Path("/home/wagoodman/more/file.txt"),
 		file.Path("/home/wagoodman/some"),
-		file.Path("/home/wagoodman/some/stuff-2.txt"),
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
+		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
 	actual := make([]file.Reference, 0)
@@ -60,8 +60,8 @@ func TestDFS_Walk(t *testing.T) {
 		file.Path("/home/wagoodman/more"),
 		file.Path("/home/wagoodman/more/file.txt"),
 		file.Path("/home/wagoodman/some"),
-		file.Path("/home/wagoodman/some/stuff-2.txt"),
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
+		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
 	actual := make([]file.Reference, 0)
@@ -116,8 +116,8 @@ func TestDFS_Walk_ShouldVisit(t *testing.T) {
 		walkFrom,
 		file.Path("/home/wagoodman/more"),
 		file.Path("/home/wagoodman/more/file.txt"),
-		file.Path("/home/wagoodman/some/stuff-2.txt"),
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
+		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
 	actual := make([]file.Reference, 0)

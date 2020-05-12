@@ -15,13 +15,14 @@ func bfsTestTree() *FileTree {
 }
 
 func assertExpectedTraversal(t *testing.T, expected []file.Path, actual []file.Reference) {
+	t.Helper()
 	if len(actual) != len(expected) {
 		t.Errorf("Did not traverse all nodes (expected %d, got %d)", len(expected), len(actual))
 	}
 
 	for idx, a := range actual {
 		if expected[idx].ID() != a.Path.ID() {
-			t.Errorf("eEpected visit ID @%v = '%v', got %v", idx, expected[idx], a)
+			t.Errorf("expected visit ID @%v = '%v', got %v", idx, expected[idx], a.ID())
 		}
 	}
 }
@@ -36,8 +37,8 @@ func TestBFS_WalkAll(t *testing.T) {
 		file.Path("/home/wagoodman/more"),
 		file.Path("/home/wagoodman/some"),
 		file.Path("/home/wagoodman/more/file.txt"),
-		file.Path("/home/wagoodman/some/stuff-2.txt"),
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
+		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
 	actual := make([]file.Reference, 0)
@@ -60,8 +61,8 @@ func TestBFS_Walk(t *testing.T) {
 		file.Path("/home/wagoodman/more"),
 		file.Path("/home/wagoodman/some"),
 		file.Path("/home/wagoodman/more/file.txt"),
-		file.Path("/home/wagoodman/some/stuff-2.txt"),
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
+		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
 	actual := make([]file.Reference, 0)
@@ -117,8 +118,8 @@ func TestBFS_Walk_ShouldVisit(t *testing.T) {
 		file.Path("/home/wagoodman"),
 		file.Path("/home/wagoodman/more"),
 		file.Path("/home/wagoodman/more/file.txt"),
-		file.Path("/home/wagoodman/some/stuff-2.txt"),
 		file.Path("/home/wagoodman/some/stuff-1.txt"),
+		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
 	actual := make([]file.Reference, 0)

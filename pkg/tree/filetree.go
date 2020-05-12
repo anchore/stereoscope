@@ -2,6 +2,8 @@ package tree
 
 import (
 	"fmt"
+
+	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
@@ -145,6 +147,21 @@ func (t *FileTree) RemovePath(path file.Path) error {
 	return nil
 }
 
+func (t *FileTree) RemoveChildPaths(path file.Path) error {
+	removedNodes := make(node.Nodes, 0)
+	for _, child := range t.tree.Children(path) {
+		nodes, err := t.tree.RemoveNode(child)
+		if err != nil {
+			return err
+		}
+		removedNodes = append(removedNodes, nodes...)
+	}
+	for _, n := range removedNodes {
+		delete(t.pathToFileRef, n.ID())
+	}
+	return nil
+}
+
 func (t *FileTree) Reader() Reader {
 	return t.tree
 }
@@ -153,4 +170,43 @@ func (t *FileTree) Walk(fn func(f file.Reference)) {
 	visitor := t.VisitorFn(fn)
 	w := NewDepthFirstWalker(t.Reader(), visitor)
 	w.WalkAll()
+}
+
+func (t *FileTree) PathDiff(other *FileTree) (extra, missing []file.Path) {
+	extra = make([]file.Path, 0)
+	missing = make([]file.Path, 0)
+
+	ourPaths := internal.NewStringSet()
+	for _, f := range t.pathToFileRef {
+		ourPaths.Add(string(f.Path))
+	}
+
+	theirPaths := internal.NewStringSet()
+	for _, f := range other.pathToFileRef {
+		theirPaths.Add(string(f.Path))
+	}
+
+	for _, f := range other.pathToFileRef {
+		if !ourPaths.Contains(string(f.Path)) {
+			extra = append(extra, f.Path)
+		}
+	}
+
+	for _, f := range t.pathToFileRef {
+		if !theirPaths.Contains(string(f.Path)) {
+			missing = append(missing, f.Path)
+		}
+	}
+
+	return
+}
+
+func (t *FileTree) Equal(other *FileTree) bool {
+	if len(t.pathToFileRef) != len(other.pathToFileRef) {
+		return false
+	}
+
+	extra, missing := t.PathDiff(other)
+
+	return len(extra) == 0 && len(missing) == 0
 }

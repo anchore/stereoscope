@@ -13,10 +13,10 @@ docker image save centos:8 -o centos.tar
 go run examples/basic.go tarball://centos.tar
 ```
 
-## Why the name?
-(This is just a working title)
+## Names...
 
-A stereoscope is a device that takes multiple flat, two-dimensional images to create an impression of a single three-dimensional image. This library takes a container image and provides the user with usable file tree manipulation and a content API (i.e. depth and detail, like a stereoscope).
+- Stereoscope: A stereoscope is a device that takes multiple flat, two-dimensional images to create an impression of a single three-dimensional image. This library takes a container image and provides the user with usable file tree manipulation and a content API (i.e. depth and detail, like a stereoscope).
+- Cartographer: A map maker. This library essentially maps out an image into file trees from various perspectives.
 
 ## TODO:
 

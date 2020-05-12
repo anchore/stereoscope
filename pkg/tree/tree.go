@@ -2,6 +2,7 @@ package tree
 
 import (
 	"fmt"
+
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
