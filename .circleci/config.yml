@@ -72,7 +72,7 @@ jobs:
 
       - run:
           name: build hash key for tar cache
-          command: find integration/test-fixtures/tar-cache -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee integration/test-fixtures/tar-cache.key
+          command: find integration/test-fixtures/image-* -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee integration/test-fixtures/tar-cache.key
 
       - restore_cache:
           keys:
