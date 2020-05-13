@@ -16,10 +16,12 @@ pushd "$TEMP_DIR"
   echo "third file" > path/file-3.txt
 
   # permissions
+  chmod -R 755 path
   chmod -R 700 path/branch/one/
-  chmod -R 755 path/branch/two/
+  chmod 664 path/file-3.txt
 
   # tar + owner
-  tar --owner=1337 --group=5432 -cvf "$FIXTURE_TAR_PATH" path/
+  # note: sort by name is important for test file header entry ordering
+  tar --sort=name --owner=1337 --group=5432 -cvf "$FIXTURE_TAR_PATH" path/
 
 popd

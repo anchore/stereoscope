@@ -1,0 +1,99 @@
+version: 2.1
+
+jobs:
+  run-static-analysis:
+    parameters:
+      version:
+        type: string
+    working_directory: /home/circleci/app
+    docker:
+      - image: circleci/golang:<< parameters.version >>
+        environment:
+          GO111MODULE: "on"
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - golang-dependencies-<< parameters.version >>-{{ checksum "go.sum" }}
+      - run: make bootstrap
+      - save_cache:
+          key: golang-dependencies-<< parameters.version >>-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
+            - ".tmp"
+      - run:
+          name: run static analysis
+          command: make lint
+
+  run-tests:
+    parameters:
+      version:
+        type: string
+    working_directory: /home/circleci/app
+    docker:
+      - image: circleci/golang:<< parameters.version >>
+        environment:
+          GO111MODULE: "on"
+    steps:
+      - checkout
+
+      - restore_cache:
+          keys:
+            - golang-dependencies-<< parameters.version >>-{{ checksum "go.sum" }}
+
+      - run: make bootstrap
+
+      - save_cache:
+          key: golang-dependencies-<< parameters.version >>-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
+            - ".tmp"
+
+      - setup_remote_docker:
+          version: 18.06.0-ce
+          docker_layer_caching: true
+
+      - run:
+          name: enable docker client
+          command: |
+              # all of this to enable "circleci local execute ..." cli commands for /var/run/docker.sock
+              mkdir -p ${HOME}/.local/bin
+              cat \<< EOF > ${HOME}/.local/bin/docker
+              #!/bin/bash
+              set -xue
+              sudo -E ${HOME}/.local/bin/docker.bin \$@
+              EOF
+              sudo mv /usr/bin/docker ${HOME}/.local/bin/docker.bin
+              chmod 755 ${HOME}/.local/bin/docker
+
+      - run:
+          name: run unit tests
+          command: make unit
+
+      - run:
+          name: build hash key for tar cache
+          command: find integration/test-fixtures/tar-cache -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee integration/test-fixtures/tar-cache.key
+
+      - restore_cache:
+          keys:
+            - integration-test-tar-cache-<< parameters.version >>-{{ checksum "integration/test-fixtures/tar-cache.key" }}
+      - run:
+          name: run integration tests
+          command: |
+            docker version
+            make integration
+
+      - save_cache:
+          key: integration-test-tar-cache-<< parameters.version >>-{{ checksum "integration/test-fixtures/tar-cache.key" }}
+          paths:
+            - "integration/test-fixtures/tar-cache"
+
+workflows:
+  commit:
+    jobs:
+      - run-static-analysis:
+          version: "1.14"
+      - run-tests:
+          version: "1.13"
+      - run-tests:
+          version: "1.14"
