@@ -49,8 +49,7 @@ clear-cache:
 
 check-pipeline:
 	# note: this is meant for local development & testing of the pipeline, NOT to be run in CI
-	circleci config process .circleci/config.yaml > .tmp/circleci.yaml
-	circleci local execute -c .tmp/circleci.yaml --job run-static-analysis
-	circleci local execute -c .tmp/circleci.yaml --job run-tests-1
-	circleci local execute -c .tmp/circleci.yaml --job run-tests-2
+	circleci config process .circleci/config.yml > .tmp/circleci.yml
+	circleci local execute -c .tmp/circleci.yml --job "Static Analysis"
+	circleci local execute -c .tmp/circleci.yml --job "Unit & Integration Tests (go-latest)"
 	@printf '$(SUCCESS)pipeline checks pass!$(RESET)\n'
