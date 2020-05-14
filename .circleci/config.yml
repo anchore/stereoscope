@@ -5,7 +5,6 @@ jobs:
     parameters:
       version:
         type: string
-    working_directory: /home/circleci/app
     docker:
       - image: circleci/golang:<< parameters.version >>
         environment:
@@ -29,7 +28,6 @@ jobs:
     parameters:
       version:
         type: string
-    working_directory: /home/circleci/app
     docker:
       - image: circleci/golang:<< parameters.version >>
         environment:
@@ -51,7 +49,6 @@ jobs:
 
       - setup_remote_docker:
           version: 18.06.0-ce
-          docker_layer_caching: true
 
       - run:
           name: enable docker client
