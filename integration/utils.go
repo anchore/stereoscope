@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"github.com/anchore/stereoscope"
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/tree"
 	"io"
@@ -22,7 +23,7 @@ const (
 	imagePrefix         = "stereoscope-fixture"
 )
 
-func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.Image) {
+func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.Image, ignorePaths []file.Path) {
 	t.Helper()
 	if len(expected) != len(i.Layers) {
 		t.Fatalf("mismatched layers (%d!=%d)", len(expected), len(i.Layers))
@@ -31,8 +32,39 @@ func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.
 	for idx, expected := range expected {
 		actual := i.Layers[idx].Tree
 		if !expected.Equal(actual) {
-			fmt.Println(expected.PathDiff(actual))
-			t.Errorf("mismatched trees (layer %d)", idx)
+			extra, missing := expected.PathDiff(actual)
+			nonIgnoredPaths := 0
+
+			for _, p := range extra {
+				found := false
+				inner1: for _, ignore := range ignorePaths {
+					if ignore == p {
+						found = true
+						break inner1
+					}
+				}
+				if !found {
+					nonIgnoredPaths++
+				}
+			}
+
+			for _, p := range missing {
+				found := false
+				inner2: for _, ignore := range ignorePaths {
+				if ignore == p {
+					found = true
+					break inner2
+				}
+			}
+				if !found {
+					nonIgnoredPaths++
+				}
+			}
+			if nonIgnoredPaths > 0 {
+				t.Logf("ignore paths: %+v", ignorePaths)
+				t.Logf("path differences: extra=%+v missing=%+v", extra, missing)
+				t.Errorf("mismatched trees (layer %d)", idx)
+			}
 		}
 	}
 }
@@ -71,31 +103,33 @@ func getSquashedImage(t *testing.T, name string) *image.Image {
 	return i
 }
 
-func getFixtureImageName(t *testing.T, name string) string {
+func getFixtureImageInfo(t *testing.T, name string) (string, string) {
 	t.Helper()
-	contextPath := path.Join(testFixturesDirName, name)
 	version := fixtureVersion(t, name)
 	imageName := fmt.Sprintf("%s-%s", imagePrefix, name)
-	fullImageName := fmt.Sprintf("%s:%s", imageName, version)
-	if !hasImage(t, fullImageName) {
-		err := buildImage(t, contextPath, imageName, version)
-		if err != nil {
-			panic(err)
-		}
-	}
-	return fullImageName
+	return imageName, version
+
 }
 
 func getFixtureImageTarPath(t *testing.T, name string) string {
 	t.Helper()
-	imageName := getFixtureImageName(t, name)
+	imageName, imageVersion := getFixtureImageInfo(t, name)
+	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
 	tarFileName := fmt.Sprintf("%s.tar", imageName)
 	tarPath := path.Join(testFixturesDirName, tarCacheDirName, tarFileName)
 
 	if !fileExists(t, tarPath) {
-		err := saveImage(t, imageName, tarPath)
+		if !hasImage(t, fullImageName) {
+			contextPath := path.Join(testFixturesDirName, name)
+			err := buildImage(t, contextPath, imageName, imageVersion)
+			if err != nil {
+				t.Fatal("could not build fixture image:", err)
+			}
+		}
+
+		err := saveImage(t, fullImageName, tarPath)
 		if err != nil {
-			panic(err)
+			t.Fatal("could not save fixture image:", err)
 		}
 	}
 
@@ -179,9 +213,24 @@ func buildImage(t *testing.T, contextDir, name, tag string) error {
 
 func saveImage(t *testing.T, image, path string) error {
 	t.Helper()
-	cmd := exec.Command("docker", "image", "save", image, "-o", path)
+
+	outfile, err := os.Create(path)
+	if err != nil {
+		t.Fatal("unable to create file for docker image tar:", err)
+	}
+	defer func() {
+		err := outfile.Close()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	// note: we are not using -o since some CI providers need root access for the docker client, however,
+	// we don't want the resulting tar to be owned by root, thus we write the file piped from stdout.
+	cmd := exec.Command("docker", "image", "save", image)
 	cmd.Env = os.Environ()
-	cmd.Stdout = os.Stdout
+
+	cmd.Stdout = outfile
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	return cmd.Run()

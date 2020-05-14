@@ -1,13 +1,13 @@
 TEMPDIR = ./.tmp
 LINTCMD = $(TEMPDIR)/golangci-lint run --tests=false --config .golangci.yaml
-BOLD := $(shell tput bold)
-PURPLE := $(shell tput setaf 5)
-GREEN := $(shell tput setaf 2)
-RESET := $(shell tput sgr0)
+BOLD := $(shell tput -T linux bold)
+PURPLE := $(shell tput -T linux setaf 5)
+GREEN := $(shell tput -T linux setaf 2)
+RESET := $(shell tput -T linux sgr0)
 TITLE := $(BOLD)$(PURPLE)
 SUCCESS := $(BOLD)$(GREEN)
 
-.PHONY: all boostrap lint lint-fix unit coverage integration
+.PHONY: all boostrap lint lint-fix unit coverage integration check-pipeline clear-cache
 
 all: lint unit integration
 	@printf '$(SUCCESS)All checks pass!$(RESET)\n'
@@ -42,4 +42,15 @@ coverage:
 
 integration:
 	@printf '$(TITLE)Running integration tests...$(RESET)\n'
-	go test -tags=integration ./integration
+	go test -v -tags=integration ./integration
+
+clear-cache:
+	rm -f integration/test-fixtures/tar-cache/*.tar
+
+check-pipeline:
+	# note: this is meant for local development & testing of the pipeline, NOT to be run in CI
+	mkdir -p $(TEMPDIR)
+	circleci config process .circleci/config.yml > .tmp/circleci.yml
+	circleci local execute -c .tmp/circleci.yml --job "Static Analysis"
+	circleci local execute -c .tmp/circleci.yml --job "Unit & Integration Tests (go-latest)"
+	@printf '$(SUCCESS)pipeline checks pass!$(RESET)\n'

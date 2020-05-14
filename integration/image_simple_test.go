@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 	"testing"
 )
@@ -26,7 +27,13 @@ func TestSimpleImageFiletrees(t *testing.T) {
 		2: three,
 	}
 
-	compareLayerTrees(t, expectedTrees, i)
+	// there is a difference in behavior between docker 18 and 19 regarding opaque whiteout
+	// creation during docker build (which could lead to test inconsistencies depending where
+	// this test is run. However, this opaque whiteout is not important to theses tests, only
+	// the correctness of the layer representation and squashing ability.
+	ignorePaths := []file.Path{"/really/.wh..wh..opq"}
+
+	compareLayerTrees(t, expectedTrees, i, ignorePaths)
 
 	squashed := tree.NewFileTree()
 	squashed.AddPath("/somefile-1.txt")

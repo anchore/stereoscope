@@ -133,22 +133,23 @@ func TestEnumerateFileMetadataFromTar_GoCase(t *testing.T) {
 	defer cleanup()
 
 	expected := []Metadata{
-		{Path:"/path", TarHeaderName:"path/", TypeFlag:53, Linkname: "", Size:0, Mode:os.ModeDir|0o775, Uid:1337, Gid:5432, IsDir:true},
-		{Path:"/path/file-3.txt", TarHeaderName:"path/file-3.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o664, Uid:1337, Gid:5432, IsDir:false},
-		{Path:"/path/branch", TarHeaderName:"path/branch/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o775, Uid:1337, Gid:5432, IsDir:true},
-		{Path:"/path/branch/two", TarHeaderName:"path/branch/two/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, Uid:1337, Gid:5432, IsDir:true},
-		{Path:"/path/branch/two/file-2.txt", TarHeaderName:"path/branch/two/file-2.txt", TypeFlag:48, Linkname:"", Size:12, Mode:0o755, Uid:1337, Gid:5432, IsDir:false},
+		{Path:"/path", TarHeaderName:"path/", TypeFlag:53, Linkname: "", Size:0, Mode:os.ModeDir|0o755, Uid:1337, Gid:5432, IsDir:true},
+		{Path:"/path/branch", TarHeaderName:"path/branch/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, Uid:1337, Gid:5432, IsDir:true},
 		{Path:"/path/branch/one", TarHeaderName:"path/branch/one/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o700, Uid:1337, Gid:5432, IsDir:true},
 		{Path:"/path/branch/one/file-1.txt", TarHeaderName:"path/branch/one/file-1.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o700, Uid:1337, Gid:5432, IsDir:false},
+		{Path:"/path/branch/two", TarHeaderName:"path/branch/two/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, Uid:1337, Gid:5432, IsDir:true},
+		{Path:"/path/branch/two/file-2.txt", TarHeaderName:"path/branch/two/file-2.txt", TypeFlag:48, Linkname:"", Size:12, Mode:0o755, Uid:1337, Gid:5432, IsDir:false},
+		{Path:"/path/file-3.txt", TarHeaderName:"path/file-3.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o664, Uid:1337, Gid:5432, IsDir:false},
 	}
 
 	idx := 0
 	for metadata := range EnumerateFileMetadataFromTar(tarReader) {
+		t.Log("Path:", metadata.Path)
 		if len(expected) <= idx {
 			t.Fatal("more metadata files than expected!")
 		}
 		if metadata != expected[idx] {
-			t.Logf("Mode: %d %d", metadata.Mode, expected[idx].Mode)
+			t.Logf("Mode: actual:%d expected:%d", metadata.Mode, expected[idx].Mode)
 			t.Errorf("unexpected file metadata:\n\texpected: %+v\n\tgot     : %+v\n", expected[idx], metadata)
 
 		}
