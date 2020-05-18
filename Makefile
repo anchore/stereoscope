@@ -42,7 +42,7 @@ coverage:
 
 integration:
 	@printf '$(TITLE)Running integration tests...$(RESET)\n'
-	go test -v -tags=integration ./integration
+	go test -tags=integration ./integration
 
 clear-cache:
 	rm -f integration/test-fixtures/tar-cache/*.tar

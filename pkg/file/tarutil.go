@@ -7,6 +7,8 @@ import (
 	"io/ioutil"
 	"path"
 
+	"github.com/pkg/errors"
+
 	"github.com/anchore/stereoscope/internal"
 )
 
@@ -21,7 +23,7 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 	tarReader := tar.NewReader(reader)
 	for {
 		hdr, err := tarReader.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -37,13 +39,13 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 	return nil, fmt.Errorf("file %s not found in tar", tarPath)
 }
 
-func ContentsFromTar(reader io.ReadCloser, tarHeaderNames TarContentsRequest) (map[Reference]string, error) {
+func ContentsFromTar(reader io.Reader, tarHeaderNames TarContentsRequest) (map[Reference]string, error) {
 	result := make(map[Reference]string)
 	tarReader := tar.NewReader(reader)
 
 	for {
 		hdr, err := tarReader.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -75,13 +77,13 @@ func ContentsFromTar(reader io.ReadCloser, tarHeaderNames TarContentsRequest) (m
 	return result, nil
 }
 
-func EnumerateFileMetadataFromTar(reader io.ReadCloser) <-chan Metadata {
+func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 	tarReader := tar.NewReader(reader)
 	result := make(chan Metadata)
 	go func() {
 		for {
 			header, err := tarReader.Next()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {
 				panic(err)
@@ -106,8 +108,8 @@ func EnumerateFileMetadataFromTar(reader io.ReadCloser) <-chan Metadata {
 					Linkname:      header.Linkname,
 					Size:          header.FileInfo().Size(),
 					Mode:          header.FileInfo().Mode(),
-					Uid:           header.Uid,
-					Gid:           header.Gid,
+					UserID:        header.Uid,
+					GroupID:       header.Gid,
 					IsDir:         header.FileInfo().IsDir(),
 				}
 			}

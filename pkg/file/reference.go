@@ -4,27 +4,27 @@ import (
 	"fmt"
 )
 
-var nextId = 0
+var nextID = 0
 
 type ID uint64
 
 type Reference struct {
-	Id   ID
+	id   ID
 	Path Path
 }
 
 func NewFileReference(path Path) Reference {
-	nextId++
+	nextID++
 	return Reference{
 		Path: path,
-		Id:   ID(nextId),
+		id:   ID(nextID),
 	}
 }
 
 func (f *Reference) ID() ID {
-	return f.Id
+	return f.id
 }
 
 func (f *Reference) String() string {
-	return fmt.Sprintf("[%v] %v", f.Id, f.Path)
+	return fmt.Sprintf("[%v] %v", f.id, f.Path)
 }

@@ -60,7 +60,6 @@ func (w *DepthFirstWalker) Walk(from node.Node) node.Node {
 		for _, child := range children {
 			w.stack.Push(child)
 		}
-
 	}
 
 	return nil

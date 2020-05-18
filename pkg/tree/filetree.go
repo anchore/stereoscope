@@ -2,6 +2,7 @@ package tree
 
 import (
 	"fmt"
+	"path"
 
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -40,19 +41,19 @@ func (t *FileTree) HasPath(path file.Path) bool {
 	return ok
 }
 
-func (t *FileTree) FileByPathId(id node.ID) file.Reference {
+func (t *FileTree) FileByPathID(id node.ID) file.Reference {
 	return t.pathToFileRef[id]
 }
 
 func (t *FileTree) VisitorFn(fn func(file.Reference)) func(node.Node) {
 	return func(node node.Node) {
-		fn(t.FileByPathId(node.ID()))
+		fn(t.FileByPathID(node.ID()))
 	}
 }
 
 func (t *FileTree) ConditionFn(fn func(file.Reference) bool) func(node.Node) bool {
 	return func(node node.Node) bool {
-		return fn(t.FileByPathId(node.ID()))
+		return fn(t.FileByPathID(node.ID()))
 	}
 }
 
@@ -209,4 +210,59 @@ func (t *FileTree) Equal(other *FileTree) bool {
 	extra, missing := t.PathDiff(other)
 
 	return len(extra) == 0 && len(missing) == 0
+}
+
+func (t *FileTree) Merge(other *FileTree) {
+	conditions := WalkConditions{
+		ShouldContinueBranch: other.ConditionFn(func(f file.Reference) bool {
+			return !f.Path.IsWhiteout()
+		}),
+		ShouldVisit: other.ConditionFn(func(f file.Reference) bool {
+			return !f.Path.IsDirWhiteout()
+		}),
+	}
+
+	visitor := other.VisitorFn(func(f file.Reference) {
+		// opaque whiteouts must be processed first
+		opaqueWhiteoutChild := file.Path(path.Join(string(f.Path), file.OpaqueWhiteout))
+		if other.HasPath(opaqueWhiteoutChild) {
+			err := t.RemoveChildPaths(f.Path)
+			if err != nil {
+				// TODO: replace
+				panic(err)
+			}
+
+			return
+		}
+
+		if f.Path.IsWhiteout() {
+			lowerPath, err := f.Path.UnWhiteoutPath()
+			if err != nil {
+				// TODO: replace
+				panic(err)
+			}
+
+			err = t.RemovePath(lowerPath)
+			if err != nil {
+				// TODO: replace
+				panic(err)
+			}
+		} else {
+			if !t.HasPath(f.Path) {
+				_, err := t.AddPath(f.Path)
+				if err != nil {
+					// TODO: replace
+					panic(err)
+				}
+			}
+			err := t.SetFile(f)
+			if err != nil {
+				// TODO: replace
+				panic(err)
+			}
+		}
+	})
+
+	w := NewDepthFirstWalkerWithConditions(other.Reader(), visitor, conditions)
+	w.WalkAll()
 }

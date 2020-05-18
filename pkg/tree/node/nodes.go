@@ -17,7 +17,6 @@ func (n Nodes) Less(idx1, idx2 int) bool {
 }
 
 func (n Nodes) Equal(other Nodes) bool {
-
 	// TODO: this is bad, since it changes the order of the nodes, which is unexpected for the caller
 	// however, this is only supporting tests, which need to be refactored.
 	sort.Sort(n)

@@ -13,7 +13,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/opencontainers/runc v0.1.1 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.5.0 // indirect
 	github.com/stretchr/testify v1.5.1 // indirect
 	golang.org/x/net v0.0.0-20200501053045-e0ff5e5a1de5

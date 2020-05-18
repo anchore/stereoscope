@@ -29,6 +29,10 @@ func ParseSource(source string) Source {
 	switch source {
 	case "tarball":
 		return TarballSource
+	case "docker":
+		panic("not implemented")
+	case "podman":
+		panic("not implemented")
 	}
 	return UnknownSource
 }
