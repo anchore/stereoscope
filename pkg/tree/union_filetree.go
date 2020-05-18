@@ -1,11 +1,5 @@
 package tree
 
-import (
-	"path"
-
-	"github.com/anchore/stereoscope/pkg/file"
-)
-
 type UnionFileTree struct {
 	trees []*FileTree
 }
@@ -39,60 +33,7 @@ func (u *UnionFileTree) Squash() (*FileTree, error) {
 			continue
 		}
 
-		conditions := WalkConditions{
-			ShouldContinueBranch: refTree.ConditionFn(func(f file.Reference) bool {
-				return !f.Path.IsWhiteout()
-			}),
-			ShouldVisit: refTree.ConditionFn(func(f file.Reference) bool {
-				return !f.Path.IsDirWhiteout()
-			}),
-		}
-
-		visitor := refTree.VisitorFn(func(f file.Reference) {
-
-			// opaque whiteouts must be processed first
-			opaqueWhiteoutChild := file.Path(path.Join(string(f.Path), file.OpaqueWhiteout))
-			if refTree.HasPath(opaqueWhiteoutChild) {
-				err := squashedTree.RemoveChildPaths(f.Path)
-				if err != nil {
-					// TODO: replace
-					panic(err)
-				}
-
-				return
-			}
-
-			if f.Path.IsWhiteout() {
-				lowerPath, err := f.Path.UnWhiteoutPath()
-				if err != nil {
-					// TODO: replace
-					panic(err)
-				}
-
-				err = squashedTree.RemovePath(lowerPath)
-				if err != nil {
-					// TODO: replace
-					panic(err)
-				}
-			} else {
-				if !squashedTree.HasPath(f.Path) {
-					_, err := squashedTree.AddPath(f.Path)
-					if err != nil {
-						// TODO: replace
-						panic(err)
-					}
-				}
-				err := squashedTree.SetFile(f)
-				if err != nil {
-					// TODO: replace
-					panic(err)
-				}
-			}
-		})
-
-		w := NewDepthFirstWalkerWithConditions(refTree.Reader(), visitor, conditions)
-		w.WalkAll()
-
+		squashedTree.Merge(refTree)
 	}
 	return squashedTree, nil
 }

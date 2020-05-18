@@ -60,7 +60,6 @@ func (w *BreadthFirstWalker) Walk(from node.Node) node.Node {
 		for _, child := range children {
 			w.queue.Enqueue(child)
 		}
-
 	}
 
 	return nil

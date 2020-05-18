@@ -133,13 +133,13 @@ func TestEnumerateFileMetadataFromTar_GoCase(t *testing.T) {
 	defer cleanup()
 
 	expected := []Metadata{
-		{Path:"/path", TarHeaderName:"path/", TypeFlag:53, Linkname: "", Size:0, Mode:os.ModeDir|0o755, Uid:1337, Gid:5432, IsDir:true},
-		{Path:"/path/branch", TarHeaderName:"path/branch/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, Uid:1337, Gid:5432, IsDir:true},
-		{Path:"/path/branch/one", TarHeaderName:"path/branch/one/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o700, Uid:1337, Gid:5432, IsDir:true},
-		{Path:"/path/branch/one/file-1.txt", TarHeaderName:"path/branch/one/file-1.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o700, Uid:1337, Gid:5432, IsDir:false},
-		{Path:"/path/branch/two", TarHeaderName:"path/branch/two/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, Uid:1337, Gid:5432, IsDir:true},
-		{Path:"/path/branch/two/file-2.txt", TarHeaderName:"path/branch/two/file-2.txt", TypeFlag:48, Linkname:"", Size:12, Mode:0o755, Uid:1337, Gid:5432, IsDir:false},
-		{Path:"/path/file-3.txt", TarHeaderName:"path/file-3.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o664, Uid:1337, Gid:5432, IsDir:false},
+		{Path:"/path", TarHeaderName:"path/", TypeFlag:53, Linkname: "", Size:0, Mode:os.ModeDir|0o755, UserID:1337, GroupID:5432, IsDir:true},
+		{Path:"/path/branch", TarHeaderName:"path/branch/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, UserID:1337, GroupID:5432, IsDir:true},
+		{Path:"/path/branch/one", TarHeaderName:"path/branch/one/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o700, UserID:1337, GroupID:5432, IsDir:true},
+		{Path:"/path/branch/one/file-1.txt", TarHeaderName:"path/branch/one/file-1.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o700, UserID:1337, GroupID:5432, IsDir:false},
+		{Path:"/path/branch/two", TarHeaderName:"path/branch/two/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, UserID:1337, GroupID:5432, IsDir:true},
+		{Path:"/path/branch/two/file-2.txt", TarHeaderName:"path/branch/two/file-2.txt", TypeFlag:48, Linkname:"", Size:12, Mode:0o755, UserID:1337, GroupID:5432, IsDir:false},
+		{Path:"/path/file-3.txt", TarHeaderName:"path/file-3.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o664, UserID:1337, GroupID:5432, IsDir:false},
 	}
 
 	idx := 0
@@ -162,17 +162,17 @@ func TestContentsFromTar_GoCase(t *testing.T) {
 	defer cleanup()
 
 	first := Reference{
-		Id:   ID(1),
+		id:   ID(1),
 		Path: "path/branch/one/file-1.txt",
 	}
 
 	second := Reference{
-		Id:   ID(2),
+		id:   ID(2),
 		Path: "path/branch/two/file-2.txt",
 	}
 
 	third := Reference{
-		Id:   ID(3),
+		id:   ID(3),
 		Path: "path/file-3.txt",
 	}
 
@@ -213,7 +213,7 @@ func TestContentsFromTar_MissingFile(t *testing.T) {
 	defer cleanup()
 
 	ref := Reference{
-		Id:   ID(99),
+		id:   ID(99),
 		Path: "nOn-ExIsTaNt-paTh",
 	}
 
