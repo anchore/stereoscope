@@ -100,16 +100,6 @@ func getSquashedImage(t *testing.T, source, name string) *image.Image {
 		t.Fatal("could not get tar image:", err)
 	}
 
-	err = i.Read()
-	if err != nil {
-		t.Fatal("could not read tar image:", err)
-	}
-
-	err = i.Squash()
-	if err != nil {
-		t.Fatal("could not squash image:", err)
-	}
-
 	return i
 }
 
