@@ -80,24 +80,34 @@ func compareSquashTree(t *testing.T, expected *tree.FileTree, i *image.Image) {
 
 }
 
-func getSquashedImage(t *testing.T, name string) *image.Image {
+func getSquashedImage(t *testing.T, source, name string) *image.Image {
 	t.Helper()
-	imageTarPath := getFixtureImageTarPath(t, name)
-	request := fmt.Sprintf("tarball://%s", imageTarPath)
+
+	var location string
+	switch source {
+	case "tarball":
+		location = getFixtureImageTarPath(t, name)
+	case "docker":
+		location = loadFixtureImageIntoDocker(t, name)
+	default:
+		t.Fatalf("could not determine source: %+v", source)
+	}
+	request := fmt.Sprintf("%s://%s", source, location)
+
 
 	i, err := stereoscope.GetImage(request)
 	if err != nil {
-		t.Fatal("could not get tar image", err)
+		t.Fatal("could not get tar image:", err)
 	}
 
 	err = i.Read()
 	if err != nil {
-		t.Fatal("could not read tar image", err)
+		t.Fatal("could not read tar image:", err)
 	}
 
 	err = i.Squash()
 	if err != nil {
-		t.Fatal("could not squash image", err)
+		t.Fatal("could not squash image:", err)
 	}
 
 	return i
@@ -109,6 +119,22 @@ func getFixtureImageInfo(t *testing.T, name string) (string, string) {
 	imageName := fmt.Sprintf("%s-%s", imagePrefix, name)
 	return imageName, version
 
+}
+
+func loadFixtureImageIntoDocker(t *testing.T, name string) string {
+	t.Helper()
+	imageName, imageVersion := getFixtureImageInfo(t, name)
+	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
+
+	if !hasImage(t, fullImageName) {
+		contextPath := path.Join(testFixturesDirName, name)
+		err := buildImage(t, contextPath, imageName, imageVersion)
+		if err != nil {
+			t.Fatal("could not build fixture image:", err)
+		}
+	}
+
+	return fullImageName
 }
 
 func getFixtureImageTarPath(t *testing.T, name string) string {
@@ -166,18 +192,18 @@ func dirHash(t *testing.T, root string) (string, error) {
 			return nil
 		}
 
-		file, err := os.Open(path)
+		f, err := os.Open(path)
 		if err != nil {
 			return err
 		}
 		defer func() {
-			err := file.Close()
+			err := f.Close()
 			if err != nil {
 				panic(err)
 			}
 		}()
 
-		if _, err := io.Copy(hasher, file); err != nil {
+		if _, err := io.Copy(hasher, f); err != nil {
 			return err
 		}
 
