@@ -11,7 +11,6 @@ linters:
     - dupl
     - errcheck
     - funlen
-    - gochecknoinits
     - gocognit
     - goconst
     - gocritic
@@ -19,7 +18,6 @@ linters:
     - gofmt
     - goimports
     - golint
-    - gomnd
     - goprintffuncname
     - gosec
     - gosimple
@@ -44,9 +42,11 @@ linters:
 
 # do not enable...
 #    - gochecknoglobals
+#    - gochecknoinits    # this is too aggressive
 #    - godot
 #    - godox
 #    - goerr113
+#    - gomnd       # this is too aggressive
 #    - interfacer  # this is a good idea, but is no longer supported and is prone to false positives
 #    - lll         # without a way to specify per-line exception cases, this is not usable
 #    - nestif

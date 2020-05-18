@@ -9,7 +9,7 @@ type Provider struct {
 	path string
 }
 
-func NewTarballProvider(path string) *Provider {
+func NewProvider(path string) *Provider {
 	return &Provider{
 		path: path,
 	}

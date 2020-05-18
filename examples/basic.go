@@ -16,6 +16,9 @@ func main() {
 		panic(err)
 	}
 
+	// delete any cached tar files
+	defer stereoscope.Cleanup()
+
 	/////////////////////////////////////////////////////////////////
 	// Catalog the file metadata and build the file trees
 	err = image.Read()

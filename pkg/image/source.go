@@ -1,38 +1,53 @@
 package image
 
 import (
-	"net/url"
 	"strings"
 )
 
 const (
 	UnknownSource Source = iota
 	TarballSource
+	DockerSource
 )
 
 var sourceStr = [...]string{
 	"UnknownSource",
 	"Tarball",
+	"Docker",
 }
 
 type Source uint8
 
 func ParseImageSpec(imageSpec string) (Source, string) {
-	u, err := url.Parse(imageSpec)
-	if err != nil {
-		return UnknownSource, ""
+	candidates := strings.Split(imageSpec, "://")
+
+	var source Source
+	switch len(candidates) {
+	case 1:
+		source = DockerSource
+	case 2:
+		source = ParseSource(candidates[0])
+	default:
+		source = UnknownSource
 	}
-	return ParseSource(u.Scheme), strings.TrimPrefix(imageSpec, u.Scheme+"://")
+
+	if source == UnknownSource {
+		return source, ""
+	}
+
+	return source, strings.TrimPrefix(imageSpec, candidates[0]+"://")
 }
 
 func ParseSource(source string) Source {
+	source = strings.ToLower(source)
 	switch source {
-	case "tarball":
+	case "tarball", "tar", "archive", "docker-archive":
 		return TarballSource
-	case "docker":
-		panic("not implemented")
+	case "docker", "docker-daemon", "docker-engine":
+		return DockerSource
 	case "podman":
-		panic("not implemented")
+		// TODO: implement
+		return UnknownSource
 	}
 	return UnknownSource
 }

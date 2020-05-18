@@ -4,13 +4,12 @@ package integration
 
 import (
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/tree"
 	"testing"
 )
 
-func TestSimpleImageFiletrees(t *testing.T) {
-	i := getSquashedImage(t, "image-simple")
-
+func assertImageSimpleFixtureTrees(t *testing.T, i *image.Image) {
 	one := tree.NewFileTree()
 	one.AddPath("/somefile-1.txt")
 
@@ -43,8 +42,7 @@ func TestSimpleImageFiletrees(t *testing.T) {
 	compareSquashTree(t, squashed, i)
 }
 
-func TestSimpleImageMultipleFileContents(t *testing.T) {
-	i := getSquashedImage(t, "image-simple")
+func assertImageSimpleFixtureContents(t *testing.T, i *image.Image) {
 	actualContents, err := i.MultipleFileContents(
 		"/somefile-1.txt",
 		"/somefile-2.txt",
