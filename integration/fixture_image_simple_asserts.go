@@ -43,7 +43,7 @@ func assertImageSimpleFixtureTrees(t *testing.T, i *image.Image) {
 }
 
 func assertImageSimpleFixtureContents(t *testing.T, i *image.Image) {
-	actualContents, err := i.MultipleFileContents(
+	actualContents, err := i.MultipleFileContentsFromSquash(
 		"/somefile-1.txt",
 		"/somefile-2.txt",
 		"/really/nested/file-3.txt",

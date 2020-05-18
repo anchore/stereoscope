@@ -44,9 +44,9 @@ func (l *Layer) Read(catalog *FileCatalog) error {
 }
 
 func (l *Layer) FileContents(path file.Path) (string, error) {
-	return fetchFileContents(l.Tree, l.fileCatalog, path)
+	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
 }
 
 func (l *Layer) MultipleFileContents(paths ...file.Path) (map[file.Reference]string, error) {
-	return fetchMultipleFileContents(l.Tree, l.fileCatalog, paths...)
+	return fetchMultipleFileContentsByPath(l.Tree, l.fileCatalog, paths...)
 }

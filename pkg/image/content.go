@@ -7,7 +7,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/tree"
 )
 
-func fetchFileContents(filetree *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (string, error) {
+func fetchFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (string, error) {
 	fileReference := filetree.File(path)
 	if fileReference == nil {
 		return "", fmt.Errorf("could not find file path in Tree: %s", path)
@@ -20,7 +20,7 @@ func fetchFileContents(filetree *tree.FileTree, fileCatalog *FileCatalog, path f
 	return content, nil
 }
 
-func fetchMultipleFileContents(filetree *tree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]string, error) {
+func fetchMultipleFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]string, error) {
 	fileReferences := make([]file.Reference, len(paths))
 	for idx, path := range paths {
 		fileReference := filetree.File(path)

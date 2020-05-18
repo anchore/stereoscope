@@ -60,10 +60,26 @@ func (i *Image) Squash() error {
 	return nil
 }
 
-func (i *Image) FileContents(path file.Path) (string, error) {
-	return fetchFileContents(i.SquashedTree, &i.FileCatalog, path)
+func (i *Image) FileContentsFromSquash(path file.Path) (string, error) {
+	return fetchFileContentsByPath(i.SquashedTree, &i.FileCatalog, path)
 }
 
-func (i *Image) MultipleFileContents(paths ...file.Path) (map[file.Reference]string, error) {
-	return fetchMultipleFileContents(i.SquashedTree, &i.FileCatalog, paths...)
+func (i *Image) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]string, error) {
+	return fetchMultipleFileContentsByPath(i.SquashedTree, &i.FileCatalog, paths...)
+}
+
+func (i *Image) FileContentsByRef(ref file.Reference) (string, error) {
+	content, err := i.FileCatalog.FileContents(ref)
+	if err != nil {
+		return "", err
+	}
+	return content, nil
+}
+
+func (i *Image) MultipleFileContentsByRef(refs ...file.Reference) (map[file.Reference]string, error) {
+	content, err := i.FileCatalog.MultipleFileContents(refs...)
+	if err != nil {
+		return nil, err
+	}
+	return content, nil
 }
