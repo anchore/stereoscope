@@ -13,10 +13,10 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - golang-dependencies-<< parameters.version >>-{{ checksum "go.sum" }}
+            - go-<< parameters.version >>-{{ checksum "go.sum" }}-{{ checksum "Makefile" }}
       - run: make bootstrap
       - save_cache:
-          key: golang-dependencies-<< parameters.version >>-{{ checksum "go.sum" }}
+          key: go-<< parameters.version >>-{{ checksum "go.sum" }}-{{ checksum "Makefile" }}
           paths:
             - "/go/pkg/mod"
             - ".tmp"
@@ -40,12 +40,12 @@ jobs:
 
       - restore_cache:
           keys:
-            - golang-dependencies-<< parameters.version >>-{{ checksum "go.sum" }}
+            - go-<< parameters.version >>-{{ checksum "go.sum" }}-{{ checksum "Makefile" }}
 
       - run: make bootstrap
 
       - save_cache:
-          key: golang-dependencies-<< parameters.version >>-{{ checksum "go.sum" }}
+          key: go-<< parameters.version >>-{{ checksum "go.sum" }}-{{ checksum "Makefile" }}
           paths:
             - "/go/pkg/mod"
             - ".tmp"
@@ -76,7 +76,7 @@ jobs:
 
       - restore_cache:
           keys:
-            - integration-test-tar-cache-<< parameters.version >>-{{ checksum "integration/test-fixtures/tar-cache.key" }}
+            - integration-test-tar-cache-{{ checksum "integration/test-fixtures/tar-cache.key" }}
       - run:
           name: run integration tests
           command: |
@@ -84,7 +84,7 @@ jobs:
             make integration
 
       - save_cache:
-          key: integration-test-tar-cache-<< parameters.version >>-{{ checksum "integration/test-fixtures/tar-cache.key" }}
+          key: integration-test-tar-cache-{{ checksum "integration/test-fixtures/tar-cache.key" }}
           paths:
             - "integration/test-fixtures/tar-cache"
 
