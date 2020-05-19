@@ -9,6 +9,46 @@ import (
 	"testing"
 )
 
+func assertImageSimpleFixtureMetadata(t *testing.T, i *image.Image) {
+	if i.Metadata.Size != 65 {
+		t.Errorf("unexpected image size: %d", i.Metadata.Size)
+	}
+
+	expected := []image.LayerMetadata{
+		{
+			Index:     0,
+			Size:      22,
+			MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+		},
+		{
+			Index:     1,
+			Size:      16,
+			MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+		},
+		{
+			Index:     2,
+			Size:      27,
+			MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+		},
+	}
+
+	if len(expected) != len(i.Layers) {
+		t.Fatal("unexpected number of layers:", len(i.Layers))
+	}
+
+	for idx, l := range i.Layers {
+		if expected[idx].Size != l.Metadata.Size {
+			t.Errorf("mismatched layer 'Size' (layer %d): %+v", idx, l.Metadata.Size)
+		}
+		if expected[idx].MediaType != l.Metadata.MediaType {
+			t.Errorf("mismatched layer 'MediaType' (layer %d): %+v", idx, l.Metadata.MediaType)
+		}
+		if expected[idx].Index != l.Metadata.Index {
+			t.Errorf("mismatched layer 'Index' (layer %d): %+v", idx, l.Metadata.Index)
+		}
+	}
+}
+
 func assertImageSimpleFixtureTrees(t *testing.T, i *image.Image) {
 	one := tree.NewFileTree()
 	one.AddPath("/somefile-1.txt")
@@ -54,8 +94,8 @@ func assertImageSimpleFixtureContents(t *testing.T, i *image.Image) {
 	}
 
 	expectedContents := map[string]string{
-		"/somefile-1.txt": "this file has contents",
-		"/somefile-2.txt": "file-2 contents!",
+		"/somefile-1.txt":           "this file has contents",
+		"/somefile-2.txt":           "file-2 contents!",
 		"/really/nested/file-3.txt": "another file!\nwith lines...",
 	}
 
