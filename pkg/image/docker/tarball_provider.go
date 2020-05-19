@@ -20,5 +20,11 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	return image.NewImage(img), nil
+
+	tags, err := extractTags(p.path)
+	if err != nil {
+		return nil, err
+	}
+
+	return image.NewImageWithTags(img, tags), nil
 }

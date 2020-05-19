@@ -54,6 +54,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}()
 
 	// save the image contents to the temp file
+	// note: this is the same image that will be used to querying image content during analysis
 	nBytes, err := io.Copy(tempTarFile, readCloser)
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image to tar: %w", err)
@@ -67,5 +68,11 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	return image.NewImage(img), nil
+
+	tags, err := extractTags(tempTarFile.Name())
+	if err != nil {
+		return nil, err
+	}
+
+	return image.NewImageWithTags(img, tags), nil
 }

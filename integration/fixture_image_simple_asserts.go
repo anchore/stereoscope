@@ -6,12 +6,23 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/tree"
+	"strings"
 	"testing"
 )
 
 func assertImageSimpleFixtureMetadata(t *testing.T, i *image.Image) {
 	if i.Metadata.Size != 65 {
 		t.Errorf("unexpected image size: %d", i.Metadata.Size)
+	}
+	if string(i.Metadata.MediaType) != "application/vnd.docker.distribution.manifest.v2+json" {
+		t.Errorf("unexpected image media type: %+v", i.Metadata.MediaType)
+	}
+	if len(i.Metadata.Tags) != 1 {
+		t.Errorf("unexpected number of tags: %d", len(i.Metadata.Tags))
+	} else {
+		if !strings.HasPrefix(i.Metadata.Tags[0].String(), "stereoscope-fixture-image-simple:") {
+			t.Errorf("unexpected image tag: %+v", i.Metadata.Tags)
+		}
 	}
 
 	expected := []image.LayerMetadata{
