@@ -7,7 +7,6 @@ import (
 
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
-	"github.com/anchore/stereoscope/pkg/image/tarball"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-multierror"
 )
@@ -72,16 +71,16 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 	}
 
 	switch source {
-	case image.TarballSource:
+	case image.DockerTarballSource:
 		// note: the imgStr is the path on disk to the tar file
-		provider = tarball.NewProvider(imgStr)
-	case image.DockerSource:
+		provider = docker.NewProviderFromTarball(imgStr)
+	case image.DockerDaemonSource:
 		imgRef, err := name.ParseReference(imgStr)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse image identifier: %w", err)
 		}
 		cacheDir := trackerInstance.newTempDir()
-		provider = docker.NewProvider(imgRef, cacheDir)
+		provider = docker.NewProviderFromDaemon(imgRef, cacheDir)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}

@@ -28,6 +28,7 @@ lint:
 
 lint-fix:
 	@printf '$(TITLE)Running lint fixers$(RESET)\n'
+	gofmt -w -s .
 	$(LINTCMD) --fix
 
 unit:

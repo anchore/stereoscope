@@ -6,14 +6,14 @@ import (
 
 const (
 	UnknownSource Source = iota
-	TarballSource
-	DockerSource
+	DockerTarballSource
+	DockerDaemonSource
 )
 
 var sourceStr = [...]string{
 	"UnknownSource",
-	"Tarball",
-	"Docker",
+	"DockerTarball",
+	"DockerDaemon",
 }
 
 type Source uint8
@@ -24,7 +24,7 @@ func ParseImageSpec(imageSpec string) (Source, string) {
 	var source Source
 	switch len(candidates) {
 	case 1:
-		source = DockerSource
+		source = DockerDaemonSource
 	case 2:
 		source = ParseSource(candidates[0])
 	default:
@@ -42,9 +42,9 @@ func ParseSource(source string) Source {
 	source = strings.ToLower(source)
 	switch source {
 	case "tarball", "tar", "archive", "docker-archive":
-		return TarballSource
+		return DockerTarballSource
 	case "docker", "docker-daemon", "docker-engine":
-		return DockerSource
+		return DockerDaemonSource
 	case "podman":
 		// TODO: implement
 		return UnknownSource

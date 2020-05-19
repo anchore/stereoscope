@@ -18,9 +18,8 @@ const (
 
 var (
 	fixturesGeneratorsPath = path.Join(fixturesPath, "generators")
-	tarCachePath = path.Join(fixturesPath, "tar-cache")
+	tarCachePath           = path.Join(fixturesPath, "tar-cache")
 )
-
 
 func getTarFixture(t *testing.T, name string) (io.ReadCloser, func()) {
 	generatorScriptName := name + ".sh"
@@ -133,13 +132,13 @@ func TestEnumerateFileMetadataFromTar_GoCase(t *testing.T) {
 	defer cleanup()
 
 	expected := []Metadata{
-		{Path:"/path", TarHeaderName:"path/", TypeFlag:53, Linkname: "", Size:0, Mode:os.ModeDir|0o755, UserID:1337, GroupID:5432, IsDir:true},
-		{Path:"/path/branch", TarHeaderName:"path/branch/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, UserID:1337, GroupID:5432, IsDir:true},
-		{Path:"/path/branch/one", TarHeaderName:"path/branch/one/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o700, UserID:1337, GroupID:5432, IsDir:true},
-		{Path:"/path/branch/one/file-1.txt", TarHeaderName:"path/branch/one/file-1.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o700, UserID:1337, GroupID:5432, IsDir:false},
-		{Path:"/path/branch/two", TarHeaderName:"path/branch/two/", TypeFlag:53, Linkname:"", Size:0, Mode:os.ModeDir|0o755, UserID:1337, GroupID:5432, IsDir:true},
-		{Path:"/path/branch/two/file-2.txt", TarHeaderName:"path/branch/two/file-2.txt", TypeFlag:48, Linkname:"", Size:12, Mode:0o755, UserID:1337, GroupID:5432, IsDir:false},
-		{Path:"/path/file-3.txt", TarHeaderName:"path/file-3.txt", TypeFlag:48, Linkname:"", Size:11, Mode:0o664, UserID:1337, GroupID:5432, IsDir:false},
+		{Path: "/path", TarHeaderName: "path/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true},
+		{Path: "/path/branch", TarHeaderName: "path/branch/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true},
+		{Path: "/path/branch/one", TarHeaderName: "path/branch/one/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o700, UserID: 1337, GroupID: 5432, IsDir: true},
+		{Path: "/path/branch/one/file-1.txt", TarHeaderName: "path/branch/one/file-1.txt", TypeFlag: 48, Linkname: "", Size: 11, Mode: 0o700, UserID: 1337, GroupID: 5432, IsDir: false},
+		{Path: "/path/branch/two", TarHeaderName: "path/branch/two/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true},
+		{Path: "/path/branch/two/file-2.txt", TarHeaderName: "path/branch/two/file-2.txt", TypeFlag: 48, Linkname: "", Size: 12, Mode: 0o755, UserID: 1337, GroupID: 5432, IsDir: false},
+		{Path: "/path/file-3.txt", TarHeaderName: "path/file-3.txt", TypeFlag: 48, Linkname: "", Size: 11, Mode: 0o664, UserID: 1337, GroupID: 5432, IsDir: false},
 	}
 
 	idx := 0
@@ -177,15 +176,15 @@ func TestContentsFromTar_GoCase(t *testing.T) {
 	}
 
 	expected := map[Reference]string{
-		first: "first file\n",
+		first:  "first file\n",
 		second: "second file\n",
-		third: "third file\n",
+		third:  "third file\n",
 	}
 
-	request := map[string]Reference {
-		string(first.Path): first,
+	request := map[string]Reference{
+		string(first.Path):  first,
 		string(second.Path): second,
-		string(third.Path): third,
+		string(third.Path):  third,
 	}
 
 	actual, err := ContentsFromTar(tarReader, request)
@@ -217,7 +216,7 @@ func TestContentsFromTar_MissingFile(t *testing.T) {
 		Path: "nOn-ExIsTaNt-paTh",
 	}
 
-	request := map[string]Reference {
+	request := map[string]Reference{
 		string(ref.Path): ref,
 	}
 
