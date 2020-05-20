@@ -3,12 +3,15 @@ package image
 import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 type Image struct {
 	// The image metadata and content source
-	Content v1.Image
+	content v1.Image
+	// Select image attributes
+	Metadata Metadata
 	// Ordered listing of Layers
 	Layers []Layer
 	// A {file.Reference -> (file.Metadata, Layer, Path)} mapping for all files in all layers
@@ -19,25 +22,45 @@ type Image struct {
 
 func NewImage(image v1.Image) *Image {
 	return &Image{
-		Content:     image,
+		content:     image,
 		FileCatalog: NewFileCatalog(),
+	}
+}
+
+func NewImageWithTags(image v1.Image, tags []name.Tag) *Image {
+	return &Image{
+		content:     image,
+		FileCatalog: NewFileCatalog(),
+		Metadata: Metadata{
+			Tags: tags,
+		},
 	}
 }
 
 func (i *Image) Read() error {
 	var layers = make([]Layer, 0)
 
-	v1Layers, err := i.Content.Layers()
+	metadata, err := readImageMetadata(i.content)
+	if err != nil {
+		return err
+	}
+	if i.Metadata.Tags != nil {
+		metadata.Tags = i.Metadata.Tags
+	}
+	i.Metadata = metadata
+
+	v1Layers, err := i.content.Layers()
 	if err != nil {
 		return err
 	}
 
 	for idx, v1Layer := range v1Layers {
-		layer := NewLayer(uint(idx), v1Layer)
-		err := layer.Read(&i.FileCatalog)
+		layer := NewLayer(v1Layer)
+		err := layer.Read(&i.FileCatalog, i.Metadata, idx)
 		if err != nil {
 			return err
 		}
+		i.Metadata.Size += layer.Metadata.Size
 		layers = append(layers, layer)
 	}
 

@@ -37,7 +37,8 @@ func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.
 
 			for _, p := range extra {
 				found := false
-				inner1: for _, ignore := range ignorePaths {
+			inner1:
+				for _, ignore := range ignorePaths {
 					if ignore == p {
 						found = true
 						break inner1
@@ -50,12 +51,13 @@ func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.
 
 			for _, p := range missing {
 				found := false
-				inner2: for _, ignore := range ignorePaths {
-				if ignore == p {
-					found = true
-					break inner2
+			inner2:
+				for _, ignore := range ignorePaths {
+					if ignore == p {
+						found = true
+						break inner2
+					}
 				}
-			}
 				if !found {
 					nonIgnoredPaths++
 				}
@@ -83,17 +85,18 @@ func compareSquashTree(t *testing.T, expected *tree.FileTree, i *image.Image) {
 func getSquashedImage(t *testing.T, source, name string) *image.Image {
 	t.Helper()
 
+	sourceObj := image.ParseSource(source)
+
 	var location string
-	switch source {
-	case "tarball":
+	switch sourceObj {
+	case image.DockerTarballSource:
 		location = getFixtureImageTarPath(t, name)
-	case "docker":
+	case image.DockerDaemonSource:
 		location = loadFixtureImageIntoDocker(t, name)
 	default:
 		t.Fatalf("could not determine source: %+v", source)
 	}
 	request := fmt.Sprintf("%s://%s", source, location)
-
 
 	i, err := stereoscope.GetImage(request)
 	if err != nil {

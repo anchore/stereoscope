@@ -3,34 +3,34 @@ package image
 import "testing"
 
 func TestParseImageSpec(t *testing.T) {
-	cases := []struct{
+	cases := []struct {
 		name     string
 		source   Source
 		location string
-	} {
+	}{
 		{
-			name: "tar://a/place.tar",
-			source: TarballSource,
+			name:     "tar://a/place.tar",
+			source:   DockerTarballSource,
 			location: "a/place.tar",
 		},
 		{
-			name: "docker://something/something:latest",
-			source: DockerSource,
+			name:     "docker://something/something:latest",
+			source:   DockerDaemonSource,
 			location: "something/something:latest",
 		},
 		{
-			name: "DoCKEr://something/something:latest",
-			source: DockerSource,
+			name:     "DoCKEr://something/something:latest",
+			source:   DockerDaemonSource,
 			location: "something/something:latest",
 		},
 		{
-			name: "something/something:latest",
-			source: DockerSource,
+			name:     "something/something:latest",
+			source:   DockerDaemonSource,
 			location: "something/something:latest",
 		},
 		{
-			name: "blerg://something/something:latest",
-			source: UnknownSource,
+			name:     "blerg://something/something:latest",
+			source:   UnknownSource,
 			location: "",
 		},
 	}
@@ -46,52 +46,52 @@ func TestParseImageSpec(t *testing.T) {
 }
 
 func TestParseSource(t *testing.T) {
-	cases := []struct{
-		source string
+	cases := []struct {
+		source   string
 		expected Source
-	} {
+	}{
 		{
-			source: "tar",
-			expected: TarballSource,
+			source:   "tar",
+			expected: DockerTarballSource,
 		},
 		{
-			source: "tarball",
-			expected: TarballSource,
+			source:   "tarball",
+			expected: DockerTarballSource,
 		},
 		{
-			source: "archive",
-			expected: TarballSource,
+			source:   "archive",
+			expected: DockerTarballSource,
 		},
 		{
-			source: "docker-archive",
-			expected: TarballSource,
+			source:   "docker-archive",
+			expected: DockerTarballSource,
 		},
 		{
-			source: "Docker",
-			expected: DockerSource,
+			source:   "Docker",
+			expected: DockerDaemonSource,
 		},
 		{
-			source: "DOCKER",
-			expected: DockerSource,
+			source:   "DOCKER",
+			expected: DockerDaemonSource,
 		},
 		{
-			source: "docker",
-			expected: DockerSource,
+			source:   "docker",
+			expected: DockerDaemonSource,
 		},
 		{
-			source: "docker-daemon",
-			expected: DockerSource,
+			source:   "docker-daemon",
+			expected: DockerDaemonSource,
 		},
 		{
-			source: "docker-engine",
-			expected: DockerSource,
+			source:   "docker-engine",
+			expected: DockerDaemonSource,
 		},
 		{
-			source: "",
+			source:   "",
 			expected: UnknownSource,
 		},
 		{
-			source: "something",
+			source:   "something",
 			expected: UnknownSource,
 		},
 	}

@@ -13,19 +13,19 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
-type Provider struct {
+type DaemonImageProvider struct {
 	ImageRef name.Reference
 	cacheDir string
 }
 
-func NewProvider(imgRef name.Reference, cacheDir string) *Provider {
-	return &Provider{
+func NewProviderFromDaemon(imgRef name.Reference, cacheDir string) *DaemonImageProvider {
+	return &DaemonImageProvider{
 		ImageRef: imgRef,
 		cacheDir: cacheDir,
 	}
 }
 
-func (p *Provider) Provide() (*image.Image, error) {
+func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	// create a file within the temp dir
 	tempTarFile, err := os.Create(path.Join(p.cacheDir, "image.tar"))
 	if err != nil {
@@ -54,6 +54,7 @@ func (p *Provider) Provide() (*image.Image, error) {
 	}()
 
 	// save the image contents to the temp file
+	// note: this is the same image that will be used to querying image content during analysis
 	nBytes, err := io.Copy(tempTarFile, readCloser)
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image to tar: %w", err)
@@ -67,5 +68,11 @@ func (p *Provider) Provide() (*image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	return image.NewImage(img), nil
+
+	tags, err := extractTags(tempTarFile.Name())
+	if err != nil {
+		return nil, err
+	}
+
+	return image.NewImageWithTags(img, tags), nil
 }

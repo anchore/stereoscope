@@ -44,7 +44,7 @@ func (c *FileCatalog) FileContents(f file.Reference) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("could not find file: %+v", f.Path)
 	}
-	sourceTarReader, err := entry.Source.Content.Uncompressed()
+	sourceTarReader, err := entry.Source.content.Uncompressed()
 	if err != nil {
 		return "", err
 	}
@@ -80,7 +80,7 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 
 	allResults := make(map[file.Reference]string)
 	for layer, request := range allRequests {
-		sourceTarReader, err := layer.Content.Uncompressed()
+		sourceTarReader, err := layer.content.Uncompressed()
 		if err != nil {
 			return nil, err
 		}
