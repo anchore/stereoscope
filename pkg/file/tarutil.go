@@ -10,6 +10,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/anchore/stereoscope/internal"
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 type tarFile struct {
@@ -86,7 +87,8 @@ func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 			if errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {
-				panic(err)
+				log.Errorf("failed to read next tar header: %w", err)
+				return
 			}
 
 			// always ensure relative path notations are not parsed as part of the filename
@@ -97,9 +99,9 @@ func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 
 			switch header.Typeflag {
 			case tar.TypeXGlobalHeader:
-				panic(fmt.Errorf("unexptected tar file: (XGlobalHeader): type=%v name=%s", header.Typeflag, name))
+				log.Errorf("unexpected tar file: (XGlobalHeader): type=%v name=%s", header.Typeflag, name)
 			case tar.TypeXHeader:
-				panic(fmt.Errorf("unexptected tar file (XHeader): type=%v name=%s", header.Typeflag, name))
+				log.Errorf("unexpected tar file (XHeader): type=%v name=%s", header.Typeflag, name)
 			default:
 				result <- Metadata{
 					Path:          name,

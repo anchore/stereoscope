@@ -8,6 +8,7 @@ import (
 	"path"
 
 	"github.com/anchore/stereoscope/internal/docker"
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -34,13 +35,16 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	defer func() {
 		err := tempTarFile.Close()
 		if err != nil {
-			// TODO: replace
-			panic(err)
+			log.Errorf("unable to close temp file (%s): %w", tempTarFile.Name(), err)
 		}
 	}()
 
 	// fetch the image from the docker daemon
-	dockerClient := docker.GetClient()
+	dockerClient, err := docker.GetClient()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get docker client: %w", err)
+	}
+
 	readCloser, err := dockerClient.ImageSave(context.Background(), []string{p.ImageRef.Name()})
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image tar: %w", err)
@@ -48,8 +52,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	defer func() {
 		err := readCloser.Close()
 		if err != nil {
-			// TODO: replace
-			panic(err)
+			log.Errorf("unable to close temp file (%s): %w", tempTarFile.Name(), err)
 		}
 	}()
 

@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -35,7 +36,7 @@ type tracker struct {
 func (t *tracker) newTempDir() string {
 	dir, err := ioutil.TempDir("", "stereoscope-cache")
 	if err != nil {
-		// TODO: replace
+		log.Errorf("could not create temp dir: %w", err)
 		panic(err)
 	}
 
@@ -111,6 +112,6 @@ func Cleanup() {
 	err := trackerInstance.cleanup()
 	if err != nil {
 		// TODO: replace
-		panic(err)
+		log.Errorf("failed to cleanup: %w", err)
 	}
 }

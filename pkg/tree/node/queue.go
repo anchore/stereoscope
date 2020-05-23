@@ -22,7 +22,7 @@ func (q *Queue) Enqueue(n Node) {
 
 func (q *Queue) Dequeue() Node {
 	if q.Size() == 0 {
-		panic("q: empty q")
+		return nil
 	}
 
 	var node Node

@@ -5,6 +5,7 @@ import (
 	"path"
 
 	"github.com/anchore/stereoscope/internal"
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
@@ -228,8 +229,11 @@ func (t *FileTree) Merge(other *FileTree) {
 		if other.HasPath(opaqueWhiteoutChild) {
 			err := t.RemoveChildPaths(f.Path)
 			if err != nil {
-				// TODO: replace
-				panic(err)
+				log.WithFields(
+					map[string]interface{}{
+						"path": f.Path,
+					},
+				).Errorf("filetree merge failed to remove child paths: %w", err)
 			}
 
 			return
@@ -238,27 +242,39 @@ func (t *FileTree) Merge(other *FileTree) {
 		if f.Path.IsWhiteout() {
 			lowerPath, err := f.Path.UnWhiteoutPath()
 			if err != nil {
-				// TODO: replace
-				panic(err)
+				log.WithFields(
+					map[string]interface{}{
+						"path": f.Path,
+					},
+				).Errorf("filetree merge failed to find original path for whiteout: %w", err)
 			}
 
 			err = t.RemovePath(lowerPath)
 			if err != nil {
-				// TODO: replace
-				panic(err)
+				log.WithFields(
+					map[string]interface{}{
+						"path": lowerPath,
+					},
+				).Errorf("filetree merge failed to remove path: %w", err)
 			}
 		} else {
 			if !t.HasPath(f.Path) {
 				_, err := t.AddPath(f.Path)
 				if err != nil {
-					// TODO: replace
-					panic(err)
+					log.WithFields(
+						map[string]interface{}{
+							"path": f.Path,
+						},
+					).Errorf("filetree merge failed to add path: %w", err)
 				}
 			}
 			err := t.SetFile(f)
 			if err != nil {
-				// TODO: replace
-				panic(err)
+				log.WithFields(
+					map[string]interface{}{
+						"file": f,
+					},
+				).Errorf("filetree merge failed to set file reference: %w", err)
 			}
 		}
 	})

@@ -6,15 +6,17 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/cli/cli/connhelper"
 
 	"github.com/docker/docker/client"
 )
 
+var instanceErr error
 var instance *client.Client
 var once sync.Once
 
-func GetClient() *client.Client {
+func GetClient() (*client.Client, error) {
 	once.Do(func() {
 		var clientOpts = []client.Opt{
 			client.FromEnv,
@@ -26,8 +28,9 @@ func GetClient() *client.Client {
 		if strings.HasPrefix(host, "ssh") {
 			helper, err := connhelper.GetConnectionHelper(host)
 			if err != nil {
-				// TODO: replace
-				panic(err)
+				log.Errorf("failed to fetch docker connection helper: %w", err)
+				instanceErr = err
+				return
 			}
 			clientOpts = append(clientOpts, func(c *client.Client) error {
 				httpClient := &http.Client{
@@ -42,19 +45,22 @@ func GetClient() *client.Client {
 		}
 
 		if os.Getenv("DOCKER_TLS_VERIFY") != "" && os.Getenv("DOCKER_CERT_PATH") == "" {
-			_ = os.Setenv("DOCKER_CERT_PATH", "~/.docker")
-			// TODO: log
-			//if err != nil {
-			//
-			//}
+			err := os.Setenv("DOCKER_CERT_PATH", "~/.docker")
+			if err != nil {
+				log.Errorf("failed create docker client: %w", err)
+				instanceErr = err
+				return
+			}
 		}
 		dockerClient, err := client.NewClientWithOpts(clientOpts...)
 		if err != nil {
-			// TODO: replace
-			panic(err)
+			log.Errorf("failed create docker client: %w", err)
+			instanceErr = err
+			return
 		}
 
 		instance = dockerClient
 	})
-	return instance
+
+	return instance, instanceErr
 }

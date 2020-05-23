@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -19,8 +20,7 @@ func extractManifest(tarPath string) (tarball.Manifest, error) {
 	defer func() {
 		err := f.Close()
 		if err != nil {
-			// TODO: replace
-			panic(err)
+			log.Errorf("unable to close tar file (%s): %w", f.Name(), err)
 		}
 	}()
 
