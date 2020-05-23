@@ -71,6 +71,8 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 		}
 	}
 
+	log.Debugf("image:\n\tsource=%+v\n\tlocation=%+v\n\treadOption=%+v", source, imgStr, processingOption)
+
 	switch source {
 	case image.DockerTarballSource:
 		// note: the imgStr is the path on disk to the tar file
@@ -111,7 +113,6 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 func Cleanup() {
 	err := trackerInstance.cleanup()
 	if err != nil {
-		// TODO: replace
 		log.Errorf("failed to cleanup: %w", err)
 	}
 }
