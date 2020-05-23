@@ -8,6 +8,7 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
+	"github.com/anchore/stereoscope/pkg/logger"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/hashicorp/go-multierror"
 )
@@ -71,7 +72,7 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 		}
 	}
 
-	log.Debugf("image:\n\tsource=%+v\n\tlocation=%+v\n\treadOption=%+v", source, imgStr, processingOption)
+	log.Debugf("image: source=%+v location=%+v readOption=%+v", source, imgStr, processingOption)
 
 	switch source {
 	case image.DockerTarballSource:
@@ -108,6 +109,10 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 	}
 
 	return img, nil
+}
+
+func SetLogger(logger logger.Logger) {
+	log.Log = logger
 }
 
 func Cleanup() {

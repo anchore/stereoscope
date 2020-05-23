@@ -28,10 +28,10 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 		return err
 	}
 
-	log.Debugf("layer metadata:\n\tdigest=%+v\n\tmediaType=%+v\n\tindex=%+v",
+	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
+		metadata.Index,
 		metadata.Digest,
-		metadata.MediaType,
-		metadata.Index)
+		metadata.MediaType)
 
 	l.Metadata = metadata
 	l.Tree = tree.NewFileTree()

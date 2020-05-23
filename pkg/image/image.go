@@ -50,7 +50,7 @@ func (i *Image) Read() error {
 	}
 	i.Metadata = metadata
 
-	log.Debugf("image metadata:\n\tdigest=%+v\n\tmediaType=%+v\n\ttags=%+v",
+	log.Debugf("image metadata: digest=%+v mediaType=%+v tags=%+v",
 		metadata.Digest,
 		metadata.MediaType,
 		metadata.Tags)

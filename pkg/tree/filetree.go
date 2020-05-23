@@ -229,11 +229,7 @@ func (t *FileTree) Merge(other *FileTree) {
 		if other.HasPath(opaqueWhiteoutChild) {
 			err := t.RemoveChildPaths(f.Path)
 			if err != nil {
-				log.WithFields(
-					map[string]interface{}{
-						"path": f.Path,
-					},
-				).Errorf("filetree merge failed to remove child paths: %w", err)
+				log.Errorf("filetree merge failed to remove child paths (path=%s): %w", f.Path, err)
 			}
 
 			return
@@ -242,39 +238,23 @@ func (t *FileTree) Merge(other *FileTree) {
 		if f.Path.IsWhiteout() {
 			lowerPath, err := f.Path.UnWhiteoutPath()
 			if err != nil {
-				log.WithFields(
-					map[string]interface{}{
-						"path": f.Path,
-					},
-				).Errorf("filetree merge failed to find original path for whiteout: %w", err)
+				log.Errorf("filetree merge failed to find original path for whiteout (path=%s): %w", f.Path, err)
 			}
 
 			err = t.RemovePath(lowerPath)
 			if err != nil {
-				log.WithFields(
-					map[string]interface{}{
-						"path": lowerPath,
-					},
-				).Errorf("filetree merge failed to remove path: %w", err)
+				log.Errorf("filetree merge failed to remove path (path=%s): %w", lowerPath, err)
 			}
 		} else {
 			if !t.HasPath(f.Path) {
 				_, err := t.AddPath(f.Path)
 				if err != nil {
-					log.WithFields(
-						map[string]interface{}{
-							"path": f.Path,
-						},
-					).Errorf("filetree merge failed to add path: %w", err)
+					log.Errorf("filetree merge failed to add path (path=%s): %w", f.Path, err)
 				}
 			}
 			err := t.SetFile(f)
 			if err != nil {
-				log.WithFields(
-					map[string]interface{}{
-						"file": f,
-					},
-				).Errorf("filetree merge failed to set file reference: %w", err)
+				log.Errorf("filetree merge failed to set file reference (ref=%+v): %w", f, err)
 			}
 		}
 	})
