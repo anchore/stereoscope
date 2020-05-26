@@ -1,6 +1,7 @@
 package image
 
 import (
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -48,6 +49,11 @@ func (i *Image) Read() error {
 		metadata.Tags = i.Metadata.Tags
 	}
 	i.Metadata = metadata
+
+	log.Debugf("image metadata: digest=%+v mediaType=%+v tags=%+v",
+		metadata.Digest,
+		metadata.MediaType,
+		metadata.Tags)
 
 	v1Layers, err := i.content.Layers()
 	if err != nil {

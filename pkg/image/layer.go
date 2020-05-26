@@ -1,6 +1,7 @@
 package image
 
 import (
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -26,6 +27,12 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 	if err != nil {
 		return err
 	}
+
+	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
+		metadata.Index,
+		metadata.Digest,
+		metadata.MediaType)
+
 	l.Metadata = metadata
 	l.Tree = tree.NewFileTree()
 	l.fileCatalog = catalog
