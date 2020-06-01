@@ -8,14 +8,14 @@ import (
 
 // DepthFirstWalker implements stateful depth-first tree traversal.
 type DepthFirstWalker struct {
-	visitor    Visitor
+	visitor    NodeVisitor
 	tree       Reader
 	stack      node.Stack
 	visited    node.Set
 	conditions WalkConditions
 }
 
-func NewDepthFirstWalker(reader Reader, visitor Visitor) *DepthFirstWalker {
+func NewDepthFirstWalker(reader Reader, visitor NodeVisitor) *DepthFirstWalker {
 	return &DepthFirstWalker{
 		visitor: visitor,
 		tree:    reader,
@@ -23,7 +23,7 @@ func NewDepthFirstWalker(reader Reader, visitor Visitor) *DepthFirstWalker {
 	}
 }
 
-func NewDepthFirstWalkerWithConditions(reader Reader, visitor Visitor, conditions WalkConditions) *DepthFirstWalker {
+func NewDepthFirstWalkerWithConditions(reader Reader, visitor NodeVisitor, conditions WalkConditions) *DepthFirstWalker {
 	return &DepthFirstWalker{
 		visitor:    visitor,
 		tree:       reader,

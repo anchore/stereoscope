@@ -7,14 +7,14 @@ import (
 )
 
 type BreadthFirstWalker struct {
-	visitor    Visitor
+	visitor    NodeVisitor
 	tree       Reader
 	queue      node.Queue
 	visited    node.Set
 	conditions WalkConditions
 }
 
-func NewBreadthFirstWalker(reader Reader, visitor Visitor) *BreadthFirstWalker {
+func NewBreadthFirstWalker(reader Reader, visitor NodeVisitor) *BreadthFirstWalker {
 	return &BreadthFirstWalker{
 		visitor: visitor,
 		tree:    reader,
@@ -22,7 +22,7 @@ func NewBreadthFirstWalker(reader Reader, visitor Visitor) *BreadthFirstWalker {
 	}
 }
 
-func NewBreadthFirstWalkerWithConditions(reader Reader, visitor Visitor, conditions WalkConditions) *BreadthFirstWalker {
+func NewBreadthFirstWalkerWithConditions(reader Reader, visitor NodeVisitor, conditions WalkConditions) *BreadthFirstWalker {
 	return &BreadthFirstWalker{
 		visitor:    visitor,
 		tree:       reader,

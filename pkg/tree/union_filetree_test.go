@@ -1,8 +1,9 @@
 package tree
 
 import (
-	"github.com/anchore/stereoscope/pkg/file"
 	"testing"
+
+	"github.com/anchore/stereoscope/pkg/file"
 )
 
 func TestUnionFileTree_Squash(t *testing.T) {

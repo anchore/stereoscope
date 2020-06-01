@@ -42,19 +42,19 @@ func (t *FileTree) HasPath(path file.Path) bool {
 	return ok
 }
 
-func (t *FileTree) FileByPathID(id node.ID) file.Reference {
+func (t *FileTree) fileByPathID(id node.ID) file.Reference {
 	return t.pathToFileRef[id]
 }
 
 func (t *FileTree) VisitorFn(fn func(file.Reference)) func(node.Node) {
 	return func(node node.Node) {
-		fn(t.FileByPathID(node.ID()))
+		fn(t.fileByPathID(node.ID()))
 	}
 }
 
 func (t *FileTree) ConditionFn(fn func(file.Reference) bool) func(node.Node) bool {
 	return func(node node.Node) bool {
-		return fn(t.FileByPathID(node.ID()))
+		return fn(t.fileByPathID(node.ID()))
 	}
 }
 
@@ -66,20 +66,6 @@ func (t *FileTree) AllFiles() []file.Reference {
 		idx++
 	}
 	return files
-}
-
-func (t *FileTree) Files(paths []file.Path) ([]file.Reference, error) {
-	files := make([]file.Reference, len(paths))
-	idx := 0
-	for _, path := range paths {
-		f := t.File(path)
-		if f == nil {
-			return nil, fmt.Errorf("could not find path: %+v", path)
-		}
-		files[idx] = *f
-		idx++
-	}
-	return files, nil
 }
 
 func (t *FileTree) File(path file.Path) *file.Reference {

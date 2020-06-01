@@ -1,5 +1,10 @@
 package tree
 
-import "github.com/anchore/stereoscope/pkg/tree/node"
+import (
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/tree/node"
+)
 
-type Visitor func(n node.Node)
+type NodeVisitor func(node.Node)
+
+type FileVisitor func(file.Reference)
