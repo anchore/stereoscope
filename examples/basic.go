@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
-	"os"
 )
 
 func main() {
@@ -45,5 +46,4 @@ func main() {
 		panic(err)
 	}
 	fmt.Println(content)
-
 }

@@ -1,9 +1,10 @@
 package tree
 
 import (
+	"testing"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
-	"testing"
 )
 
 func bfsTestTree() *FileTree {
@@ -94,7 +95,7 @@ func TestBFS_Walk_ShouldTerminate(t *testing.T) {
 
 	h := WalkConditions{
 		ShouldTerminate: func(path node.Node) bool {
-			if tr.FileByPathID(path.ID()).Path == terminatePath {
+			if tr.fileByPathID(path.ID()).Path == terminatePath {
 				return true
 			}
 			return false
@@ -130,7 +131,7 @@ func TestBFS_Walk_ShouldVisit(t *testing.T) {
 	h := WalkConditions{
 		ShouldTerminate: nil,
 		ShouldVisit: func(path node.Node) bool {
-			if tr.FileByPathID(path.ID()).Path == skipPath {
+			if tr.fileByPathID(path.ID()).Path == skipPath {
 				return false
 			}
 			return true
@@ -165,7 +166,7 @@ func TestBFS_Walk_ShouldContinueBranch(t *testing.T) {
 		ShouldTerminate: nil,
 		ShouldVisit:     nil,
 		ShouldContinueBranch: func(path node.Node) bool {
-			if tr.FileByPathID(path.ID()).Path == prunePath {
+			if tr.fileByPathID(path.ID()).Path == prunePath {
 				return false
 			}
 			return true
