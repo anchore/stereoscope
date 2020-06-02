@@ -75,6 +75,18 @@ func (t *FileTree) File(path file.Path) *file.Reference {
 	return nil
 }
 
+func (t *FileTree) FilesByGlob(query string) ([]file.Reference, error) {
+	result := make([]file.Reference, 0)
+
+	for _, f := range t.pathToFileRef {
+		if internal.GlobMatch(query, string(f.Path)) {
+			result = append(result, f)
+		}
+	}
+
+	return result, nil
+}
+
 // TODO: put under test
 func (t *FileTree) SetFile(f file.Reference) error {
 	original, ok := t.pathToFileRef[f.Path.ID()]
@@ -109,6 +121,7 @@ func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 
 	f := file.NewFileReference(path)
 	if !t.tree.HasNode(path.ID()) {
+		// add the node to the tree
 		var err error
 		if parentNode == nil {
 			err = t.tree.AddRoot(f.Path)
@@ -118,6 +131,8 @@ func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 		if err != nil {
 			return file.Reference{}, err
 		}
+
+		// track the path for fast lookup
 		t.pathToFileRef[f.Path.ID()] = f
 	}
 

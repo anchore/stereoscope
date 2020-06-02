@@ -23,6 +23,11 @@ func TestPath_Normalize(t *testing.T) {
 			path:     "/some/path////",
 			expected: "/some/path",
 		},
+		{
+			name:     "Special case: /",
+			path:     "/",
+			expected: "/",
+		},
 	}
 
 	for _, c := range cases {

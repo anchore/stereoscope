@@ -1,8 +1,10 @@
 package tree
 
 import (
-	"github.com/anchore/stereoscope/pkg/file"
 	"testing"
+
+	"github.com/anchore/stereoscope/internal"
+	"github.com/anchore/stereoscope/pkg/file"
 )
 
 func TestFileTree_AddPath(t *testing.T) {
@@ -59,6 +61,146 @@ func TestFileTree_RemovePath(t *testing.T) {
 
 	if tr.File(path) != nil {
 		t.Fatal("expected file to be missing")
+	}
+
+}
+
+func TestFileTree_FilesByRegex(t *testing.T) {
+	tr := NewFileTree()
+
+	paths := []string{
+		"/home/wagoodman/awesome/file.txt",
+		"/home/wagoodman/file.txt",
+		"/home/wagoodman/b-file.txt",
+		"/home/wagoodman/some/deeply/nested/spot/file.txt",
+		"/home/a-file.txt",
+		"/home/nothing.txt",
+		"/home/dir",
+	}
+
+	for _, p := range paths {
+		_, err := tr.AddPath(file.Path(p))
+		if err != nil {
+			t.Fatalf("failed to add path ('%s'): %+v", p, err)
+		}
+	}
+
+	tests := []struct {
+		g        string
+		expected []string
+	}{
+		{
+			g: "/home/wagoodman/**/file.txt",
+			expected: []string{
+				"/home/wagoodman/some/deeply/nested/spot/file.txt",
+				"/home/wagoodman/awesome/file.txt",
+			},
+		},
+		{
+			g: "/home/wagoodman/**",
+			expected: []string{
+				"/home/wagoodman/awesome",
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/home/wagoodman/some",
+				"/home/wagoodman/some/deeply",
+				"/home/wagoodman/some/deeply/nested",
+				"/home/wagoodman/some/deeply/nested/spot",
+				"/home/wagoodman/some/deeply/nested/spot/file.txt",
+			},
+		},
+		{
+			g:        "file.txt",
+			expected: []string{},
+		},
+		{
+			g: "*file.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/home/wagoodman/some/deeply/nested/spot/file.txt",
+				"/home/a-file.txt",
+			},
+		},
+		{
+			g: "*/file.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/some/deeply/nested/spot/file.txt",
+			},
+		},
+		{
+			g: "*/?-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+				"/home/wagoodman/b-file.txt",
+			},
+		},
+		{
+			g: "*/*-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+				"/home/wagoodman/b-file.txt",
+			},
+		},
+		{
+			g: "**/?-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+				"/home/wagoodman/b-file.txt",
+			},
+		},
+		{
+			g: "**/a-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+			},
+		},
+		{
+			g: "*.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/home/wagoodman/some/deeply/nested/spot/file.txt",
+				"/home/a-file.txt",
+				"/home/nothing.txt",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.g, func(t *testing.T) {
+			t.Log("PATTERN: ", test.g)
+			actual, err := tr.FilesByGlob(test.g)
+			if err != nil {
+				t.Fatal("failed to search by glob:", err)
+			}
+
+			actualSet := internal.NewStringSet()
+			expectedSet := internal.NewStringSet()
+
+			for _, f := range actual {
+				actualSet.Add(string(f.Path))
+			}
+
+			for _, e := range test.expected {
+				expectedSet.Add(e)
+				if !actualSet.Contains(e) {
+					t.Errorf("missing search hit: %s", e)
+				}
+			}
+
+			for _, f := range actual {
+				if !expectedSet.Contains(string(f.Path)) {
+					t.Errorf("extra search hit: %+v", f)
+				}
+			}
+
+		})
 	}
 
 }

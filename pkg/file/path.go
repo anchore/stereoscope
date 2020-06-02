@@ -21,7 +21,11 @@ func (p Path) ID() node.ID {
 }
 
 func (p Path) Normalize() Path {
-	return Path(strings.TrimRight(strings.Trim(string(p), " "), DirSeparator))
+	trimmed := strings.Trim(string(p), " ")
+	if trimmed == "/" {
+		return Path(trimmed)
+	}
+	return Path(strings.TrimRight(trimmed, DirSeparator))
 }
 
 func (p Path) Basename() string {
@@ -51,7 +55,7 @@ func (p Path) UnWhiteoutPath() (Path, error) {
 func (p Path) ParentPath() (Path, error) {
 	parent, child := path.Split(string(p))
 	sanitized := Path(parent).Normalize()
-	if sanitized == "" {
+	if sanitized == "/" {
 		if child != "" {
 			return "/", nil
 		}

@@ -9,4 +9,5 @@ type FileTreeReader interface {
 	HasPath(path file.Path) bool
 	File(path file.Path) *file.Reference
 	Walk(fn func(f file.Reference))
+	FilesByGlob(string) ([]file.Reference, error)
 }
