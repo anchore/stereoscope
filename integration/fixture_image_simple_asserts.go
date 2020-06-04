@@ -3,11 +3,12 @@
 package integration
 
 import (
+	"strings"
+	"testing"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/tree"
-	"strings"
-	"testing"
 )
 
 func assertImageSimpleFixtureMetadata(t *testing.T, i *image.Image) {
@@ -20,7 +21,7 @@ func assertImageSimpleFixtureMetadata(t *testing.T, i *image.Image) {
 	if len(i.Metadata.Tags) != 1 {
 		t.Errorf("unexpected number of tags: %d", len(i.Metadata.Tags))
 	} else {
-		if !strings.HasPrefix(i.Metadata.Tags[0].String(), "stereoscope-fixture-image-simple:") {
+		if !strings.HasPrefix(i.Metadata.Tags[0].String(), "anchore-fixture-image-simple:") {
 			t.Errorf("unexpected image tag: %+v", i.Metadata.Tags)
 		}
 	}
