@@ -204,3 +204,64 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 	}
 
 }
+
+func TestFileTree_Merge_Overwite(t *testing.T) {
+	tr1 := NewFileTree()
+	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+
+	tr2 := NewFileTree()
+	new, _ := tr2.AddPath("/home/wagoodman/awesome/file.txt")
+
+	tr1.Merge(tr2)
+
+	if tr1.File("/home/wagoodman/awesome/file.txt").ID() != new.ID() {
+		t.Fatalf("did not overwrite paths on merge")
+	}
+
+}
+
+func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
+	tr1 := NewFileTree()
+	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+
+	tr2 := NewFileTree()
+	tr2.AddPath("/home/wagoodman/.wh..wh..opq")
+
+	tr1.Merge(tr2)
+
+	for _, p := range []file.Path{"/home/wagoodman", "/home"} {
+		if !tr1.HasPath(p) {
+			t.Errorf("missing expected path: %s", p)
+		}
+	}
+
+	for _, p := range []file.Path{"/home/wagoodman/awesome", "/home/wagoodman/awesome/file.txt"} {
+		if tr1.HasPath(p) {
+			t.Errorf("missing expected path to be deleted: %s", p)
+		}
+	}
+
+}
+
+func TestFileTree_Merge_Whiteout(t *testing.T) {
+	tr1 := NewFileTree()
+	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+
+	tr2 := NewFileTree()
+	tr2.AddPath("/home/wagoodman/awesome/.wh.file.txt")
+
+	tr1.Merge(tr2)
+
+	for _, p := range []file.Path{"/home/wagoodman/awesome", "/home/wagoodman", "/home"} {
+		if !tr1.HasPath(p) {
+			t.Errorf("missing expected path: %s", p)
+		}
+	}
+
+	for _, p := range []file.Path{"/home/wagoodman/awesome/file.txt"} {
+		if tr1.HasPath(p) {
+			t.Errorf("missing expected path to be deleted: %s", p)
+		}
+	}
+
+}

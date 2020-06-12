@@ -8,15 +8,16 @@ import (
 )
 
 type Layer struct {
-	content  v1.Layer
-	Metadata LayerMetadata
-	Tree     *tree.FileTree
+	content      v1.Layer
+	Metadata     LayerMetadata
+	Tree         *tree.FileTree
+	SquashedTree *tree.FileTree
 	// note: this is a reference to all files in the image, not just this layer
 	fileCatalog *FileCatalog
 }
 
-func NewLayer(content v1.Layer) Layer {
-	return Layer{
+func NewLayer(content v1.Layer) *Layer {
+	return &Layer{
 		content: content,
 	}
 }
@@ -61,4 +62,12 @@ func (l *Layer) FileContents(path file.Path) (string, error) {
 
 func (l *Layer) MultipleFileContents(paths ...file.Path) (map[file.Reference]string, error) {
 	return fetchMultipleFileContentsByPath(l.Tree, l.fileCatalog, paths...)
+}
+
+func (l *Layer) FileContentsFromSquash(path file.Path) (string, error) {
+	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
+}
+
+func (l *Layer) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]string, error) {
+	return fetchMultipleFileContentsByPath(l.SquashedTree, l.fileCatalog, paths...)
 }

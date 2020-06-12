@@ -16,6 +16,11 @@ var sourceStr = [...]string{
 	"DockerDaemon",
 }
 
+var AllSources = []Source{
+	DockerTarballSource,
+	DockerDaemonSource,
+}
+
 type Source uint8
 
 func ParseImageSpec(imageSpec string) (Source, string) {

@@ -16,7 +16,6 @@ import (
 const (
 	NoActionOption Option = iota
 	ReadImageOption
-	SquashImageOption
 )
 
 type Option uint
@@ -63,7 +62,7 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 
 	var processingOption = NoActionOption
 	if len(options) == 0 {
-		processingOption = SquashImageOption
+		processingOption = ReadImageOption
 	} else {
 		for _, o := range options {
 			if o > processingOption {
@@ -72,7 +71,7 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 		}
 	}
 
-	log.Debugf("image: source=%+v location=%+v readOption=%+v", source, imgStr, processingOption)
+	log.Debugf("image: source=%+v location=%+v processingOption=%+v", source, imgStr, processingOption)
 
 	switch source {
 	case image.DockerTarballSource:
@@ -98,13 +97,6 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 		err = img.Read()
 		if err != nil {
 			return nil, fmt.Errorf("could not read image: %+v", err)
-		}
-	}
-
-	if processingOption >= SquashImageOption {
-		err = img.Squash()
-		if err != nil {
-			return nil, fmt.Errorf("could not squash image: %+v", err)
 		}
 	}
 
