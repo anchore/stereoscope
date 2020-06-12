@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -17,14 +16,39 @@ const (
 	imagePrefix         = "stereoscope-fixture"
 )
 
+func compareLayerSquashTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.Image, ignorePaths []file.Path) {
+	t.Helper()
+	if len(expected) != len(i.Layers) {
+		t.Fatalf("mismatched layers (%d!=%d)", len(expected), len(i.Layers))
+	}
+
+	var actual = make([]*tree.FileTree, 0)
+	for _, l := range i.Layers {
+		actual = append(actual, l.SquashedTree)
+	}
+
+	compareTrees(t, expected, actual, ignorePaths)
+}
+
 func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.Image, ignorePaths []file.Path) {
 	t.Helper()
 	if len(expected) != len(i.Layers) {
 		t.Fatalf("mismatched layers (%d!=%d)", len(expected), len(i.Layers))
 	}
 
+	var actual = make([]*tree.FileTree, 0)
+	for _, l := range i.Layers {
+		actual = append(actual, l.Tree)
+	}
+
+	compareTrees(t, expected, actual, ignorePaths)
+}
+
+func compareTrees(t *testing.T, expected map[uint]*tree.FileTree, actual []*tree.FileTree, ignorePaths []file.Path) {
+	t.Helper()
+
 	for idx, expected := range expected {
-		actual := i.Layers[idx].Tree
+		actual := actual[idx]
 		if !expected.Equal(actual) {
 			extra, missing := expected.PathDiff(actual)
 			nonIgnoredPaths := 0
@@ -57,8 +81,8 @@ func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.
 				}
 			}
 			if nonIgnoredPaths > 0 {
-				t.Logf("ignore paths: %+v", ignorePaths)
-				t.Logf("path differences: extra=%+v missing=%+v", extra, missing)
+				t.Errorf("ignore paths: %+v", ignorePaths)
+				t.Errorf("path differences: extra=%+v missing=%+v", extra, missing)
 				t.Errorf("mismatched trees (layer %d)", idx)
 			}
 		}
@@ -68,9 +92,20 @@ func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.
 func compareSquashTree(t *testing.T, expected *tree.FileTree, i *image.Image) {
 	t.Helper()
 
-	actual := i.SquashedTree
+	actual := i.SquashedTree()
 	if !expected.Equal(actual) {
-		fmt.Println(expected.PathDiff(actual))
+		t.Log("Walking expected squashed tree:")
+		expected.Walk(func(f file.Reference) {
+			t.Log("   ", f.Path)
+		})
+
+		t.Log("Walking actual squashed tree:")
+		actual.Walk(func(f file.Reference) {
+			t.Log("   ", f.Path)
+		})
+
+		extra, missing := expected.PathDiff(actual)
+		t.Errorf("path differences: extra=%+v missing=%+v", extra, missing)
 		t.Errorf("mismatched squashed trees")
 	}
 

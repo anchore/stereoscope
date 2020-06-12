@@ -13,12 +13,9 @@ func main() {
 	// pass a path to an image tar as an argument:
 	//    tarball://./path/to.tar
 	//
-	// This will:
-	//  - catalog the file metadata (img.Read)
-	//  - squash the layers into a single filetree (img.Squash)
+	// This will catalog the file metadata and resolve all squash trees (img.Read)
 	//
-	// note: if you'd prefer to read and squash the image manually, pass stereoscope.NoActionOption
-	// or pass the Option you'd prefer (e.g. only read, no squash = stereoscope.ReadImageOption)
+	// note: if you'd prefer to read the image manually, pass stereoscope.NoActionOption
 	image, err := stereoscope.GetImage(os.Args[1])
 	if err != nil {
 		panic(err)
@@ -26,7 +23,8 @@ func main() {
 
 	////////////////////////////////////////////////////////////////
 	// Show the filetree for each layer
-	for _, layer := range image.Layers {
+	for idx, layer := range image.Layers {
+		fmt.Printf("Walking layer: %d", idx)
 		layer.Tree.Walk(func(f file.Reference) {
 			fmt.Println("   ", f.Path)
 		})
@@ -34,14 +32,25 @@ func main() {
 	}
 
 	////////////////////////////////////////////////////////////////
-	// Show the squashed tree
-	image.SquashedTree.Walk(func(f file.Reference) {
+	// Show the squashed filetree for each layer
+	for idx, layer := range image.Layers {
+		fmt.Printf("Walking squashed layer: %d", idx)
+		layer.SquashedTree.Walk(func(f file.Reference) {
+			fmt.Println("   ", f.Path)
+		})
+		fmt.Println("-----------------------------")
+	}
+
+	////////////////////////////////////////////////////////////////
+	// Show the final squashed tree
+	fmt.Printf("Walking squashed image (same as the last layer squashed tree)")
+	image.SquashedTree().Walk(func(f file.Reference) {
 		fmt.Println("   ", f.Path)
 	})
 
 	////////////////////////////////////////////////////////////////
 	// Fetch file contents from the (squashed) image
-	content, err := image.FileContentsFromSquash("/etc/centos-release")
+	content, err := image.FileContentsFromSquash("/etc/group")
 	if err != nil {
 		panic(err)
 	}
