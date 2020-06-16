@@ -13,26 +13,22 @@ import (
 )
 
 func TestSimpleImage(t *testing.T) {
-	fixtureName := "image-simple"
 	cases := []struct {
-		name        string
-		source      string
-		fixtureName string
+		name   string
+		source string
 	}{
 		{
-			name:        "FromTarball",
-			source:      "docker-archive",
-			fixtureName: fixtureName,
+			name:   "FromTarball",
+			source: "docker-archive",
 		},
 		{
-			name:        "FromDocker",
-			source:      "docker",
-			fixtureName: fixtureName,
+			name:   "FromDocker",
+			source: "docker",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			i, cleanup := testutils.GetFixtureImage(t, c.source, c.fixtureName)
+			i, cleanup := testutils.GetFixtureImage(t, c.source, "image-simple")
 			defer cleanup()
 
 			assertImageSimpleMetadata(t, i)

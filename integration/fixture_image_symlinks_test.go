@@ -17,29 +17,26 @@ type linkFetchConfig struct {
 	resolveLayer     int
 	expectedPath     string
 	perspectiveLayer int
+	contents         string
 }
 
 func TestImageSymlinks(t *testing.T) {
-	fixtureName := "image-symlinks"
 	cases := []struct {
-		name        string
-		source      string
-		fixtureName string
+		name   string
+		source string
 	}{
 		{
-			name:        "FromTarball",
-			source:      "docker-archive",
-			fixtureName: fixtureName,
+			name:   "FromTarball",
+			source: "docker-archive",
 		},
 		{
-			name:        "FromDocker",
-			source:      "docker",
-			fixtureName: fixtureName,
+			name:   "FromDocker",
+			source: "docker",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			i, cleanup := testutils.GetFixtureImage(t, c.source, c.fixtureName)
+			i, cleanup := testutils.GetFixtureImage(t, c.source, "image-symlinks")
 			defer cleanup()
 			assertImageSymlinkLinkResolution(t, i)
 		})
@@ -93,6 +90,14 @@ func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Referen
 	return expectedResolve, actualResolve
 }
 
+func fetchContents(t *testing.T, i *image.Image, cfg linkFetchConfig) string {
+	contents, err := i.Layers[cfg.perspectiveLayer].FileContentsFromSquash(file.Path(cfg.linkPath))
+	if err != nil {
+		t.Fatalf("could not fetch contents of %+v: %+v", cfg.linkPath, err)
+	}
+	return contents
+}
+
 func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 
 	tests := []linkFetchConfig{
@@ -104,6 +109,7 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 			expectedPath:     "/bin/[",
 			perspectiveLayer: 0,
 		},
+
 		// # link with previous data
 		// LAYER 1 > ADD file-1.txt .
 		// LAYER 2 > RUN ln -s ./file-1.txt link-1
@@ -113,6 +119,7 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 			resolveLayer:     1,
 			expectedPath:     "/file-1.txt",
 			perspectiveLayer: 2,
+			contents:         "file 1!",
 		},
 
 		// # link with future data
@@ -124,6 +131,7 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 			resolveLayer:     4,
 			expectedPath:     "/file-2.txt",
 			perspectiveLayer: 4,
+			contents:         "file 2!",
 		},
 
 		// # link with current data
@@ -134,6 +142,8 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 			resolveLayer:     5,
 			expectedPath:     "/file-3.txt",
 			perspectiveLayer: 5,
+			// since echo was used a newline character will be present
+			contents: "file 3\n",
 		},
 
 		// # multiple links (link-indirect > link-2 > file-2.txt)
@@ -144,6 +154,7 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 			resolveLayer:     4,
 			expectedPath:     "/file-2.txt",
 			perspectiveLayer: 6,
+			contents:         "file 2!",
 		},
 
 		// # override contents / resolution
@@ -154,6 +165,7 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 			resolveLayer:     7,
 			expectedPath:     "/file-2.txt",
 			perspectiveLayer: 7,
+			contents:         "NEW file override!",
 		},
 
 		// # dead link (link-indirect > [non-existant file])
@@ -172,6 +184,15 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 		t.Run(name, func(t *testing.T) {
 			expectedResolve, actualResolve := fetchRefs(t, i, cfg)
 			assertMatch(t, i, cfg, expectedResolve, actualResolve)
+
+			if cfg.contents == "" {
+				return
+			}
+
+			actualContents := fetchContents(t, i, cfg)
+			if actualContents != cfg.contents {
+				t.Errorf("mismatched contents: '%+v'!='%+v'", cfg.contents, actualContents)
+			}
 		})
 	}
 }
