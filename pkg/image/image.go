@@ -1,11 +1,7 @@
 package image
 
 import (
-	"archive/tar"
 	"fmt"
-	"path"
-	"path/filepath"
-	"strings"
 
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -118,78 +114,16 @@ func (i *Image) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Ref
 }
 
 func (i *Image) FileContentsByRef(ref file.Reference) (string, error) {
-	content, err := i.FileCatalog.FileContents(ref)
-	if err != nil {
-		return "", err
-	}
-	return content, nil
+	return i.FileCatalog.FileContents(ref)
 }
 
 func (i *Image) MultipleFileContentsByRef(refs ...file.Reference) (map[file.Reference]string, error) {
-	content, err := i.FileCatalog.MultipleFileContents(refs...)
-	if err != nil {
-		return nil, err
-	}
-	return content, nil
+	return i.FileCatalog.MultipleFileContents(refs...)
 }
 
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int) (*file.Reference, error) {
-	return i.resolveLink(ref, i.Layers[layer].SquashedTree)
+	return resolveLink(ref, i.Layers[layer].SquashedTree, &i.FileCatalog)
 }
 func (i *Image) ResolveLinkByImageSquash(ref file.Reference) (*file.Reference, error) {
-	return i.resolveLink(ref, i.Layers[len(i.Layers)-1].SquashedTree)
-}
-
-func (i *Image) resolveLink(ref file.Reference, t *tree.FileTree) (*file.Reference, error) {
-	alreadySeen := file.NewFileReferenceSet()
-	currentRef := &ref
-	for {
-		if alreadySeen.Contains(*currentRef) {
-			return nil, fmt.Errorf("cycle during symlink resolution: %+v", currentRef)
-		}
-
-		entry, err := i.FileCatalog.Get(*currentRef)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve link metadata (%+v): %w", currentRef, err)
-		}
-
-		if entry.Metadata.TypeFlag != tar.TypeSymlink && entry.Metadata.TypeFlag != tar.TypeLink {
-			// resolve the link to a file
-			return currentRef, nil
-		} else if entry.Metadata.Linkname == "" {
-			// no resolution and there is no next link (pseudo dead link)... return what you found
-			// any content fetches will fail, but that's ok
-			return currentRef, nil
-		}
-
-		// prepare for the next iteration
-		alreadySeen.Add(*currentRef)
-
-		var nextPath string
-		if strings.HasPrefix(entry.Metadata.Linkname, "/") {
-			// use linked to absolute paths blindly
-			nextPath = entry.Metadata.Linkname
-		} else {
-			var parentDir string
-			switch entry.Metadata.TypeFlag {
-			case tar.TypeSymlink:
-				parentDir, _ = filepath.Split(string(currentRef.Path))
-			case tar.TypeLink:
-				parentDir = "/"
-			default:
-				return nil, fmt.Errorf("unknown link type: %+v", entry.Metadata.TypeFlag)
-			}
-
-			// assemble relative link path: normalize("/cur/dir/../file1.txt") = "/cur/file1.txt"
-			nextPath = filepath.Clean(path.Join(parentDir, entry.Metadata.Linkname))
-		}
-
-		nextRef := t.File(file.Path(nextPath))
-
-		// if there is no next path, return this reference (dead link)
-		if nextRef == nil {
-			return currentRef, nil
-		}
-		currentRef = nextRef
-	}
+	return resolveLink(ref, i.Layers[len(i.Layers)-1].SquashedTree, &i.FileCatalog)
 }
