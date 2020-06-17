@@ -5,15 +5,17 @@ import (
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
+// Metadata represents container layer metadata.
 type LayerMetadata struct {
 	Index uint
-	// sha256 digest of the layer contents (the docker "diff id")
+	// Digest is the sha256 digest of the layer contents (the docker "diff id")
 	Digest    string
 	MediaType v1Types.MediaType
 	// Size in bytes of the layer content size
 	Size int64
 }
 
+// readLayerMetadata extracts the most pertinent information from the underlying layer tar.
 func readLayerMetadata(imgMetadata Metadata, layer v1.Layer, idx int) (LayerMetadata, error) {
 	mediaType, err := layer.MediaType()
 	if err != nil {

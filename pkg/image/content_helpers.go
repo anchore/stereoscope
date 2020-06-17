@@ -11,6 +11,8 @@ import (
 	"github.com/anchore/stereoscope/pkg/tree"
 )
 
+// fetchFileContentsByPath is a common helper function for resolving the file contents for a path from the file
+// catalog relative to the given tree.
 func fetchFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (string, error) {
 	fileReference := filetree.File(path)
 	if fileReference == nil {
@@ -31,6 +33,8 @@ func fetchFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileCatalog, 
 	return content, nil
 }
 
+// fetchMultipleFileContentsByPath is a common helper function for resolving the file contents for all paths from the
+// file catalog relative to the given tree. If any one path does not exist in the given tree then an error is returned.
 func fetchMultipleFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]string, error) {
 	fileReferences := make([]file.Reference, len(paths))
 	for idx, path := range paths {
@@ -56,6 +60,11 @@ func fetchMultipleFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileC
 	return content, nil
 }
 
+// resolveLink is a common helper function for resolving a file reference that represents a symlink or hardlink
+// to a non-symlink/non-hardlink file reference (by following the link path to conclusion). In the case of a dead
+// link or a non-link type, the given user file reference is returned. If the given link does not resolve (dead link),
+// then the final link in the chain is provided. If the file reference has no stored metadata or a link cycle is
+// detected then an error is returned.
 func resolveLink(ref file.Reference, t *tree.FileTree, fileCatalog *FileCatalog) (*file.Reference, error) {
 	alreadySeen := file.NewFileReferenceSet()
 	currentRef := &ref

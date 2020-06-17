@@ -10,17 +10,19 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
+// Image represents a container image.
 type Image struct {
-	// The image metadata and content source
+	// content is the image metadata and content provider
 	content v1.Image
-	// Select image attributes
+	// Metadata contains select image attributes
 	Metadata Metadata
-	// Ordered listing of Layers
+	// Layers contains the rich layer objects in build order
 	Layers []*Layer
-	// A {file.Reference -> (file.Metadata, Layer, Path)} mapping for all files in all layers
+	// FileCatalog contains all file metadata for all files in all layers
 	FileCatalog FileCatalog
 }
 
+// NewImage provides a new, unread image object.
 func NewImage(image v1.Image) *Image {
 	return &Image{
 		content:     image,
@@ -28,6 +30,7 @@ func NewImage(image v1.Image) *Image {
 	}
 }
 
+// NewImageWithTags provides a new, unread image object, represented by a set of named image tags.
 func NewImageWithTags(image v1.Image, tags []name.Tag) *Image {
 	return &Image{
 		content:     image,
@@ -38,6 +41,8 @@ func NewImageWithTags(image v1.Image, tags []name.Tag) *Image {
 	}
 }
 
+// Read parses information from the underlaying image tar into this struct. This includes image metadata, layer
+// metadata, layer file trees, and layer squash trees (which implies the image squash tree).
 func (i *Image) Read() error {
 	var layers = make([]*Layer, 0)
 
@@ -76,6 +81,8 @@ func (i *Image) Read() error {
 	return i.squash()
 }
 
+// squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
+// squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
 func (i *Image) squash() error {
 	var lastSquashTree *tree.FileTree
 	for idx, layer := range i.Layers {
@@ -101,29 +108,45 @@ func (i *Image) squash() error {
 	return nil
 }
 
+// SquashTree returns the pre-computed image squash file tree.
 func (i *Image) SquashedTree() *tree.FileTree {
 	return i.Layers[len(i.Layers)-1].SquashedTree
 }
 
+// FileContentsFromSquash fetches file contents for a single path, relative to the image squash tree.
+// If the path does not exist an error is returned.
 func (i *Image) FileContentsFromSquash(path file.Path) (string, error) {
 	return fetchFileContentsByPath(i.SquashedTree(), &i.FileCatalog, path)
 }
 
+// MultipleFileContentsFromSquash fetches file contents for all given paths, relative to the image squash tree.
+// If any one path does not exist an error is returned for the entire request.
 func (i *Image) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]string, error) {
 	return fetchMultipleFileContentsByPath(i.SquashedTree(), &i.FileCatalog, paths...)
 }
 
+// FileContentsByRef fetches file contents for a single file reference, irregardless of the source layer.
+// If the path does not exist an error is returned.
+// This is a convenience function provided by the FileCatalog.
 func (i *Image) FileContentsByRef(ref file.Reference) (string, error) {
 	return i.FileCatalog.FileContents(ref)
 }
 
+// FileContentsByRef fetches file contents for all file references given, irregardless of the source layer.
+// If any one path does not exist an error is returned for the entire request.
 func (i *Image) MultipleFileContentsByRef(refs ...file.Reference) (map[file.Reference]string, error) {
 	return i.FileCatalog.MultipleFileContents(refs...)
 }
 
+// ResolveLinkByLayerSquash resolves a symlink or hardlink for the given file reference relative to the result from
+// the layer squash of the given layer index argument.
+// If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int) (*file.Reference, error) {
 	return resolveLink(ref, i.Layers[layer].SquashedTree, &i.FileCatalog)
 }
+
+// ResolveLinkByLayerSquash resolves a symlink or hardlink for the given file reference relative to the result from the image squash.
+// If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByImageSquash(ref file.Reference) (*file.Reference, error) {
 	return resolveLink(ref, i.Layers[len(i.Layers)-1].SquashedTree, &i.FileCatalog)
 }

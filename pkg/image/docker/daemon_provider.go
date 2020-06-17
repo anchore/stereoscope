@@ -14,11 +14,13 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
+// DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.
 type DaemonImageProvider struct {
 	ImageRef name.Reference
 	cacheDir string
 }
 
+// NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
 func NewProviderFromDaemon(imgRef name.Reference, cacheDir string) *DaemonImageProvider {
 	return &DaemonImageProvider{
 		ImageRef: imgRef,
@@ -26,6 +28,7 @@ func NewProviderFromDaemon(imgRef name.Reference, cacheDir string) *DaemonImageP
 	}
 }
 
+// Provide an image object that represents the cached docker image tar fetched from a docker daemon.
 func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	// create a file within the temp dir
 	tempTarFile, err := os.Create(path.Join(p.cacheDir, "image.tar"))

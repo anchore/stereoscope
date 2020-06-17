@@ -6,8 +6,9 @@ import (
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
+// Metadata represents container image metadata.
 type Metadata struct {
-	// sha256 of this image manifest json
+	// Digest is the sha256 of this image manifest json
 	Digest string
 	// Size in bytes of all the image layer content sizes
 	Size      int64
@@ -16,6 +17,7 @@ type Metadata struct {
 	Tags      []name.Tag
 }
 
+// readImageMetadata extracts the most pertinent information from the underlying image tar.
 func readImageMetadata(img v1.Image) (Metadata, error) {
 	digest, err := img.ConfigName()
 	if err != nil {
