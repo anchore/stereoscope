@@ -1,5 +1,6 @@
 package file
 
+// References is a slice of file references (useful for attaching sorting-related methods)
 type References []*Reference
 
 func (f References) Len() int {

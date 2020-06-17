@@ -21,8 +21,11 @@ var AllSources = []Source{
 	DockerDaemonSource,
 }
 
+// Source is a concrete a selection of valid concrete image providers.
 type Source uint8
 
+// ParseImageSpec takes a user string and determines the image source (e.g. the docker daemon, a tar file, etc.) and
+// image identifier for future fetching (e.g. "wagoodman/dive:latest" or "./image.tar").
 func ParseImageSpec(imageSpec string) (Source, string) {
 	candidates := strings.Split(imageSpec, "://")
 
@@ -43,6 +46,8 @@ func ParseImageSpec(imageSpec string) (Source, string) {
 	return source, strings.TrimPrefix(imageSpec, candidates[0]+"://")
 }
 
+// ParseSource attempts to resolve a concrete image source selection from a user string (e.g. "docker://", "tar://",
+// "podman://", etc.)
 func ParseSource(source string) Source {
 	source = strings.ToLower(source)
 	switch source {
@@ -57,6 +62,7 @@ func ParseSource(source string) Source {
 	return UnknownSource
 }
 
+// String returns a convenient display string for the source.
 func (t Source) String() string {
 	return sourceStr[t]
 }

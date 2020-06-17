@@ -13,13 +13,16 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 )
 
+// tarFile is a ReadCloser of a tar file on disk.
 type tarFile struct {
 	io.Reader
 	io.Closer
 }
 
+// TarContentsRequest is a map of tarHeaderNames -> file.References to aid in simplifying content retrieval.
 type TarContentsRequest map[string]Reference
 
+// ReaderFromTar returns a io.ReadCloser for the path within a tar file.
 func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) {
 	tarReader := tar.NewReader(reader)
 	for {
@@ -40,6 +43,7 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 	return nil, fmt.Errorf("file %s not found in tar", tarPath)
 }
 
+// ContentsFromTar reads the contents of a tar for the selection of tarHeaderNames, where the return is a mapping of the file reference from the original request to the fetched contents.
 func ContentsFromTar(reader io.Reader, tarHeaderNames TarContentsRequest) (map[Reference]string, error) {
 	result := make(map[Reference]string)
 	tarReader := tar.NewReader(reader)
@@ -78,6 +82,7 @@ func ContentsFromTar(reader io.Reader, tarHeaderNames TarContentsRequest) (map[R
 	return result, nil
 }
 
+// EnumerateFileMetadataFromTar populates and returns a Metadata object for all files in the tar.
 func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 	tarReader := tar.NewReader(reader)
 	result := make(chan Metadata)

@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
+// extractManifest is helper function for extracting and parsing a docker image manifest (V2) from a docker image tar.
 func extractManifest(tarPath string) (tarball.Manifest, error) {
 	f, err := os.Open(tarPath)
 	if err != nil {
@@ -41,6 +42,7 @@ func extractManifest(tarPath string) (tarball.Manifest, error) {
 	return manifest, nil
 }
 
+// extractTags returns the image tags referenced within the images manifest file (within the given docker image tar).
 func extractTags(tarPath string) ([]name.Tag, error) {
 	manifest, err := extractManifest(tarPath)
 	if err != nil {
