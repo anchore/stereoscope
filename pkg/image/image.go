@@ -3,11 +3,15 @@ package image
 import (
 	"fmt"
 
+	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/wagoodman/go-partybus"
+	"github.com/wagoodman/go-progress"
 )
 
 // Image represents a container image.
@@ -41,6 +45,30 @@ func NewImageWithTags(image v1.Image, tags []name.Tag) *Image {
 	}
 }
 
+func (i *Image) IDs() []string {
+	var ids = make([]string, len(i.Metadata.Tags))
+	for idx, t := range i.Metadata.Tags {
+		ids[idx] = t.String()
+	}
+	ids = append(ids, i.Metadata.Digest)
+	return ids
+}
+
+func (i *Image) trackReadProgress(metadata Metadata) *progress.Manual {
+	prog := &progress.Manual{
+		// x2 for read and squash of each layer
+		Total: int64(len(metadata.Config.RootFS.DiffIDs) * 2),
+	}
+
+	bus.Publish(partybus.Event{
+		Type:   event.ReadImage,
+		Source: metadata,
+		Value:  progress.Progressable(prog),
+	})
+
+	return prog
+}
+
 // Read parses information from the underlaying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
 func (i *Image) Read() error {
@@ -65,6 +93,9 @@ func (i *Image) Read() error {
 		return err
 	}
 
+	// let consumers know of a monitorable event (image save + copy stages)
+	readProg := i.trackReadProgress(metadata)
+
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
 		err := layer.Read(&i.FileCatalog, i.Metadata, idx)
@@ -73,18 +104,21 @@ func (i *Image) Read() error {
 		}
 		i.Metadata.Size += layer.Metadata.Size
 		layers = append(layers, layer)
+
+		readProg.N++
 	}
 
 	i.Layers = layers
 
 	// in order to resolve symlinks all squashed trees must be available
-	return i.squash()
+	return i.squash(readProg)
 }
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
-func (i *Image) squash() error {
+func (i *Image) squash(prog *progress.Manual) error {
 	var lastSquashTree *tree.FileTree
+
 	for idx, layer := range i.Layers {
 		if idx == 0 {
 			lastSquashTree = layer.Tree
@@ -103,7 +137,11 @@ func (i *Image) squash() error {
 
 		layer.SquashedTree = squashedTree
 		lastSquashTree = squashedTree
+
+		prog.N++
 	}
+
+	prog.SetCompleted()
 
 	return nil
 }

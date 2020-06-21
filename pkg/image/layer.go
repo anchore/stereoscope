@@ -1,10 +1,14 @@
 package image
 
 import (
+	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/wagoodman/go-partybus"
+	"github.com/wagoodman/go-progress"
 )
 
 // Layer represents a single layer within a container image.
@@ -29,6 +33,18 @@ func NewLayer(content v1.Layer) *Layer {
 	}
 }
 
+func (l *Layer) trackReadProgress(metadata LayerMetadata) *progress.Manual {
+	prog := &progress.Manual{}
+
+	bus.Publish(partybus.Event{
+		Type:   event.ReadLayer,
+		Source: metadata,
+		Value:  progress.Monitorable(prog),
+	})
+
+	return prog
+}
+
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
 func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error {
@@ -47,6 +63,8 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 	l.Tree = tree.NewFileTree()
 	l.fileCatalog = catalog
 
+	monitor := l.trackReadProgress(metadata)
+
 	reader, err := l.content.Uncompressed()
 	if err != nil {
 		return err
@@ -61,7 +79,11 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 		if err != nil {
 			return err
 		}
+
+		monitor.N++
 	}
+	monitor.SetCompleted()
+
 	return nil
 }
 
