@@ -4,14 +4,20 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path"
+	"time"
 
+	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/wagoodman/go-partybus"
+	"github.com/wagoodman/go-progress"
 )
 
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.
@@ -26,6 +32,45 @@ func NewProviderFromDaemon(imgRef name.Reference, cacheDir string) *DaemonImageP
 		ImageRef: imgRef,
 		cacheDir: cacheDir,
 	}
+}
+
+func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *progress.Writer, *progress.Stage, error) {
+	dockerClient, err := docker.GetClient()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("unable to get docker client: %w", err)
+	}
+
+	// fetch the expected image size to estimate and measure progress
+	inspect, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.ImageRef.Name())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("unable to inspect image: %w", err)
+	}
+
+	// docker image save clocks in at ~125MB/sec on my laptop... milage may vary, of course :shrug:
+	mb := math.Pow(2, 20)
+	sec := float64(inspect.VirtualSize) / (mb * 125)
+	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
+
+	estimateSaveProgress := progress.NewTimedProgress(approxSaveTime)
+	copyProgress := progress.NewSizedWriter(inspect.VirtualSize)
+	aggregateProgress := progress.NewAggregator(progress.NormalizeStrategy, estimateSaveProgress, copyProgress)
+
+	// let consumers know of a monitorable event (image save + copy stages)
+	stage := &progress.Stage{}
+
+	bus.Publish(partybus.Event{
+		Type:   event.FetchImage,
+		Source: p.ImageRef.Name(),
+		Value: progress.StagedProgressable(&struct {
+			progress.Stager
+			*progress.Aggregator
+		}{
+			Stager:     progress.Stager(stage),
+			Aggregator: aggregateProgress,
+		}),
+	})
+
+	return estimateSaveProgress, copyProgress, stage, nil
 }
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
@@ -48,6 +93,12 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to get docker client: %w", err)
 	}
 
+	estimateSaveProgress, copyProgress, stage, err := p.trackSaveProgress()
+	if err != nil {
+		return nil, fmt.Errorf("unable to trace image save progress: %w", err)
+	}
+
+	stage.Current = "requesting image from docker"
 	readCloser, err := dockerClient.ImageSave(context.Background(), []string{p.ImageRef.Name()})
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image tar: %w", err)
@@ -59,9 +110,13 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		}
 	}()
 
+	// cancel indeterminate progress
+	estimateSaveProgress.SetCompleted()
+
 	// save the image contents to the temp file
 	// note: this is the same image that will be used to querying image content during analysis
-	nBytes, err := io.Copy(tempTarFile, readCloser)
+	stage.Current = "saving image to disk"
+	nBytes, err := io.Copy(io.MultiWriter(tempTarFile, copyProgress), readCloser)
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image to tar: %w", err)
 	}
