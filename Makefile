@@ -2,6 +2,7 @@ TEMPDIR = ./.tmp
 RESULTSDIR = $(TEMPDIR)/results
 COVER_REPORT = $(RESULTSDIR)/cover.report
 COVER_TOTAL = $(RESULTSDIR)/cover.total
+LICENSES_REPORT = $(RESULTSDIR)/licenses.json
 LINTCMD = $(TEMPDIR)/golangci-lint run --tests=false --config .golangci.yaml
 BOLD := $(shell tput -T linux bold)
 PURPLE := $(shell tput -T linux setaf 5)
@@ -44,6 +45,8 @@ bootstrap: ## Download and install all project dependencies (+ prep tooling in t
 	go get ./...
 	# install golangci-lint
 	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b .tmp/ v1.26.0
+	# install bouncer
+	curl -sSfL https://raw.githubusercontent.com/wagoodman/go-bouncer/master/bouncer.sh | sh -s -- -b .tmp/ v0.2.0
 
 lint: ## Run gofmt + golangci lint checks
 	$(call title,Running linters)
@@ -78,3 +81,8 @@ check-pipeline: ## Run local CircleCI pipeline locally (sanity check)
 	circleci local execute -c .tmp/circleci.yml --job "Static Analysis"
 	circleci local execute -c .tmp/circleci.yml --job "Unit & Integration Tests (go-latest)"
 	@printf '$(SUCCESS)Pipeline checks pass!$(RESET)\n'
+
+# todo: this should be later used by goreleaser
+check-licenses:
+	$(TEMPDIR)/bouncer list -o json | tee $(LICENSES_REPORT)
+	$(TEMPDIR)/bouncer check
