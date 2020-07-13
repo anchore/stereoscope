@@ -25,7 +25,7 @@ endef
 
 .PHONY: all bootstrap lint lint-fix unit coverage integration check-pipeline clear-cache help test
 
-all: lint test ## Run all checks (linting, unit tests, and integration tests)
+all: lint check-licenses test ## Run all checks (linting, unit tests, integration tests, and dependencies license checks)
 	@printf '$(SUCCESS)All checks pass!$(RESET)\n'
 
 test: unit integration ## Run all tests (currently unit & integration)
@@ -82,7 +82,7 @@ check-pipeline: ## Run local CircleCI pipeline locally (sanity check)
 	circleci local execute -c .tmp/circleci.yml --job "Unit & Integration Tests (go-latest)"
 	@printf '$(SUCCESS)Pipeline checks pass!$(RESET)\n'
 
-# todo: this should be later used by goreleaser
 check-licenses:
+	$(call title,Validating licenses for go dependencies)
 	$(TEMPDIR)/bouncer list -o json | tee $(LICENSES_REPORT)
 	$(TEMPDIR)/bouncer check
