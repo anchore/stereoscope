@@ -2,7 +2,6 @@ TEMPDIR = ./.tmp
 RESULTSDIR = $(TEMPDIR)/results
 COVER_REPORT = $(RESULTSDIR)/cover.report
 COVER_TOTAL = $(RESULTSDIR)/cover.total
-LICENSES_REPORT = $(RESULTSDIR)/licenses.json
 LINTCMD = $(TEMPDIR)/golangci-lint run --tests=false --config .golangci.yaml
 BOLD := $(shell tput -T linux bold)
 PURPLE := $(shell tput -T linux setaf 5)
@@ -23,42 +22,51 @@ define title
     @printf '$(TITLE)$(1)$(RESET)\n'
 endef
 
-.PHONY: all bootstrap lint lint-fix unit coverage integration check-pipeline clear-cache help test
-
-all: lint check-licenses test ## Run all checks (linting, unit tests, integration tests, and dependencies license checks)
+.PHONY: all
+all: static-analysis test ## Run all checks (linting, unit tests, integration tests, and dependencies license checks)
 	@printf '$(SUCCESS)All checks pass!$(RESET)\n'
 
+.PHONY: test
 test: unit integration ## Run all tests (currently unit & integration)
 
+.PHONY: help
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(BOLD)$(CYAN)%-25s$(RESET)%s\n", $$1, $$2}'
 
+.PHONY: ci-bootstrap
 ci-bootstrap: bootstrap
 	sudo apt install -y bc
 
+.PHONY: boostrap
 bootstrap: ## Download and install all project dependencies (+ prep tooling in the ./tmp dir)
 	$(call title,Downloading dependencies)
+	@pwd
 	# prep temp dirs
 	mkdir -p $(TEMPDIR)
 	mkdir -p $(RESULTSDIR)
-	# install project dependencies
-	go get ./...
-	# install golangci-lint
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b .tmp/ v1.26.0
-	# install bouncer
-	curl -sSfL https://raw.githubusercontent.com/wagoodman/go-bouncer/master/bouncer.sh | sh -s -- -b .tmp/ v0.2.0
+	# install go dependencies
+	go mod download
+	# install utilities
+	[ -f "$(TEMPDIR)/golangci" ] || curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(TEMPDIR)/ v1.26.0
+	[ -f "$(TEMPDIR)/bouncer" ] || curl -sSfL https://raw.githubusercontent.com/wagoodman/go-bouncer/master/bouncer.sh | sh -s -- -b $(TEMPDIR)/ v0.1.0
 
+.PHONY: static-analysis
+static-analysis: lint check-licenses
+
+.PHONY: lint
 lint: ## Run gofmt + golangci lint checks
 	$(call title,Running linters)
 	@printf "files with gofmt issues: [$(shell gofmt -l -s .)]\n"
 	@test -z "$(shell gofmt -l -s .)"
 	$(LINTCMD)
 
+.PHONY: lint-fix
 lint-fix: ## Auto-format all source code + run golangci lint fixers
 	$(call title,Running lint fixers)
 	gofmt -w -s .
 	$(LINTCMD) --fix
 
+.PHONY: unit
 unit: ## Run unit tests (with coverage)
 	$(call title,Running unit tests)
 	go test --race -coverprofile $(COVER_REPORT) ./...
@@ -66,13 +74,16 @@ unit: ## Run unit tests (with coverage)
 	@echo "Coverage: $$(cat $(COVER_TOTAL))"
 	@if [ $$(echo "$$(cat $(COVER_TOTAL)) >= $(COVERAGE_THRESHOLD)" | bc -l) -ne 1 ]; then echo "$(RED)$(BOLD)Failed coverage quality gate (> $(COVERAGE_THRESHOLD)%)$(RESET)" && false; fi
 
+.PHONY: integration
 integration: ## Run integration tests
 	$(call title,Running integration tests)
 	go test -tags=integration ./integration
 
+.PHONY: clear-test-cache
 clear-test-cache: ## Delete all test cache (built docker image tars)
 	find . -type f -wholename "**/test-fixtures/tar-cache/*.tar" -delete
 
+.PHONY: check-pipeline
 check-pipeline: ## Run local CircleCI pipeline locally (sanity check)
 	$(call title,Check pipeline)
 	# note: this is meant for local development & testing of the pipeline, NOT to be run in CI
@@ -82,7 +93,7 @@ check-pipeline: ## Run local CircleCI pipeline locally (sanity check)
 	circleci local execute -c .tmp/circleci.yml --job "Unit & Integration Tests (go-latest)"
 	@printf '$(SUCCESS)Pipeline checks pass!$(RESET)\n'
 
+.PHONY: check-licenses
 check-licenses:
 	$(call title,Validating licenses for go dependencies)
-	$(TEMPDIR)/bouncer list -o json | tee $(LICENSES_REPORT)
 	$(TEMPDIR)/bouncer check
