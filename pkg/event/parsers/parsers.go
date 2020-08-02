@@ -3,6 +3,8 @@ package parsers
 import (
 	"fmt"
 
+	"github.com/anchore/stereoscope/pkg/image/docker"
+
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/wagoodman/go-partybus"
@@ -32,6 +34,24 @@ func checkEventType(actual, expected partybus.EventType) error {
 		return newPayloadErr(expected, "Type", actual)
 	}
 	return nil
+}
+
+func ParsePullDockerImage(e partybus.Event) (string, *docker.PullStatus, error) {
+	if err := checkEventType(e.Type, event.PullDockerImage); err != nil {
+		return "", nil, err
+	}
+
+	imgName, ok := e.Source.(string)
+	if !ok {
+		return "", nil, newPayloadErr(e.Type, "Source", e.Source)
+	}
+
+	prog, ok := e.Value.(*docker.PullStatus)
+	if !ok {
+		return "", nil, newPayloadErr(e.Type, "Value", e.Value)
+	}
+
+	return imgName, prog, nil
 }
 
 func ParseFetchImage(e partybus.Event) (string, progress.StagedProgressable, error) {

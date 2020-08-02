@@ -5,7 +5,8 @@ import (
 )
 
 const (
-	FetchImage partybus.EventType = "fetch-image-event"
-	ReadImage  partybus.EventType = "read-image-event"
-	ReadLayer  partybus.EventType = "read-layer-event"
+	PullDockerImage partybus.EventType = "pull-docker-image-event"
+	FetchImage      partybus.EventType = "fetch-image-event"
+	ReadImage       partybus.EventType = "read-image-event"
+	ReadLayer       partybus.EventType = "read-layer-event"
 )
