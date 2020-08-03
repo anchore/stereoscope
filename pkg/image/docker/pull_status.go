@@ -18,6 +18,17 @@ const (
 	PullCompletePhase
 )
 
+var phaseLookup = map[string]PullPhase{
+	"Waiting":            WaitingPhase,
+	"Pulling fs layer":   PullingFsPhase,
+	"Downloading":        DownloadingPhase,
+	"Download complete":  DownloadCompletePhase,
+	"Extracting":         ExtractingPhase,
+	"Verifying Checksum": VerifyingChecksumPhase,
+	"Already exists":     AlreadyExistsPhase,
+	"Pull complete":      PullCompletePhase,
+}
+
 type PullPhase int
 type LayerID string
 
@@ -100,7 +111,11 @@ func (p *PullStatus) onEvent(event *pullEvent) {
 	}
 
 	// capture latest event info
-	currentPhase := parsePhase(event.Status)
+	currentPhase, ok := phaseLookup[event.Status]
+	if !ok {
+		currentPhase = UnknownPhase
+	}
+
 	p.phase[layer] = currentPhase
 	phaseProgress := p.phaseProgress[layer]
 
@@ -120,26 +135,4 @@ func (p *PullStatus) onEvent(event *pullEvent) {
 		dl.N = dl.Total
 		dl.SetCompleted()
 	}
-}
-
-func parsePhase(inputStr string) PullPhase {
-	switch inputStr {
-	case "Waiting":
-		return WaitingPhase
-	case "Pulling fs layer":
-		return PullingFsPhase
-	case "Downloading":
-		return DownloadingPhase
-	case "Download complete":
-		return DownloadCompletePhase
-	case "Extracting":
-		return ExtractingPhase
-	case "Verifying Checksum":
-		return VerifyingChecksumPhase
-	case "Already exists":
-		return AlreadyExistsPhase
-	case "Pull complete":
-		return PullCompletePhase
-	}
-	return UnknownPhase
 }
