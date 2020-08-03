@@ -46,12 +46,12 @@ func ParsePullDockerImage(e partybus.Event) (string, *docker.PullStatus, error) 
 		return "", nil, newPayloadErr(e.Type, "Source", e.Source)
 	}
 
-	prog, ok := e.Value.(*docker.PullStatus)
+	pullStatus, ok := e.Value.(*docker.PullStatus)
 	if !ok {
 		return "", nil, newPayloadErr(e.Type, "Value", e.Value)
 	}
 
-	return imgName, prog, nil
+	return imgName, pullStatus, nil
 }
 
 func ParseFetchImage(e partybus.Event) (string, progress.StagedProgressable, error) {
