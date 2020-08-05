@@ -59,6 +59,7 @@ func (t *tracker) cleanup() error {
 
 // GetImage parses the user provided image string and provides a image object
 func GetImage(userStr string, options ...Option) (*image.Image, error) {
+	log.Infof("loading image '%q", userStr)
 	var provider image.Provider
 	source, imgStr := image.ParseImageSpec(userStr)
 
