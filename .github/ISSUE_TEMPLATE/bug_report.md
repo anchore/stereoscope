@@ -16,5 +16,4 @@ assignees: ''
 **Anything else we need to know?**:
 
 **Environment**:
-- grype version (use `grype version -v`):
 - OS (e.g: `cat /etc/os-release` or similar):
