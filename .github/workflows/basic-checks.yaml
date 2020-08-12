@@ -1,0 +1,85 @@
+name: 'Static Analysis + Test'
+on:
+  workflow_dispatch:
+  push:
+jobs:
+
+  Static-Analysis:
+    strategy:
+      matrix:
+        go-version: [1.14.x]
+        platform: [ubuntu-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - uses: actions/checkout@v2
+
+      - name: Restore bootstrap cache
+        id: bootstrap-cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/.tmp
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}-
+            ${{ runner.os }}-go-${{ matrix.go-version }}-
+
+      - name: Bootstrap dependencies
+        if: steps.bootstrap-cache.outputs.cache-hit != 'true'
+        run: make ci-bootstrap
+
+      - name: Run static analysis
+        run: make static-analysis
+
+  Tests:
+    strategy:
+      matrix:
+        go-version: [1.13.x, 1.14.x]
+        platform: [ubuntu-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - uses: actions/checkout@v2
+
+      - name: Restore bootstrap cache
+        id: bootstrap-cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/.tmp
+          key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}-
+            ${{ runner.os }}-go-${{ matrix.go-version }}-
+
+      - name: Bootstrap dependencies
+        if: steps.bootstrap-cache.outputs.cache-hit != 'true'
+        run: make ci-bootstrap
+
+      - name: Run unit tests
+        run: make unit
+
+      - name: Build key for tar cache
+        run: make integration-fingerprint
+
+      - name: Restore integration test cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/go/pkg/mod
+            ${{ github.workspace }}/.tmp
+          key: ${{ runner.os }}-integration-test-tar-cache-${{ hashFiles('integration/test-fixtures/tar-cache.fingerprint') }}
+
+      - name: Run integration tests
+        run: make integration
