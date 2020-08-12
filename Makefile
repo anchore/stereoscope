@@ -74,6 +74,11 @@ unit: ## Run unit tests (with coverage)
 	@echo "Coverage: $$(cat $(COVER_TOTAL))"
 	@if [ $$(echo "$$(cat $(COVER_TOTAL)) >= $(COVERAGE_THRESHOLD)" | bc -l) -ne 1 ]; then echo "$(RED)$(BOLD)Failed coverage quality gate (> $(COVERAGE_THRESHOLD)%)$(RESET)" && false; fi
 
+# note: this is used by CI to determine if the integration test fixture cache (docker image tars) should be busted
+.PHONY: integration-fingerprint
+integration-fingerprint:
+	find integration/test-fixtures/image-* -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee integration/test-fixtures/tar-cache.fingerprint
+
 .PHONY: integration
 integration: ## Run integration tests
 	$(call title,Running integration tests)

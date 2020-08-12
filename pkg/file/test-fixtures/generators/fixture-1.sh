@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
-set -uex
+set -ue
 
 FIXTURE_TAR_PATH=$1
+FIXTURE_NAME=$(basename $FIXTURE_TAR_PATH)
+FIXTURE_DIR=$(realpath $(dirname $FIXTURE_TAR_PATH))
 
-TEMP_DIR=$(mktemp -d -t stereoscope-fixture-XXXXXXXXXX)
-trap 'rm -rf $TEMP_DIR' EXIT
-
-pushd "$TEMP_DIR"
+# note: since tar --sort is not an option on mac, and we want these generation scripts to be generally portable, we've
+# elected to use docker to generate the tar
+docker run --rm -i \
+    -u $(id -u):$(id -g) \
+    -v ${FIXTURE_DIR}:/scratch \
+    -w /scratch \
+        ubuntu:latest \
+            /bin/bash -xs <<EOF
+mkdir /tmp/stereoscope
+pushd /tmp/stereoscope
 
   # content
   mkdir -p path/branch/one
@@ -22,6 +30,7 @@ pushd "$TEMP_DIR"
 
   # tar + owner
   # note: sort by name is important for test file header entry ordering
-  tar --sort=name --owner=1337 --group=5432 -cvf "$FIXTURE_TAR_PATH" path/
+  tar --sort=name --owner=1337 --group=5432 -cvf "/scratch/${FIXTURE_NAME}" path/
 
 popd
+EOF
