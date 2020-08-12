@@ -40,7 +40,8 @@ jobs:
   Tests:
     strategy:
       matrix:
-        go-version: [1.13.x, 1.14.x]
+        # test the lower bounds of support, and the latest available
+        go-version: [1.13.x, 1.x]
         platform: [ubuntu-latest]
     runs-on: ${{ matrix.platform }}
     steps:
