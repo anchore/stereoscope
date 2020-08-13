@@ -43,7 +43,7 @@ func NewProviderFromDaemon(imgStr, cacheDir string) *DaemonImageProvider {
 }
 
 func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *progress.Writer, *progress.Stage, error) {
-	dockerClient, err := docker.NewClient()
+	dockerClient, err := docker.GetClient()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to get docker client: %w", err)
 	}
@@ -104,7 +104,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 		Value:  status,
 	})
 
-	dockerClient, err := docker.NewClient()
+	dockerClient, err := docker.GetClient()
 	if err != nil {
 		return fmt.Errorf("failed to load docker client: %w", err)
 	}
@@ -155,8 +155,8 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		}
 	}()
 
-	// create a new Docker client
-	dockerClient, err := docker.NewClient()
+	// obtain a Docker client
+	dockerClient, err := docker.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("unable to create a docker client: %w", err)
 	}

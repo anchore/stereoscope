@@ -16,7 +16,7 @@ var instanceErr error
 var instance *client.Client
 var once sync.Once
 
-func NewClient() (*client.Client, error) {
+func GetClient() (*client.Client, error) {
 	once.Do(func() {
 		var clientOpts = []client.Opt{
 			client.FromEnv,
