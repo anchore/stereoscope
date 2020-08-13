@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/cli/cli/config/configfile"
+	"github.com/google/go-containerregistry/pkg/name"
+
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
@@ -20,7 +23,6 @@ import (
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
@@ -28,14 +30,14 @@ import (
 
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.
 type DaemonImageProvider struct {
-	ImageRef name.Reference
+	ImageStr string
 	cacheDir string
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgRef name.Reference, cacheDir string) *DaemonImageProvider {
+func NewProviderFromDaemon(imgStr, cacheDir string) *DaemonImageProvider {
 	return &DaemonImageProvider{
-		ImageRef: imgRef,
+		ImageStr: imgStr,
 		cacheDir: cacheDir,
 	}
 }
@@ -47,12 +49,12 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 	}
 
 	// fetch the expected image size to estimate and measure progress
-	inspect, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.ImageRef.Name())
+	inspect, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.ImageStr)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to inspect image: %w", err)
 	}
 
-	// docker image save clocks in at ~125MB/sec on my laptop... milage may vary, of course :shrug:
+	// docker image save clocks in at ~125MB/sec on my laptop... mileage may vary, of course :shrug:
 	mb := math.Pow(2, 20)
 	sec := float64(inspect.VirtualSize) / (mb * 125)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
@@ -66,7 +68,7 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 	bus.Publish(partybus.Event{
 		Type:   event.FetchImage,
-		Source: p.ImageRef.Name(),
+		Source: p.ImageStr,
 		Value: progress.StagedProgressable(&struct {
 			progress.Stager
 			*progress.Aggregator
@@ -81,7 +83,7 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 // pull a docker image
 func (p *DaemonImageProvider) pull(ctx context.Context) error {
-	log.Debugf("pulling docker image=%q", p.ImageRef.String())
+	log.Debugf("pulling docker image=%q", p.ImageStr)
 
 	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
 	cfg, err := config.Load("")
@@ -89,28 +91,6 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 		return fmt.Errorf("failed to load docker config: %w", err)
 	}
 	log.Debugf("using docker config=%q", cfg.Filename)
-
-	hostname := p.ImageRef.Context().RegistryStr()
-	creds, err := cfg.GetAuthConfig(hostname)
-	if err != nil {
-		return fmt.Errorf("failed to fetch registry auth (hostname=%s): %w", hostname, err)
-	}
-
-	dockerClient, err := docker.GetClient()
-	if err != nil {
-		return fmt.Errorf("failed to load docker client: %w", err)
-	}
-
-	var opts types.ImagePullOptions
-
-	if creds.Username != "" {
-		log.Debugf("using docker credentials for %q", hostname)
-		jsonBytes, _ := json.Marshal(map[string]string{
-			"username": creds.Username,
-			"password": creds.Password,
-		})
-		opts.RegistryAuth = base64.StdEncoding.EncodeToString(jsonBytes)
-	}
 
 	var status = newPullStatus()
 	defer func() {
@@ -120,11 +100,21 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 	// publish a pull event on the bus, allowing for read-only consumption of status
 	bus.Publish(partybus.Event{
 		Type:   event.PullDockerImage,
-		Source: p.ImageRef.Name(),
+		Source: p.ImageStr,
 		Value:  status,
 	})
 
-	resp, err := dockerClient.ImagePull(ctx, p.ImageRef.Name(), opts)
+	dockerClient, err := docker.GetClient()
+	if err != nil {
+		return fmt.Errorf("failed to load docker client: %w", err)
+	}
+
+	options, err := newPullOptions(p.ImageStr, cfg)
+	if err != nil {
+		return err
+	}
+
+	resp, err := dockerClient.ImagePull(ctx, p.ImageStr, options)
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
@@ -165,14 +155,15 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		}
 	}()
 
-	// fetch the image from the docker daemon
+	// obtain a Docker client
 	dockerClient, err := docker.GetClient()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get docker client: %w", err)
+		return nil, fmt.Errorf("unable to create a docker client: %w", err)
 	}
 
-	// check if the image exists, if not pull it...
-	_, _, err = dockerClient.ImageInspectWithRaw(context.Background(), p.ImageRef.Name())
+	// check if the image exists locally
+	_, _, err = dockerClient.ImageInspectWithRaw(context.Background(), p.ImageStr)
+
 	if err != nil {
 		if client.IsErrNotFound(err) {
 			if err = p.pull(context.Background()); err != nil {
@@ -190,7 +181,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	stage.Current = "requesting image from docker"
-	readCloser, err := dockerClient.ImageSave(context.Background(), []string{p.ImageRef.Name()})
+	readCloser, err := dockerClient.ImageSave(context.Background(), []string{p.ImageStr})
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image tar: %w", err)
 	}
@@ -227,4 +218,31 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	return image.NewImageWithTags(img, tags), nil
+}
+
+func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {
+	var options types.ImagePullOptions
+
+	ref, err := name.ParseReference(image)
+	if err != nil {
+		return options, err
+	}
+
+	hostname := ref.Context().RegistryStr()
+
+	creds, err := cfg.GetAuthConfig(hostname)
+	if err != nil {
+		return options, fmt.Errorf("failed to fetch registry auth (hostname=%s): %w", hostname, err)
+	}
+
+	if creds.Username != "" {
+		log.Debugf("using docker credentials for %q", hostname)
+		jsonBytes, _ := json.Marshal(map[string]string{
+			"username": creds.Username,
+			"password": creds.Password,
+		})
+		options.RegistryAuth = base64.StdEncoding.EncodeToString(jsonBytes)
+	}
+
+	return options, nil
 }

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -ue
 
+realpath() {
+    [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+}
+
 FIXTURE_TAR_PATH=$1
 FIXTURE_NAME=$(basename $FIXTURE_TAR_PATH)
 FIXTURE_DIR=$(realpath $(dirname $FIXTURE_TAR_PATH))
