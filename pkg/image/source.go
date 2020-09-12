@@ -8,17 +8,23 @@ const (
 	UnknownSource Source = iota
 	DockerTarballSource
 	DockerDaemonSource
+	OciDirectorySource
+	OciTarballSource
 )
 
 var sourceStr = [...]string{
 	"UnknownSource",
 	"DockerTarball",
 	"DockerDaemon",
+	"OciDirectory",
+	"OciTarball",
 }
 
 var AllSources = []Source{
 	DockerTarballSource,
 	DockerDaemonSource,
+	OciDirectorySource,
+	OciTarballSource,
 }
 
 // Source is a concrete a selection of valid concrete image providers.
@@ -46,8 +52,7 @@ func ParseImageSpec(imageSpec string) (Source, string) {
 	return source, strings.TrimPrefix(imageSpec, candidates[0]+"://")
 }
 
-// ParseSource attempts to resolve a concrete image source selection from a user string (e.g. "docker://", "tar://",
-// "podman://", etc.)
+// ParseSource attempts to resolve a concrete image source selection from a user string (e.g. "docker://", "tar://", "podman://", etc.)
 func ParseSource(source string) Source {
 	source = strings.ToLower(source)
 	switch source {
@@ -55,6 +60,10 @@ func ParseSource(source string) Source {
 		return DockerTarballSource
 	case "docker", "docker-daemon", "docker-engine":
 		return DockerDaemonSource
+	case "oci", "oci-directory", "oci-dir":
+		return OciDirectorySource
+	case "oci-tarball", "oci-tar", "oci-archive":
+		return OciTarballSource
 	case "podman":
 		// TODO: implement
 		return UnknownSource

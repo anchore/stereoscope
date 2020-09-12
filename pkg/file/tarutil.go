@@ -5,13 +5,24 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/pkg/errors"
 
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/internal/log"
 )
+
+const (
+	_  = iota
+	KB = 1 << (10 * iota)
+	MB
+	GB
+)
+
+const perFileReadLimit = 2 * GB
 
 // tarFile is a ReadCloser of a tar file on disk.
 type tarFile struct {
@@ -124,4 +135,52 @@ func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 		close(result)
 	}()
 	return result
+}
+
+// UntarToDirectory writes the contents of the given tar reader to the given destination
+func UntarToDirectory(reader io.Reader, dst string) error {
+	tr := tar.NewReader(reader)
+
+	for {
+		header, err := tr.Next()
+
+		switch {
+		case err == io.EOF:
+			return nil
+		case err != nil:
+			return err
+		case header == nil:
+			continue
+		}
+
+		target := filepath.Join(dst, header.Name)
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if _, err := os.Stat(target); err != nil {
+				if err := os.MkdirAll(target, 0755); err != nil {
+					return err
+				}
+			}
+
+		case tar.TypeReg:
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			if err != nil {
+				return err
+			}
+
+			// limit the reader on each file read to prevent decompression bomb attacks
+			numBytes, err := io.Copy(f, io.LimitReader(tr, perFileReadLimit))
+			if numBytes >= perFileReadLimit || errors.Is(err, io.EOF) {
+				return fmt.Errorf("zip read limit hit (potential decompression bomb attack)")
+			}
+			if err != nil {
+				return fmt.Errorf("unable to copy file: %w", err)
+			}
+
+			if err = f.Close(); err != nil {
+				log.Errorf("failed to close file during untar of path=%q: %w", f.Name(), err)
+			}
+		}
+	}
 }
