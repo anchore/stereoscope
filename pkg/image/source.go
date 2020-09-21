@@ -10,6 +10,7 @@ const (
 	DockerDaemonSource
 	OciDirectorySource
 	OciTarballSource
+	ContainersStorageSource
 )
 
 var sourceStr = [...]string{
@@ -18,6 +19,7 @@ var sourceStr = [...]string{
 	"DockerDaemon",
 	"OciDirectory",
 	"OciTarball",
+	"ContainersStorage",
 }
 
 var AllSources = []Source{
@@ -25,6 +27,7 @@ var AllSources = []Source{
 	DockerDaemonSource,
 	OciDirectorySource,
 	OciTarballSource,
+	ContainersStorageSource,
 }
 
 // Source is a concrete a selection of valid concrete image providers.
@@ -56,7 +59,7 @@ func ParseImageSpec(imageSpec string) (Source, string) {
 func ParseSource(source string) Source {
 	source = strings.ToLower(source)
 	switch source {
-	case "tarball", "tar", "archive", "docker-archive":
+	case "tarball", "tar", "archive", "docker-archive", "docker-tar", "docker-tarball":
 		return DockerTarballSource
 	case "docker", "docker-daemon", "docker-engine":
 		return DockerDaemonSource
@@ -64,9 +67,8 @@ func ParseSource(source string) Source {
 		return OciDirectorySource
 	case "oci-tarball", "oci-tar", "oci-archive":
 		return OciTarballSource
-	case "podman":
-		// TODO: implement
-		return UnknownSource
+	case "podman", "containers-storage", "container-storage", "cs":
+		return ContainersStorageSource
 	}
 	return UnknownSource
 }

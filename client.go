@@ -2,6 +2,7 @@ package stereoscope
 
 import (
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/image/containers_storage"
 	"io/ioutil"
 	"os"
 
@@ -88,6 +89,9 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 	case image.OciTarballSource:
 		cacheDir := trackerInstance.newTempDir()
 		provider = oci.NewProviderFromTarball(imgStr, cacheDir)
+	case image.ContainersStorageSource:
+		cacheDir := trackerInstance.newTempDir()
+		provider = containers_storage.NewProvider(imgStr, cacheDir)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}
