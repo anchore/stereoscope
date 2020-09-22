@@ -36,7 +36,7 @@ type tarFile struct {
 // TarContentsRequest is a map of tarHeaderNames -> file.References to aid in simplifying content retrieval.
 type TarContentsRequest map[string]Reference
 
-// ReaderFromTar returns a io.ReadCloser for the path within a tar file (otherwise returns ErrFileNotFound).
+// ReaderFromTar returns a io.ReadCloser for the path within a tar file.
 func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) {
 	tarReader := tar.NewReader(reader)
 	for {
@@ -54,7 +54,7 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 			}, nil
 		}
 	}
-	return nil, ErrFileNotFound
+	return nil, fmt.Errorf("file %s not found in tar", tarPath)
 }
 
 // ContentsFromTar reads the contents of a tar for the selection of tarHeaderNames, where the return is a mapping of the file reference from the original request to the fetched contents.
