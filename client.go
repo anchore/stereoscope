@@ -61,7 +61,10 @@ func (t *tracker) cleanup() error {
 // GetImage parses the user provided image string and provides an image object
 func GetImage(userStr string, options ...Option) (*image.Image, error) {
 	var provider image.Provider
-	source, imgStr := image.ParseImageSpec(userStr)
+	source, imgStr, err := image.ParseImageSpec(userStr)
+	if err != nil {
+		return nil, err
+	}
 
 	var processingOption = NoActionOption
 	if len(options) == 0 {

@@ -43,7 +43,10 @@ func TestParseImageSpec(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		source, location := ParseImageSpec(c.name)
+		source, location, err := ParseImageSpec(c.name)
+		if err != nil {
+			t.Fatalf("unexecpted error: %+v", err)
+		}
 		if c.source != source {
 			t.Errorf("unexpected source: %s!=%s", c.source, source)
 		}
@@ -204,6 +207,7 @@ func TestDetectSourceFromPath(t *testing.T) {
 		paths          []string
 		expectedSource Source
 		sourceType     string
+		expectedErr    bool
 	}{
 		{
 			name:           "no tar paths",
@@ -237,7 +241,7 @@ func TestDetectSourceFromPath(t *testing.T) {
 		},
 		{
 			name:           "no dir paths",
-			paths:          []string{""},
+			paths:          []string{},
 			sourceType:     "dir",
 			expectedSource: UnknownSource,
 		},
@@ -253,6 +257,12 @@ func TestDetectSourceFromPath(t *testing.T) {
 			sourceType:     "dir",
 			expectedSource: UnknownSource,
 		},
+		{
+			name:           "no path given",
+			sourceType:     "none",
+			expectedSource: UnknownSource,
+			expectedErr:    false,
+		},
 	}
 
 	for _, test := range tests {
@@ -264,10 +274,17 @@ func TestDetectSourceFromPath(t *testing.T) {
 				testPath = getDummyTar(t, fs.(*afero.MemMapFs), test.paths...)
 			case "dir":
 				testPath = getDummyPath(t, fs.(*afero.MemMapFs), test.paths...)
+			case "none":
+				testPath = "/does-not-exist"
 			default:
 				t.Fatalf("unknown source type: %+v", test.sourceType)
 			}
-			actual := detectSourceFromPath(fs, testPath)
+			actual, err := detectSourceFromPath(fs, testPath)
+			if err != nil && !test.expectedErr {
+				t.Fatalf("unexpected error: %+v", err)
+			} else if err == nil && test.expectedErr {
+				t.Fatal("expected error but got none")
+			}
 			if actual != test.expectedSource {
 				t.Errorf("unexpected source: %+v (expected: %+v)", actual, test.expectedSource)
 			}

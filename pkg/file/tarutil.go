@@ -24,9 +24,6 @@ const (
 
 const perFileReadLimit = 2 * GB
 
-// ErrFileNotFound returned from ReaderFromTar if a file is not found in the given archive
-var ErrFileNotFound = fmt.Errorf("file not found")
-
 // tarFile is a ReadCloser of a tar file on disk.
 type tarFile struct {
 	io.Reader
@@ -35,6 +32,15 @@ type tarFile struct {
 
 // TarContentsRequest is a map of tarHeaderNames -> file.References to aid in simplifying content retrieval.
 type TarContentsRequest map[string]Reference
+
+// ErrFileNotFound returned from ReaderFromTar if a file is not found in the given archive
+type ErrFileNotFound struct {
+	Path string
+}
+
+func (e *ErrFileNotFound) Error() string {
+	return fmt.Sprintf("file not found (path=%s)", e.Path)
+}
 
 // ReaderFromTar returns a io.ReadCloser for the path within a tar file.
 func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) {
@@ -45,7 +51,7 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to get next tar header: %w", err)
 		}
 		if hdr.Name == tarPath {
 			return tarFile{
@@ -54,7 +60,7 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 			}, nil
 		}
 	}
-	return nil, fmt.Errorf("file %s not found in tar", tarPath)
+	return nil, &ErrFileNotFound{tarPath}
 }
 
 // ContentsFromTar reads the contents of a tar for the selection of tarHeaderNames, where the return is a mapping of the file reference from the original request to the fetched contents.
