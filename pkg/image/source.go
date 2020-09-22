@@ -45,7 +45,7 @@ func ParseImageSpec(imageSpec string) (Source, string) {
 	switch len(candidates) {
 	case 1:
 		// no source hint has been provided, detect one
-		source, _ = DetectSourceFromPath(imageSpec)
+		source = DetectSourceFromPath(imageSpec)
 		if source == UnknownSource {
 			// when all else fails, default to docker daemon
 			source = DockerDaemonSource
@@ -84,33 +84,33 @@ func ParseSource(source string) Source {
 }
 
 // DetectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive.
-func DetectSourceFromPath(imgPath string) (Source, error) {
+func DetectSourceFromPath(imgPath string) Source {
 	return detectSourceFromPath(afero.NewOsFs(), imgPath)
 }
 
 // detectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
-func detectSourceFromPath(fs afero.Fs, imgPath string) (Source, error) {
+func detectSourceFromPath(fs afero.Fs, imgPath string) Source {
 	pathStat, err := fs.Stat(imgPath)
 	if os.IsNotExist(err) {
-		return UnknownSource, nil
+		return UnknownSource
 	} else if err != nil {
-		return UnknownSource, err
+		return UnknownSource
 	}
 
 	if pathStat.IsDir() {
 		//  check for oci-directory
 		if _, err := fs.Stat(path.Join(imgPath, "oci-layout")); !os.IsNotExist(err) {
-			return OciDirectorySource, nil
+			return OciDirectorySource
 		}
 
 		// there are no other directory-based source formats supported
-		return UnknownSource, nil
+		return UnknownSource
 	}
 
 	// assume this is an archive...
 	archive, err := fs.Open(imgPath)
 	if err != nil {
-		return UnknownSource, err
+		return UnknownSource
 	}
 
 	for _, pair := range []struct {
@@ -127,17 +127,17 @@ func detectSourceFromPath(fs afero.Fs, imgPath string) (Source, error) {
 		},
 	} {
 		if _, err = archive.Seek(0, io.SeekStart); err != nil {
-			return UnknownSource, err
+			return UnknownSource
 		}
 
 		_, err = file.ReaderFromTar(archive, pair.path)
 		if err == nil {
-			return pair.source, nil
+			return pair.source
 		}
 	}
 
 	// there are no other archive-based formats supported
-	return UnknownSource, nil
+	return UnknownSource
 }
 
 // String returns a convenient display string for the source.

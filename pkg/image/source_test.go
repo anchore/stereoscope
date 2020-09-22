@@ -267,7 +267,7 @@ func TestDetectSourceFromPath(t *testing.T) {
 			default:
 				t.Fatalf("unknown source type: %+v", test.sourceType)
 			}
-			actual, _ := detectSourceFromPath(fs, testPath)
+			actual := detectSourceFromPath(fs, testPath)
 			if actual != test.expectedSource {
 				t.Errorf("unexpected source: %+v (expected: %+v)", actual, test.expectedSource)
 			}
