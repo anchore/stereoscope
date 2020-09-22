@@ -10,20 +10,46 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/tree"
+	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
+type testCase struct {
+	name           string
+	source         string
+	imageMediaType v1Types.MediaType
+	layerMediaType v1Types.MediaType
+	tagCount       int
+}
+
 func TestSimpleImage(t *testing.T) {
-	cases := []struct {
-		name   string
-		source string
-	}{
+	cases := []testCase{
 		{
-			name:   "FromTarball",
-			source: "docker-archive",
+			name:           "FromTarball",
+			source:         "docker-archive",
+			imageMediaType: v1Types.DockerManifestSchema2,
+			layerMediaType: v1Types.DockerLayer,
+			tagCount:       1,
 		},
 		{
-			name:   "FromDocker",
-			source: "docker",
+			name:           "FromDocker",
+			source:         "docker",
+			imageMediaType: v1Types.DockerManifestSchema2,
+			layerMediaType: v1Types.DockerLayer,
+			tagCount:       1,
+		},
+		{
+			name:           "FromOciTarball",
+			source:         "oci-archive",
+			imageMediaType: v1Types.OCIManifestSchema1,
+			layerMediaType: v1Types.OCILayer,
+			tagCount:       0,
+		},
+		{
+			name:           "FromOciDirectory",
+			source:         "oci-directory",
+			imageMediaType: v1Types.OCIManifestSchema1,
+			layerMediaType: v1Types.OCILayer,
+			tagCount:       0,
 		},
 	}
 	for _, c := range cases {
@@ -31,7 +57,7 @@ func TestSimpleImage(t *testing.T) {
 			i, cleanup := testutils.GetFixtureImage(t, c.source, "image-simple")
 			defer cleanup()
 
-			assertImageSimpleMetadata(t, i)
+			assertImageSimpleMetadata(t, i, c)
 			assertImageSimpleTrees(t, i)
 			assertImageSimpleSquashedTrees(t, i)
 			assertImageSimpleContents(t, i)
@@ -44,17 +70,17 @@ func TestSimpleImage(t *testing.T) {
 
 }
 
-func assertImageSimpleMetadata(t *testing.T, i *image.Image) {
+func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues testCase) {
 	t.Log("Asserting metadata...")
 	if i.Metadata.Size != 65 {
 		t.Errorf("unexpected image size: %d", i.Metadata.Size)
 	}
-	if string(i.Metadata.MediaType) != "application/vnd.docker.distribution.manifest.v2+json" {
+	if i.Metadata.MediaType != expectedValues.imageMediaType {
 		t.Errorf("unexpected image media type: %+v", i.Metadata.MediaType)
 	}
-	if len(i.Metadata.Tags) != 1 {
+	if len(i.Metadata.Tags) != expectedValues.tagCount {
 		t.Errorf("unexpected number of tags: %d", len(i.Metadata.Tags))
-	} else {
+	} else if expectedValues.tagCount > 0 {
 		if !strings.HasPrefix(i.Metadata.Tags[0].String(), "anchore-fixture-image-simple:") {
 			t.Errorf("unexpected image tag: %+v", i.Metadata.Tags)
 		}
@@ -64,17 +90,17 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image) {
 		{
 			Index:     0,
 			Size:      22,
-			MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+			MediaType: expectedValues.layerMediaType,
 		},
 		{
 			Index:     1,
 			Size:      16,
-			MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+			MediaType: expectedValues.layerMediaType,
 		},
 		{
 			Index:     2,
 			Size:      27,
-			MediaType: "application/vnd.docker.image.rootfs.diff.tar.gzip",
+			MediaType: expectedValues.layerMediaType,
 		},
 	}
 

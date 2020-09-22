@@ -1,7 +1,13 @@
 package image
 
 import (
+	"io"
+	"os"
+	"path"
 	"strings"
+
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/spf13/afero"
 )
 
 const (
@@ -38,8 +44,14 @@ func ParseImageSpec(imageSpec string) (Source, string) {
 	var source Source
 	switch len(candidates) {
 	case 1:
-		source = DockerDaemonSource
+		// no source hint has been provided, detect one
+		source, _ = DetectSourceFromPath(imageSpec)
+		if source == UnknownSource {
+			// when all else fails, default to docker daemon
+			source = DockerDaemonSource
+		}
 	case 2:
+		// the user has provided the source hint
 		source = ParseSource(candidates[0])
 	default:
 		source = UnknownSource
@@ -52,11 +64,11 @@ func ParseImageSpec(imageSpec string) (Source, string) {
 	return source, strings.TrimPrefix(imageSpec, candidates[0]+"://")
 }
 
-// ParseSource attempts to resolve a concrete image source selection from a user string (e.g. "docker://", "tar://", "podman://", etc.)
+// ParseSource attempts to resolve a concrete image source selection from a user string (e.g. "docker://", "tar://", "podman://", etc.).
 func ParseSource(source string) Source {
 	source = strings.ToLower(source)
 	switch source {
-	case "tarball", "tar", "archive", "docker-archive":
+	case "tarball", "tar", "archive", "docker-archive", "docker-tar", "docker-tarball":
 		return DockerTarballSource
 	case "docker", "docker-daemon", "docker-engine":
 		return DockerDaemonSource
@@ -69,6 +81,63 @@ func ParseSource(source string) Source {
 		return UnknownSource
 	}
 	return UnknownSource
+}
+
+// DetectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive.
+func DetectSourceFromPath(imgPath string) (Source, error) {
+	return detectSourceFromPath(afero.NewOsFs(), imgPath)
+}
+
+// detectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
+func detectSourceFromPath(fs afero.Fs, imgPath string) (Source, error) {
+	pathStat, err := fs.Stat(imgPath)
+	if os.IsNotExist(err) {
+		return UnknownSource, nil
+	} else if err != nil {
+		return UnknownSource, err
+	}
+
+	if pathStat.IsDir() {
+		//  check for oci-directory
+		if _, err := fs.Stat(path.Join(imgPath, "oci-layout")); !os.IsNotExist(err) {
+			return OciDirectorySource, nil
+		}
+
+		// there are no other directory-based source formats supported
+		return UnknownSource, nil
+	}
+
+	// assume this is an archive...
+	archive, err := fs.Open(imgPath)
+	if err != nil {
+		return UnknownSource, err
+	}
+
+	for _, pair := range []struct {
+		path   string
+		source Source
+	}{
+		{
+			"manifest.json",
+			DockerTarballSource,
+		},
+		{
+			"oci-layout",
+			OciTarballSource,
+		},
+	} {
+		if _, err = archive.Seek(0, io.SeekStart); err != nil {
+			return UnknownSource, err
+		}
+
+		_, err = file.ReaderFromTar(archive, pair.path)
+		if err == nil {
+			return pair.source, nil
+		}
+	}
+
+	// there are no other archive-based formats supported
+	return UnknownSource, nil
 }
 
 // String returns a convenient display string for the source.
