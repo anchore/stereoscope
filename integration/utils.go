@@ -10,12 +10,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/tree"
 )
 
-const (
-	testFixturesDirName = "test-fixtures"
-	tarCacheDirName     = "tar-cache"
-	imagePrefix         = "stereoscope-fixture"
-)
-
 func compareLayerSquashTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.Image, ignorePaths []file.Path) {
 	t.Helper()
 	if len(expected) != len(i.Layers) {

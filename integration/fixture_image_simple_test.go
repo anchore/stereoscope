@@ -3,12 +3,13 @@
 package integration
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/anchore/go-testutils"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/imagetest"
 	"github.com/anchore/stereoscope/pkg/tree"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
@@ -54,7 +55,7 @@ func TestSimpleImage(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			i, cleanup := testutils.GetFixtureImage(t, c.source, "image-simple")
+			i, cleanup := imagetest.GetFixtureImage(t, c.source, "image-simple")
 			defer cleanup()
 
 			assertImageSimpleMetadata(t, i, c)
@@ -81,7 +82,7 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 	if len(i.Metadata.Tags) != expectedValues.tagCount {
 		t.Errorf("unexpected number of tags: %d", len(i.Metadata.Tags))
 	} else if expectedValues.tagCount > 0 {
-		if !strings.HasPrefix(i.Metadata.Tags[0].String(), "anchore-fixture-image-simple:") {
+		if !strings.HasPrefix(i.Metadata.Tags[0].String(), fmt.Sprintf("%s-image-simple:", imagetest.ImagePrefix)) {
 			t.Errorf("unexpected image tag: %+v", i.Metadata.Tags)
 		}
 	}

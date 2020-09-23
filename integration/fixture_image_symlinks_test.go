@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/anchore/go-testutils"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/imagetest"
 )
 
 type linkFetchConfig struct {
@@ -44,7 +44,7 @@ func TestImageSymlinks(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			i, cleanup := testutils.GetFixtureImage(t, c.source, "image-symlinks")
+			i, cleanup := imagetest.GetFixtureImage(t, c.source, "image-symlinks")
 			defer cleanup()
 			assertImageSymlinkLinkResolution(t, i)
 		})
