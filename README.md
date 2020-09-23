@@ -8,7 +8,7 @@ See `examples/basic.go`
 
 ```bash
 docker image save centos:8 -o centos.tar
-go run examples/basic.go tarball://centos.tar
+go run examples/basic.go ./centos.tar
 ```
 
 Note: To run tests you will need `skopeo` installed.

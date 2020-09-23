@@ -14,7 +14,7 @@ func main() {
 
 	/////////////////////////////////////////////////////////////////
 	// pass a path to an image tar as an argument:
-	//    tarball://./path/to.tar
+	//    ./path/to.tar
 	//
 	// This will catalog the file metadata and resolve all squash trees (img.Read)
 	//

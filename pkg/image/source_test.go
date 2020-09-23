@@ -12,47 +12,104 @@ import (
 
 func TestParseImageSpec(t *testing.T) {
 	cases := []struct {
-		name     string
-		source   Source
-		location string
+		name             string
+		input            string
+		source           Source
+		expectedLocation string
+		tarPath          string
+		tarPaths         []string
 	}{
 		{
-			name:     "tar://a/place.tar",
-			source:   DockerTarballSource,
-			location: "a/place.tar",
+			name:             "docker-tar",
+			input:            "docker-tar:a/place.tar",
+			source:           DockerTarballSource,
+			expectedLocation: "a/place.tar",
 		},
 		{
-			name:     "docker://something/something:latest",
-			source:   DockerDaemonSource,
-			location: "something/something:latest",
+			name:             "docker-engine",
+			input:            "docker:something/something:latest",
+			source:           DockerDaemonSource,
+			expectedLocation: "something/something:latest",
 		},
 		{
-			name:     "DoCKEr://something/something:latest",
-			source:   DockerDaemonSource,
-			location: "something/something:latest",
+			name:   "docker-engine-edge-case",
+			input:  "docker:latest",
+			source: DockerDaemonSource,
+			// we want to be able to handle this case better, however, I don't see a way to do this
+			// the user will need to provide more explicit input (docker:docker:latest)
+			expectedLocation: "latest",
 		},
 		{
-			name:     "something/something:latest",
-			source:   DockerDaemonSource,
-			location: "something/something:latest",
+			name:             "docker-caps",
+			input:            "DoCKEr:something/something:latest",
+			source:           DockerDaemonSource,
+			expectedLocation: "something/something:latest",
 		},
 		{
-			name:     "blerg://something/something:latest",
-			source:   UnknownSource,
-			location: "",
+			name:             "infer-docker-engine",
+			input:            "something/something:latest",
+			source:           DockerDaemonSource,
+			expectedLocation: "something/something:latest",
+		},
+		{
+			name:             "bad-hint",
+			input:            "blerg:something/something:latest",
+			source:           UnknownSource,
+			expectedLocation: "",
+		},
+		{
+			name:             "relative-path-1",
+			input:            ".",
+			source:           UnknownSource,
+			expectedLocation: "",
+		},
+		{
+			name:             "relative-path-2",
+			input:            "./",
+			source:           UnknownSource,
+			expectedLocation: "",
+		},
+		{
+			name:             "relative-parent-path",
+			input:            "../",
+			source:           UnknownSource,
+			expectedLocation: "",
+		},
+		{
+			name:             "oci-tar-path",
+			input:            "a-potential/path",
+			source:           OciTarballSource,
+			expectedLocation: "a-potential/path",
+			tarPath:          "a-potential/path",
+			tarPaths:         []string{"oci-layout"},
+		},
+		{
+			name:             "unparsable-existing-path",
+			input:            "a-potential/path",
+			source:           DockerDaemonSource,
+			expectedLocation: "a-potential/path",
+			tarPath:          "a-potential/path",
+			tarPaths:         []string{},
 		},
 	}
 	for _, c := range cases {
-		source, location, err := ParseImageSpec(c.name)
-		if err != nil {
-			t.Fatalf("unexecpted error: %+v", err)
-		}
-		if c.source != source {
-			t.Errorf("unexpected source: %s!=%s", c.source, source)
-		}
-		if c.location != location {
-			t.Errorf("unexpected location: %s!=%s", c.location, location)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			if c.tarPath != "" {
+				getDummyTar(t, fs.(*afero.MemMapFs), c.tarPath, c.tarPaths...)
+			}
+
+			source, location, err := detectSource(fs, c.input)
+			if err != nil {
+				t.Fatalf("unexecpted error: %+v", err)
+			}
+			if c.source != source {
+				t.Errorf("expected: %q , got: %q", c.source, source)
+			}
+			if c.expectedLocation != location {
+				t.Errorf("expected: %q , got: %q", c.expectedLocation, location)
+			}
+		})
 	}
 }
 
@@ -62,16 +119,19 @@ func TestParseSource(t *testing.T) {
 		expected Source
 	}{
 		{
+			// regression for unsupported behavior
 			source:   "tar",
-			expected: DockerTarballSource,
+			expected: UnknownSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "tarball",
-			expected: DockerTarballSource,
+			expected: UnknownSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "archive",
-			expected: DockerTarballSource,
+			expected: UnknownSource,
 		},
 		{
 			source:   "docker-archive",
@@ -139,15 +199,14 @@ func TestParseSource(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		actual := ParseSource(c.source)
+		actual := ParseSourceScheme(c.source)
 		if c.expected != actual {
 			t.Errorf("unexpected source: %s!=%s", c.expected, actual)
 		}
 	}
 }
 
-func getDummyTar(t *testing.T, fs *afero.MemMapFs, paths ...string) string {
-	archivePath := "/image.tar"
+func getDummyTar(t *testing.T, fs *afero.MemMapFs, archivePath string, paths ...string) string {
 	testFile, err := fs.Create(archivePath)
 	if err != nil {
 		t.Fatalf("failed to create dummy tar: %+v", err)
@@ -176,8 +235,7 @@ func getDummyTar(t *testing.T, fs *afero.MemMapFs, paths ...string) string {
 	return archivePath
 }
 
-func getDummyPath(t *testing.T, fs *afero.MemMapFs, paths ...string) string {
-	dirPath := "/image"
+func getDummyPath(t *testing.T, fs *afero.MemMapFs, dirPath string, paths ...string) string {
 	err := fs.Mkdir(dirPath, os.ModePerm)
 	if err != nil {
 		t.Fatalf("failed to create dummy tar: %+v", err)
@@ -271,9 +329,9 @@ func TestDetectSourceFromPath(t *testing.T) {
 			var testPath string
 			switch test.sourceType {
 			case "tar":
-				testPath = getDummyTar(t, fs.(*afero.MemMapFs), test.paths...)
+				testPath = getDummyTar(t, fs.(*afero.MemMapFs), "/image.tar", test.paths...)
 			case "dir":
-				testPath = getDummyPath(t, fs.(*afero.MemMapFs), test.paths...)
+				testPath = getDummyPath(t, fs.(*afero.MemMapFs), "/image", test.paths...)
 			case "none":
 				testPath = "/does-not-exist"
 			default:

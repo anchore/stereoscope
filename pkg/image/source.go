@@ -8,6 +8,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/name"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/spf13/afero"
 )
@@ -19,6 +21,8 @@ const (
 	OciDirectorySource
 	OciTarballSource
 )
+
+const SchemeSeparator = ":"
 
 var sourceStr = [...]string{
 	"UnknownSource",
@@ -38,43 +42,19 @@ var AllSources = []Source{
 // Source is a concrete a selection of valid concrete image providers.
 type Source uint8
 
-// ParseImageSpec takes a user string and determines the image source (e.g. the docker daemon, a tar file, etc.) and
-// image identifier for future fetching (e.g. "wagoodman/dive:latest" or "./image.tar").
-func ParseImageSpec(imageSpec string) (Source, string, error) {
-	candidates := strings.Split(imageSpec, "://")
-
-	var source Source
-	var err error
-	switch len(candidates) {
-	case 1:
-		// no source hint has been provided, detect one
-		source, err = DetectSourceFromPath(imageSpec)
-		if err != nil {
-			return UnknownSource, "", err
-		}
-		if source == UnknownSource {
-			// when all else fails, default to docker daemon
-			source = DockerDaemonSource
-		}
-	case 2:
-		// the user has provided the source hint
-		source = ParseSource(candidates[0])
-	default:
-		source = UnknownSource
-	}
-
-	if source == UnknownSource {
-		return source, "", nil
-	}
-
-	return source, strings.TrimPrefix(imageSpec, candidates[0]+"://"), nil
+// couldBeDockerReference takes a string and indicates if it conforms to a docker image reference.
+func couldBeDockerReference(imageSpec string) bool {
+	// note: strict validation requires there to be a default registry (e.g. docker.io) which we cannot assume will be provided
+	// we only want to validate the bare minimum number of image specification features, not exhaustive.
+	_, err := name.ParseReference(imageSpec, name.WeakValidation)
+	return err == nil
 }
 
-// ParseSource attempts to resolve a concrete image source selection from a user string (e.g. "docker://", "tar://", "podman://", etc.).
-func ParseSource(source string) Source {
+// ParseSourceScheme attempts to resolve a concrete image source selection from a user string (e.g. "docker:", "tar:", "podman:", etc.).
+func ParseSourceScheme(source string) Source {
 	source = strings.ToLower(source)
 	switch source {
-	case "tarball", "tar", "archive", "docker-archive", "docker-tar", "docker-tarball":
+	case "docker-archive", "docker-tar", "docker-tarball":
 		return DockerTarballSource
 	case "docker", "docker-daemon", "docker-engine":
 		return DockerDaemonSource
@@ -89,12 +69,55 @@ func ParseSource(source string) Source {
 	return UnknownSource
 }
 
-// DetectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive.
+// DetectSource takes a user string and determines the image source (e.g. the docker daemon, a tar file, etc.) returning the string subset representing the image (or nothing if it is unknown).
+// note: parsing is done relative to the given string and environmental evidence (i.e. the given filesystem) to determine the actual source.
+func DetectSource(userInput string) (Source, string, error) {
+	return detectSource(afero.NewOsFs(), userInput)
+}
+
+// DetectSource takes a user string and determines the image source (e.g. the docker daemon, a tar file, etc.) returning the string subset representing the image (or nothing if it is unknown).
+// note: parsing is done relative to the given string and environmental evidence (i.e. the given filesystem) to determine the actual source.
+func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
+	candidates := strings.SplitN(userInput, SchemeSeparator, 2)
+
+	var source Source
+	var location = userInput
+	var sourceHint string
+	var err error
+	switch len(candidates) {
+	case 1:
+		// no source hint has been provided, detect one
+		source, err = detectSourceFromPath(fs, location)
+		if err != nil {
+			return UnknownSource, "", err
+		}
+	case 2:
+		// the user may have provided a source hint (or this is a split from a docker image reference, we aren't certain yet)
+		sourceHint = candidates[0]
+		location = strings.TrimPrefix(userInput, sourceHint+SchemeSeparator)
+		source = ParseSourceScheme(sourceHint)
+	default:
+		source = UnknownSource
+	}
+
+	if source == UnknownSource {
+		if couldBeDockerReference(userInput) {
+			// ignore any source hint since the source is ultimately unknown, see if this could be a docker image
+			return DockerDaemonSource, userInput, nil
+		}
+		// invalidate any previous processing if the source is still unknown
+		location = ""
+	}
+
+	return source, location, nil
+}
+
+// DetectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
 func DetectSourceFromPath(imgPath string) (Source, error) {
 	return detectSourceFromPath(afero.NewOsFs(), imgPath)
 }
 
-// detectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
+// DetectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
 func detectSourceFromPath(fs afero.Fs, imgPath string) (Source, error) {
 	pathStat, err := fs.Stat(imgPath)
 	if os.IsNotExist(err) {
