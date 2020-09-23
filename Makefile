@@ -77,7 +77,7 @@ unit: ## Run unit tests (with coverage)
 # note: this is used by CI to determine if the integration test fixture cache (docker image tars) should be busted
 .PHONY: integration-fingerprint
 integration-fingerprint:
-	find integration/test-fixtures/image-* -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee integration/test-fixtures/tar-cache.fingerprint
+	find integration/test-fixtures/image-* -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee integration/test-fixtures/cache.fingerprint
 
 .PHONY: integration
 integration: ## Run integration tests
@@ -86,7 +86,7 @@ integration: ## Run integration tests
 
 .PHONY: clear-test-cache
 clear-test-cache: ## Delete all test cache (built docker image tars)
-	find . -type f -wholename "**/test-fixtures/tar-cache/*.tar" -delete
+	find . -type f -wholename "**/test-fixtures/cache/*.tar" -delete
 
 .PHONY: check-pipeline
 check-pipeline: ## Run local CircleCI pipeline locally (sanity check)

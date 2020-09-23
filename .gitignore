@@ -5,6 +5,8 @@
 .images
 .tmp/
 coverage.txt
+**/test-fixtures/cache/
+
 
 # Binaries for programs and plugins
 *.exe

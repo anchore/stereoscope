@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/anchore/stereoscope/pkg/image/oci"
+
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/image"
@@ -59,7 +61,10 @@ func (t *tracker) cleanup() error {
 // GetImage parses the user provided image string and provides an image object
 func GetImage(userStr string, options ...Option) (*image.Image, error) {
 	var provider image.Provider
-	source, imgStr := image.ParseImageSpec(userStr)
+	source, imgStr, err := image.ParseImageSpec(userStr)
+	if err != nil {
+		return nil, err
+	}
 
 	var processingOption = NoActionOption
 	if len(options) == 0 {
@@ -81,6 +86,11 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 	case image.DockerDaemonSource:
 		cacheDir := trackerInstance.newTempDir()
 		provider = docker.NewProviderFromDaemon(imgStr, cacheDir)
+	case image.OciDirectorySource:
+		provider = oci.NewProviderFromPath(imgStr)
+	case image.OciTarballSource:
+		cacheDir := trackerInstance.newTempDir()
+		provider = oci.NewProviderFromTarball(imgStr, cacheDir)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}

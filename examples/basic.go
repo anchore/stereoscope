@@ -9,6 +9,9 @@ import (
 )
 
 func main() {
+	// note: we are writing out temp files which should be cleaned up after you're done with the image object
+	defer stereoscope.Cleanup()
+
 	/////////////////////////////////////////////////////////////////
 	// pass a path to an image tar as an argument:
 	//    tarball://./path/to.tar

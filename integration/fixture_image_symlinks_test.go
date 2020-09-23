@@ -33,6 +33,14 @@ func TestImageSymlinks(t *testing.T) {
 			name:   "FromDocker",
 			source: "docker",
 		},
+		{
+			name:   "FromOciTarball",
+			source: "oci-archive",
+		},
+		{
+			name:   "FromOciDirectory",
+			source: "oci-directory",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
