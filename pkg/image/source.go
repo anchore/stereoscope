@@ -50,21 +50,18 @@ func couldBeDockerReference(imageSpec string) bool {
 	return err == nil
 }
 
-// ParseSourceScheme attempts to resolve a concrete image source selection from a user string (e.g. "docker:", "tar:", "podman:", etc.).
+// ParseSourceScheme attempts to resolve a concrete image source selection from a scheme in a user string.
 func ParseSourceScheme(source string) Source {
 	source = strings.ToLower(source)
 	switch source {
-	case "docker-archive", "docker-tar", "docker-tarball":
+	case "docker-archive":
 		return DockerTarballSource
-	case "docker", "docker-daemon", "docker-engine":
+	case "docker":
 		return DockerDaemonSource
-	case "oci", "oci-directory", "oci-dir":
+	case "oci-dir":
 		return OciDirectorySource
-	case "oci-tarball", "oci-tar", "oci-archive":
+	case "oci-archive":
 		return OciTarballSource
-	case "podman":
-		// TODO: implement
-		return UnknownSource
 	}
 	return UnknownSource
 }

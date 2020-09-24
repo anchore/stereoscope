@@ -47,7 +47,7 @@ func TestSimpleImage(t *testing.T) {
 		},
 		{
 			name:           "FromOciDirectory",
-			source:         "oci-directory",
+			source:         "oci-dir",
 			imageMediaType: v1Types.OCIManifestSchema1,
 			layerMediaType: v1Types.OCILayer,
 			tagCount:       0,

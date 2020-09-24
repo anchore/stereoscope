@@ -20,8 +20,8 @@ func TestParseImageSpec(t *testing.T) {
 		tarPaths         []string
 	}{
 		{
-			name:             "docker-tar",
-			input:            "docker-tar:a/place.tar",
+			name:             "docker-archive",
+			input:            "docker-archive:a/place.tar",
 			source:           DockerTarballSource,
 			expectedLocation: "a/place.tar",
 		},
@@ -38,6 +38,12 @@ func TestParseImageSpec(t *testing.T) {
 			// we want to be able to handle this case better, however, I don't see a way to do this
 			// the user will need to provide more explicit input (docker:docker:latest)
 			expectedLocation: "latest",
+		},
+		{
+			name:             "docker-engine-edge-case-explicit",
+			input:            "docker:docker:latest",
+			source:           DockerDaemonSource,
+			expectedLocation: "docker:latest",
 		},
 		{
 			name:             "docker-caps",
@@ -138,12 +144,14 @@ func TestParseSource(t *testing.T) {
 			expected: DockerTarballSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "docker-tar",
-			expected: DockerTarballSource,
+			expected: UnknownSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "docker-tarball",
-			expected: DockerTarballSource,
+			expected: UnknownSource,
 		},
 		{
 			source:   "Docker",
@@ -158,36 +166,42 @@ func TestParseSource(t *testing.T) {
 			expected: DockerDaemonSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "docker-daemon",
-			expected: DockerDaemonSource,
+			expected: UnknownSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "docker-engine",
-			expected: DockerDaemonSource,
+			expected: UnknownSource,
 		},
 		{
 			source:   "oci-archive",
 			expected: OciTarballSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "oci-tar",
-			expected: OciTarballSource,
+			expected: UnknownSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "oci-tarball",
-			expected: OciTarballSource,
+			expected: UnknownSource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "oci",
-			expected: OciDirectorySource,
+			expected: UnknownSource,
 		},
 		{
 			source:   "oci-dir",
 			expected: OciDirectorySource,
 		},
 		{
+			// regression for unsupported behavior
 			source:   "oci-directory",
-			expected: OciDirectorySource,
+			expected: UnknownSource,
 		},
 		{
 			source:   "",

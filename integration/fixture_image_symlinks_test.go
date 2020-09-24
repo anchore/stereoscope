@@ -39,7 +39,7 @@ func TestImageSymlinks(t *testing.T) {
 		},
 		{
 			name:   "FromOciDirectory",
-			source: "oci-directory",
+			source: "oci-dir",
 		},
 	}
 	for _, c := range cases {
