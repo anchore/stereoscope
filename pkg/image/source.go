@@ -117,7 +117,7 @@ func DetectSourceFromPath(imgPath string) (Source, error) {
 	return detectSourceFromPath(afero.NewOsFs(), imgPath)
 }
 
-// DetectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
+// detectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
 func detectSourceFromPath(fs afero.Fs, imgPath string) (Source, error) {
 	pathStat, err := fs.Stat(imgPath)
 	if os.IsNotExist(err) {
