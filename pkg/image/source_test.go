@@ -32,11 +32,11 @@ func TestDetectSource(t *testing.T) {
 			expectedLocation: "a5e",
 		},
 		{
-			name:             "docker-engine-impossible-id",
+			name: "docker-engine-impossible-id",
 			// not a valid ID
 			input:            "a5E",
 			source:           UnknownSource,
-			expectedLocation: "a5E",
+			expectedLocation: "",
 		},
 		{
 			name:             "docker-engine",
@@ -233,59 +233,6 @@ func TestParseScheme(t *testing.T) {
 	}
 }
 
-func getDummyTar(t *testing.T, fs *afero.MemMapFs, archivePath string, paths ...string) string {
-	testFile, err := fs.Create(archivePath)
-	if err != nil {
-		t.Fatalf("failed to create dummy tar: %+v", err)
-	}
-
-	tarWriter := tar.NewWriter(testFile)
-	defer tarWriter.Close()
-
-	for _, filePath := range paths {
-		header := &tar.Header{
-			Name: filePath,
-			Size: 13,
-		}
-
-		err = tarWriter.WriteHeader(header)
-		if err != nil {
-			t.Fatalf("could not write dummy header: %+v", err)
-		}
-
-		_, err = io.Copy(tarWriter, strings.NewReader("hello, world!"))
-		if err != nil {
-			t.Fatalf("could not write dummy file: %+v", err)
-		}
-	}
-
-	return archivePath
-}
-
-func getDummyPath(t *testing.T, fs *afero.MemMapFs, dirPath string, paths ...string) string {
-	err := fs.Mkdir(dirPath, os.ModePerm)
-	if err != nil {
-		t.Fatalf("failed to create dummy tar: %+v", err)
-	}
-
-	for _, filePath := range paths {
-		f, err := fs.Create(path.Join(dirPath, filePath))
-		if err != nil {
-			t.Fatalf("unable to create file: %+v", err)
-		}
-
-		if _, err = f.WriteString("hello, world!"); err != nil {
-			t.Fatalf("unable to write file")
-		}
-
-		if err = f.Close(); err != nil {
-			t.Fatalf("unable to close file")
-		}
-	}
-
-	return dirPath
-}
-
 func TestDetectSourceFromPath(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -375,4 +322,61 @@ func TestDetectSourceFromPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+// note: we do not pass the afero.Fs interface since we are writing out to the root of the filesystem, something we never want to do with an OS filesystem. This type is more explicit.
+func getDummyTar(t *testing.T, fs *afero.MemMapFs, archivePath string, paths ...string) string {
+	t.Helper()
+	testFile, err := fs.Create(archivePath)
+	if err != nil {
+		t.Fatalf("failed to create dummy tar: %+v", err)
+	}
+
+	tarWriter := tar.NewWriter(testFile)
+	defer tarWriter.Close()
+
+	for _, filePath := range paths {
+		header := &tar.Header{
+			Name: filePath,
+			Size: 13,
+		}
+
+		err = tarWriter.WriteHeader(header)
+		if err != nil {
+			t.Fatalf("could not write dummy header: %+v", err)
+		}
+
+		_, err = io.Copy(tarWriter, strings.NewReader("hello, world!"))
+		if err != nil {
+			t.Fatalf("could not write dummy file: %+v", err)
+		}
+	}
+
+	return archivePath
+}
+
+// note: we do not pass the afero.Fs interface since we are writing out to the root of the filesystem, something we never want to do with an OS filesystem. This type is more explicit.
+func getDummyPath(t *testing.T, fs *afero.MemMapFs, dirPath string, paths ...string) string {
+	t.Helper()
+	err := fs.Mkdir(dirPath, os.ModePerm)
+	if err != nil {
+		t.Fatalf("failed to create dummy tar: %+v", err)
+	}
+
+	for _, filePath := range paths {
+		f, err := fs.Create(path.Join(dirPath, filePath))
+		if err != nil {
+			t.Fatalf("unable to create file: %+v", err)
+		}
+
+		if _, err = f.WriteString("hello, world!"); err != nil {
+			t.Fatalf("unable to write file")
+		}
+
+		if err = f.Close(); err != nil {
+			t.Fatalf("unable to close file")
+		}
+	}
+
+	return dirPath
 }
