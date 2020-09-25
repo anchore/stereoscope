@@ -3,15 +3,14 @@ package image
 import (
 	"errors"
 	"fmt"
-	"github.com/mitchellh/go-homedir"
 	"io"
 	"os"
 	"path"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/name"
-
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/afero"
 )
 
