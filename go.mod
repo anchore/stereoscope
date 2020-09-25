@@ -11,6 +11,7 @@ require (
 	github.com/google/go-containerregistry v0.1.0
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/logrusorgru/aurora v0.0.0-20200102142835-e9ef32dff381
+	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/afero v1.2.2
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d

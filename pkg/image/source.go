@@ -3,6 +3,7 @@ package image
 import (
 	"errors"
 	"fmt"
+	"github.com/mitchellh/go-homedir"
 	"io"
 	"os"
 	"path"
@@ -97,7 +98,14 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 		source = UnknownSource
 	}
 
-	if source == UnknownSource {
+	switch source {
+	case OciDirectorySource, OciTarballSource, DockerTarballSource:
+		// since the scheme was explicitly given, that means that home dir tilde expansion would not have been done by the shell (so we have to)
+		location, err = homedir.Expand(location)
+		if err != nil {
+			return UnknownSource, "", fmt.Errorf("unable to expand potential home dir expression: %w", err)
+		}
+	case UnknownSource:
 		if isDockerReference(userInput) {
 			// ignore any source hint since the source is ultimately unknown, see if this could be a docker image
 			return DockerDaemonSource, userInput, nil
@@ -116,6 +124,11 @@ func DetectSourceFromPath(imgPath string) (Source, error) {
 
 // detectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
 func detectSourceFromPath(fs afero.Fs, imgPath string) (Source, error) {
+	imgPath, err := homedir.Expand(imgPath)
+	if err != nil {
+		return UnknownSource, fmt.Errorf("unable to expand potential home dir expression: %w", err)
+	}
+
 	pathStat, err := fs.Stat(imgPath)
 	if os.IsNotExist(err) {
 		return UnknownSource, nil

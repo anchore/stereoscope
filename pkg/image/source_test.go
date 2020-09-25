@@ -2,6 +2,7 @@ package image
 
 import (
 	"archive/tar"
+	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/afero"
 	"io"
 	"os"
@@ -110,6 +111,23 @@ func TestDetectSource(t *testing.T) {
 			tarPath:          "a-potential/path",
 			tarPaths:         []string{},
 		},
+		// honor tilde expansion
+		{
+			name:             "oci-tar-path",
+			input:            "~/a-potential/path",
+			source:           OciTarballSource,
+			expectedLocation: "~/a-potential/path",
+			tarPath:          "~/a-potential/path",
+			tarPaths:         []string{"oci-layout"},
+		},
+		{
+			name:             "oci-tar-path-explicit",
+			input:            "oci-archive:~/a-potential/path",
+			source:           OciTarballSource,
+			expectedLocation: "~/a-potential/path",
+			tarPath:          "~/a-potential/path",
+			tarPaths:         []string{"oci-layout"},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -125,8 +143,15 @@ func TestDetectSource(t *testing.T) {
 			if c.source != source {
 				t.Errorf("expected: %q , got: %q", c.source, source)
 			}
-			if c.expectedLocation != location {
-				t.Errorf("expected: %q , got: %q", c.expectedLocation, location)
+
+			// lean on the users real home directory value
+			expandedExpectedLocation, err := homedir.Expand(c.expectedLocation)
+			if err != nil {
+				t.Fatalf("unable to expand path=%q: %+v", c.expectedLocation, err)
+			}
+
+			if expandedExpectedLocation != location {
+				t.Errorf("expected: %q , got: %q", expandedExpectedLocation, location)
 			}
 		})
 	}
@@ -303,9 +328,9 @@ func TestDetectSourceFromPath(t *testing.T) {
 			var testPath string
 			switch test.sourceType {
 			case "tar":
-				testPath = getDummyTar(t, fs.(*afero.MemMapFs), "/image.tar", test.paths...)
+				testPath = getDummyTar(t, fs.(*afero.MemMapFs), "image.tar", test.paths...)
 			case "dir":
-				testPath = getDummyPath(t, fs.(*afero.MemMapFs), "/image", test.paths...)
+				testPath = getDummyPath(t, fs.(*afero.MemMapFs), "image", test.paths...)
 			case "none":
 				testPath = "/does-not-exist"
 			default:
@@ -327,6 +352,12 @@ func TestDetectSourceFromPath(t *testing.T) {
 // note: we do not pass the afero.Fs interface since we are writing out to the root of the filesystem, something we never want to do with an OS filesystem. This type is more explicit.
 func getDummyTar(t *testing.T, fs *afero.MemMapFs, archivePath string, paths ...string) string {
 	t.Helper()
+
+	archivePath, err := homedir.Expand(archivePath)
+	if err != nil {
+		t.Fatalf("unable to expand home path=%q: %+v", archivePath, err)
+	}
+
 	testFile, err := fs.Create(archivePath)
 	if err != nil {
 		t.Fatalf("failed to create dummy tar: %+v", err)
@@ -358,8 +389,13 @@ func getDummyTar(t *testing.T, fs *afero.MemMapFs, archivePath string, paths ...
 // note: we do not pass the afero.Fs interface since we are writing out to the root of the filesystem, something we never want to do with an OS filesystem. This type is more explicit.
 func getDummyPath(t *testing.T, fs *afero.MemMapFs, dirPath string, paths ...string) string {
 	t.Helper()
-	err := fs.Mkdir(dirPath, os.ModePerm)
+
+	dirPath, err := homedir.Expand(dirPath)
 	if err != nil {
+		t.Fatalf("unable to expand home dir=%q: %+v", dirPath, err)
+	}
+
+	if err = fs.Mkdir(dirPath, os.ModePerm); err != nil {
 		t.Fatalf("failed to create dummy tar: %+v", err)
 	}
 
