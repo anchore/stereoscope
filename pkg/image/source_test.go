@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestParseImageSpec(t *testing.T) {
+func TestDetectSource(t *testing.T) {
 	cases := []struct {
 		name             string
 		input            string
@@ -24,6 +24,19 @@ func TestParseImageSpec(t *testing.T) {
 			input:            "docker-archive:a/place.tar",
 			source:           DockerTarballSource,
 			expectedLocation: "a/place.tar",
+		},
+		{
+			name:             "docker-engine-by-possible-id",
+			input:            "a5e",
+			source:           DockerDaemonSource,
+			expectedLocation: "a5e",
+		},
+		{
+			name:             "docker-engine-impossible-id",
+			// not a valid ID
+			input:            "a5E",
+			source:           UnknownSource,
+			expectedLocation: "a5E",
 		},
 		{
 			name:             "docker-engine",
@@ -119,7 +132,7 @@ func TestParseImageSpec(t *testing.T) {
 	}
 }
 
-func TestParseSource(t *testing.T) {
+func TestParseScheme(t *testing.T) {
 	cases := []struct {
 		source   string
 		expected Source
