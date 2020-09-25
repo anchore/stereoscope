@@ -42,8 +42,8 @@ var AllSources = []Source{
 // Source is a concrete a selection of valid concrete image providers.
 type Source uint8
 
-// couldBeDockerReference takes a string and indicates if it conforms to a docker image reference.
-func couldBeDockerReference(imageSpec string) bool {
+// isDockerReference takes a string and indicates if it conforms to a docker image reference.
+func isDockerReference(imageSpec string) bool {
 	// note: strict validation requires there to be a default registry (e.g. docker.io) which we cannot assume will be provided
 	// we only want to validate the bare minimum number of image specification features, not exhaustive.
 	_, err := name.ParseReference(imageSpec, name.WeakValidation)
@@ -98,7 +98,7 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 	}
 
 	if source == UnknownSource {
-		if couldBeDockerReference(userInput) {
+		if isDockerReference(userInput) {
 			// ignore any source hint since the source is ultimately unknown, see if this could be a docker image
 			return DockerDaemonSource, userInput, nil
 		}
