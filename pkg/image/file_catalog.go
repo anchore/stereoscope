@@ -37,6 +37,12 @@ func (c *FileCatalog) Add(f file.Reference, m file.Metadata, s *Layer) {
 	}
 }
 
+// Exists indicates if the given file reference exists in the catalog.
+func (c *FileCatalog) Exists(f file.Reference) bool {
+	_, ok := c.catalog[f.ID()]
+	return ok
+}
+
 // Get fetches a FileCatalogEntry for the given file reference, or returns an error if the file reference has not
 // been added to the catalog.
 func (c *FileCatalog) Get(f file.Reference) (FileCatalogEntry, error) {
