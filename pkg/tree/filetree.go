@@ -249,15 +249,12 @@ func (t *FileTree) Merge(other *FileTree) {
 	}
 
 	visitor := other.VisitorFn(func(f file.Reference) {
-		// opaque whiteouts must be processed first
-		opaqueWhiteoutChild := file.Path(path.Join(string(f.Path), file.OpaqueWhiteout))
-		if other.HasPath(opaqueWhiteoutChild) {
+		// opaque directories must be processed first
+		if other.hasOpaqueDirectory(f.Path) {
 			err := t.RemoveChildPaths(f.Path)
 			if err != nil {
 				log.Errorf("filetree merge failed to remove child paths (path=%s): %w", f.Path, err)
 			}
-
-			return
 		}
 
 		if f.Path.IsWhiteout() {
@@ -270,20 +267,28 @@ func (t *FileTree) Merge(other *FileTree) {
 			if err != nil {
 				log.Errorf("filetree merge failed to remove path (path=%s): %w", lowerPath, err)
 			}
-		} else {
-			if !t.HasPath(f.Path) {
-				_, err := t.AddPath(f.Path)
-				if err != nil {
-					log.Errorf("filetree merge failed to add path (path=%s): %w", f.Path, err)
-				}
-			}
-			err := t.SetFile(f)
+
+			return
+		}
+
+		if !t.HasPath(f.Path) {
+			_, err := t.AddPath(f.Path)
 			if err != nil {
-				log.Errorf("filetree merge failed to set file reference (ref=%+v): %w", f, err)
+				log.Errorf("filetree merge failed to add path (path=%s): %w", f.Path, err)
 			}
+		}
+
+		err := t.SetFile(f)
+		if err != nil {
+			log.Errorf("filetree merge failed to set file reference (ref=%+v): %w", f, err)
 		}
 	})
 
 	w := NewDepthFirstWalkerWithConditions(other.Reader(), visitor, conditions)
 	w.WalkAll()
+}
+
+func (t *FileTree) hasOpaqueDirectory(directoryPath file.Path) bool {
+	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
+	return t.HasPath(opaqueWhiteoutChild)
 }
