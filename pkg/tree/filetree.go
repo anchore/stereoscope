@@ -18,9 +18,18 @@ type FileTree struct {
 
 // NewFileTree creates a new FileTree instance.
 func NewFileTree() *FileTree {
+	tree := newTree()
+
+	// Initialize FileTree with a root "/" node
+	root := file.Path("/")
+	_ = tree.AddRoot(root)
+
+	pathToFileRef := make(map[node.ID]file.Reference)
+	pathToFileRef[root.ID()] = file.NewFileReference(root)
+
 	return &FileTree{
-		tree:          newTree(),
-		pathToFileRef: make(map[node.ID]file.Reference),
+		tree:          tree,
+		pathToFileRef: pathToFileRef,
 	}
 }
 
@@ -28,7 +37,7 @@ func NewFileTree() *FileTree {
 func (t *FileTree) Copy() (*FileTree, error) {
 	dest := NewFileTree()
 	for _, fileNode := range t.pathToFileRef {
-		_, err := dest.AddPath(fileNode.Path)
+		_, err := dest.AddPathAndMissingAncestors(fileNode.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -113,42 +122,72 @@ func (t *FileTree) SetFile(f file.Reference) error {
 	return nil
 }
 
-// AddPath adds a new path (and all containing paths) to the tree. The resulting file.Reference of the new
-// (leaf) addition is returned.
+// AddPath adds a new path to the tree. The path's parent node must already
+// exist, otherwise an error is returned. The resulting file.Reference of the
+// new (leaf) addition is returned.
 func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 	if f, ok := t.pathToFileRef[path.ID()]; ok {
 		return f, nil
 	}
 
-	parent, err := path.ParentPath()
-	var parentNode *file.Reference
-	if err == nil {
-		if pNode, ok := t.pathToFileRef[parent.ID()]; !ok {
-			pNode, err = t.AddPath(parent)
-			if err != nil {
-				return file.Reference{}, err
-			}
-			parentNode = &pNode
-		} else {
-			parentNode = &pNode
+	if path == "/" {
+		f := file.NewFileReference(path)
+		err := t.tree.AddRoot(f.Path)
+		if err != nil {
+			return file.Reference{}, err
 		}
+		return f, nil
+	}
+
+	parent, err := path.ParentPath()
+	if err != nil {
+		return file.Reference{}, fmt.Errorf("unable to add path: %w", err)
+	}
+
+	parentNode, ok := t.pathToFileRef[parent.ID()]
+	if !ok {
+		return file.Reference{}, fmt.Errorf("unable to add path: parent node must already exist")
 	}
 
 	f := file.NewFileReference(path)
 	if !t.tree.HasNode(path.ID()) {
 		// add the node to the tree
-		var err error
-		if parentNode == nil {
-			err = t.tree.AddRoot(f.Path)
-		} else {
-			err = t.tree.AddChild(parentNode.Path, f.Path)
-		}
+		err = t.tree.AddChild(parentNode.Path, f.Path)
 		if err != nil {
 			return file.Reference{}, err
 		}
 
 		// track the path for fast lookup
 		t.pathToFileRef[f.Path.ID()] = f
+	}
+
+	return f, nil
+}
+
+// AddPathAndMissingAncestors adds a new path to the tree. It also adds any
+// ancestors of the path that are not already present in the tree. The resulting
+// file.Reference of the // new (leaf) addition is returned.
+func (t *FileTree) AddPathAndMissingAncestors(path file.Path) (file.Reference, error) {
+	if f, ok := t.pathToFileRef[path.ID()]; ok {
+		return f, nil
+	}
+
+	//  Recursively add parents of the node until an existent parent is found
+	parent, err := path.ParentPath()
+	if err == nil {
+		_, ok := t.pathToFileRef[parent.ID()]
+		if !ok {
+			_, err = t.AddPathAndMissingAncestors(parent)
+			if err != nil {
+				return file.Reference{}, err
+			}
+		}
+	}
+
+	// Add this path itself
+	f, err := t.AddPath(path)
+	if err != nil {
+		return file.Reference{}, err
 	}
 
 	return f, nil

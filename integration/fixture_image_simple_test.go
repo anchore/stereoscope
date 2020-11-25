@@ -134,8 +134,8 @@ func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 	three := tree.NewFileTree()
 	three.AddPath("/somefile-1.txt")
 	three.AddPath("/somefile-2.txt")
-	three.AddPath("/really/.wh..wh..opq")
-	three.AddPath("/really/nested/file-3.txt")
+	three.AddPathAndMissingAncestors("/really/.wh..wh..opq")
+	three.AddPathAndMissingAncestors("/really/nested/file-3.txt")
 
 	expectedTrees := map[uint]*tree.FileTree{
 		0: one,
@@ -154,7 +154,7 @@ func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 	squashed := tree.NewFileTree()
 	squashed.AddPath("/somefile-1.txt")
 	squashed.AddPath("/somefile-2.txt")
-	squashed.AddPath("/really/nested/file-3.txt")
+	squashed.AddPathAndMissingAncestors("/really/nested/file-3.txt")
 
 	compareSquashTree(t, squashed, i)
 }
@@ -168,8 +168,8 @@ func assertImageSimpleTrees(t *testing.T, i *image.Image) {
 	two.AddPath("/somefile-2.txt")
 
 	three := tree.NewFileTree()
-	three.AddPath("/really/.wh..wh..opq")
-	three.AddPath("/really/nested/file-3.txt")
+	three.AddPathAndMissingAncestors("/really/.wh..wh..opq")
+	three.AddPathAndMissingAncestors("/really/nested/file-3.txt")
 
 	expectedTrees := map[uint]*tree.FileTree{
 		0: one,

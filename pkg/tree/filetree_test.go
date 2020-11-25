@@ -9,8 +9,25 @@ import (
 
 func TestFileTree_AddPath(t *testing.T) {
 	tr := NewFileTree()
-	path := file.Path("/home/wagoodman/awesome/file.txt")
+	path := file.Path("/home")
 	fileNode, err := tr.AddPath(path)
+	if err != nil {
+		t.Fatal("could not add path", err)
+	}
+
+	if len(tr.pathToFileRef) != 2 {
+		t.Fatal("unexpected file count", len(tr.pathToFileRef))
+	}
+
+	if *tr.File(path) != fileNode {
+		t.Fatal("expected pointer to the newly created fileNode")
+	}
+}
+
+func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
+	tr := NewFileTree()
+	path := file.Path("/home/wagoodman/awesome/file.txt")
+	fileNode, err := tr.AddPathAndMissingAncestors(path)
 	if err != nil {
 		t.Fatal("could not add path", err)
 	}
@@ -20,7 +37,7 @@ func TestFileTree_AddPath(t *testing.T) {
 	}
 
 	if *tr.File(path) != fileNode {
-		t.Fatal("expected pointed to the newly created fileNode")
+		t.Fatal("expected pointer to the newly created fileNode")
 	}
 
 	parent := file.Path("/home/wagoodman")
@@ -35,13 +52,12 @@ func TestFileTree_AddPath(t *testing.T) {
 	if children[0].ID() != child.ID() {
 		t.Fatal("unexpected child", children[0])
 	}
-
 }
 
 func TestFileTree_RemovePath(t *testing.T) {
 	tr := NewFileTree()
 	path := file.Path("/home/wagoodman/awesome/file.txt")
-	_, err := tr.AddPath(path)
+	_, err := tr.AddPathAndMissingAncestors(path)
 	if err != nil {
 		t.Fatal("could not add path", err)
 	}
@@ -79,7 +95,7 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 	}
 
 	for _, p := range paths {
-		_, err := tr.AddPath(file.Path(p))
+		_, err := tr.AddPathAndMissingAncestors(file.Path(p))
 		if err != nil {
 			t.Fatalf("failed to add path ('%s'): %+v", p, err)
 		}
@@ -207,10 +223,10 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 
 func TestFileTree_Merge_Overwite(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+	tr1.AddPathAndMissingAncestors("/home/wagoodman/awesome/file.txt")
 
 	tr2 := NewFileTree()
-	new, _ := tr2.AddPath("/home/wagoodman/awesome/file.txt")
+	new, _ := tr2.AddPathAndMissingAncestors("/home/wagoodman/awesome/file.txt")
 
 	tr1.Merge(tr2)
 
@@ -222,10 +238,10 @@ func TestFileTree_Merge_Overwite(t *testing.T) {
 
 func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+	tr1.AddPathAndMissingAncestors("/home/wagoodman/awesome/file.txt")
 
 	tr2 := NewFileTree()
-	tr2.AddPath("/home/wagoodman/.wh..wh..opq")
+	tr2.AddPathAndMissingAncestors("/home/wagoodman/.wh..wh..opq")
 
 	tr1.Merge(tr2)
 
@@ -245,10 +261,10 @@ func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 
 func TestFileTree_Merge_Whiteout(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+	tr1.AddPathAndMissingAncestors("/home/wagoodman/awesome/file.txt")
 
 	tr2 := NewFileTree()
-	tr2.AddPath("/home/wagoodman/awesome/.wh.file.txt")
+	tr2.AddPathAndMissingAncestors("/home/wagoodman/awesome/.wh.file.txt")
 
 	tr1.Merge(tr2)
 

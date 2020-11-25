@@ -71,7 +71,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 	}
 
 	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
-		fileNode, err := l.Tree.AddPath(file.Path(metadata.Path))
+		fileNode, err := l.Tree.AddPathAndMissingAncestors(file.Path(metadata.Path))
 		l.Metadata.Size += metadata.Size
 
 		catalog.Add(fileNode, metadata, l)
