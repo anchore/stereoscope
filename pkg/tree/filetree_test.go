@@ -259,6 +259,22 @@ func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 
 }
 
+func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
+	tr1 := NewFileTree()
+	tr1.AddPathAndMissingAncestors("/home")
+
+	tr2 := NewFileTree()
+	tr2.AddPathAndMissingAncestors("/home/luhring/.wh..wh..opq")
+
+	tr1.Merge(tr2)
+
+	for _, p := range []file.Path{"/home/wagoodman", "/home"} {
+		if !tr1.HasPath(p) {
+			t.Errorf("missing expected path: %s", p)
+		}
+	}
+}
+
 func TestFileTree_Merge_Whiteout(t *testing.T) {
 	tr1 := NewFileTree()
 	tr1.AddPathAndMissingAncestors("/home/wagoodman/awesome/file.txt")
