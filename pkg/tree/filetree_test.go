@@ -268,7 +268,7 @@ func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
 
 	tr1.Merge(tr2)
 
-	for _, p := range []file.Path{"/home/wagoodman", "/home"} {
+	for _, p := range []file.Path{"/home/luhring", "/home"} {
 		if !tr1.HasPath(p) {
 			t.Errorf("missing expected path: %s", p)
 		}

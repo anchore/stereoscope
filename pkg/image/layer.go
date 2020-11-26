@@ -1,6 +1,8 @@
 package image
 
 import (
+	"errors"
+
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -63,6 +65,10 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 	l.Tree = tree.NewFileTree()
 	l.fileCatalog = catalog
 
+	// Add tree root to catalog in case it's not added during TAR reading
+	root := l.Tree.File("/")
+	catalog.Add(*root, file.Metadata{}, l)
+
 	monitor := l.trackReadProgress(metadata)
 
 	reader, err := l.content.Uncompressed()
@@ -82,6 +88,11 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 
 		monitor.N++
 	}
+
+	if !catalog.HasEntriesForAllFilesInTree(*l.Tree) {
+		return errors.New("layer read failed: FileCatalog doesn't have an entry for all files in FileTree")
+	}
+
 	monitor.SetCompleted()
 
 	return nil

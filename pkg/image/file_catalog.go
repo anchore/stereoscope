@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io/ioutil"
 
+	"github.com/anchore/stereoscope/pkg/tree"
+
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
@@ -117,4 +119,16 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 	}
 
 	return allResults, nil
+}
+
+// HasEntriesForAllFilesInTree checks to see if the catalog has an entry for
+// every node ( file / directory) in the FileTree.
+func (c *FileCatalog) HasEntriesForAllFilesInTree(tree tree.FileTree) bool {
+	for _, f := range tree.AllFiles() {
+		if !c.Exists(f) {
+			return false
+		}
+	}
+
+	return true
 }
