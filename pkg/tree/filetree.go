@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"errors"
 	"fmt"
 	"path"
 
@@ -10,6 +11,8 @@ import (
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
+var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
+
 // FileTree represents a file/directory tree
 type FileTree struct {
 	pathToFileRef map[node.ID]file.Reference
@@ -18,9 +21,18 @@ type FileTree struct {
 
 // NewFileTree creates a new FileTree instance.
 func NewFileTree() *FileTree {
+	tree := newTree()
+
+	// Initialize FileTree with a root "/" node
+	root := file.Path("/")
+	_ = tree.AddRoot(root)
+
+	pathToFileRef := make(map[node.ID]file.Reference)
+	pathToFileRef[root.ID()] = file.NewFileReference(root)
+
 	return &FileTree{
-		tree:          newTree(),
-		pathToFileRef: make(map[node.ID]file.Reference),
+		tree:          tree,
+		pathToFileRef: pathToFileRef,
 	}
 }
 
@@ -28,7 +40,7 @@ func NewFileTree() *FileTree {
 func (t *FileTree) Copy() (*FileTree, error) {
 	dest := NewFileTree()
 	for _, fileNode := range t.pathToFileRef {
-		_, err := dest.AddPath(fileNode.Path)
+		_, err := dest.AddPathAndAncestors(fileNode.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -113,36 +125,28 @@ func (t *FileTree) SetFile(f file.Reference) error {
 	return nil
 }
 
-// AddPath adds a new path (and all containing paths) to the tree. The resulting file.Reference of the new
-// (leaf) addition is returned.
+// AddPath adds a new path to the tree. The path's parent node must already
+// exist, otherwise an error is returned. The resulting file.Reference of the
+// new (leaf) addition is returned.
 func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 	if f, ok := t.pathToFileRef[path.ID()]; ok {
 		return f, nil
 	}
 
 	parent, err := path.ParentPath()
-	var parentNode *file.Reference
-	if err == nil {
-		if pNode, ok := t.pathToFileRef[parent.ID()]; !ok {
-			pNode, err = t.AddPath(parent)
-			if err != nil {
-				return file.Reference{}, err
-			}
-			parentNode = &pNode
-		} else {
-			parentNode = &pNode
-		}
+	if err != nil {
+		return file.Reference{}, fmt.Errorf("unable to add path: %w", err)
+	}
+
+	parentNode, ok := t.pathToFileRef[parent.ID()]
+	if !ok {
+		return file.Reference{}, fmt.Errorf("unable to add path: parent node must already exist")
 	}
 
 	f := file.NewFileReference(path)
 	if !t.tree.HasNode(path.ID()) {
 		// add the node to the tree
-		var err error
-		if parentNode == nil {
-			err = t.tree.AddRoot(f.Path)
-		} else {
-			err = t.tree.AddChild(parentNode.Path, f.Path)
-		}
+		err = t.tree.AddChild(parentNode.Path, f.Path)
 		if err != nil {
 			return file.Reference{}, err
 		}
@@ -154,8 +158,41 @@ func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 	return f, nil
 }
 
+// AddPathAndAncestors adds a new path to the tree. It also adds any
+// ancestors of the path that are not already present in the tree. The resulting
+// file.Reference of the // new (leaf) addition is returned.
+func (t *FileTree) AddPathAndAncestors(path file.Path) (file.Reference, error) {
+	if f, ok := t.pathToFileRef[path.ID()]; ok {
+		return f, nil
+	}
+
+	//  Recursively add parents of the node until an existent parent is found
+	parent, err := path.ParentPath()
+	if err == nil {
+		_, ok := t.pathToFileRef[parent.ID()]
+		if !ok {
+			_, err = t.AddPathAndAncestors(parent)
+			if err != nil {
+				return file.Reference{}, err
+			}
+		}
+	}
+
+	// Add this path itself
+	f, err := t.AddPath(path)
+	if err != nil {
+		return file.Reference{}, err
+	}
+
+	return f, nil
+}
+
 // RemovePath deletes the file.Reference from the FileTree by the given path.
 func (t *FileTree) RemovePath(path file.Path) error {
+	if path.Normalize() == "/" {
+		return ErrRemovingRoot
+	}
+
 	removedNodes, err := t.tree.RemoveNode(path)
 	if err != nil {
 		return err
@@ -249,15 +286,12 @@ func (t *FileTree) Merge(other *FileTree) {
 	}
 
 	visitor := other.VisitorFn(func(f file.Reference) {
-		// opaque whiteouts must be processed first
-		opaqueWhiteoutChild := file.Path(path.Join(string(f.Path), file.OpaqueWhiteout))
-		if other.HasPath(opaqueWhiteoutChild) {
+		// opaque directories must be processed first
+		if other.hasOpaqueDirectory(f.Path) {
 			err := t.RemoveChildPaths(f.Path)
 			if err != nil {
 				log.Errorf("filetree merge failed to remove child paths (path=%s): %w", f.Path, err)
 			}
-
-			return
 		}
 
 		if f.Path.IsWhiteout() {
@@ -270,20 +304,28 @@ func (t *FileTree) Merge(other *FileTree) {
 			if err != nil {
 				log.Errorf("filetree merge failed to remove path (path=%s): %w", lowerPath, err)
 			}
-		} else {
-			if !t.HasPath(f.Path) {
-				_, err := t.AddPath(f.Path)
-				if err != nil {
-					log.Errorf("filetree merge failed to add path (path=%s): %w", f.Path, err)
-				}
-			}
-			err := t.SetFile(f)
+
+			return
+		}
+
+		if !t.HasPath(f.Path) {
+			_, err := t.AddPath(f.Path)
 			if err != nil {
-				log.Errorf("filetree merge failed to set file reference (ref=%+v): %w", f, err)
+				log.Errorf("filetree merge failed to add path (path=%s): %w", f.Path, err)
 			}
+		}
+
+		err := t.SetFile(f)
+		if err != nil {
+			log.Errorf("filetree merge failed to set file reference (ref=%+v): %w", f, err)
 		}
 	})
 
 	w := NewDepthFirstWalkerWithConditions(other.Reader(), visitor, conditions)
 	w.WalkAll()
+}
+
+func (t *FileTree) hasOpaqueDirectory(directoryPath file.Path) bool {
+	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
+	return t.HasPath(opaqueWhiteoutChild)
 }

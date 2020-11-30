@@ -9,9 +9,9 @@ import (
 
 func dfsTestTree() *FileTree {
 	tr := NewFileTree()
-	tr.AddPath("/home/wagoodman/some/stuff-1.txt")
-	tr.AddPath("/home/wagoodman/some/stuff-2.txt")
-	tr.AddPath("/home/wagoodman/more/file.txt")
+	tr.AddPathAndAncestors("/home/wagoodman/some/stuff-1.txt")
+	tr.AddPathAndAncestors("/home/wagoodman/some/stuff-2.txt")
+	tr.AddPathAndAncestors("/home/wagoodman/more/file.txt")
 	return tr
 }
 
@@ -41,12 +41,12 @@ func TestDFS_WalkAll(t *testing.T) {
 	walker.WalkAll()
 
 	if len(actual) != len(expected) {
-		t.Errorf("BFS (WalkAll) did not traverse all nodes (expected %d, got %d)", len(expected), len(actual))
+		t.Errorf("DFS (WalkAll) did not traverse all nodes (expected %d, got %d)", len(expected), len(actual))
 	}
 
 	for idx, a := range actual {
 		if expected[idx].ID() != a.Path.ID() {
-			t.Errorf("expected BFS visit ID @%v = '%v', got %v", idx, expected[idx], a)
+			t.Errorf("expected DFS visit ID @%v = '%v', got %v", idx, expected[idx], a)
 		}
 	}
 }
@@ -170,4 +170,17 @@ func TestDFS_Walk_ShouldPruneBranch(t *testing.T) {
 	walker.WalkAll()
 
 	assertExpectedTraversal(t, expected, actual)
+}
+
+func assertExpectedTraversal(t *testing.T, expected []file.Path, actual []file.Reference) {
+	t.Helper()
+	if len(actual) != len(expected) {
+		t.Errorf("Did not traverse all nodes (expected %d, got %d)", len(expected), len(actual))
+	}
+
+	for idx, a := range actual {
+		if expected[idx].ID() != a.Path.ID() {
+			t.Errorf("expected visit ID @%v = '%v', got %v", idx, expected[idx], a.ID())
+		}
+	}
 }

@@ -10,16 +10,16 @@ func TestUnionFileTree_Squash(t *testing.T) {
 	ut := NewUnionTree()
 	base := NewFileTree()
 
-	base.AddPath("/home/wagoodman/some/stuff-1.txt")
-	originalNode, _ := base.AddPath("/home/wagoodman/some/stuff-2-overlap.txt")
-	base.AddPath("/home/wagoodman/more")
+	base.AddPathAndAncestors("/home/wagoodman/some/stuff-1.txt")
+	originalNode, _ := base.AddPathAndAncestors("/home/wagoodman/some/stuff-2-overlap.txt")
+	base.AddPathAndAncestors("/home/wagoodman/more")
 
 	top := NewFileTree()
-	top.AddPath("/etc/redhat-release")
-	top.AddPath("/home/wagoodman/more/things.txt")
-	newNode, _ := top.AddPath("/home/wagoodman/some/stuff-2-overlap.txt")
-	top.AddPath("/home/wagoodman/some/stuff-3.txt")
-	top.AddPath("/home/wagoodman/another/other-1.txt")
+	top.AddPathAndAncestors("/etc/redhat-release")
+	top.AddPathAndAncestors("/home/wagoodman/more/things.txt")
+	newNode, _ := top.AddPathAndAncestors("/home/wagoodman/some/stuff-2-overlap.txt")
+	top.AddPathAndAncestors("/home/wagoodman/some/stuff-3.txt")
+	top.AddPathAndAncestors("/home/wagoodman/another/other-1.txt")
 
 	ut.PushTree(base)
 	ut.PushTree(top)
@@ -56,13 +56,13 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 	ut := NewUnionTree()
 	base := NewFileTree()
 
-	base.AddPath("/some/stuff-1.txt")
-	base.AddPath("/some/stuff-2.txt")
-	base.AddPath("/other/things-1.txt")
+	base.AddPathAndAncestors("/some/stuff-1.txt")
+	base.AddPathAndAncestors("/some/stuff-2.txt")
+	base.AddPathAndAncestors("/other/things-1.txt")
 
 	top := NewFileTree()
-	top.AddPath("/some/" + file.OpaqueWhiteout)
-	top.AddPath("/other/" + file.WhiteoutPrefix + "things-1.txt")
+	top.AddPathAndAncestors("/some/" + file.OpaqueWhiteout)
+	top.AddPathAndAncestors("/other/" + file.WhiteoutPrefix + "things-1.txt")
 
 	ut.PushTree(base)
 	ut.PushTree(top)
