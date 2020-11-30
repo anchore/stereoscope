@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"errors"
 	"fmt"
 	"path"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
+
+var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
 
 // FileTree represents a file/directory tree
 type FileTree struct {
@@ -195,6 +198,10 @@ func (t *FileTree) AddPathAndAncestors(path file.Path) (file.Reference, error) {
 
 // RemovePath deletes the file.Reference from the FileTree by the given path.
 func (t *FileTree) RemovePath(path file.Path) error {
+	if path.Normalize() == "/" {
+		return ErrRemovingRoot
+	}
+
 	removedNodes, err := t.tree.RemoveNode(path)
 	if err != nil {
 		return err

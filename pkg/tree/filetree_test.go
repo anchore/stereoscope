@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/anchore/stereoscope/internal"
@@ -79,6 +80,10 @@ func TestFileTree_RemovePath(t *testing.T) {
 		t.Fatal("expected file to be missing")
 	}
 
+	err = tr.RemovePath("/")
+	if !errors.Is(err, ErrRemovingRoot) {
+		t.Fatalf("should not be able to remove root path, but the call returned err: %v", err)
+	}
 }
 
 func TestFileTree_FilesByRegex(t *testing.T) {
