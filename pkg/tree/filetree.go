@@ -133,15 +133,6 @@ func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 		return f, nil
 	}
 
-	if path == "/" {
-		f := file.NewFileReference(path)
-		err := t.tree.AddRoot(f.Path)
-		if err != nil {
-			return file.Reference{}, err
-		}
-		return f, nil
-	}
-
 	parent, err := path.ParentPath()
 	if err != nil {
 		return file.Reference{}, fmt.Errorf("unable to add path: %w", err)
