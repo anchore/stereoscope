@@ -37,7 +37,7 @@ func NewFileTree() *FileTree {
 func (t *FileTree) Copy() (*FileTree, error) {
 	dest := NewFileTree()
 	for _, fileNode := range t.pathToFileRef {
-		_, err := dest.AddPathAndMissingAncestors(fileNode.Path)
+		_, err := dest.AddPathAndAncestors(fileNode.Path)
 		if err != nil {
 			return nil, err
 		}
@@ -164,10 +164,10 @@ func (t *FileTree) AddPath(path file.Path) (file.Reference, error) {
 	return f, nil
 }
 
-// AddPathAndMissingAncestors adds a new path to the tree. It also adds any
+// AddPathAndAncestors adds a new path to the tree. It also adds any
 // ancestors of the path that are not already present in the tree. The resulting
 // file.Reference of the // new (leaf) addition is returned.
-func (t *FileTree) AddPathAndMissingAncestors(path file.Path) (file.Reference, error) {
+func (t *FileTree) AddPathAndAncestors(path file.Path) (file.Reference, error) {
 	if f, ok := t.pathToFileRef[path.ID()]; ok {
 		return f, nil
 	}
@@ -177,7 +177,7 @@ func (t *FileTree) AddPathAndMissingAncestors(path file.Path) (file.Reference, e
 	if err == nil {
 		_, ok := t.pathToFileRef[parent.ID()]
 		if !ok {
-			_, err = t.AddPathAndMissingAncestors(parent)
+			_, err = t.AddPathAndAncestors(parent)
 			if err != nil {
 				return file.Reference{}, err
 			}

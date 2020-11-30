@@ -9,9 +9,9 @@ import (
 
 func dfsTestTree() *FileTree {
 	tr := NewFileTree()
-	tr.AddPathAndMissingAncestors("/home/wagoodman/some/stuff-1.txt")
-	tr.AddPathAndMissingAncestors("/home/wagoodman/some/stuff-2.txt")
-	tr.AddPathAndMissingAncestors("/home/wagoodman/more/file.txt")
+	tr.AddPathAndAncestors("/home/wagoodman/some/stuff-1.txt")
+	tr.AddPathAndAncestors("/home/wagoodman/some/stuff-2.txt")
+	tr.AddPathAndAncestors("/home/wagoodman/more/file.txt")
 	return tr
 }
 

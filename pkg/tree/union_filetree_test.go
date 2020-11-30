@@ -10,16 +10,16 @@ func TestUnionFileTree_Squash(t *testing.T) {
 	ut := NewUnionTree()
 	base := NewFileTree()
 
-	base.AddPathAndMissingAncestors("/home/wagoodman/some/stuff-1.txt")
-	originalNode, _ := base.AddPathAndMissingAncestors("/home/wagoodman/some/stuff-2-overlap.txt")
-	base.AddPathAndMissingAncestors("/home/wagoodman/more")
+	base.AddPathAndAncestors("/home/wagoodman/some/stuff-1.txt")
+	originalNode, _ := base.AddPathAndAncestors("/home/wagoodman/some/stuff-2-overlap.txt")
+	base.AddPathAndAncestors("/home/wagoodman/more")
 
 	top := NewFileTree()
-	top.AddPathAndMissingAncestors("/etc/redhat-release")
-	top.AddPathAndMissingAncestors("/home/wagoodman/more/things.txt")
-	newNode, _ := top.AddPathAndMissingAncestors("/home/wagoodman/some/stuff-2-overlap.txt")
-	top.AddPathAndMissingAncestors("/home/wagoodman/some/stuff-3.txt")
-	top.AddPathAndMissingAncestors("/home/wagoodman/another/other-1.txt")
+	top.AddPathAndAncestors("/etc/redhat-release")
+	top.AddPathAndAncestors("/home/wagoodman/more/things.txt")
+	newNode, _ := top.AddPathAndAncestors("/home/wagoodman/some/stuff-2-overlap.txt")
+	top.AddPathAndAncestors("/home/wagoodman/some/stuff-3.txt")
+	top.AddPathAndAncestors("/home/wagoodman/another/other-1.txt")
 
 	ut.PushTree(base)
 	ut.PushTree(top)
@@ -56,13 +56,13 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 	ut := NewUnionTree()
 	base := NewFileTree()
 
-	base.AddPathAndMissingAncestors("/some/stuff-1.txt")
-	base.AddPathAndMissingAncestors("/some/stuff-2.txt")
-	base.AddPathAndMissingAncestors("/other/things-1.txt")
+	base.AddPathAndAncestors("/some/stuff-1.txt")
+	base.AddPathAndAncestors("/some/stuff-2.txt")
+	base.AddPathAndAncestors("/other/things-1.txt")
 
 	top := NewFileTree()
-	top.AddPathAndMissingAncestors("/some/" + file.OpaqueWhiteout)
-	top.AddPathAndMissingAncestors("/other/" + file.WhiteoutPrefix + "things-1.txt")
+	top.AddPathAndAncestors("/some/" + file.OpaqueWhiteout)
+	top.AddPathAndAncestors("/other/" + file.WhiteoutPrefix + "things-1.txt")
 
 	ut.PushTree(base)
 	ut.PushTree(top)

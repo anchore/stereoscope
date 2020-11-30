@@ -25,7 +25,7 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 			name: "identical set of files",
 			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
 				for _, p := range filePaths {
-					f, err := fileTree.AddPathAndMissingAncestors(p)
+					f, err := fileTree.AddPathAndAncestors(p)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -38,7 +38,7 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 			name: "catalog missing one file that tree has",
 			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
 				for i, p := range filePaths {
-					f, err := fileTree.AddPathAndMissingAncestors(p)
+					f, err := fileTree.AddPathAndAncestors(p)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -59,7 +59,7 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 						return
 					}
 
-					f, err := fileTree.AddPathAndMissingAncestors(p)
+					f, err := fileTree.AddPathAndAncestors(p)
 					if err != nil {
 						t.Fatal(err)
 					}
