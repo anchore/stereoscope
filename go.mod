@@ -9,6 +9,7 @@ require (
 	github.com/containerd/continuity v0.0.0-20200710164510-efbc4488d8fe // indirect
 	github.com/docker/cli v0.0.0-20191017083524-a8ff7f821017
 	github.com/docker/docker v17.12.0-ce-rc1.0.20200309214505-aa6a9891b09c+incompatible
+	github.com/go-test/deep v1.0.7
 	github.com/google/go-containerregistry v0.1.0
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/logrusorgru/aurora v0.0.0-20200102142835-e9ef32dff381

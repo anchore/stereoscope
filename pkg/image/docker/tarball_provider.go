@@ -1,6 +1,12 @@
 package docker
 
 import (
+	"fmt"
+	"io/ioutil"
+	"os"
+
+	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
@@ -24,10 +30,36 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 		return nil, err
 	}
 
-	tags, err := extractTags(p.path)
+	theManifest, err := p.extractManifest()
 	if err != nil {
 		return nil, err
 	}
 
-	return image.NewImageWithTags(img, tags), nil
+	return image.NewImage(img, image.WithTags(theManifest.tags()...), image.WithManifest(theManifest.raw))
+}
+
+// extractManifest is helper function for extracting and parsing a docker image manifest (V2) from a docker image tar.
+func (p *TarballImageProvider) extractManifest() (manifest, error) {
+	f, err := os.Open(p.path)
+	if err != nil {
+		return manifest{}, err
+	}
+
+	defer func() {
+		err := f.Close()
+		if err != nil {
+			log.Errorf("unable to close tar file (%s): %w", f.Name(), err)
+		}
+	}()
+
+	manifestReader, err := file.ReaderFromTar(f, "manifest.json")
+	if err != nil {
+		return manifest{}, err
+	}
+
+	contents, err := ioutil.ReadAll(manifestReader)
+	if err != nil {
+		return manifest{}, fmt.Errorf("unable to read manifest.json: %w", err)
+	}
+	return newManifest(contents)
 }

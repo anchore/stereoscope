@@ -1,5 +1,3 @@
-// +build integration
-
 package integration
 
 import (
@@ -102,5 +100,4 @@ func compareSquashTree(t *testing.T, expected *tree.FileTree, i *image.Image) {
 		t.Errorf("path differences: extra=%+v missing=%+v", extra, missing)
 		t.Errorf("mismatched squashed trees")
 	}
-
 }
