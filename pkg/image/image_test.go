@@ -1,6 +1,8 @@
 package image
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"github.com/go-test/deep"
 	"github.com/google/go-containerregistry/pkg/name"
 	"testing"
@@ -40,7 +42,8 @@ func TestImageAdditionalMetadata(t *testing.T) {
 			},
 			image: Image{
 				Metadata: Metadata{
-					RawManifest: []byte("some bytes"),
+					RawManifest:    []byte("some bytes"),
+					ManifestDigest: fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("some bytes"))),
 				},
 			},
 		},

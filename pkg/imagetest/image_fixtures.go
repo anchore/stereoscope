@@ -9,10 +9,9 @@ import (
 	"testing"
 
 	"github.com/anchore/go-testutils"
-	"github.com/logrusorgru/aurora"
-
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/logrusorgru/aurora"
 )
 
 const (

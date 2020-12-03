@@ -1,15 +1,16 @@
 package docker
 
 import (
+	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"os"
 
-	"github.com/anchore/stereoscope/internal/log"
-	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/apex/log"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
+
+var ErrMultipleManifests = fmt.Errorf("cannot process multiple docker manifests")
 
 // TarballImageProvider is a image.Provider for a docker image (V2) for an existing tar on disk (the output from a "docker image save ..." command).
 type TarballImageProvider struct {
@@ -27,39 +28,41 @@ func NewProviderFromTarball(path string) *TarballImageProvider {
 func (p *TarballImageProvider) Provide() (*image.Image, error) {
 	img, err := tarball.ImageFromPath(p.path, nil)
 	if err != nil {
-		return nil, err
-	}
-
-	theManifest, err := p.extractManifest()
-	if err != nil {
-		return nil, err
-	}
-
-	return image.NewImage(img, image.WithTags(theManifest.tags()...), image.WithManifest(theManifest.raw))
-}
-
-// extractManifest is helper function for extracting and parsing a docker image manifest (V2) from a docker image tar.
-func (p *TarballImageProvider) extractManifest() (manifest, error) {
-	f, err := os.Open(p.path)
-	if err != nil {
-		return manifest{}, err
-	}
-
-	defer func() {
-		err := f.Close()
-		if err != nil {
-			log.Errorf("unable to close tar file (%s): %w", f.Name(), err)
+		// raise a more controlled error for when there are multiple images within the given tar (from https://github.com/anchore/grype/issues/215)
+		if err.Error() == "tarball must contain only a single image to be used with tarball.Image" {
+			return nil, ErrMultipleManifests
 		}
-	}()
-
-	manifestReader, err := file.ReaderFromTar(f, "manifest.json")
-	if err != nil {
-		return manifest{}, err
+		return nil, fmt.Errorf("unable to provide image from tarball: %w", err)
 	}
 
-	contents, err := ioutil.ReadAll(manifestReader)
+	// make a best-effort to generate an OCI manifest and gets tags, but ultimately this should be considered optional
+	var rawOCIManifest []byte
+	var ociManifest *v1.Manifest
+	var metadata []image.AdditionalMetadata
+
+	theManifest, err := extractManifest(p.path)
 	if err != nil {
-		return manifest{}, fmt.Errorf("unable to read manifest.json: %w", err)
+		log.Warnf("could not extract manifest: %+v", err)
 	}
-	return newManifest(contents)
+
+	if theManifest != nil {
+		// given that we have a manifest, continue processing to get the tags and OCI manifest
+		metadata = append(metadata, image.WithTags(theManifest.allTags()...))
+
+		ociManifest, err = generateOCIManifest(p.path, theManifest)
+		if err != nil {
+			log.Warnf("failed to generate OCI manifest from docker archive: %+v", err)
+		}
+	}
+
+	if ociManifest != nil {
+		rawOCIManifest, err = json.Marshal(&ociManifest)
+		if err != nil {
+			log.Warnf("failed to serialize OCI manifest: %+v", err)
+		} else {
+			metadata = append(metadata, image.WithManifest(rawOCIManifest))
+		}
+	}
+
+	return image.NewImage(img, metadata...)
 }

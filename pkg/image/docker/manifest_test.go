@@ -2,21 +2,29 @@ package docker
 
 import (
 	"bytes"
+	"encoding/json"
+	"flag"
+	"github.com/sergi/go-diff/diffmatchpatch"
 	"io/ioutil"
 	"os"
 	"testing"
 
+	"github.com/anchore/go-testutils"
 	"github.com/go-test/deep"
 )
+
+var update = flag.Bool("update", false, "update the *.golden files for the oci manifest assembly test")
 
 func TestNewManifest(t *testing.T) {
 	tests := []struct {
 		fixture           string
 		expectedToBeValid bool
+		expectedConfig    string
 	}{
 		{
 			fixture:           "test-fixtures/valid-multi-manifest-with-tags.json",
 			expectedToBeValid: true,
+			expectedConfig:    "881a352c4517dbf5e561a08dd1c7cf65f6c4349d3ab9b13e95210800e12b14a8.json",
 		},
 		{
 			fixture:           "test-fixtures/empty-file",
@@ -56,12 +64,20 @@ func TestNewManifest(t *testing.T) {
 				return
 			}
 
-			if !bytes.Equal(m.raw, contents) {
-				t.Error("expected raw contents to not be altered but were")
-			}
-
 			if m.parsed == nil {
 				t.Error("failed to parse contents meaningfully and return an error")
+			}
+
+			if len(m.parsed) == 0 {
+				if test.expectedConfig == "" {
+					return
+				} else {
+					t.Fatalf("did not parse the config, but expected a value")
+				}
+			}
+
+			if m.parsed[0].Config != test.expectedConfig {
+				t.Errorf("unpexpected config value (parsing probably failed)")
 			}
 
 		})
@@ -99,9 +115,55 @@ func TestManifestTags(t *testing.T) {
 				t.Fatalf("invalid manifest: %+v", err)
 			}
 
-			for _, d := range deep.Equal(m.tags(), test.tags) {
+			for _, d := range deep.Equal(m.allTags(), test.tags) {
 				t.Errorf("diff: %s", d)
 			}
 		})
 	}
+}
+
+func TestAssembleOCIManifest(t *testing.T) {
+	// note: this is a
+	fh, err := os.Open("test-fixtures/engine-config.json")
+	if err != nil {
+		t.Fatalf("could not open config: %+v", err)
+	}
+
+	configBytes, err := ioutil.ReadAll(fh)
+	if err != nil {
+		t.Fatalf("could not read config: %+v", err)
+	}
+
+	sizes := []int64{
+		210882560,
+		20480,
+		64316928,
+		38535168,
+		1536,
+		56832,
+		232243200,
+	}
+
+	manifest, err := assembleOCIManifest(configBytes, sizes)
+	if err != nil {
+		t.Fatalf("could not assemble manifest: %+v", err)
+	}
+
+	actualBytes, err := json.Marshal(&manifest)
+	if err != nil {
+		t.Fatalf("could not serialize manifest: %+v", err)
+	}
+
+	if *update {
+		testutils.UpdateGoldenFileContents(t, actualBytes)
+	}
+
+	var expectedBytes = testutils.GetGoldenFileContents(t)
+
+	if !bytes.Equal(expectedBytes, actualBytes) {
+		dmp := diffmatchpatch.New()
+		diffs := dmp.DiffMain(string(expectedBytes), string(actualBytes), true)
+		t.Errorf("mismatched output:\n%s", dmp.DiffPrettyText(diffs))
+	}
+
 }

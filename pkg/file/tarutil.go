@@ -63,6 +63,24 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 	return nil, &ErrFileNotFound{tarPath}
 }
 
+// MetadataFromTar returns the tar metadata from the header info.
+func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
+	tarReader := tar.NewReader(reader)
+	for {
+		hdr, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return Metadata{}, fmt.Errorf("unable to get next tar header: %w", err)
+		}
+		if hdr.Name == tarPath {
+			return assembleMetadata(hdr), nil
+		}
+	}
+	return Metadata{}, &ErrFileNotFound{tarPath}
+}
+
 // ContentsFromTar reads the contents of a tar for the selection of tarHeaderNames, where the return is a mapping of the file reference from the original request to the fetched contents.
 func ContentsFromTar(reader io.Reader, tarHeaderNames TarContentsRequest) (map[Reference]string, error) {
 	result := make(map[Reference]string)
@@ -128,22 +146,26 @@ func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 			case tar.TypeXHeader:
 				log.Errorf("unexpected tar file (XHeader): type=%v name=%s", header.Typeflag, name)
 			default:
-				result <- Metadata{
-					Path:          name,
-					TarHeaderName: header.Name,
-					TypeFlag:      header.Typeflag,
-					Linkname:      header.Linkname,
-					Size:          header.FileInfo().Size(),
-					Mode:          header.FileInfo().Mode(),
-					UserID:        header.Uid,
-					GroupID:       header.Gid,
-					IsDir:         header.FileInfo().IsDir(),
-				}
+				result <- assembleMetadata(header)
 			}
 		}
 		close(result)
 	}()
 	return result
+}
+
+func assembleMetadata(header *tar.Header) Metadata {
+	return Metadata{
+		Path:          path.Clean(DirSeparator + header.Name),
+		TarHeaderName: header.Name,
+		TypeFlag:      header.Typeflag,
+		Linkname:      header.Linkname,
+		Size:          header.FileInfo().Size(),
+		Mode:          header.FileInfo().Mode(),
+		UserID:        header.Uid,
+		GroupID:       header.Gid,
+		IsDir:         header.FileInfo().IsDir(),
+	}
 }
 
 // UntarToDirectory writes the contents of the given tar reader to the given destination

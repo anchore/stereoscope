@@ -1,6 +1,7 @@
 package image
 
 import (
+	"crypto/sha256"
 	"fmt"
 
 	"github.com/anchore/stereoscope/internal/bus"
@@ -46,6 +47,7 @@ func WithTags(tags ...string) AdditionalMetadata {
 func WithManifest(manifest []byte) AdditionalMetadata {
 	return func(image *Image) error {
 		image.Metadata.RawManifest = manifest
+		image.Metadata.ManifestDigest = fmt.Sprintf("sha256:%x", sha256.Sum256(manifest))
 		return nil
 	}
 }
