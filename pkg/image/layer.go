@@ -1,8 +1,6 @@
 package image
 
 import (
-	"errors"
-
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -89,9 +87,9 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 		monitor.N++
 	}
 
-	if !catalog.HasEntriesForAllFilesInTree(*l.Tree) {
-		return errors.New("layer read failed: FileCatalog doesn't have an entry for all files in FileTree")
-	}
+	// TODO: It's possible that directories can be added to the FileTree that aren't stored in the FileCatalog.
+	//  Given this, we should think about the extent to which entries in the tree should be present in the catalog,
+	//  and we should consider the impact to consumers as they query this library for "directories" in the image.
 
 	monitor.SetCompleted()
 
