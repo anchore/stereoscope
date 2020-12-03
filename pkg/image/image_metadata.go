@@ -8,18 +8,21 @@ import (
 
 // Metadata represents container image metadata.
 type Metadata struct {
-	// Digest is the sha256 of this image manifest json
-	Digest string
-	// Size in bytes of all the image layer content sizes
+	// ID is the sha256 of this image config json (not manifest)
+	ID string
+	// Size in bytes of all the image layer content sizes (does not include config / manifest / index metadata sizes)
 	Size      int64
 	Config    v1.ConfigFile
 	MediaType v1Types.MediaType
-	Tags      []name.Tag
+	// --- below fields are optional metadata
+	Tags           []name.Tag
+	RawManifest    []byte
+	ManifestDigest string
 }
 
 // readImageMetadata extracts the most pertinent information from the underlying image tar.
 func readImageMetadata(img v1.Image) (Metadata, error) {
-	digest, err := img.ConfigName()
+	id, err := img.ConfigName()
 	if err != nil {
 		return Metadata{}, err
 	}
@@ -35,7 +38,7 @@ func readImageMetadata(img v1.Image) (Metadata, error) {
 	}
 
 	return Metadata{
-		Digest:    digest.String(),
+		ID:        id.String(),
 		Config:    *config,
 		MediaType: mediaType,
 	}, nil

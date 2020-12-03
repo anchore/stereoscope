@@ -31,20 +31,31 @@ func (p *DirectoryImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to parse OCI directory index: %w", err)
 	}
 
-	manifest, err := index.IndexManifest()
+	indexManifest, err := index.IndexManifest()
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse OCI directory manifest: %w", err)
+		return nil, fmt.Errorf("unable to parse OCI directory indexManifest: %w", err)
 	}
 
-	// for now, lets only support one image manifest (it is not clear how to handle multiple manifests)
-	if len(manifest.Manifests) != 1 {
-		return nil, fmt.Errorf("unexpected number of OCI directory manifests (found %d)", len(manifest.Manifests))
+	// for now, lets only support one image indexManifest (it is not clear how to handle multiple manifests)
+	if len(indexManifest.Manifests) != 1 {
+		return nil, fmt.Errorf("unexpected number of OCI directory manifests (found %d)", len(indexManifest.Manifests))
 	}
 
-	img, err := pathObj.Image(manifest.Manifests[0].Digest)
+	manifest := indexManifest.Manifests[0]
+	img, err := pathObj.Image(manifest.Digest)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse OCI directory as an image: %w", err)
 	}
 
-	return image.NewImage(img), nil
+	var metadata = []image.AdditionalMetadata{
+		image.WithManifestDigest(manifest.Digest.String()),
+	}
+
+	// make a best-effort attempt at getting the raw indexManifest
+	rawManifest, err := img.RawManifest()
+	if err == nil {
+		metadata = append(metadata, image.WithManifest(rawManifest))
+	}
+
+	return image.NewImage(img, metadata...)
 }

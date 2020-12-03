@@ -1,6 +1,7 @@
 package image
 
 import (
+	"crypto/sha256"
 	"fmt"
 
 	"github.com/anchore/stereoscope/internal/bus"
@@ -26,23 +27,50 @@ type Image struct {
 	FileCatalog FileCatalog
 }
 
-// NewImage provides a new, unread image object.
-func NewImage(image v1.Image) *Image {
-	return &Image{
-		content:     image,
-		FileCatalog: NewFileCatalog(),
+type AdditionalMetadata func(*Image) error
+
+func WithTags(tags ...string) AdditionalMetadata {
+	return func(image *Image) error {
+		var err error
+		image.Metadata.Tags = make([]name.Tag, len(tags))
+		for i, t := range tags {
+			image.Metadata.Tags[i], err = name.NewTag(t)
+			if err != nil {
+				image.Metadata.Tags = nil
+				break
+			}
+		}
+		return err
 	}
 }
 
-// NewImageWithTags provides a new, unread image object, represented by a set of named image tags.
-func NewImageWithTags(image v1.Image, tags []name.Tag) *Image {
-	return &Image{
+func WithManifest(manifest []byte) AdditionalMetadata {
+	return func(image *Image) error {
+		image.Metadata.RawManifest = manifest
+		image.Metadata.ManifestDigest = fmt.Sprintf("sha256:%x", sha256.Sum256(manifest))
+		return nil
+	}
+}
+
+func WithManifestDigest(digest string) AdditionalMetadata {
+	return func(image *Image) error {
+		image.Metadata.ManifestDigest = digest
+		return nil
+	}
+}
+
+// NewImage provides a new, unread image object.
+func NewImage(image v1.Image, additionalMetadata ...AdditionalMetadata) (*Image, error) {
+	imgObj := &Image{
 		content:     image,
 		FileCatalog: NewFileCatalog(),
-		Metadata: Metadata{
-			Tags: tags,
-		},
 	}
+	for _, optionFn := range additionalMetadata {
+		if err := optionFn(imgObj); err != nil {
+			return nil, fmt.Errorf("unable to create image: %w", err)
+		}
+	}
+	return imgObj, nil
 }
 
 func (i *Image) IDs() []string {
@@ -50,7 +78,7 @@ func (i *Image) IDs() []string {
 	for idx, t := range i.Metadata.Tags {
 		ids[idx] = t.String()
 	}
-	ids = append(ids, i.Metadata.Digest)
+	ids = append(ids, i.Metadata.ID)
 	return ids
 }
 
@@ -84,7 +112,7 @@ func (i *Image) Read() error {
 	i.Metadata = metadata
 
 	log.Debugf("image metadata: digest=%+v mediaType=%+v tags=%+v",
-		metadata.Digest,
+		metadata.ID,
 		metadata.MediaType,
 		metadata.Tags)
 

@@ -23,7 +23,6 @@ import (
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 )
@@ -206,18 +205,8 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("cannot provide an empty image")
 	}
 
-	// use the tar utils to load a v1.Image from the tar file on disk
-	img, err := tarball.ImageFromPath(tempTarFile.Name(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	tags, err := extractTags(tempTarFile.Name())
-	if err != nil {
-		return nil, err
-	}
-
-	return image.NewImageWithTags(img, tags), nil
+	// use the existing tarball provider to process what was pulled from the docker daemon
+	return NewProviderFromTarball(tempTarFile.Name()).Provide()
 }
 
 func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {
