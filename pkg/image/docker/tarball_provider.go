@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/apex/log"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -14,13 +15,15 @@ var ErrMultipleManifests = fmt.Errorf("cannot process multiple docker manifests"
 
 // TarballImageProvider is a image.Provider for a docker image (V2) for an existing tar on disk (the output from a "docker image save ..." command).
 type TarballImageProvider struct {
-	path string
+	path      string
+	extraTags []string
 }
 
 // NewProviderFromTarball creates a new provider instance for the specific image already at the given path.
-func NewProviderFromTarball(path string) *TarballImageProvider {
+func NewProviderFromTarball(path string, tags ...string) *TarballImageProvider {
 	return &TarballImageProvider{
-		path: path,
+		path:      path,
+		extraTags: tags,
 	}
 }
 
@@ -46,9 +49,17 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 		log.Warnf("could not extract manifest: %+v", err)
 	}
 
+	var tags = internal.NewStringSet()
+	for _, t := range p.extraTags {
+		tags.Add(t)
+	}
+
 	if theManifest != nil {
 		// given that we have a manifest, continue processing to get the tags and OCI manifest
-		metadata = append(metadata, image.WithTags(theManifest.allTags()...))
+
+		for _, t := range theManifest.allTags() {
+			tags.Add(t)
+		}
 
 		ociManifest, rawConfig, err = generateOCIManifest(p.path, theManifest)
 		if err != nil {
@@ -68,6 +79,10 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 		} else {
 			metadata = append(metadata, image.WithManifest(rawOCIManifest))
 		}
+	}
+
+	if len(tags) > 0 {
+		metadata = append(metadata, image.WithTags(tags.ToSlice()...))
 	}
 
 	return image.NewImage(img, metadata...), nil

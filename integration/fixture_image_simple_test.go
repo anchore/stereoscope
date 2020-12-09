@@ -34,7 +34,9 @@ func TestSimpleImage(t *testing.T) {
 			source:         "docker",
 			imageMediaType: v1Types.DockerManifestSchema2,
 			layerMediaType: v1Types.DockerLayer,
-			tagCount:       1,
+			// name:hash
+			// name:latest
+			tagCount: 2,
 		},
 		{
 			name:           "FromOciTarball",
@@ -78,7 +80,7 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 		t.Errorf("unexpected image media type: %+v", i.Metadata.MediaType)
 	}
 	if len(i.Metadata.Tags) != expectedValues.tagCount {
-		t.Errorf("unexpected number of tags: %d", len(i.Metadata.Tags))
+		t.Errorf("unexpected number of tags: %d : %+v", len(i.Metadata.Tags), i.Metadata.Tags)
 	} else if expectedValues.tagCount > 0 {
 		if !strings.HasPrefix(i.Metadata.Tags[0].String(), fmt.Sprintf("%s-image-simple:", imagetest.ImagePrefix)) {
 			t.Errorf("unexpected image tag: %+v", i.Metadata.Tags)

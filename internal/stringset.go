@@ -1,5 +1,7 @@
 package internal
 
+import "sort"
+
 type Set map[string]struct{}
 
 func NewStringSet() Set {
@@ -17,4 +19,16 @@ func (s Set) Remove(i string) {
 func (s Set) Contains(i string) bool {
 	_, ok := s[i]
 	return ok
+}
+
+// ToSlice returns a sorted slice of strings that are contained within the set.
+func (s Set) ToSlice() []string {
+	ret := make([]string, len(s))
+	idx := 0
+	for v := range s {
+		ret[idx] = v
+		idx++
+	}
+	sort.Strings(ret)
+	return ret
 }
