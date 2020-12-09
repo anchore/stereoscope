@@ -70,10 +70,10 @@ func extractManifest(tarPath string) (*dockerManifest, error) {
 }
 
 // generateOCIManifest takes a docker manifest and a path to the tar and generates an OCI manifest derived from the given arguments and the docker config.
-func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest, error) {
+func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest, []byte, error) {
 	f, err := os.Open(tarPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer func() {
@@ -84,33 +84,35 @@ func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest
 	}()
 
 	if len(manifest.parsed) != 1 {
-		return nil, ErrMultipleManifests
+		return nil, nil, ErrMultipleManifests
 	}
 
 	configReader, err := file.ReaderFromTar(f, manifest.parsed[0].Config)
 	if err != nil {
-		return nil, fmt.Errorf("unable to find docker config: %w", err)
+		return nil, nil, fmt.Errorf("unable to find docker config: %w", err)
 	}
 
 	configContents, err := ioutil.ReadAll(configReader)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read docker config: %w", err)
+		return nil, nil, fmt.Errorf("unable to read docker config: %w", err)
 	}
 
 	var layerSizes = make([]int64, len(manifest.parsed[0].Layers))
 	for idx, layerTarPath := range manifest.parsed[0].Layers {
 		_, err = f.Seek(0, io.SeekStart)
 		if err != nil {
-			return nil, fmt.Errorf("unable to reset tar reader: %w", err)
+			return nil, nil, fmt.Errorf("unable to reset tar reader: %w", err)
 		}
 		layerMetadata, err := file.MetadataFromTar(f, layerTarPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to find layer tar: %w", err)
+			return nil, nil, fmt.Errorf("unable to find layer tar: %w", err)
 		}
 		layerSizes[idx] = layerMetadata.Size
 	}
 
-	return assembleOCIManifest(configContents, layerSizes)
+	theManifest, err := assembleOCIManifest(configContents, layerSizes)
+
+	return theManifest, configContents, err
 }
 
 // assembleOCIManifest takes the docker manifest and config file content to populate a v1.Manifest (OCI).

@@ -37,6 +37,7 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 
 	// make a best-effort to generate an OCI manifest and gets tags, but ultimately this should be considered optional
 	var rawOCIManifest []byte
+	var rawConfig []byte
 	var ociManifest *v1.Manifest
 	var metadata []image.AdditionalMetadata
 
@@ -49,9 +50,14 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 		// given that we have a manifest, continue processing to get the tags and OCI manifest
 		metadata = append(metadata, image.WithTags(theManifest.allTags()...))
 
-		ociManifest, err = generateOCIManifest(p.path, theManifest)
+		ociManifest, rawConfig, err = generateOCIManifest(p.path, theManifest)
 		if err != nil {
 			log.Warnf("failed to generate OCI manifest from docker archive: %+v", err)
+		}
+
+		// we may have the config available, use it
+		if rawConfig != nil {
+			metadata = append(metadata, image.WithConfig(rawConfig))
 		}
 	}
 
@@ -64,5 +70,5 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 		}
 	}
 
-	return image.NewImage(img, metadata...)
+	return image.NewImage(img, metadata...), nil
 }

@@ -18,6 +18,7 @@ type Metadata struct {
 	Tags           []name.Tag
 	RawManifest    []byte
 	ManifestDigest string
+	RawConfig      []byte
 }
 
 // readImageMetadata extracts the most pertinent information from the underlying image tar.
@@ -37,9 +38,15 @@ func readImageMetadata(img v1.Image) (Metadata, error) {
 		return Metadata{}, err
 	}
 
+	rawConfig, err := img.RawConfigFile()
+	if err != nil {
+		return Metadata{}, err
+	}
+
 	return Metadata{
 		ID:        id.String(),
 		Config:    *config,
 		MediaType: mediaType,
+		RawConfig: rawConfig,
 	}, nil
 }
