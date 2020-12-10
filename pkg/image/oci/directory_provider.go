@@ -57,5 +57,5 @@ func (p *DirectoryImageProvider) Provide() (*image.Image, error) {
 		metadata = append(metadata, image.WithManifest(rawManifest))
 	}
 
-	return image.NewImage(img, metadata...)
+	return image.NewImage(img, metadata...), nil
 }

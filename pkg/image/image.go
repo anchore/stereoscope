@@ -25,6 +25,8 @@ type Image struct {
 	Layers []*Layer
 	// FileCatalog contains all file metadata for all files in all layers
 	FileCatalog FileCatalog
+
+	overrideMetadata []AdditionalMetadata
 }
 
 type AdditionalMetadata func(*Image) error
@@ -59,18 +61,22 @@ func WithManifestDigest(digest string) AdditionalMetadata {
 	}
 }
 
+func WithConfig(config []byte) AdditionalMetadata {
+	return func(image *Image) error {
+		image.Metadata.RawConfig = config
+		image.Metadata.ID = fmt.Sprintf("sha256:%x", sha256.Sum256(config))
+		return nil
+	}
+}
+
 // NewImage provides a new, unread image object.
-func NewImage(image v1.Image, additionalMetadata ...AdditionalMetadata) (*Image, error) {
+func NewImage(image v1.Image, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{
-		content:     image,
-		FileCatalog: NewFileCatalog(),
+		content:          image,
+		FileCatalog:      NewFileCatalog(),
+		overrideMetadata: additionalMetadata,
 	}
-	for _, optionFn := range additionalMetadata {
-		if err := optionFn(imgObj); err != nil {
-			return nil, fmt.Errorf("unable to create image: %w", err)
-		}
-	}
-	return imgObj, nil
+	return imgObj
 }
 
 func (i *Image) IDs() []string {
@@ -97,24 +103,34 @@ func (i *Image) trackReadProgress(metadata Metadata) *progress.Manual {
 	return prog
 }
 
+func (i *Image) applyOverrideMetadata() error {
+	for _, optionFn := range i.overrideMetadata {
+		if err := optionFn(i); err != nil {
+			return fmt.Errorf("unable to override metadata option: %w", err)
+		}
+	}
+	return nil
+}
+
 // Read parses information from the underlaying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
 func (i *Image) Read() error {
 	var layers = make([]*Layer, 0)
-
-	metadata, err := readImageMetadata(i.content)
+	var err error
+	i.Metadata, err = readImageMetadata(i.content)
 	if err != nil {
 		return err
 	}
-	if i.Metadata.Tags != nil {
-		metadata.Tags = i.Metadata.Tags
+
+	// override any metadata with what the user has provided manually
+	if err = i.applyOverrideMetadata(); err != nil {
+		return err
 	}
-	i.Metadata = metadata
 
 	log.Debugf("image metadata: digest=%+v mediaType=%+v tags=%+v",
-		metadata.ID,
-		metadata.MediaType,
-		metadata.Tags)
+		i.Metadata.ID,
+		i.Metadata.MediaType,
+		i.Metadata.Tags)
 
 	v1Layers, err := i.content.Layers()
 	if err != nil {
@@ -122,7 +138,7 @@ func (i *Image) Read() error {
 	}
 
 	// let consumers know of a monitorable event (image save + copy stages)
-	readProg := i.trackReadProgress(metadata)
+	readProg := i.trackReadProgress(i.Metadata)
 
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)

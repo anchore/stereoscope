@@ -48,7 +48,7 @@ func TestImageAdditionalMetadata(t *testing.T) {
 			},
 		},
 		{
-			name: "with digest",
+			name: "with manifest digest",
 			options: []AdditionalMetadata{
 				WithManifestDigest("the-digest"),
 			},
@@ -58,11 +58,25 @@ func TestImageAdditionalMetadata(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "with config",
+			options: []AdditionalMetadata{
+				WithConfig([]byte("some bytes")),
+			},
+			image: Image{
+				Metadata: Metadata{
+					RawConfig: []byte("some bytes"),
+					ID:        fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("some bytes"))),
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			img, err := NewImage(nil, test.options...)
+			img := NewImage(nil, test.options...)
+
+			err = img.applyOverrideMetadata()
 			if err != nil {
 				t.Fatalf("could not create image: %+v", err)
 			}

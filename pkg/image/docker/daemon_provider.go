@@ -161,7 +161,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	// check if the image exists locally
-	_, _, err = dockerClient.ImageInspectWithRaw(context.Background(), p.ImageStr)
+	inspectResult, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.ImageStr)
 
 	if err != nil {
 		if client.IsErrNotFound(err) {
@@ -206,7 +206,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewProviderFromTarball(tempTarFile.Name()).Provide()
+	return NewProviderFromTarball(tempTarFile.Name(), inspectResult.RepoTags...).Provide()
 }
 
 func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {
