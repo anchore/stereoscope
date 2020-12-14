@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anchore/stereoscope/pkg/file"
+
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/google/go-containerregistry/pkg/name"
 
@@ -29,15 +31,15 @@ import (
 
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.
 type DaemonImageProvider struct {
-	ImageStr string
-	cacheDir string
+	imageStr  string
+	tmpDirGen *file.TempDirGenerator
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr, cacheDir string) *DaemonImageProvider {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator) *DaemonImageProvider {
 	return &DaemonImageProvider{
-		ImageStr: imgStr,
-		cacheDir: cacheDir,
+		imageStr:  imgStr,
+		tmpDirGen: tmpDirGen,
 	}
 }
 
@@ -48,7 +50,7 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 	}
 
 	// fetch the expected image size to estimate and measure progress
-	inspect, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.ImageStr)
+	inspect, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.imageStr)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to inspect image: %w", err)
 	}
@@ -67,7 +69,7 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 	bus.Publish(partybus.Event{
 		Type:   event.FetchImage,
-		Source: p.ImageStr,
+		Source: p.imageStr,
 		Value: progress.StagedProgressable(&struct {
 			progress.Stager
 			*progress.Aggregator
@@ -82,7 +84,7 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 // pull a docker image
 func (p *DaemonImageProvider) pull(ctx context.Context) error {
-	log.Debugf("pulling docker image=%q", p.ImageStr)
+	log.Debugf("pulling docker image=%q", p.imageStr)
 
 	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
 	cfg, err := config.Load("")
@@ -99,7 +101,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 	// publish a pull event on the bus, allowing for read-only consumption of status
 	bus.Publish(partybus.Event{
 		Type:   event.PullDockerImage,
-		Source: p.ImageStr,
+		Source: p.imageStr,
 		Value:  status,
 	})
 
@@ -108,12 +110,12 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 		return fmt.Errorf("failed to load docker client: %w", err)
 	}
 
-	options, err := newPullOptions(p.ImageStr, cfg)
+	options, err := newPullOptions(p.imageStr, cfg)
 	if err != nil {
 		return err
 	}
 
-	resp, err := dockerClient.ImagePull(ctx, p.ImageStr, options)
+	resp, err := dockerClient.ImagePull(ctx, p.imageStr, options)
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
@@ -142,8 +144,13 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
 func (p *DaemonImageProvider) Provide() (*image.Image, error) {
+	imageTempDir, err := p.tmpDirGen.NewTempDir()
+	if err != nil {
+		return nil, err
+	}
+
 	// create a file within the temp dir
-	tempTarFile, err := os.Create(path.Join(p.cacheDir, "image.tar"))
+	tempTarFile, err := os.Create(path.Join(imageTempDir, "image.tar"))
 	if err != nil {
 		return nil, fmt.Errorf("unable to create temp file for image: %w", err)
 	}
@@ -161,7 +168,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	// check if the image exists locally
-	inspectResult, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.ImageStr)
+	inspectResult, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.imageStr)
 
 	if err != nil {
 		if client.IsErrNotFound(err) {
@@ -180,7 +187,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	stage.Current = "requesting image from docker"
-	readCloser, err := dockerClient.ImageSave(context.Background(), []string{p.ImageStr})
+	readCloser, err := dockerClient.ImageSave(context.Background(), []string{p.imageStr})
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image tar: %w", err)
 	}
@@ -206,7 +213,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewProviderFromTarball(tempTarFile.Name(), inspectResult.RepoTags...).Provide()
+	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen, inspectResult.RepoTags...).Provide()
 }
 
 func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {

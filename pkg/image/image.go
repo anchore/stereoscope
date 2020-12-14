@@ -3,6 +3,7 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
+	"io"
 
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
@@ -18,7 +19,8 @@ import (
 // Image represents a container image.
 type Image struct {
 	// content is the image metadata and content provider
-	content v1.Image
+	content         v1.Image
+	contentCacheDir string
 	// Metadata contains select image attributes
 	Metadata Metadata
 	// Layers contains the rich layer objects in build order
@@ -70,10 +72,11 @@ func WithConfig(config []byte) AdditionalMetadata {
 }
 
 // NewImage provides a new, unread image object.
-func NewImage(image v1.Image, additionalMetadata ...AdditionalMetadata) *Image {
+func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{
 		content:          image,
-		FileCatalog:      NewFileCatalog(),
+		contentCacheDir:  contentCacheDir,
+		FileCatalog:      NewFileCatalog(contentCacheDir),
 		overrideMetadata: additionalMetadata,
 	}
 	return imgObj
@@ -190,33 +193,33 @@ func (i *Image) squash(prog *progress.Manual) error {
 	return nil
 }
 
-// SquashTree returns the pre-computed image squash file tree.
+// SquashedTree returns the pre-computed image squash file tree.
 func (i *Image) SquashedTree() *tree.FileTree {
 	return i.Layers[len(i.Layers)-1].SquashedTree
 }
 
 // FileContentsFromSquash fetches file contents for a single path, relative to the image squash tree.
 // If the path does not exist an error is returned.
-func (i *Image) FileContentsFromSquash(path file.Path) (string, error) {
+func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(i.SquashedTree(), &i.FileCatalog, path)
 }
 
 // MultipleFileContentsFromSquash fetches file contents for all given paths, relative to the image squash tree.
 // If any one path does not exist an error is returned for the entire request.
-func (i *Image) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]string, error) {
+func (i *Image) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
 	return fetchMultipleFileContentsByPath(i.SquashedTree(), &i.FileCatalog, paths...)
 }
 
 // FileContentsByRef fetches file contents for a single file reference, irregardless of the source layer.
 // If the path does not exist an error is returned.
 // This is a convenience function provided by the FileCatalog.
-func (i *Image) FileContentsByRef(ref file.Reference) (string, error) {
+func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 	return i.FileCatalog.FileContents(ref)
 }
 
 // FileContentsByRef fetches file contents for all file references given, irregardless of the source layer.
 // If any one path does not exist an error is returned for the entire request.
-func (i *Image) MultipleFileContentsByRef(refs ...file.Reference) (map[file.Reference]string, error) {
+func (i *Image) MultipleFileContentsByRef(refs ...file.Reference) (map[file.Reference]io.ReadCloser, error) {
 	return i.FileCatalog.MultipleFileContents(refs...)
 }
 

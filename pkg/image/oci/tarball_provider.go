@@ -10,15 +10,15 @@ import (
 
 // TarballImageProvider is an image.Provider for an OCI image (V1) for an existing tar on disk (from a buildah push <img> oci-archive:<name>.tar command).
 type TarballImageProvider struct {
-	path     string
-	cacheDir string
+	path      string
+	tmpDirGen *file.TempDirGenerator
 }
 
 // NewProviderFromTarball creates a new provider instance for the specific image tarball already at the given path.
-func NewProviderFromTarball(path, cacheDir string) *TarballImageProvider {
+func NewProviderFromTarball(path string, tmpDirGen *file.TempDirGenerator) *TarballImageProvider {
 	return &TarballImageProvider{
-		path:     path,
-		cacheDir: cacheDir,
+		path:      path,
+		tmpDirGen: tmpDirGen,
 	}
 }
 
@@ -31,9 +31,14 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to open OCI tarball: %w", err)
 	}
 
-	if err = file.UntarToDirectory(f, p.cacheDir); err != nil {
+	tempDir, err := p.tmpDirGen.NewTempDir()
+	if err != nil {
 		return nil, err
 	}
 
-	return NewProviderFromPath(p.cacheDir).Provide()
+	if err = file.UntarToDirectory(f, tempDir); err != nil {
+		return nil, err
+	}
+
+	return NewProviderFromPath(tempDir, p.tmpDirGen).Provide()
 }

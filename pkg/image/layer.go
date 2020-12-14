@@ -1,6 +1,8 @@
 package image
 
 import (
+	"io"
+
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -99,27 +101,27 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int) error 
 // FetchContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
 // This is a convenience function provided by the FileCatalog.
-func (l *Layer) FileContents(path file.Path) (string, error) {
+func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
 }
 
 // MultipleFileContents reads the file contents for all given paths from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if any one file path does not exist or the read operation cannot continue.
 // This is a convenience function provided by the FileCatalog.
-func (l *Layer) MultipleFileContents(paths ...file.Path) (map[file.Reference]string, error) {
+func (l *Layer) MultipleFileContents(paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
 	return fetchMultipleFileContentsByPath(l.Tree, l.fileCatalog, paths...)
 }
 
 // FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
 // This is a convenience function provided by the FileCatalog.
-func (l *Layer) FileContentsFromSquash(path file.Path) (string, error) {
+func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
 }
 
 // MultipleFileContents reads the file contents for all given paths from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if any one file path does not exist or the read operation cannot continue.
 // This is a convenience function provided by the FileCatalog.
-func (l *Layer) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]string, error) {
+func (l *Layer) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
 	return fetchMultipleFileContentsByPath(l.SquashedTree, l.fileCatalog, paths...)
 }

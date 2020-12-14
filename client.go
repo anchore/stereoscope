@@ -2,9 +2,8 @@ package stereoscope
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
 
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image/oci"
 
 	"github.com/anchore/stereoscope/internal/bus"
@@ -12,7 +11,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/logger"
-	"github.com/hashicorp/go-multierror"
 	"github.com/wagoodman/go-partybus"
 )
 
@@ -23,40 +21,7 @@ const (
 
 type Option uint
 
-var trackerInstance *tracker
-
-func init() {
-	trackerInstance = &tracker{
-		tempDir: make([]string, 0),
-	}
-}
-
-type tracker struct {
-	tempDir []string
-}
-
-// newTempDir creates an empty dir in the platform temp dir
-func (t *tracker) newTempDir() string {
-	dir, err := ioutil.TempDir("", "stereoscope-cache")
-	if err != nil {
-		log.Errorf("could not create temp dir: %w", err)
-		panic(err)
-	}
-
-	t.tempDir = append(t.tempDir, dir)
-	return dir
-}
-
-func (t *tracker) cleanup() error {
-	var allErrors error
-	for _, dir := range t.tempDir {
-		err := os.RemoveAll(dir)
-		if err != nil {
-			allErrors = multierror.Append(allErrors, err)
-		}
-	}
-	return allErrors
-}
+var tempDirGenerator = file.NewTempDirGenerator()
 
 // GetImage parses the user provided image string and provides an image object
 func GetImage(userStr string, options ...Option) (*image.Image, error) {
@@ -82,15 +47,13 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 	switch source {
 	case image.DockerTarballSource:
 		// note: the imgStr is the path on disk to the tar file
-		provider = docker.NewProviderFromTarball(imgStr)
+		provider = docker.NewProviderFromTarball(imgStr, &tempDirGenerator)
 	case image.DockerDaemonSource:
-		cacheDir := trackerInstance.newTempDir()
-		provider = docker.NewProviderFromDaemon(imgStr, cacheDir)
+		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator)
 	case image.OciDirectorySource:
-		provider = oci.NewProviderFromPath(imgStr)
+		provider = oci.NewProviderFromPath(imgStr, &tempDirGenerator)
 	case image.OciTarballSource:
-		cacheDir := trackerInstance.newTempDir()
-		provider = oci.NewProviderFromTarball(imgStr, cacheDir)
+		provider = oci.NewProviderFromTarball(imgStr, &tempDirGenerator)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}
@@ -119,8 +82,7 @@ func SetBus(b *partybus.Bus) {
 }
 
 func Cleanup() {
-	err := trackerInstance.cleanup()
-	if err != nil {
+	if err := tempDirGenerator.Cleanup(); err != nil {
 		log.Errorf("failed to cleanup: %w", err)
 	}
 }
