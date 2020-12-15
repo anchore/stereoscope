@@ -2,6 +2,7 @@ package integration
 
 import (
 	"fmt"
+	"io/ioutil"
 	"strings"
 	"testing"
 
@@ -213,7 +214,11 @@ func assertImageSimpleContents(t *testing.T, i *image.Image) {
 		if !ok {
 			t.Errorf("extra path found: %+v", fileRef.Path)
 		}
-		if expected != actual {
+		b, err := ioutil.ReadAll(actual)
+		if err != nil {
+			t.Errorf("failed to read %+v : %+v", fileRef, err)
+		}
+		if expected != string(b) {
 			t.Errorf("mismatched contents (%s)", fileRef.Path)
 		}
 	}

@@ -2,11 +2,12 @@ package integration
 
 import (
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/imagetest"
+	"io/ioutil"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/anchore/stereoscope/pkg/imagetest"
 )
 
 type linkFetchConfig struct {
@@ -101,7 +102,11 @@ func fetchContents(t *testing.T, i *image.Image, cfg linkFetchConfig) string {
 	if err != nil {
 		t.Fatalf("could not fetch contents of %+v: %+v", cfg.linkPath, err)
 	}
-	return contents
+	b, err := ioutil.ReadAll(contents)
+	if err != nil {
+		t.Fatalf("unable to fetch contents for %+v : %+v", cfg, err)
+	}
+	return string(b)
 }
 
 func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {

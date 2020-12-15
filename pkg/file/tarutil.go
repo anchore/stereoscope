@@ -110,7 +110,6 @@ func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
 
 // EnumerateFileMetadataFromTar populates and returns a Metadata object for all files in the tar.
 func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
-	tarReader := tar.NewReader(reader)
 	result := make(chan Metadata)
 	go func() {
 		visitor := func(header *tar.Header, contents io.Reader) error {
@@ -131,7 +130,7 @@ func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 			return nil
 		}
 
-		if err := TarIterator(tarReader, visitor); err != nil {
+		if err := TarIterator(reader, visitor); err != nil {
 			log.Errorf("failed to extract metadata from tar: %w", err)
 		}
 

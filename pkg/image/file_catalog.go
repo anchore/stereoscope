@@ -2,6 +2,7 @@ package image
 
 import (
 	"archive/tar"
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -9,6 +10,8 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
 )
+
+var ErrFileNotFound = fmt.Errorf("could not find file")
 
 var cacheFileSizeThreshold int64 = 5 * file.MB
 
@@ -59,7 +62,7 @@ func (c *FileCatalog) Exists(f file.Reference) bool {
 func (c *FileCatalog) Get(f file.Reference) (FileCatalogEntry, error) {
 	value, ok := c.catalog[f.ID()]
 	if !ok {
-		return FileCatalogEntry{}, fmt.Errorf("could not find file")
+		return FileCatalogEntry{}, ErrFileNotFound
 	}
 	return *value, nil
 }
@@ -75,7 +78,12 @@ func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Read
 	}
 
 	if entry.Metadata.Size <= cacheFileSizeThreshold {
-		return ioutil.NopCloser(contents), nil
+		// this is a small file, read the contents into memory and return a reader
+		theBytes, err := ioutil.ReadAll(contents)
+		if err != nil {
+			return nil, fmt.Errorf("unable to handle in-memory content response: %w", err)
+		}
+		return ioutil.NopCloser(bytes.NewReader(theBytes)), nil
 	}
 
 	// check to see if this is already in the cache, if so, return a reader to the cache reference instead
@@ -87,14 +95,21 @@ func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Read
 	// actively being used.
 	tempFile, err := ioutil.TempFile(c.contentsCacheDir, ref.Path.Basename())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to create content response cache: %w", err)
 	}
 	defer tempFile.Close()
 
 	// stream the contents from the reader directly into the temp file
 	if _, err := io.Copy(tempFile, contents); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to copy content response to cache: %w", err)
 	}
+
+	// keep track of the reference in the file catalog cache
+	if _, ok := c.contentsCachePath[ref.ID()]; ok {
+		// the ref should not have already existed! this implies a potential race condition
+		return nil, fmt.Errorf("found duplicate file catalog cache entry: %+v", ref)
+	}
+	c.contentsCachePath[ref.ID()] = tempFile.Name()
 
 	// provide a io.ReadCloser that allocates a file handle on upon the first Read() call.
 	return file.NewDeferredReadCloser(tempFile.Name()), nil
@@ -107,11 +122,12 @@ func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
 	if !ok {
 		return nil, fmt.Errorf("could not find file: %+v", f.Path)
 	}
+
 	sourceTarReader, err := entry.Source.content.Uncompressed()
 	if err != nil {
 		return nil, err
 	}
-	// note: this is the reader for the underlying tar, we should
+
 	fileReader, err := file.ReaderFromTar(sourceTarReader, entry.Metadata.TarHeaderName)
 	if err != nil {
 		return nil, err
@@ -133,7 +149,7 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 	for layer, tarHeaderNameToFileReference := range requestsByLayer {
 		sourceTarReader, err := layer.content.Uncompressed()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unable to obtain layer tar reader: %w", err)
 		}
 		discoveredFiles := 0
 
