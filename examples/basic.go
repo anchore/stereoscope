@@ -16,9 +16,7 @@ func main() {
 	// pass a path to an image tar as an argument:
 	//    ./path/to.tar
 	//
-	// This will catalog the file metadata and resolve all squash trees (img.Read)
-	//
-	// note: if you'd prefer to read the image manually, pass stereoscope.NoActionOption
+	// This will catalog the file metadata and resolve all squash trees
 	image, err := stereoscope.GetImage(os.Args[1])
 	if err != nil {
 		panic(err)

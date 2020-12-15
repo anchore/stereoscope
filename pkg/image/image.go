@@ -18,8 +18,9 @@ import (
 
 // Image represents a container image.
 type Image struct {
-	// content is the image metadata and content provider
-	content         v1.Image
+	// image is the raw image metadata and content provider from the GCR lib
+	image v1.Image
+	// contentCacheDir is where all layer tar cache is stored.
 	contentCacheDir string
 	// Metadata contains select image attributes
 	Metadata Metadata
@@ -74,7 +75,7 @@ func WithConfig(config []byte) AdditionalMetadata {
 // NewImage provides a new, unread image object.
 func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{
-		content:          image,
+		image:            image,
 		contentCacheDir:  contentCacheDir,
 		FileCatalog:      NewFileCatalog(contentCacheDir),
 		overrideMetadata: additionalMetadata,
@@ -115,12 +116,12 @@ func (i *Image) applyOverrideMetadata() error {
 	return nil
 }
 
-// Read parses information from the underlaying image tar into this struct. This includes image metadata, layer
+// Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
 func (i *Image) Read() error {
 	var layers = make([]*Layer, 0)
 	var err error
-	i.Metadata, err = readImageMetadata(i.content)
+	i.Metadata, err = readImageMetadata(i.image)
 	if err != nil {
 		return err
 	}
@@ -135,7 +136,7 @@ func (i *Image) Read() error {
 		i.Metadata.MediaType,
 		i.Metadata.Tags)
 
-	v1Layers, err := i.content.Layers()
+	v1Layers, err := i.image.Layers()
 	if err != nil {
 		return err
 	}
@@ -145,7 +146,7 @@ func (i *Image) Read() error {
 
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
-		err := layer.Read(&i.FileCatalog, i.Metadata, idx)
+		err := layer.Read(&i.FileCatalog, i.Metadata, idx, i.contentCacheDir)
 		if err != nil {
 			return err
 		}

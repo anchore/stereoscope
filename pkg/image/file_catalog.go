@@ -29,7 +29,7 @@ type FileCatalog struct {
 type FileCatalogEntry struct {
 	File     file.Reference
 	Metadata file.Metadata
-	Source   *Layer
+	Layer    *Layer
 }
 
 // NewFileCatalog returns an empty FileCatalog.
@@ -47,7 +47,7 @@ func (c *FileCatalog) Add(f file.Reference, m file.Metadata, s *Layer) {
 	c.catalog[f.ID()] = &FileCatalogEntry{
 		File:     f,
 		Metadata: m,
-		Source:   s,
+		Layer:    s,
 	}
 }
 
@@ -93,7 +93,7 @@ func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Read
 
 	// cache the result to a directory and return a DeferredReadCloser to not allocate file handles unless they are
 	// actively being used.
-	tempFile, err := ioutil.TempFile(c.contentsCacheDir, ref.Path.Basename())
+	tempFile, err := ioutil.TempFile(c.contentsCacheDir, ref.Path.Basename()+"-")
 	if err != nil {
 		return nil, fmt.Errorf("unable to create content response cache: %w", err)
 	}
@@ -123,7 +123,7 @@ func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("could not find file: %+v", f.Path)
 	}
 
-	sourceTarReader, err := entry.Source.content.Uncompressed()
+	sourceTarReader, err := entry.Layer.layer.Uncompressed()
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 
 	results := make(map[file.Reference]io.ReadCloser)
 	for layer, tarHeaderNameToFileReference := range requestsByLayer {
-		sourceTarReader, err := layer.content.Uncompressed()
+		sourceTarReader, err := layer.layer.Uncompressed()
 		if err != nil {
 			return nil, fmt.Errorf("unable to obtain layer tar reader: %w", err)
 		}
@@ -194,7 +194,7 @@ func (c *FileCatalog) buildTarContentsRequests(files ...file.Reference) (map[*La
 		if err != nil {
 			return nil, err
 		}
-		layer := record.Source
+		layer := record.Layer
 		if _, ok := allRequests[layer]; !ok {
 			allRequests[layer] = make(file.TarContentsRequest)
 		}

@@ -3,46 +3,27 @@ package stereoscope
 import (
 	"fmt"
 
-	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/image/oci"
-
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
+	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/logger"
 	"github.com/wagoodman/go-partybus"
 )
 
-const (
-	NoActionOption Option = iota
-	ReadImageOption
-)
-
-type Option uint
-
 var tempDirGenerator = file.NewTempDirGenerator()
 
 // GetImage parses the user provided image string and provides an image object
-func GetImage(userStr string, options ...Option) (*image.Image, error) {
+func GetImage(userStr string) (*image.Image, error) {
 	var provider image.Provider
 	source, imgStr, err := image.DetectSource(userStr)
 	if err != nil {
 		return nil, err
 	}
 
-	var processingOption = NoActionOption
-	if len(options) == 0 {
-		processingOption = ReadImageOption
-	} else {
-		for _, o := range options {
-			if o > processingOption {
-				processingOption = o
-			}
-		}
-	}
-
-	log.Debugf("image: source=%+v location=%+v processingOption=%+v", source, imgStr, processingOption)
+	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
 	switch source {
 	case image.DockerTarballSource:
@@ -63,11 +44,9 @@ func GetImage(userStr string, options ...Option) (*image.Image, error) {
 		return nil, err
 	}
 
-	if processingOption >= ReadImageOption {
-		err = img.Read()
-		if err != nil {
-			return nil, fmt.Errorf("could not read image: %+v", err)
-		}
+	err = img.Read()
+	if err != nil {
+		return nil, fmt.Errorf("could not read image: %+v", err)
 	}
 
 	return img, nil

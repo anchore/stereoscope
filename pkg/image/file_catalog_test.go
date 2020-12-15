@@ -110,7 +110,7 @@ func fileExists(t *testing.T, filename string) bool {
 }
 
 func testFileCatalog(t *testing.T) FileCatalog {
-	tempDir, err := ioutil.TempDir("", "")
+	tempDir, err := ioutil.TempDir("", "stereoscope-file-catalog-test")
 	if err != nil {
 		t.Fatalf("could not create tempfile: %+v", err)
 	}
@@ -137,7 +137,7 @@ func TestFileCatalog_Add(t *testing.T) {
 	}
 
 	layer := &Layer{
-		content: nil,
+		layer: nil,
 		Metadata: LayerMetadata{
 			Index:     1,
 			Digest:    "y",
@@ -155,7 +155,7 @@ func TestFileCatalog_Add(t *testing.T) {
 	expected := FileCatalogEntry{
 		File:     ref,
 		Metadata: metadata,
-		Source:   layer,
+		Layer:    layer,
 	}
 
 	actual, err := catalog.Get(ref)
@@ -211,7 +211,7 @@ func TestFileCatalog_FileContents(t *testing.T) {
 	}
 
 	layer := &Layer{
-		content: &testLayerContent{content: actualReadCloser},
+		layer: &testLayerContent{content: actualReadCloser},
 	}
 
 	catalog := testFileCatalog(t)
@@ -256,7 +256,7 @@ func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[f
 
 		layer := &Layer{
 			// note: since this test is using the same tar, it is as if it is a request for two files in the same layer
-			content: &testLayerContent{content: actualReadCloser},
+			layer: &testLayerContent{content: actualReadCloser},
 		}
 
 		catalog.Add(ref, metadata, layer)

@@ -57,7 +57,7 @@ func TestSimpleImage(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			i, cleanup := imagetest.GetFixtureImage(t, c.source, "image-simple")
-			defer cleanup()
+			t.Cleanup(cleanup)
 
 			assertImageSimpleMetadata(t, i, c)
 			assertImageSimpleTrees(t, i)

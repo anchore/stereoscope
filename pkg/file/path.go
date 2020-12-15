@@ -14,15 +14,15 @@ const (
 	DirSeparator   = "/"
 )
 
-// Path represents a file path
+// Path represents a file Path
 type Path string
 
-// ID is the normalized file path, used for file tree node identification
+// ID is the normalized file Path, used for file tree node identification
 func (p Path) ID() node.ID {
 	return node.ID(p.Normalize())
 }
 
-// Normalize returns the cleaned file path representation (trimmed of spaces)
+// Normalize returns the cleaned file Path representation (trimmed of spaces)
 func (p Path) Normalize() Path {
 	trimmed := strings.Trim(string(p), " ")
 	if trimmed == "/" {
@@ -31,12 +31,12 @@ func (p Path) Normalize() Path {
 	return Path(strings.TrimRight(trimmed, DirSeparator))
 }
 
-// Basename of the path (i.e. filename)
+// Basename of the Path (i.e. filename)
 func (p Path) Basename() string {
 	return path.Base(string(p))
 }
 
-// IsDirWhiteout indicates if the path has a basename is a opaque whiteout (which means all parent directory contents should be ignored during squashing)
+// IsDirWhiteout indicates if the Path has a basename is a opaque whiteout (which means all parent directory contents should be ignored during squashing)
 func (p Path) IsDirWhiteout() bool {
 	return p.Basename() == OpaqueWhiteout
 }
@@ -46,7 +46,7 @@ func (p Path) IsWhiteout() bool {
 	return strings.HasPrefix(p.Basename(), WhiteoutPrefix)
 }
 
-// UnWhiteoutPath is a representation of the current path with no whiteout prefixes
+// UnWhiteoutPath is a representation of the current Path with no whiteout prefixes
 func (p Path) UnWhiteoutPath() (Path, error) {
 	basename := p.Basename()
 	if strings.HasPrefix(basename, OpaqueWhiteout) {
