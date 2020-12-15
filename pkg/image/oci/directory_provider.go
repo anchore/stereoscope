@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/anchore/stereoscope/pkg/file"
-
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 )

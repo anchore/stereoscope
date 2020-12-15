@@ -2,12 +2,12 @@ package integration
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/imagetest"
 	"io/ioutil"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/imagetest"
 )
 
 type linkFetchConfig struct {

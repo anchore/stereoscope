@@ -122,7 +122,7 @@ func testFileCatalog(t *testing.T) FileCatalog {
 }
 
 func TestFileCatalog_Add(t *testing.T) {
-	ref := file.NewFileReference("/somePath")
+	ref := file.NewFileReference("/somepath")
 
 	metadata := file.Metadata{
 		Path:          "a",

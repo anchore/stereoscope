@@ -14,15 +14,15 @@ import (
 
 // fetchFileContentsByPath is a common helper function for resolving the file contents for a path from the file
 // catalog relative to the given tree.
-func fetchFileContentsByPath(theFileTree *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (io.ReadCloser, error) {
-	fileReference := theFileTree.File(path)
+func fetchFileContentsByPath(ft *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (io.ReadCloser, error) {
+	fileReference := ft.File(path)
 	if fileReference == nil {
 		return nil, fmt.Errorf("could not find file path in Tree: %s", path)
 	}
 
 	// if this is a link resolve to the final file reference...
 	var err error
-	fileReference, err = resolveLink(*fileReference, theFileTree, fileCatalog)
+	fileReference, err = resolveLink(*fileReference, ft, fileCatalog)
 	if err != nil {
 		return nil, err
 	}
@@ -36,17 +36,17 @@ func fetchFileContentsByPath(theFileTree *tree.FileTree, fileCatalog *FileCatalo
 
 // fetchMultipleFileContentsByPath is a common helper function for resolving the file contents for all paths from the
 // file catalog relative to the given tree. If any one path does not exist in the given tree then an error is returned.
-func fetchMultipleFileContentsByPath(theFileTree *tree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
+func fetchMultipleFileContentsByPath(ft *tree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
 	fileReferences := make([]file.Reference, len(paths))
 	for idx, p := range paths {
-		fileReference := theFileTree.File(p)
+		fileReference := ft.File(p)
 		if fileReference == nil {
 			return nil, fmt.Errorf("could not find file path in Tree: %s", p)
 		}
 
 		// if this is a link resolve to the final file reference...
 		var err error
-		fileReference, err = resolveLink(*fileReference, theFileTree, fileCatalog)
+		fileReference, err = resolveLink(*fileReference, ft, fileCatalog)
 		if err != nil {
 			return nil, err
 		}

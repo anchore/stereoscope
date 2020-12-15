@@ -35,7 +35,7 @@ type ErrFileNotFound struct {
 }
 
 func (e *ErrFileNotFound) Error() string {
-	return fmt.Sprintf("file not found (Path=%s)", e.Path)
+	return fmt.Sprintf("file not found (path=%s)", e.Path)
 }
 
 // TarIterator is a function that reads across a tar and invokes a visitor function for each entry discovered. The iterator
@@ -195,7 +195,7 @@ func UntarToDirectory(reader io.Reader, dst string) error {
 			}
 
 			if err = f.Close(); err != nil {
-				log.Errorf("failed to close file during untar of Path=%q: %w", f.Name(), err)
+				log.Errorf("failed to close file during untar of path=%q: %w", f.Name(), err)
 			}
 		}
 	}

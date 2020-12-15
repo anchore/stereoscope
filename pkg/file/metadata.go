@@ -4,7 +4,7 @@ import "os"
 
 // Metadata represents all file metadata of interest (used today for in-tar file resolution).
 type Metadata struct {
-	// Path is the absolute Path representation to the file
+	// Path is the absolute path representation to the file
 	Path string
 	// TarHeaderName is the exact entry name as found within a tar header
 	TarHeaderName string

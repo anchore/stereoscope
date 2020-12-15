@@ -5,10 +5,7 @@ import (
 	"os"
 )
 
-type Opener interface {
-	Open() (io.ReadCloser, error)
-}
-
+// OpenerFn is a function that can open a data source and provide a io.ReadCloser for it.
 type OpenerFn func() (io.ReadCloser, error)
 
 // OpenerFromPath is an object that stores a Path to later be opened as a file.

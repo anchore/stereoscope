@@ -143,7 +143,7 @@ func TestEnumerateFileMetadataFromTar_GoCase(t *testing.T) {
 
 	idx := 0
 	for metadata := range EnumerateFileMetadataFromTar(tarReader) {
-		t.Log("Path:", metadata.Path)
+		t.Log("path:", metadata.Path)
 		if len(expected) <= idx {
 			t.Fatal("more metadata files than expected!")
 		}

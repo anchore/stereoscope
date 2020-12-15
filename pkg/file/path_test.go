@@ -10,18 +10,18 @@ func TestPath_Normalize(t *testing.T) {
 	}{
 		{
 			name:     "Trim Right Whitespace",
-			path:     "/some/Path ",
-			expected: "/some/Path",
+			path:     "/some/path ",
+			expected: "/some/path",
 		},
 		{
 			name:     "Trim Left Whitespace",
-			path:     "   /some/Path ",
-			expected: "/some/Path",
+			path:     "   /some/path ",
+			expected: "/some/path",
 		},
 		{
 			name:     "Trim extra slashes",
-			path:     "/some/Path////",
-			expected: "/some/Path",
+			path:     "/some/path////",
+			expected: "/some/path",
 		},
 		{
 			name:     "Special case: /",
@@ -42,14 +42,14 @@ func TestPath_Normalize(t *testing.T) {
 }
 
 func TestPath_AllPaths(t *testing.T) {
-	path := Path("/some/Path/to/a/file.txt")
+	path := Path("/some/path/to/a/file.txt")
 	expected := []Path{
 		Path("/"),
 		Path("/some"),
-		Path("/some/Path"),
-		Path("/some/Path/to"),
-		Path("/some/Path/to/a"),
-		Path("/some/Path/to/a/file.txt"),
+		Path("/some/path"),
+		Path("/some/path/to"),
+		Path("/some/path/to/a"),
+		Path("/some/path/to/a/file.txt"),
 	}
 
 	paths := path.AllPaths()
@@ -59,14 +59,14 @@ func TestPath_AllPaths(t *testing.T) {
 
 	for idx := range paths {
 		if paths[idx] != expected[idx] {
-			t.Errorf("unexpected Path ('%v' != '%v')", paths[idx], expected[idx])
+			t.Errorf("unexpected path ('%v' != '%v')", paths[idx], expected[idx])
 		}
 	}
 }
 
 func TestPath_Sanitize_ID(t *testing.T) {
-	patha := Path("/some/Path/to/a")
-	pathb := Path("/some/Path/to/a/")
+	patha := Path("/some/path/to/a")
+	pathb := Path("/some/path/to/a/")
 
 	if patha.ID() != pathb.ID() {
 		t.Fatalf("paths not equal: '%+v'!='%+v'", patha, pathb)
@@ -74,15 +74,15 @@ func TestPath_Sanitize_ID(t *testing.T) {
 }
 
 func TestPath_ParentPath(t *testing.T) {
-	path := Path("/some/Path/to/a/file.txt")
-	expected := Path("/some/Path/to/a")
+	path := Path("/some/path/to/a/file.txt")
+	expected := Path("/some/path/to/a")
 
 	actual, err := path.ParentPath()
 	if err != nil {
-		t.Fatal("no parent Path", err)
+		t.Fatal("no parent path", err)
 	}
 	if expected != actual {
-		t.Fatalf("bad parent Path: expected '%+v', got '%+v'", expected, actual)
+		t.Fatalf("bad parent path: expected '%+v', got '%+v'", expected, actual)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestPath_ParentPath_Root(t *testing.T) {
 
 	parent, err := path.ParentPath()
 	if err != nil {
-		t.Fatal("expected /home to have parent Path:", err)
+		t.Fatal("expected /home to have parent path:", err)
 	}
 	if parent.ID() != Path("/").ID() {
 		t.Fatalf("expected /home parent to be / , got '%v':", parent)
@@ -101,42 +101,42 @@ func TestPath_ParentPath_Root(t *testing.T) {
 
 	parent, err = path.ParentPath()
 	if err == nil {
-		t.Fatalf("expected no parent Path, got one: '%+v'", parent)
+		t.Fatalf("expected no parent path, got one: '%+v'", parent)
 	}
 }
 
 func TestPath_Whiteout(t *testing.T) {
-	path := Path("/some/Path/to/.wh.afile")
+	path := Path("/some/path/to/.wh.afile")
 
 	if !path.IsWhiteout() {
-		t.Fatal("Path should be a whiteout")
+		t.Fatal("path should be a whiteout")
 	}
 
-	path = Path("/some/Path/to/.wh..wh..opq")
+	path = Path("/some/path/to/.wh..wh..opq")
 
 	if !path.IsWhiteout() {
-		t.Fatal("Path should be a whiteout")
+		t.Fatal("path should be a whiteout")
 	}
 }
 
 func TestPath_UnWhiteoutPath(t *testing.T) {
-	path := Path("/some/Path/to/.wh..wh..opq")
+	path := Path("/some/path/to/.wh..wh..opq")
 
 	newPath, err := path.UnWhiteoutPath()
 	if err != nil {
 		t.Fatal("error while unwhiteing out", err)
 	}
-	if newPath != Path("/some/Path/to") {
-		t.Fatal("Path should be a whiteout")
+	if newPath != Path("/some/path/to") {
+		t.Fatal("path should be a whiteout")
 	}
 
-	path = "/some/Path/to/.wh.somefile.txt"
+	path = "/some/path/to/.wh.somefile.txt"
 
 	newPath, err = path.UnWhiteoutPath()
 	if err != nil {
 		t.Fatal("error while unwhiteing out", err)
 	}
-	if newPath != "/some/Path/to/somefile.txt" {
-		t.Fatal("Path should be a whiteout")
+	if newPath != "/some/path/to/somefile.txt" {
+		t.Fatal("path should be a whiteout")
 	}
 }
