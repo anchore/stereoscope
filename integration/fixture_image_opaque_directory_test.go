@@ -1,16 +1,13 @@
-// +build integration
-
 package integration
 
 import (
-	"testing"
-
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/imagetest"
+	"testing"
 )
 
 func TestImage_SquashedTree_OpaqueDirectoryExistsInFileCatalog(t *testing.T) {
-	image, cleanup := imagetest.GetFixtureImage(t, "docker", "image-opaque-directory")
+	image, cleanup := imagetest.GetFixtureImage(t, "docker-archive", "image-opaque-directory")
 	defer cleanup()
 
 	tree := image.SquashedTree()

@@ -3,6 +3,7 @@ package image
 import (
 	"archive/tar"
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 	"strings"
@@ -13,39 +14,39 @@ import (
 
 // fetchFileContentsByPath is a common helper function for resolving the file contents for a path from the file
 // catalog relative to the given tree.
-func fetchFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (string, error) {
-	fileReference := filetree.File(path)
+func fetchFileContentsByPath(ft *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (io.ReadCloser, error) {
+	fileReference := ft.File(path)
 	if fileReference == nil {
-		return "", fmt.Errorf("could not find file path in Tree: %s", path)
+		return nil, fmt.Errorf("could not find file path in Tree: %s", path)
 	}
 
 	// if this is a link resolve to the final file reference...
 	var err error
-	fileReference, err = resolveLink(*fileReference, filetree, fileCatalog)
+	fileReference, err = resolveLink(*fileReference, ft, fileCatalog)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	content, err := fileCatalog.FileContents(*fileReference)
+	reader, err := fileCatalog.FileContents(*fileReference)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return content, nil
+	return reader, nil
 }
 
 // fetchMultipleFileContentsByPath is a common helper function for resolving the file contents for all paths from the
 // file catalog relative to the given tree. If any one path does not exist in the given tree then an error is returned.
-func fetchMultipleFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]string, error) {
+func fetchMultipleFileContentsByPath(ft *tree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
 	fileReferences := make([]file.Reference, len(paths))
-	for idx, path := range paths {
-		fileReference := filetree.File(path)
+	for idx, p := range paths {
+		fileReference := ft.File(p)
 		if fileReference == nil {
-			return nil, fmt.Errorf("could not find file path in Tree: %s", path)
+			return nil, fmt.Errorf("could not find file path in Tree: %s", p)
 		}
 
 		// if this is a link resolve to the final file reference...
 		var err error
-		fileReference, err = resolveLink(*fileReference, filetree, fileCatalog)
+		fileReference, err = resolveLink(*fileReference, ft, fileCatalog)
 		if err != nil {
 			return nil, err
 		}
@@ -53,11 +54,11 @@ func fetchMultipleFileContentsByPath(filetree *tree.FileTree, fileCatalog *FileC
 		fileReferences[idx] = *fileReference
 	}
 
-	content, err := fileCatalog.MultipleFileContents(fileReferences...)
+	readers, err := fileCatalog.MultipleFileContents(fileReferences...)
 	if err != nil {
 		return nil, err
 	}
-	return content, nil
+	return readers, nil
 }
 
 // resolveLink is a common helper function for resolving a file reference that represents a symlink or hardlink

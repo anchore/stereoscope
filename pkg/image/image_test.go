@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/go-test/deep"
 	"github.com/google/go-containerregistry/pkg/name"
+	"io/ioutil"
+	"os"
 	"testing"
 )
 
@@ -74,7 +76,15 @@ func TestImageAdditionalMetadata(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			img := NewImage(nil, test.options...)
+			tempFile, err := ioutil.TempFile("", "")
+			if err != nil {
+				t.Fatalf("could not create tempfile: %+v", err)
+			}
+			t.Cleanup(func() {
+				os.Remove(tempFile.Name())
+			})
+
+			img := NewImage(nil, tempFile.Name(), test.options...)
 
 			err = img.applyOverrideMetadata()
 			if err != nil {

@@ -2,6 +2,7 @@ package integration
 
 import (
 	"fmt"
+	"io/ioutil"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -43,7 +44,7 @@ func TestImageSymlinks(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			i, cleanup := imagetest.GetFixtureImage(t, c.source, "image-symlinks")
-			defer cleanup()
+			t.Cleanup(cleanup)
 			assertImageSymlinkLinkResolution(t, i)
 		})
 	}
@@ -64,13 +65,13 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 
 		eM, err := i.FileCatalog.Get(*expectedResolve)
 		if err == nil {
-			exLayer = int(eM.Source.Metadata.Index)
+			exLayer = int(eM.Layer.Metadata.Index)
 			exType = eM.Metadata.TypeFlag
 		}
 
 		aM, err := i.FileCatalog.Get(*actualResolve)
 		if err == nil {
-			acLayer = int(aM.Source.Metadata.Index)
+			acLayer = int(aM.Layer.Metadata.Index)
 			acType = aM.Metadata.TypeFlag
 		}
 
@@ -101,7 +102,11 @@ func fetchContents(t *testing.T, i *image.Image, cfg linkFetchConfig) string {
 	if err != nil {
 		t.Fatalf("could not fetch contents of %+v: %+v", cfg.linkPath, err)
 	}
-	return contents
+	b, err := ioutil.ReadAll(contents)
+	if err != nil {
+		t.Fatalf("unable to fetch contents for %+v : %+v", cfg, err)
+	}
+	return string(b)
 }
 
 func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {

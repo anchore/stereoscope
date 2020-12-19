@@ -143,7 +143,7 @@ func TestEnumerateFileMetadataFromTar_GoCase(t *testing.T) {
 
 	idx := 0
 	for metadata := range EnumerateFileMetadataFromTar(tarReader) {
-		t.Log("Path:", metadata.Path)
+		t.Log("path:", metadata.Path)
 		if len(expected) <= idx {
 			t.Fatal("more metadata files than expected!")
 		}
@@ -154,74 +154,8 @@ func TestEnumerateFileMetadataFromTar_GoCase(t *testing.T) {
 		}
 		idx++
 	}
-}
 
-func TestContentsFromTar_GoCase(t *testing.T) {
-	tarReader, cleanup := getTarFixture(t, "fixture-1")
-	defer cleanup()
-
-	first := Reference{
-		id:   ID(1),
-		Path: "path/branch/one/file-1.txt",
-	}
-
-	second := Reference{
-		id:   ID(2),
-		Path: "path/branch/two/file-2.txt",
-	}
-
-	third := Reference{
-		id:   ID(3),
-		Path: "path/file-3.txt",
-	}
-
-	expected := map[Reference]string{
-		first:  "first file\n",
-		second: "second file\n",
-		third:  "third file\n",
-	}
-
-	request := map[string]Reference{
-		string(first.Path):  first,
-		string(second.Path): second,
-		string(third.Path):  third,
-	}
-
-	actual, err := ContentsFromTar(tarReader, request)
-	if err != nil {
-		t.Fatal("could not read from file reader:", err)
-	}
-
-	if len(expected) != len(actual) {
-		t.Fatalf("mismatched result lengths: %d!=%d", len(expected), len(actual))
-	}
-
-	for expectedRef, expectedContents := range expected {
-		actualContents, ok := actual[expectedRef]
-		if !ok {
-			t.Errorf("could not find key: %+v", expectedRef)
-		}
-		if actualContents != expectedContents {
-			t.Errorf("mismatched contents for key: %+v\n\texpected: %+v\n\tgot     : %+v\n", expectedRef, expectedContents, actualContents)
-		}
-	}
-}
-
-func TestContentsFromTar_MissingFile(t *testing.T) {
-	tarReader, cleanup := getTarFixture(t, "fixture-1")
-	defer cleanup()
-
-	ref := Reference{
-		id:   ID(99),
-		Path: "nOn-ExIsTaNt-paTh",
-	}
-
-	request := map[string]Reference{
-		string(ref.Path): ref,
-	}
-
-	_, err := ContentsFromTar(tarReader, request)
-	if err == nil {
-		t.Error("expected an error but did not find one")
+	if idx != len(expected) {
+		t.Errorf("unexpected length: %d != %d", len(expected), idx)
 	}
 }

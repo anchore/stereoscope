@@ -59,7 +59,7 @@ func (p Path) UnWhiteoutPath() (Path, error) {
 	return Path(path.Join(string(parent), strings.TrimPrefix(basename, WhiteoutPrefix))), nil
 }
 
-// ParentPath returns a Path object to the current files parent directory (or errors out if there is no parent)
+// ParentPath returns a path object to the current files parent directory (or errors out if there is no parent)
 func (p Path) ParentPath() (Path, error) {
 	parent, child := path.Split(string(p))
 	sanitized := Path(parent).Normalize()

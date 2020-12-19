@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/anchore/stereoscope/pkg/file"
+
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/apex/log"
@@ -17,13 +19,15 @@ var ErrMultipleManifests = fmt.Errorf("cannot process multiple docker manifests"
 type TarballImageProvider struct {
 	path      string
 	extraTags []string
+	tmpDirGen *file.TempDirGenerator
 }
 
 // NewProviderFromTarball creates a new provider instance for the specific image already at the given path.
-func NewProviderFromTarball(path string, tags ...string) *TarballImageProvider {
+func NewProviderFromTarball(path string, tmpDirGen *file.TempDirGenerator, tags ...string) *TarballImageProvider {
 	return &TarballImageProvider{
 		path:      path,
 		extraTags: tags,
+		tmpDirGen: tmpDirGen,
 	}
 }
 
@@ -85,5 +89,10 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 		metadata = append(metadata, image.WithTags(tags.ToSlice()...))
 	}
 
-	return image.NewImage(img, metadata...), nil
+	contentTempDir, err := p.tmpDirGen.NewTempDir()
+	if err != nil {
+		return nil, err
+	}
+
+	return image.NewImage(img, contentTempDir, metadata...), nil
 }
