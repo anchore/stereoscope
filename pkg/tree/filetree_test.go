@@ -86,7 +86,7 @@ func TestFileTree_RemovePath(t *testing.T) {
 	}
 }
 
-func TestFileTree_FilesByRegex(t *testing.T) {
+func TestFileTree_FilesByGlob(t *testing.T) {
 	tr := NewFileTree()
 
 	paths := []string{
@@ -163,13 +163,6 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 			},
 		},
 		{
-			g: "/**/?-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-				"/home/wagoodman/b-file.txt",
-			},
-		},
-		{
 			g: "/**/*-file.txt",
 			expected: []string{
 				"/home/a-file.txt",
@@ -196,6 +189,322 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 				"/home/wagoodman/file.txt",
 				"/home/wagoodman/b-file.txt",
 				"/home/wagoodman/some/deeply/nested/spot/file.txt",
+				"/home/a-file.txt",
+				"/home/nothing.txt",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.g, func(t *testing.T) {
+			t.Log("PATTERN: ", test.g)
+			actual, err := tr.FilesByGlob(test.g)
+			if err != nil && !test.err {
+				t.Fatal("failed to search by glob:", err)
+			} else if err == nil && test.err {
+				t.Fatalf("expected an error but did not get one")
+			} else if err != nil && test.err {
+				// we expected an error, nothing else matters
+				return
+			}
+
+			actualSet := internal.NewStringSet()
+			expectedSet := internal.NewStringSet()
+
+			for _, f := range actual {
+				actualSet.Add(string(f.Path))
+			}
+
+			for _, e := range test.expected {
+				expectedSet.Add(e)
+				if !actualSet.Contains(e) {
+					t.Errorf("missing search hit: %s", e)
+				}
+			}
+
+			for _, f := range actual {
+				if !expectedSet.Contains(string(f.Path)) {
+					t.Errorf("extra search hit: %+v", f)
+				}
+			}
+
+		})
+	}
+
+}
+
+func TestFileTree_FilesByGlob_WithAbsoluteLinks(t *testing.T) {
+	tr := NewFileTree()
+
+	paths := []string{
+		"/home/wagoodman/awesome/file.txt",
+		"/home/wagoodman/file.txt",
+		"/home/wagoodman/b-file.txt",
+		// target for a link
+		"/linked-spot/nested/spot/file.txt",
+		"/home/a-file.txt",
+		"/home/nothing.txt",
+		"/home/dir",
+		"/place/example.gif",
+	}
+
+	for _, p := range paths {
+		_, err := tr.AddPath(file.Path(p))
+		if err != nil {
+			t.Fatalf("failed to add path ('%s'): %+v", p, err)
+		}
+	}
+
+	_, err := tr.AddLink("/home/wagoodman/some/deeply", "/linked-spot")
+	if err != nil {
+		t.Fatalf("could notsetup link: %+v", err)
+	}
+
+	tests := []struct {
+		g        string
+		expected []string
+		err      bool
+	}{
+		{
+			g: "/home/wagoodman/some/**",
+			expected: []string{
+				"/linked-spot/nested/spot/file.txt", // link
+			},
+		},
+		{
+			g: "/home/wagoodman/**/file.txt",
+			expected: []string{
+				"/linked-spot/nested/spot/file.txt", // link
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+			},
+		},
+		{
+			g: "/home/wagoodman/**",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/linked-spot/nested/spot/file.txt", // link
+			},
+		},
+		{
+			g:        "file.txt",
+			expected: []string{},
+		},
+		{
+			g:        "*file.txt",
+			expected: []string{},
+		},
+		{
+			g: "**/*file.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/linked-spot/nested/spot/file.txt", // link
+				"/home/a-file.txt",
+			},
+		},
+		{
+			g: "*/example.gif",
+			expected: []string{
+				"/place/example.gif",
+			},
+		},
+		{
+			g: "/**/file.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/linked-spot/nested/spot/file.txt", // link & target
+			},
+		},
+		{
+			g: "/**/?-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+				"/home/wagoodman/b-file.txt",
+			},
+		},
+		{
+			g: "/**/*-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+				"/home/wagoodman/b-file.txt",
+			},
+		},
+		{
+			g: "**/a-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+			},
+		},
+		{
+			g: "/**/*.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/linked-spot/nested/spot/file.txt", // line & target
+				"/home/a-file.txt",
+				"/home/nothing.txt",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.g, func(t *testing.T) {
+			t.Log("PATTERN: ", test.g)
+			actual, err := tr.FilesByGlob(test.g)
+			if err != nil && !test.err {
+				t.Fatal("failed to search by glob:", err)
+			} else if err == nil && test.err {
+				t.Fatalf("expected an error but did not get one")
+			} else if err != nil && test.err {
+				// we expected an error, nothing else matters
+				return
+			}
+
+			actualSet := internal.NewStringSet()
+			expectedSet := internal.NewStringSet()
+
+			for _, f := range actual {
+				actualSet.Add(string(f.Path))
+			}
+
+			for _, e := range test.expected {
+				expectedSet.Add(e)
+				if !actualSet.Contains(e) {
+					t.Errorf("missing search hit: %s", e)
+				}
+			}
+
+			for _, f := range actual {
+				if !expectedSet.Contains(string(f.Path)) {
+					t.Errorf("extra search hit: %+v", f)
+				}
+			}
+
+		})
+	}
+
+}
+
+func TestFileTree_FilesByGlob_WithRelativeLinks(t *testing.T) {
+	tr := NewFileTree()
+
+	paths := []string{
+		"/home/wagoodman/awesome/file.txt",
+		"/home/wagoodman/file.txt",
+		"/home/wagoodman/b-file.txt",
+		// target for a link
+		"/linked-spot/nested/spot/file.txt",
+		"/home/a-file.txt",
+		"/home/nothing.txt",
+		"/home/dir",
+		"/place/example.gif",
+	}
+
+	for _, p := range paths {
+		_, err := tr.AddPath(file.Path(p))
+		if err != nil {
+			t.Fatalf("failed to add path ('%s'): %+v", p, err)
+		}
+	}
+
+	_, err := tr.AddLink("/home/wagoodman/some/deeply", "../../../../linked-spot")
+	if err != nil {
+		t.Fatalf("could notsetup link: %+v", err)
+	}
+
+	tests := []struct {
+		g        string
+		expected []string
+		err      bool
+	}{
+		{
+			g: "/home/wagoodman/some/**",
+			expected: []string{
+				"/linked-spot/nested/spot/file.txt", // link
+			},
+		},
+		{
+			g: "/home/wagoodman/**/file.txt",
+			expected: []string{
+				"/linked-spot/nested/spot/file.txt", // link
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+			},
+		},
+		{
+			g: "/home/wagoodman/**",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/linked-spot/nested/spot/file.txt", // link
+			},
+		},
+		{
+			g:        "file.txt",
+			expected: []string{},
+		},
+		{
+			g:        "*file.txt",
+			expected: []string{},
+		},
+		{
+			g: "**/*file.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/linked-spot/nested/spot/file.txt", // link
+				"/home/a-file.txt",
+			},
+		},
+		{
+			g: "*/example.gif",
+			expected: []string{
+				"/place/example.gif",
+			},
+		},
+		{
+			g: "/**/file.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/linked-spot/nested/spot/file.txt", // link & target
+			},
+		},
+		{
+			g: "/**/?-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+				"/home/wagoodman/b-file.txt",
+			},
+		},
+		{
+			g: "/**/*-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+				"/home/wagoodman/b-file.txt",
+			},
+		},
+		{
+			g: "**/a-file.txt",
+			expected: []string{
+				"/home/a-file.txt",
+			},
+		},
+		{
+			g: "/**/*.txt",
+			expected: []string{
+				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
+				"/home/wagoodman/b-file.txt",
+				"/linked-spot/nested/spot/file.txt", // line & target
 				"/home/a-file.txt",
 				"/home/nothing.txt",
 			},

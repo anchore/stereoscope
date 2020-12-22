@@ -3,10 +3,10 @@ package tree
 import (
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/tree/node"
 	"github.com/bmatcuk/doublestar/v2"
 )
 
@@ -39,11 +39,19 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]os.FileInfo, 0)
-	for idx, child := range f.os.ft.tree.Children(file.Path(f.name)) {
+	exists, p, _, err := f.os.ft.resolveLinkPathToFile(file.Path(f.name))
+	if err != nil {
+		return ret, err
+	}
+	if !exists {
+		return ret, nil
+	}
+	for idx, child := range f.os.ft.tree.Children(p) {
 		if idx == n && n != -1 {
 			break
 		}
-		r, err := f.os.Lstat(string(child.ID()))
+		requestPath := filepath.Join(f.name, filepath.Base(string(child.ID())))
+		r, err := f.os.Lstat(requestPath)
 		if err != nil {
 			return nil, err
 		}
@@ -60,12 +68,16 @@ type osAdapter struct {
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link. If there is an error,
 // it will be of type *PathError.
 func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
-	_, ok := a.ft.pathToFileRef[node.ID(name)]
-	if !ok {
+	exists, p, ref, err := a.ft.resolveLinkPathToFile(file.Path(name))
+	if err != nil {
+		return &fileinfoAdapter{}, err
+	}
+	if !exists {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
-	isDir := len(a.ft.tree.Children(file.Path(name))) > 0
-	ref := a.ft.File(file.Path(name))
+
+	isDir := len(a.ft.tree.Children(p)) > 0
+
 	isLink := false
 	if ref != nil {
 		isLink = ref.LinkPath != ""
@@ -87,18 +99,19 @@ func (a *osAdapter) PathSeparator() rune {
 
 // Stat returns a FileInfo describing the named file. If there is an error, it will be of type *PathError.
 func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
-	exists, _, ref, err := a.ft.resolveLinkPathToFile(file.Path(name))
+	exists, p, ref, err := a.ft.resolveLinkPathToFile(file.Path(name))
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}
 	if !exists {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
-	isDir := len(a.ft.tree.Children(file.Path(name))) > 0
+	isDir := len(a.ft.tree.Children(p)) > 0
 	isLink := false
 	if ref != nil {
 		isLink = ref.LinkPath != ""
 	}
+
 	return &fileinfoAdapter{
 		name:    name,
 		dir:     isDir,
