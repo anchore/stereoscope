@@ -15,8 +15,8 @@ import (
 // fetchFileContentsByPath is a common helper function for resolving the file contents for a path from the file
 // catalog relative to the given tree.
 func fetchFileContentsByPath(ft *tree.FileTree, fileCatalog *FileCatalog, path file.Path) (io.ReadCloser, error) {
-	fileReference := ft.File(path)
-	if fileReference == nil {
+	exists, fileReference := ft.File(path)
+	if !exists && fileReference == nil {
 		return nil, fmt.Errorf("could not find file path in Tree: %s", path)
 	}
 
@@ -39,8 +39,8 @@ func fetchFileContentsByPath(ft *tree.FileTree, fileCatalog *FileCatalog, path f
 func fetchMultipleFileContentsByPath(ft *tree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
 	fileReferences := make([]file.Reference, len(paths))
 	for idx, p := range paths {
-		fileReference := ft.File(p)
-		if fileReference == nil {
+		exists, fileReference := ft.File(p)
+		if !exists && fileReference == nil {
 			return nil, fmt.Errorf("could not find file path in Tree: %s", p)
 		}
 
@@ -111,10 +111,10 @@ func resolveLink(ref file.Reference, t *tree.FileTree, fileCatalog *FileCatalog)
 			nextPath = filepath.Clean(path.Join(parentDir, entry.Metadata.Linkname))
 		}
 
-		nextRef := t.File(file.Path(nextPath))
+		exists, nextRef := t.File(file.Path(nextPath))
 
 		// if there is no next path, return this reference (dead link)
-		if nextRef == nil {
+		if !exists && nextRef == nil {
 			return currentRef, nil
 		}
 		currentRef = nextRef

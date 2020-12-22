@@ -52,10 +52,10 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		}
 		requestPath := filepath.Join(f.name, filepath.Base(string(child.ID())))
 		r, err := f.os.Lstat(requestPath)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			// Lstat by default returns an error when the path cannot be found
+			ret = append(ret, r)
 		}
-		ret = append(ret, r)
 	}
 	return ret, nil
 }

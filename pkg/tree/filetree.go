@@ -130,9 +130,9 @@ func (t *FileTree) file(path file.Path) (bool, file.Path, *file.Reference) {
 	// Therefore we can safely lookup the path first without worrying about symlink resolution yet... if there is a
 	// hit, return it! If not, fallback to symlink resolution.
 
-	//if value, ok := t.pathToFileRef[path.ID()]; ok {
-	//	return true, path, value
-	//}
+	if value, ok := t.pathToFileRef[path.ID()]; ok {
+		return true, path, value
+	}
 
 	// symlink resolution!... note that this is really only valid within the context of a filetree that represents a
 	// squash tree (or is simply not a single union FS layer).
@@ -141,9 +141,9 @@ func (t *FileTree) file(path file.Path) (bool, file.Path, *file.Reference) {
 }
 
 // File fetches a file.Reference for the given path. Returns nil if the path does not exist in the FileTree.
-func (t *FileTree) File(path file.Path) *file.Reference {
-	_, _, ref := t.file(path)
-	return ref
+func (t *FileTree) File(path file.Path) (bool, *file.Reference) {
+	exists, _, ref := t.file(path)
+	return exists, ref
 }
 
 func (t *FileTree) resolveLinkPathToFile(thePath file.Path) (bool, file.Path, *file.Reference, error) {
@@ -277,12 +277,12 @@ func (t *FileTree) FilesByGlob(query string) ([]file.Reference, error) {
 		return nil, err
 	}
 	for _, match := range matches {
-		ref := t.File(file.Path(match))
+		_, ref := t.File(file.Path(match))
+		_, _, ref, err := t.resolveLinkPathToFile(file.Path(match))
+		if err != nil {
+			return nil, err
+		}
 		if ref != nil {
-			if ref.LinkPath != "" {
-				// links should not be included, though the globber will return them
-				continue
-			}
 			result = append(result, *ref)
 		}
 	}
