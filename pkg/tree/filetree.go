@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
+	"github.com/bmatcuk/doublestar/v2"
 )
 
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
@@ -37,8 +39,8 @@ func NewFileTree() *FileTree {
 	}
 }
 
-// Copy returns a copy of the current FileTree.
-func (t *FileTree) Copy() (*FileTree, error) {
+// copy returns a copy of the current FileTree.
+func (t *FileTree) copy() (*FileTree, error) {
 	dest := NewFileTree()
 	for p, ref := range t.pathToFileRef {
 		pathObj := file.Path(p)
@@ -134,7 +136,8 @@ func (t *FileTree) file(path file.Path) (bool, *file.Reference) {
 
 	// symlink resolution!... note that this is really only valid within the context of a filetree that represents a
 	// squash tree (or is simply not a single union FS layer).
-	return t.resolveLink(path)
+	exists, _, ref := t.resolvePath(path)
+	return exists, ref
 }
 
 // File fetches a file.Reference for the given path. Returns nil if the path does not exist in the FileTree.
@@ -143,8 +146,59 @@ func (t *FileTree) File(path file.Path) *file.Reference {
 	return ref
 }
 
-func (t *FileTree) resolveLink(path file.Path) (bool, *file.Reference) {
+func (t *FileTree) resolveLinkPathToFile(thePath file.Path) (bool, file.Path, *file.Reference, error) {
+	// get to the link target
+	exists, p, ref := t.resolvePath(thePath)
+	if !exists || ref == nil {
+		return exists, p, ref, nil
+	}
+
+	// keep resolving links until a regular file or directory is found
+	alreadySeen := file.NewFileReferenceSet()
+	currentRef := ref
+	for {
+		if currentRef == nil {
+			// does not exist....
+			return false, "", nil, nil
+		}
+		if alreadySeen.Contains(*currentRef) {
+			return false, "", nil, fmt.Errorf("cycle during symlink resolution: %+v", currentRef)
+		}
+
+		if currentRef.LinkPath == "" {
+			// no resolution and there is no next link (pseudo dead link)... return what you found
+			// any content fetches will fail, but that's ok
+			return true, "", currentRef, nil
+		}
+
+		// prepare for the next iteration
+		alreadySeen.Add(*currentRef)
+
+		var nextPath string
+		if currentRef.LinkPath.IsAbsolutePath() {
+			// use links with absolute paths blindly
+			nextPath = string(currentRef.LinkPath)
+		} else {
+			// resolve relative link paths
+			var parentDir string
+			parentDir, _ = filepath.Split(string(currentRef.Path))
+			// assemble relative link path by normalizing: "/cur/dir/../file1.txt" --> "/cur/file1.txt"
+			nextPath = filepath.Clean(path.Join(parentDir, string(currentRef.LinkPath)))
+		}
+
+		nextRef := t.File(file.Path(nextPath))
+
+		// if there is no next path, return this reference (dead link)
+		if nextRef == nil {
+			return false, currentRef.Path, currentRef, nil
+		}
+		currentRef = nextRef
+	}
+}
+
+func (t *FileTree) resolvePath(path file.Path) (bool, file.Path, *file.Reference) {
 	var currentPathStr string
+	var currentPath file.Path
 	var pathParts = strings.Split(string(path.Normalize()), file.DirSeparator)
 	var ref *file.Reference
 	var ok bool
@@ -155,7 +209,7 @@ func (t *FileTree) resolveLink(path file.Path) (bool, *file.Reference) {
 		}
 
 		// cumulatively gather where we are currently at and provide a rich object
-		currentPath := file.Path(currentPathStr + file.DirSeparator + part).Normalize()
+		currentPath = file.Path(currentPathStr + file.DirSeparator + part).Normalize()
 		currentPathStr = string(currentPath)
 
 		ref, ok = t.pathToFileRef[currentPath.ID()]
@@ -164,7 +218,7 @@ func (t *FileTree) resolveLink(path file.Path) (bool, *file.Reference) {
 			// 1. the current path is really invalid and we should return NIL indicating that it cannot be resolved.
 			// 2. the current path is a link? no, this isn't possible since we are iterating through constituent paths
 			//      in order, so we are guaranteed to hit parent links in which we should adjust the search path accordingly.
-			return false, nil
+			return false, "", nil
 		}
 
 		// this is positively a path, however, there is no information about this node. This may be OK since we
@@ -189,19 +243,39 @@ func (t *FileTree) resolveLink(path file.Path) (bool, *file.Reference) {
 	}
 	// by this point we have processed all constituent paths; there were no un-added paths and the path is guaranteed
 	// to have followed link resolution. Let's return the file reference at this point.
-	return true, ref
+	return true, currentPath, ref
+}
+
+func (t *FileTree) glob(query string) ([]string, error) {
+	if len(query) == 0 {
+		return nil, fmt.Errorf("no glob pattern given")
+	}
+
+	if query[0] != file.DirSeparator[0] {
+		// this is for an image, so it should always be relative to root
+		query = file.DirSeparator + query
+	}
+
+	matches, err := doublestar.GlobOS(&osAdapter{ft: t}, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return matches, nil
 }
 
 // File fetches zero to many file.References for the given glob pattern.
 func (t *FileTree) FilesByGlob(query string) ([]file.Reference, error) {
 	result := make([]file.Reference, 0)
 
-	// TODO: critical! does not match against symlinks....
-	for _, f := range t.pathToFileRef {
-		if f != nil {
-			if internal.GlobMatch(query, string(f.Path)) {
-				result = append(result, *f)
-			}
+	matches, err := t.glob(query)
+	if err != nil {
+		return nil, err
+	}
+	for _, match := range matches {
+		ref := t.File(file.Path(match))
+		if ref != nil {
+			result = append(result, *ref)
 		}
 	}
 
@@ -215,16 +289,14 @@ func (t *FileTree) setFile(path file.Path, ref *file.Reference) error {
 		return err
 	}
 
-	original, ok := t.pathToFileRef[path.ID()]
+	_, ok := t.pathToFileRef[path.ID()]
 
 	if !ok {
 		return fmt.Errorf("file does not already exist in tree (cannot replace)")
 	}
 
-	// TODO: critical! add link related lookups here for glob...
-	if original != nil {
-		delete(t.pathToFileRef, original.Path.ID())
-	}
+	delete(t.pathToFileRef, path.ID())
+
 	t.pathToFileRef[path.ID()] = ref
 
 	return nil
@@ -256,8 +328,6 @@ func (t *FileTree) AddLink(path file.Path, linkPath file.Path) (*file.Reference,
 	}
 
 	f := file.NewFileLinkReference(path, linkPath)
-
-	// TODO: critical! track link info for help with glob searching...?
 
 	return f, t.addPath(path, f)
 }
@@ -399,10 +469,10 @@ func (t *FileTree) Equal(other *FileTree) bool {
 	return len(extra) == 0 && len(missing) == 0
 }
 
-// Merge takes the given tree and combines it with the current tree, preferring files in the other tree if there
+// merge takes the given tree and combines it with the current tree, preferring files in the other tree if there
 // are path conflicts. This is the basis function for squashing (where the current tree is the bottom tree and the
 // given tree is the top tree).
-func (t *FileTree) Merge(other *FileTree) {
+func (t *FileTree) merge(other *FileTree) {
 	conditions := WalkConditions{
 		ShouldContinueBranch: other.ConditionFn(func(p file.Path, f *file.Reference) bool {
 			return !p.IsWhiteout()

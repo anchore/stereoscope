@@ -1,6 +1,7 @@
 package image
 
 import (
+	"archive/tar"
 	"fmt"
 	"io"
 	"os"
@@ -99,12 +100,21 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	}
 
 	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
-		fileReference, err := l.Tree.AddPath(file.Path(metadata.Path))
-		if err != nil {
-			return err
+		var fileReference *file.Reference
+		if metadata.TypeFlag == tar.TypeSymlink || metadata.TypeFlag == tar.TypeLink {
+			fileReference, err = l.Tree.AddLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			if err != nil {
+				return err
+			}
+		} else {
+			fileReference, err = l.Tree.AddPath(file.Path(metadata.Path))
+			if err != nil {
+				return err
+			}
 		}
+
 		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q during tar iteration", metadata.Path)
+			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.Linkname)
 		}
 
 		l.Metadata.Size += metadata.Size

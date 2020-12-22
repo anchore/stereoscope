@@ -19,21 +19,21 @@ func (u *UnionFileTree) Squash() (*FileTree, error) {
 	case 0:
 		return NewFileTree(), nil
 	case 1:
-		return u.trees[0].Copy()
+		return u.trees[0].copy()
 	}
 
 	var squashedTree *FileTree
 	var err error
 	for layerIdx, refTree := range u.trees {
 		if layerIdx == 0 {
-			squashedTree, err = refTree.Copy()
+			squashedTree, err = refTree.copy()
 			if err != nil {
 				return nil, err
 			}
 			continue
 		}
 
-		squashedTree.Merge(refTree)
+		squashedTree.merge(refTree)
 	}
 	return squashedTree, nil
 }

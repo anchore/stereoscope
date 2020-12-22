@@ -97,6 +97,7 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 		"/home/a-file.txt",
 		"/home/nothing.txt",
 		"/home/dir",
+		"/place/example.gif",
 	}
 
 	for _, p := range paths {
@@ -109,25 +110,23 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 	tests := []struct {
 		g        string
 		expected []string
+		err      bool
 	}{
 		{
 			g: "/home/wagoodman/**/file.txt",
 			expected: []string{
 				"/home/wagoodman/some/deeply/nested/spot/file.txt",
 				"/home/wagoodman/awesome/file.txt",
+				"/home/wagoodman/file.txt",
 			},
 		},
 		{
 			g: "/home/wagoodman/**",
 			expected: []string{
-				"/home/wagoodman/awesome",
+				// note: this will only find files, not dirs
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
 				"/home/wagoodman/b-file.txt",
-				"/home/wagoodman/some",
-				"/home/wagoodman/some/deeply",
-				"/home/wagoodman/some/deeply/nested",
-				"/home/wagoodman/some/deeply/nested/spot",
 				"/home/wagoodman/some/deeply/nested/spot/file.txt",
 			},
 		},
@@ -136,7 +135,11 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 			expected: []string{},
 		},
 		{
-			g: "*file.txt",
+			g:        "*file.txt",
+			expected: []string{},
+		},
+		{
+			g: "**/*file.txt",
 			expected: []string{
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
@@ -146,7 +149,13 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 			},
 		},
 		{
-			g: "*/file.txt",
+			g: "*/example.gif",
+			expected: []string{
+				"/place/example.gif",
+			},
+		},
+		{
+			g: "/**/file.txt",
 			expected: []string{
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
@@ -154,21 +163,21 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 			},
 		},
 		{
-			g: "*/?-file.txt",
+			g: "/**/?-file.txt",
 			expected: []string{
 				"/home/a-file.txt",
 				"/home/wagoodman/b-file.txt",
 			},
 		},
 		{
-			g: "*/*-file.txt",
+			g: "/**/*-file.txt",
 			expected: []string{
 				"/home/a-file.txt",
 				"/home/wagoodman/b-file.txt",
 			},
 		},
 		{
-			g: "**/?-file.txt",
+			g: "/**/?-file.txt",
 			expected: []string{
 				"/home/a-file.txt",
 				"/home/wagoodman/b-file.txt",
@@ -181,7 +190,7 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 			},
 		},
 		{
-			g: "*.txt",
+			g: "/**/*.txt",
 			expected: []string{
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
@@ -197,8 +206,13 @@ func TestFileTree_FilesByRegex(t *testing.T) {
 		t.Run(test.g, func(t *testing.T) {
 			t.Log("PATTERN: ", test.g)
 			actual, err := tr.FilesByGlob(test.g)
-			if err != nil {
+			if err != nil && !test.err {
 				t.Fatal("failed to search by glob:", err)
+			} else if err == nil && test.err {
+				t.Fatalf("expected an error but did not get one")
+			} else if err != nil && test.err {
+				// we expected an error, nothing else matters
+				return
 			}
 
 			actualSet := internal.NewStringSet()
@@ -233,7 +247,7 @@ func TestFileTree_Merge(t *testing.T) {
 	tr2 := NewFileTree()
 	tr2.AddPath("/home/wagoodman/awesome/file-2.txt")
 
-	tr1.Merge(tr2)
+	tr1.merge(tr2)
 
 	for _, p := range []file.Path{"/home/wagoodman/awesome/file-1.txt", "/home/wagoodman/awesome/file-2.txt"} {
 		if !tr1.HasPath(p) {
@@ -249,7 +263,7 @@ func TestFileTree_Merge_Overwrite(t *testing.T) {
 	tr2 := NewFileTree()
 	new, _ := tr2.AddPath("/home/wagoodman/awesome/file.txt")
 
-	tr1.Merge(tr2)
+	tr1.merge(tr2)
 
 	if tr1.File("/home/wagoodman/awesome/file.txt").ID() != new.ID() {
 		t.Fatalf("did not overwrite paths on merge")
@@ -264,7 +278,7 @@ func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 	tr2 := NewFileTree()
 	tr2.AddPath("/home/wagoodman/.wh..wh..opq")
 
-	tr1.Merge(tr2)
+	tr1.merge(tr2)
 
 	for _, p := range []file.Path{"/home/wagoodman", "/home"} {
 		if !tr1.HasPath(p) {
@@ -287,7 +301,7 @@ func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
 	tr2 := NewFileTree()
 	tr2.AddPath("/home/luhring/.wh..wh..opq")
 
-	tr1.Merge(tr2)
+	tr1.merge(tr2)
 
 	for _, p := range []file.Path{"/home/luhring", "/home"} {
 		if !tr1.HasPath(p) {
@@ -303,7 +317,7 @@ func TestFileTree_Merge_Whiteout(t *testing.T) {
 	tr2 := NewFileTree()
 	tr2.AddPath("/home/wagoodman/awesome/.wh.file.txt")
 
-	tr1.Merge(tr2)
+	tr1.merge(tr2)
 
 	for _, p := range []file.Path{"/home/wagoodman/awesome", "/home/wagoodman", "/home"} {
 		if !tr1.HasPath(p) {
