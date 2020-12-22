@@ -88,7 +88,7 @@ func skopeoCopyDockerArchiveToPath(t *testing.T, dockerArchivePath, destination 
 	}
 
 	archive := fmt.Sprintf("docker-archive:%s", dockerArchivePath)
-	cmd := exec.Command("skopeo", "copy", archive, destination)
+	cmd := exec.Command("skopeo", "copy", "--insecure-policy", archive, destination)
 	cmd.Env = os.Environ()
 
 	cmd.Stdout = os.Stdout

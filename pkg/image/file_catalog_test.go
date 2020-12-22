@@ -349,11 +349,11 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 			name: "identical set of files",
 			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
 				for _, p := range filePaths {
-					f, err := fileTree.AddPathAndAncestors(p)
+					f, err := fileTree.AddPath(p)
 					if err != nil {
 						t.Fatal(err)
 					}
-					catalog.Add(f, file.Metadata{}, &Layer{})
+					catalog.Add(*f, file.Metadata{}, &Layer{})
 				}
 			},
 			expected: true,
@@ -362,13 +362,13 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 			name: "catalog missing one file that tree has",
 			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
 				for i, p := range filePaths {
-					f, err := fileTree.AddPathAndAncestors(p)
+					f, err := fileTree.AddPath(p)
 					if err != nil {
 						t.Fatal(err)
 					}
 
 					if i != 1 { // don't add filePaths[1] to the catalog
-						catalog.Add(f, file.Metadata{}, &Layer{})
+						catalog.Add(*f, file.Metadata{}, &Layer{})
 					}
 				}
 			},
@@ -379,15 +379,15 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
 				for i, p := range filePaths {
 					if i == 1 { // add filePaths[1] to only the catalog, not the tree
-						catalog.Add(file.NewFileReference(p), file.Metadata{}, &Layer{})
+						catalog.Add(*file.NewFileReference(p), file.Metadata{}, &Layer{})
 						return
 					}
 
-					f, err := fileTree.AddPathAndAncestors(p)
+					f, err := fileTree.AddPath(p)
 					if err != nil {
 						t.Fatal(err)
 					}
-					catalog.Add(f, file.Metadata{}, &Layer{})
+					catalog.Add(*f, file.Metadata{}, &Layer{})
 				}
 			},
 			expected: true,
@@ -397,7 +397,7 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
 				for _, p := range filePaths {
 					f := file.NewFileReference(p)
-					catalog.Add(f, file.Metadata{}, &Layer{})
+					catalog.Add(*f, file.Metadata{}, &Layer{})
 				}
 			},
 			expected: true,

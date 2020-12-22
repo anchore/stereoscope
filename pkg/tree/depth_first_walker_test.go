@@ -9,9 +9,9 @@ import (
 
 func dfsTestTree() *FileTree {
 	tr := NewFileTree()
-	tr.AddPathAndAncestors("/home/wagoodman/some/stuff-1.txt")
-	tr.AddPathAndAncestors("/home/wagoodman/some/stuff-2.txt")
-	tr.AddPathAndAncestors("/home/wagoodman/more/file.txt")
+	tr.AddPath("/home/wagoodman/some/stuff-1.txt")
+	tr.AddPath("/home/wagoodman/some/stuff-2.txt")
+	tr.AddPath("/home/wagoodman/more/file.txt")
 	return tr
 }
 
@@ -29,26 +29,15 @@ func TestDFS_WalkAll(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
-	actual := make([]file.Reference, 0)
-	visitor := tr.VisitorFn(func(f file.Reference) {
-		actual = append(actual, f)
+	actual := make([]file.Path, 0)
+	visitor := tr.VisitorFn(func(path file.Path, f *file.Reference) {
+		actual = append(actual, path)
 	})
 
-	var reader = tr.Reader()
-
-	walker := NewDepthFirstWalker(reader, visitor)
-
+	walker := NewDepthFirstWalker(tr.Reader(), visitor)
 	walker.WalkAll()
 
-	if len(actual) != len(expected) {
-		t.Errorf("DFS (WalkAll) did not traverse all nodes (expected %d, got %d)", len(expected), len(actual))
-	}
-
-	for idx, a := range actual {
-		if expected[idx].ID() != a.Path.ID() {
-			t.Errorf("expected DFS visit ID @%v = '%v', got %v", idx, expected[idx], a)
-		}
-	}
+	assertExpectedTraversal(t, expected, actual)
 }
 
 func TestDFS_Walk(t *testing.T) {
@@ -64,9 +53,9 @@ func TestDFS_Walk(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
-	actual := make([]file.Reference, 0)
-	visitor := tr.VisitorFn(func(f file.Reference) {
-		actual = append(actual, f)
+	actual := make([]file.Path, 0)
+	visitor := tr.VisitorFn(func(path file.Path, f *file.Reference) {
+		actual = append(actual, path)
 	})
 
 	walker := NewDepthFirstWalker(tr.Reader(), visitor)
@@ -86,14 +75,14 @@ func TestDFS_Walk_ShouldTerminate(t *testing.T) {
 		file.Path("/home/wagoodman/more/file.txt"),
 	}
 
-	actual := make([]file.Reference, 0)
-	visitor := tr.VisitorFn(func(f file.Reference) {
-		actual = append(actual, f)
+	actual := make([]file.Path, 0)
+	visitor := tr.VisitorFn(func(path file.Path, f *file.Reference) {
+		actual = append(actual, path)
 	})
 
 	h := WalkConditions{
 		ShouldTerminate: func(path node.Node) bool {
-			if tr.fileByPathID(path.ID()).Path == terminatePath {
+			if file.Path(path.ID()) == terminatePath {
 				return true
 			}
 			return false
@@ -120,15 +109,15 @@ func TestDFS_Walk_ShouldVisit(t *testing.T) {
 		file.Path("/home/wagoodman/some/stuff-2.txt"),
 	}
 
-	actual := make([]file.Reference, 0)
-	visitor := tr.VisitorFn(func(f file.Reference) {
-		actual = append(actual, f)
+	actual := make([]file.Path, 0)
+	visitor := tr.VisitorFn(func(path file.Path, f *file.Reference) {
+		actual = append(actual, path)
 	})
 
 	h := WalkConditions{
 		ShouldTerminate: nil,
 		ShouldVisit: func(path node.Node) bool {
-			if tr.fileByPathID(path.ID()).Path == skipPath {
+			if file.Path(path.ID()) == skipPath {
 				return false
 			}
 			return true
@@ -151,16 +140,16 @@ func TestDFS_Walk_ShouldPruneBranch(t *testing.T) {
 		prunePath,
 	}
 
-	actual := make([]file.Reference, 0)
-	visitor := tr.VisitorFn(func(f file.Reference) {
-		actual = append(actual, f)
+	actual := make([]file.Path, 0)
+	visitor := tr.VisitorFn(func(path file.Path, f *file.Reference) {
+		actual = append(actual, path)
 	})
 
 	h := WalkConditions{
 		ShouldTerminate: nil,
 		ShouldVisit:     nil,
 		ShouldContinueBranch: func(path node.Node) bool {
-			if tr.fileByPathID(path.ID()).Path == prunePath {
+			if file.Path(path.ID()) == prunePath {
 				return false
 			}
 			return true
@@ -172,14 +161,14 @@ func TestDFS_Walk_ShouldPruneBranch(t *testing.T) {
 	assertExpectedTraversal(t, expected, actual)
 }
 
-func assertExpectedTraversal(t *testing.T, expected []file.Path, actual []file.Reference) {
+func assertExpectedTraversal(t *testing.T, expected []file.Path, actual []file.Path) {
 	t.Helper()
 	if len(actual) != len(expected) {
 		t.Errorf("Did not traverse all nodes (expected %d, got %d)", len(expected), len(actual))
 	}
 
 	for idx, a := range actual {
-		if expected[idx].ID() != a.Path.ID() {
+		if expected[idx].ID() != a.ID() {
 			t.Errorf("expected visit ID @%v = '%v', got %v", idx, expected[idx], a.ID())
 		}
 	}

@@ -69,10 +69,6 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	l.Tree = tree.NewFileTree()
 	l.fileCatalog = catalog
 
-	// Add tree root to catalog in case it's not added during TAR reading
-	root := l.Tree.File("/")
-	catalog.Add(*root, file.Metadata{}, l)
-
 	monitor := l.trackReadProgress(metadata)
 
 	if uncompressedLayersCacheDir != "" {
@@ -103,14 +99,16 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	}
 
 	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
-		fileNode, err := l.Tree.AddPathAndAncestors(file.Path(metadata.Path))
-		l.Metadata.Size += metadata.Size
-
-		catalog.Add(fileNode, metadata, l)
-
+		fileReference, err := l.Tree.AddPath(file.Path(metadata.Path))
 		if err != nil {
 			return err
 		}
+		if fileReference == nil {
+			return fmt.Errorf("could not add path=%q during tar iteration", metadata.Path)
+		}
+
+		l.Metadata.Size += metadata.Size
+		catalog.Add(*fileReference, metadata, l)
 
 		monitor.N++
 	}

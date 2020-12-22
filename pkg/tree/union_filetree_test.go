@@ -10,16 +10,16 @@ func TestUnionFileTree_Squash(t *testing.T) {
 	ut := NewUnionTree()
 	base := NewFileTree()
 
-	base.AddPathAndAncestors("/home/wagoodman/some/stuff-1.txt")
-	originalNode, _ := base.AddPathAndAncestors("/home/wagoodman/some/stuff-2-overlap.txt")
-	base.AddPathAndAncestors("/home/wagoodman/more")
+	base.AddPath("/home/wagoodman/some/stuff-1.txt")
+	originalNode, _ := base.AddPath("/home/wagoodman/some/stuff-2-overlap.txt")
+	originalMore, _ := base.AddPath("/home/wagoodman/more")
 
 	top := NewFileTree()
-	top.AddPathAndAncestors("/etc/redhat-release")
-	top.AddPathAndAncestors("/home/wagoodman/more/things.txt")
-	newNode, _ := top.AddPathAndAncestors("/home/wagoodman/some/stuff-2-overlap.txt")
-	top.AddPathAndAncestors("/home/wagoodman/some/stuff-3.txt")
-	top.AddPathAndAncestors("/home/wagoodman/another/other-1.txt")
+	top.AddPath("/etc/redhat-release")
+	top.AddPath("/home/wagoodman/more/things.txt")
+	newNode, _ := top.AddPath("/home/wagoodman/some/stuff-2-overlap.txt")
+	top.AddPath("/home/wagoodman/some/stuff-3.txt")
+	top.AddPath("/home/wagoodman/another/other-1.txt")
 
 	ut.PushTree(base)
 	ut.PushTree(top)
@@ -33,9 +33,15 @@ func TestUnionFileTree_Squash(t *testing.T) {
 		t.Fatal("cloud not squash trees", err)
 	}
 
+	paths := squashed.AllPaths()
+	if len(paths) != 13 {
+		t.Fatalf("unexpected squashed tree number of paths: %d : %+v", len(paths), paths)
+	}
+
+	// this does not include paths with nil file refs
 	nodes := squashed.AllFiles()
-	if len(nodes) != 13 {
-		t.Fatal("unexpected squashed tree number of nodes", len(nodes))
+	if len(nodes) != 8 { // data nodes + root /
+		t.Fatalf("unexpected squashed tree number of nodes: %d : %+v", len(nodes), nodes)
 	}
 
 	if originalNode.ID() == newNode.ID() {
@@ -46,8 +52,20 @@ func TestUnionFileTree_Squash(t *testing.T) {
 		t.Fatal("failed to overwrite a path in the squash tree")
 	}
 
-	if squashed.File("/home/wagoodman/more").ID() != top.File("/home/wagoodman/more").ID() {
-		t.Fatal("implicit file if did not track to squash")
+	if base.File("/home/wagoodman/more") == nil {
+		t.Fatal("base was never created")
+	}
+
+	if originalMore.ID() != base.File("/home/wagoodman/more").ID() {
+		t.Fatal("base path ref ID changed!")
+	}
+
+	if top.File("/home/wagoodman/more") != nil {
+		t.Fatal("top file should have been implicitly nil but wasn't")
+	}
+
+	if squashed.File("/home/wagoodman/more") == nil {
+		t.Fatal("implicit file was copied to squash")
 	}
 
 }
@@ -56,13 +74,13 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 	ut := NewUnionTree()
 	base := NewFileTree()
 
-	base.AddPathAndAncestors("/some/stuff-1.txt")
-	base.AddPathAndAncestors("/some/stuff-2.txt")
-	base.AddPathAndAncestors("/other/things-1.txt")
+	base.AddPath("/some/stuff-1.txt")
+	base.AddPath("/some/stuff-2.txt")
+	base.AddPath("/other/things-1.txt")
 
 	top := NewFileTree()
-	top.AddPathAndAncestors("/some/" + file.OpaqueWhiteout)
-	top.AddPathAndAncestors("/other/" + file.WhiteoutPrefix + "things-1.txt")
+	top.AddPath("/some/" + file.OpaqueWhiteout)
+	top.AddPath("/other/" + file.WhiteoutPrefix + "things-1.txt")
 
 	ut.PushTree(base)
 	ut.PushTree(top)
@@ -72,9 +90,14 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 		t.Fatal("cloud not squash trees", err)
 	}
 
-	nodes := squashed.AllFiles()
+	nodes := squashed.AllPaths()
 	if len(nodes) != 3 {
-		t.Fatal("unexpected squashed tree number of nodes", len(nodes))
+		t.Fatal("unexpected squashed tree number of paths", len(nodes))
+	}
+
+	files := squashed.AllFiles()
+	if len(files) != 1 { // just the root node
+		t.Fatal("unexpected squashed tree number of files", len(files))
 	}
 
 	expectedPaths := []string{

@@ -26,8 +26,8 @@ func main() {
 	// Show the filetree for each layer
 	for idx, layer := range image.Layers {
 		fmt.Printf("Walking layer: %d", idx)
-		layer.Tree.Walk(func(f file.Reference) {
-			fmt.Println("   ", f.Path)
+		layer.Tree.Walk(func(path file.Path, f *file.Reference) {
+			fmt.Println("   ", path)
 		})
 		fmt.Println("-----------------------------")
 	}
@@ -36,8 +36,8 @@ func main() {
 	// Show the squashed filetree for each layer
 	for idx, layer := range image.Layers {
 		fmt.Printf("Walking squashed layer: %d", idx)
-		layer.SquashedTree.Walk(func(f file.Reference) {
-			fmt.Println("   ", f.Path)
+		layer.SquashedTree.Walk(func(path file.Path, f *file.Reference) {
+			fmt.Println("   ", path)
 		})
 		fmt.Println("-----------------------------")
 	}
@@ -45,8 +45,8 @@ func main() {
 	////////////////////////////////////////////////////////////////
 	// Show the final squashed tree
 	fmt.Printf("Walking squashed image (same as the last layer squashed tree)")
-	image.SquashedTree().Walk(func(f file.Reference) {
-		fmt.Println("   ", f.Path)
+	image.SquashedTree().Walk(func(path file.Path, f *file.Reference) {
+		fmt.Println("   ", path)
 	})
 
 	////////////////////////////////////////////////////////////////

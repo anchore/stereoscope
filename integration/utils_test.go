@@ -87,13 +87,13 @@ func compareSquashTree(t *testing.T, expected *tree.FileTree, i *image.Image) {
 	actual := i.SquashedTree()
 	if !expected.Equal(actual) {
 		t.Log("Walking expected squashed tree:")
-		expected.Walk(func(f file.Reference) {
-			t.Log("   ", f.Path)
+		expected.Walk(func(p file.Path, f *file.Reference) {
+			t.Log("   ", p)
 		})
 
 		t.Log("Walking actual squashed tree:")
-		actual.Walk(func(f file.Reference) {
-			t.Log("   ", f.Path)
+		actual.Walk(func(p file.Path, f *file.Reference) {
+			t.Log("   ", p)
 		})
 
 		extra, missing := expected.PathDiff(actual)
