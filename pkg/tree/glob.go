@@ -39,7 +39,7 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]os.FileInfo, 0)
-	exists, p, _, err := f.os.ft.resolveLinkPathToFile(file.Path(f.name))
+	exists, p, _, err := f.os.ft.resolveFile(file.Path(f.name), true)
 	if err != nil {
 		return ret, err
 	}
@@ -68,7 +68,7 @@ type osAdapter struct {
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link. If there is an error,
 // it will be of type *PathError.
 func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
-	exists, p, ref, err := a.ft.resolveLinkPathToFile(file.Path(name))
+	exists, p, ref, err := a.ft.resolveFile(file.Path(name), true)
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}
@@ -99,7 +99,7 @@ func (a *osAdapter) PathSeparator() rune {
 
 // Stat returns a FileInfo describing the named file. If there is an error, it will be of type *PathError.
 func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
-	exists, p, ref, err := a.ft.resolveLinkPathToFile(file.Path(name))
+	exists, p, ref, err := a.ft.resolveFile(file.Path(name), true)
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}

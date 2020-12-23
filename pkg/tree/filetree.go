@@ -15,6 +15,7 @@ import (
 )
 
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
+var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
 
 // FileTree represents a file/directory tree
 type FileTree struct {
@@ -66,7 +67,10 @@ func (t *FileTree) copy() (*FileTree, error) {
 
 // HasPath indicates is the given path is in the file tree.
 func (t *FileTree) HasPath(path file.Path) bool {
-	exists, _, _ := t.file(path)
+	exists, _, _, err := t.File(path, false)
+	if err != nil {
+		return false
+	}
 	return exists
 }
 
@@ -111,7 +115,7 @@ func (t *FileTree) AllPaths() []file.Path {
 }
 
 // File fetches a file.Reference for the given path. Returns nil if the path does not exist in the FileTree.
-func (t *FileTree) file(path file.Path) (bool, file.Path, *file.Reference) {
+func (t *FileTree) File(path file.Path, followBaseLink bool) (bool, file.Path, *file.Reference, error) {
 	// For:             /some/path/here
 	// Where:           /some/path -> /other/place
 	// And resolves to: /other/place/here
@@ -130,31 +134,80 @@ func (t *FileTree) file(path file.Path) (bool, file.Path, *file.Reference) {
 	// Therefore we can safely lookup the path first without worrying about symlink resolution yet... if there is a
 	// hit, return it! If not, fallback to symlink resolution.
 
-	if value, ok := t.pathToFileRef[path.ID()]; ok {
-		return true, path, value
+	if ref, ok := t.pathToFileRef[path.ID()]; ok && (ref == nil || ref != nil && ref.LinkPath == "") {
+		return true, path, ref, nil
 	}
 
-	// symlink resolution!... note that this is really only valid within the context of a filetree that represents a
-	// squash tree (or is simply not a single union FS layer).
-	exists, p, ref := t.resolvePath(path)
-	return exists, p, ref
+	// symlink resolution!... within the context of container images (which is outside of the responsibility of this object)
+	// the only really valid resolution of symlinks is in squash trees (both for an image and a layer --NOT for trees
+	// that represent a single union FS layer.
+	exists, p, ref, err := t.resolveFile(path, followBaseLink)
+	return exists, p, ref, err
 }
 
-// File fetches a file.Reference for the given path. Returns nil if the path does not exist in the FileTree.
-func (t *FileTree) File(path file.Path) (bool, *file.Reference) {
-	exists, _, ref := t.file(path)
-	return exists, ref
+// resolveFile takes the given path and returns the file.Reference at that path (if there is one). This helper will
+// do link resolution for getting to the basename in the path, but will NOT resolve the basename itself.
+func (t *FileTree) resolveFile(path file.Path, followBaseLink bool) (bool, file.Path, *file.Reference, error) {
+	var pathParts = strings.Split(string(path.Normalize()), file.DirSeparator)
+	var currentPathStr string
+	var currentPath file.Path
+	var currentRef *file.Reference
+	var exists bool
+	var err error
+
+	// iterate through all parts of the path, replacing path elements with link resolutions where possible.
+	for idx, part := range pathParts {
+		if (part == "" || part == file.DirSeparator) && idx == 0 {
+			// note: this means that we will NEVER resolve a symlink or file.Reference for /, which is OK
+			continue
+		}
+
+		// cumulatively gather where we are currently at and provide a rich object
+		currentPath = file.Path(currentPathStr + file.DirSeparator + part).Normalize()
+		currentPathStr = string(currentPath)
+
+		currentRef, exists = t.pathToFileRef[currentPath.ID()]
+		if !exists {
+			// we've reached a point where the given path that has never been observed. This can happen for one reason:
+			// 1. the current path is really invalid and we should return NIL indicating that it cannot be resolved.
+			// 2. the current path is a link? no, this isn't possible since we are iterating through constituent paths
+			//      in order, so we are guaranteed to hit parent links in which we should adjust the search path accordingly.
+			return false, currentPath, nil, nil
+		}
+
+		// this is positively a path, however, there is no information about this node. This may be OK since we
+		// allow for adding children before parents (and even don't require the parent to ever be added --which is
+		// potentially valid given the underlying messy data [tar headers]). In this case we keep building the path
+		// (which we've already done at this point) and continue.
+		if currentRef == nil {
+			continue
+		}
+
+		// we definitely have a file reference, which means that the file was specifically given to us by the caller.
+		isLastPart := idx == len(pathParts)-1
+		if currentRef.LinkPath != "" && (!isLastPart || isLastPart && followBaseLink) {
+			exists, currentPath, currentRef, err = t.followBasePath(currentRef.Path)
+			if err != nil {
+				// only expected to happen on cycles
+				return false, currentPath, nil, err
+			}
+			currentPathStr = string(currentPath)
+		}
+	}
+	// by this point we have processed all constituent paths; there were no un-added paths and the path is guaranteed
+	// to have followed link resolution. Let's return the file reference at this point.
+	return exists, currentPath, currentRef, nil
 }
 
-func (t *FileTree) resolveLinkPathToFile(thePath file.Path) (bool, file.Path, *file.Reference, error) {
-	// get to the link target
-	exists, p, ref := t.resolvePath(thePath)
+func (t *FileTree) followBasePath(realPath file.Path) (bool, file.Path, *file.Reference, error) {
+	// note: this assumes that callers are passing paths in which the constituent parts are NOT symlinks
+	ref, exists := t.pathToFileRef[realPath.ID()]
 
 	// keep resolving links until a regular file or directory is found
 	alreadySeen := internal.NewStringSet()
-	var nextRef *file.Reference
+	var err error
 	currentRef := ref
-	currentPath := p
+	currentPath := realPath
 	for {
 		// if there is no next path, return this reference (dead link)
 		if !exists {
@@ -162,7 +215,7 @@ func (t *FileTree) resolveLinkPathToFile(thePath file.Path) (bool, file.Path, *f
 		}
 
 		if alreadySeen.Contains(string(currentPath)) {
-			return false, "", nil, fmt.Errorf("cycle during symlink resolution: %+v", currentRef)
+			return false, currentPath, nil, ErrLinkCycleDetected
 		}
 
 		if currentRef != nil && currentRef.LinkPath == "" {
@@ -193,61 +246,13 @@ func (t *FileTree) resolveLinkPathToFile(thePath file.Path) (bool, file.Path, *f
 			break
 		}
 
-		exists, _, nextRef = t.file(nextPath)
-		currentRef = nextRef
-		currentPath = nextPath
+		exists, currentPath, currentRef, err = t.resolveFile(nextPath, false)
+		if err != nil {
+			// only expected to occur upon cycle detection
+			return false, currentPath, currentRef, err
+		}
 	}
 	return true, currentPath, currentRef, nil
-}
-
-func (t *FileTree) resolvePath(path file.Path) (bool, file.Path, *file.Reference) {
-	var currentPathStr string
-	var currentPath file.Path
-	var pathParts = strings.Split(string(path.Normalize()), file.DirSeparator)
-	var ref *file.Reference
-	var ok bool
-	for idx, part := range pathParts {
-		if (part == "" || part == file.DirSeparator) && idx == 0 {
-			// note: this means that we will NEVER resolve a symlink or file.Reference for /, which is OK
-			continue
-		}
-
-		// cumulatively gather where we are currently at and provide a rich object
-		currentPath = file.Path(currentPathStr + file.DirSeparator + part).Normalize()
-		currentPathStr = string(currentPath)
-
-		ref, ok = t.pathToFileRef[currentPath.ID()]
-		if !ok {
-			// we've reached a point where the given path that has never been observed. This can happen for one reason:
-			// 1. the current path is really invalid and we should return NIL indicating that it cannot be resolved.
-			// 2. the current path is a link? no, this isn't possible since we are iterating through constituent paths
-			//      in order, so we are guaranteed to hit parent links in which we should adjust the search path accordingly.
-			return false, "", nil
-		}
-
-		// this is positively a path, however, there is no information about this node. This may be OK since we
-		// allow for adding children before parents (and even don't require the parent to ever be added --which is
-		// potentially valid given the underlying messy data [tar headers]). In this case we keep building the path
-		// (which we've already done at this point) and continue.
-		if ref == nil {
-			continue
-		}
-
-		// we definitely have a file reference, which means that the file was specifically given to us by the caller.
-		if ref.LinkPath != "" {
-			// this is a symlink! let's process the ref to determine if this is a absolute or relative path (which would
-			// mean either we will be replacing the currentPathStr we have so far [with the absolute path] or appending
-			// the [relative] linkPath onto what we have so far).
-			if ref.LinkPath.IsAbsolutePath() {
-				currentPathStr = string(ref.LinkPath)
-			} else {
-				currentPathStr += file.DirSeparator + string(ref.LinkPath)
-			}
-		}
-	}
-	// by this point we have processed all constituent paths; there were no un-added paths and the path is guaranteed
-	// to have followed link resolution. Let's return the file reference at this point.
-	return true, currentPath, ref
 }
 
 func (t *FileTree) glob(query string) ([]string, error) {
@@ -277,12 +282,11 @@ func (t *FileTree) FilesByGlob(query string) ([]file.Reference, error) {
 		return nil, err
 	}
 	for _, match := range matches {
-		_, ref := t.File(file.Path(match))
-		_, _, ref, err := t.resolveLinkPathToFile(file.Path(match))
+		exists, _, ref, err := t.File(file.Path(match), true)
 		if err != nil {
 			return nil, err
 		}
-		if ref != nil {
+		if exists && ref != nil {
 			result = append(result, *ref)
 		}
 	}

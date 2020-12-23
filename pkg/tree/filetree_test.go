@@ -2,6 +2,7 @@ package tree
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/anchore/stereoscope/internal"
@@ -19,7 +20,7 @@ func TestFileTree_AddPath(t *testing.T) {
 	if len(tr.pathToFileRef) != 2 {
 		t.Fatal("unexpected file count", len(tr.pathToFileRef))
 	}
-	_, f := tr.File(path)
+	_, _, f, _ := tr.File(path, false)
 	if f != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
 	}
@@ -37,7 +38,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 		t.Fatal("unexpected file count", len(tr.pathToFileRef))
 	}
 
-	_, f := tr.File(path)
+	_, _, f, _ := tr.File(path, false)
 	if f != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
 	}
@@ -77,7 +78,7 @@ func TestFileTree_RemovePath(t *testing.T) {
 		t.Fatal("unexpected file count", len(tr.pathToFileRef))
 	}
 
-	_, f := tr.File(path)
+	_, _, f, _ := tr.File(path, false)
 	if f != nil {
 		t.Fatal("expected file to be missing")
 	}
@@ -506,7 +507,7 @@ func TestFileTree_FilesByGlob_WithAbsoluteLinks(t *testing.T) {
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
 				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // line & target
+				"/linked-spot/nested/spot/file.txt", // link & target
 				"/home/a-file.txt",
 				"/home/nothing.txt",
 			},
@@ -664,7 +665,7 @@ func TestFileTree_FilesByGlob_WithRelativeLinks(t *testing.T) {
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
 				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // line & target
+				"/linked-spot/nested/spot/file.txt", // link & target
 				"/home/a-file.txt",
 				"/home/nothing.txt",
 			},
@@ -730,12 +731,12 @@ func TestFileTree_Merge_Overwrite(t *testing.T) {
 	tr1.AddPath("/home/wagoodman/awesome/file.txt")
 
 	tr2 := NewFileTree()
-	new, _ := tr2.AddPath("/home/wagoodman/awesome/file.txt")
+	newRef, _ := tr2.AddPath("/home/wagoodman/awesome/file.txt")
 
 	tr1.merge(tr2)
 
-	_, f := tr1.File("/home/wagoodman/awesome/file.txt")
-	if f.ID() != new.ID() {
+	_, _, f, _ := tr1.File("/home/wagoodman/awesome/file.txt", false)
+	if f.ID() != newRef.ID() {
 		t.Fatalf("did not overwrite paths on merge")
 	}
 
@@ -803,140 +804,287 @@ func TestFileTree_Merge_Whiteout(t *testing.T) {
 
 }
 
-func TestFileTree_Symlink(t *testing.T) {
+func TestFileTree_File_Symlink(t *testing.T) {
+
+	tests := []struct {
+		name                 string
+		buildLinkSource      file.Path // ln -s <SOURCE> DEST
+		buildLinkDest        file.Path // ln -s SOURCE <DEST>
+		buildRealPath        file.Path // a real file that should exist (or not if "")
+		followBase           bool      // whether to follow the base request path (do link resolution)
+		requestPath          file.Path // the path to check against
+		expectedExists       bool      // if the request path should exist or not
+		expectedResolvedPath file.Path // the expected path for a request result
+		expectedErr          bool      // if an error is expected from the request
+		expectedRealRef      bool      // if the resolved reference should match the built reference from "buildRealPath"
+	}{
+		///////////////
+		{
+			name:                 "request base is ABSOLUTE symlink",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "/another/place",
+			buildRealPath:        "/another/place",
+			followBase:           true,
+			requestPath:          "/home",
+			expectedExists:       true,
+			expectedResolvedPath: "/another/place",
+			// /another/place is the "real" reference that we followed, so we should expect the IDs to match upon lookup
+			expectedRealRef: true,
+		},
+		{
+			name:                 "request base is ABSOLUTE symlink",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "/another/place",
+			buildRealPath:        "/another/place",
+			followBase:           false,
+			requestPath:          "/home",
+			expectedExists:       true,
+			expectedResolvedPath: "/home",
+			// /home is just a symlink, not the real file (which is at /another/place)
+			expectedRealRef: false,
+		},
+
+		///////////////
+		{
+			name:                 "request parent is ABSOLUTE symlink",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "/another/place",
+			buildRealPath:        "/another/place/wagoodman",
+			followBase:           true, // a nop for this case (note the expected path and ref)
+			requestPath:          "/home/wagoodman",
+			expectedExists:       true,
+			expectedResolvedPath: "/another/place/wagoodman",
+			expectedRealRef:      true,
+		},
+		{
+			name:                 "request parent is ABSOLUTE symlink",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "/another/place",
+			buildRealPath:        "/another/place/wagoodman",
+			followBase:           false, // a nop for this case (note the expected path and ref)
+			requestPath:          "/home/wagoodman",
+			expectedExists:       true,
+			expectedResolvedPath: "/another/place/wagoodman",
+			expectedRealRef:      true,
+		},
+
+		///////////////
+		{
+			name:                 "request base is RELATIVE symlink",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "../../another/place",
+			buildRealPath:        "/another/place",
+			followBase:           true,
+			requestPath:          "/home",
+			expectedExists:       true,
+			expectedResolvedPath: "/another/place",
+			expectedRealRef:      true,
+		},
+		{
+			name:            "request base is RELATIVE symlink",
+			buildLinkSource: "/home",
+			buildLinkDest:   "../../another/place/wagoodman",
+			buildRealPath:   "/another/place/wagoodman",
+			followBase:      false,
+			requestPath:     "/home",
+			expectedExists:  true,
+			// note that since the request matches the link source and we are NOT following, we get the link ref back
+			expectedResolvedPath: "/home",
+			expectedRealRef:      false,
+		},
+		///////////////
+		{
+			name:                 "request parent is RELATIVE symlink",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "../../another/place",
+			buildRealPath:        "/another/place/wagoodman",
+			followBase:           true, // this is a nop since the parent is a link
+			requestPath:          "/home/wagoodman",
+			expectedExists:       true,
+			expectedResolvedPath: "/another/place/wagoodman",
+			expectedRealRef:      true,
+		},
+		{
+			name:                 "request parent is RELATIVE symlink",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "../../another/place",
+			buildRealPath:        "/another/place/wagoodman",
+			followBase:           false, // this is a nop since the parent is a link
+			requestPath:          "/home/wagoodman",
+			expectedExists:       true,
+			expectedResolvedPath: "/another/place/wagoodman",
+			expectedRealRef:      true,
+		},
+		///////////////
+		{
+			name:            "request base is DEAD symlink",
+			buildLinkSource: "/home",
+			buildLinkDest:   "/mwahaha/i/go/to/nowhere",
+			followBase:      false,
+			requestPath:     "/home",
+			// since we did not follow, the paths should exist to the symlink file
+			expectedResolvedPath: "/home",
+			expectedExists:       true,
+		},
+		{
+			name:            "request base is DEAD symlink",
+			buildLinkSource: "/home",
+			buildLinkDest:   "/mwahaha/i/go/to/nowhere",
+			followBase:      true,
+			requestPath:     "/home",
+			// we are following the path, which goes to nowhere.... the first failed path is resolved and returned
+			expectedResolvedPath: "/mwahaha",
+			expectedExists:       false,
+		},
+		///////////////
+		// trying to resolve to above root
+		{
+			name:                 "request parent is RELATIVE symlink to ABOVE root",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "../../../../../../../../../../../../another/place",
+			buildRealPath:        "/another/place/wagoodman",
+			followBase:           true, // this is a nop since the parent is a link
+			requestPath:          "/home/wagoodman",
+			expectedExists:       true,
+			expectedResolvedPath: "/another/place/wagoodman",
+			expectedRealRef:      true,
+		},
+		{
+			name:                 "request parent is RELATIVE symlink to ABOVE root",
+			buildLinkSource:      "/home",
+			buildLinkDest:        "../../../../../../../../../../../../another/place",
+			buildRealPath:        "/another/place/wagoodman",
+			followBase:           false, // this is a nop since the parent is a link
+			requestPath:          "/home/wagoodman",
+			expectedExists:       true,
+			expectedResolvedPath: "/another/place/wagoodman",
+			expectedRealRef:      true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%s (follow=%+v)", test.name, test.followBase), func(t *testing.T) {
+			tr := NewFileTree()
+			_, err := tr.AddLink(test.buildLinkSource, test.buildLinkDest)
+			if err != nil {
+				t.Fatalf("unexpected an error on add link: %+v", err)
+			}
+
+			var realRef *file.Reference
+			if test.buildRealPath != "" {
+				realRef, _ = tr.AddPath(test.buildRealPath)
+			}
+
+			exists, p, ref, err := tr.File(test.requestPath, test.followBase)
+			if err != nil && !test.expectedErr {
+				t.Fatalf("unexpected error: %+v", err)
+			} else if err == nil && test.expectedErr {
+				t.Fatalf("expected error but got none")
+			}
+
+			if test.expectedErr {
+				// don't validate beyond an expected error...
+				return
+			}
+
+			// validate exists...
+			if exists && !test.expectedExists {
+				t.Fatalf("expected path to NOT exist, but does")
+			} else if !exists && test.expectedExists {
+				t.Fatalf("expected path to exist, but does NOT")
+			}
+
+			// validate path...
+			if p != test.expectedResolvedPath {
+				t.Fatalf("unexpected path difference: %+v != %v", p, test.expectedResolvedPath)
+			}
+
+			// validate ref...
+			if realRef != nil {
+				if ref.ID() == realRef.ID() && !test.expectedRealRef {
+					t.Errorf("refs should not be the same: resolve(%+v) == reaal(%+v)", ref, realRef)
+				} else if ref.ID() != realRef.ID() && test.expectedRealRef {
+					t.Errorf("refs should be the same: resolve(%+v) != real(%+v)", ref, realRef)
+				}
+			} else {
+				if test.expectedRealRef {
+					t.Fatalf("expected to test a real reference, but could not")
+				}
+			}
+		})
+	}
+}
+
+func TestFileTree_ResolveFile_MultipleIndirections(t *testing.T) {
 	tr := NewFileTree()
+	// first indirection
 	_, err := tr.AddLink("/home", "/another/place")
 	if err != nil {
 		t.Fatalf("unexpected an error on add link: %+v", err)
 	}
 
-	myHome, _ := tr.AddPath("/another/place")
+	// second indirection
+	_, err = tr.AddLink("/another/place", "/someother/place")
+	if err != nil {
+		t.Fatalf("unexpected an error on add link: %+v", err)
+	}
 
-	if len(tr.pathToFileRef) != 4 {
+	// concrete file
+	realHome, _ := tr.AddPath("/someother/place/wagoodman")
+
+	if len(tr.pathToFileRef) != 7 {
 		t.Fatal("unexpected file count", len(tr.pathToFileRef))
 	}
 
-	_, ref := tr.File("/home")
-	if ref == nil {
-		t.Fatalf("expected a ref but got none")
-	}
-
-	// at this point we are NOT expecting these references to be the same... one is a link
-	// and the other is a file, so the tree should be keeping track of both
-	if ref.ID() == myHome.ID() {
-		t.Errorf("failed to resolve to home symlink ref: %+v != %+v", ref.ID(), myHome.ID())
-	}
-}
-
-func TestFileTree_Symlink_AbsoluteTarget(t *testing.T) {
-	tr := NewFileTree()
-	_, err := tr.AddLink("/home/wagoodman", "/another/place/wagoodman")
+	// the test.... do we resolve through multiple indirections?
+	exists, resolvedPath, resolvedHome, err := tr.resolveFile("/home/wagoodman", true)
 	if err != nil {
-		t.Fatalf("unexpected an error on add link: %+v", err)
+		t.Fatalf("should not have gotten an error on resolving a file: %+v", err)
 	}
-	myHome, _ := tr.AddPath("/another/place/wagoodman")
+	if !exists {
+		t.Fatalf("expected path does not exist: %+v", resolvedPath)
+	}
 
-	_, ref := tr.File("/home/wagoodman")
-	if ref == nil {
+	// we are expecting the resolution for /home/wagoodman to result in /someother/place/wagoodman
+	if resolvedPath != "/someother/place/wagoodman" {
+		t.Fatalf("path resolution through link failed: %+v", resolvedPath)
+	}
+
+	if resolvedHome == nil {
 		t.Fatalf("expected a ref but got none")
 	}
 
-	// at this point we are NOT expecting these references to be the same... one is a link
-	// and the other is a file, so the tree should be keeping track of both
-	if ref.ID() == myHome.ID() {
-		t.Errorf("failed to resolve to home symlink ref: %+v != %+v", ref.ID(), myHome.ID())
+	if resolvedHome.ID() != realHome.ID() {
+		t.Errorf("failed to resolve to home symlink ref: %+v != %+v", resolvedHome.ID(), realHome.ID())
 	}
 }
 
-func TestFileTree_Symlink_RelativeTarget(t *testing.T) {
+func TestFileTree_ResolveFile_CycleDetection(t *testing.T) {
 	tr := NewFileTree()
-	_, err := tr.AddLink("/home/wagoodman", "../../another/place/wagoodman")
-	if err != nil {
-		t.Fatalf("unexpected an error on add link: %+v", err)
-	}
-	myHome, _ := tr.AddPath("/another/place/wagoodman")
-
-	_, ref := tr.File("/home/wagoodman")
-	if ref == nil {
-		t.Fatalf("expected a ref but got none")
-	}
-
-	// at this point we are NOT expecting these references to be the same... one is a link
-	// and the other is a file, so the tree should be keeping track of both
-	if ref.ID() == myHome.ID() {
-		t.Errorf("failed to resolve to home symlink ref: %+v != %+v", ref.ID(), myHome.ID())
-	}
-}
-
-func TestFileTree_Symlink_Deadlink(t *testing.T) {
-	tr := NewFileTree()
+	// first indirection
 	_, err := tr.AddLink("/home", "/another/place")
 	if err != nil {
 		t.Fatalf("unexpected an error on add link: %+v", err)
 	}
 
-	if len(tr.pathToFileRef) != 2 {
-		t.Fatal("unexpected file count", len(tr.pathToFileRef))
-	}
-
-	_, ref := tr.File("/home")
-	if ref == nil {
-		t.Errorf("expected a ref but got none")
-	}
-}
-
-func TestFileTree_Symlink_AbsoluteParent(t *testing.T) {
-	tr := NewFileTree()
-	_, err := tr.AddLink("/home", "/another/place")
+	// second indirection
+	_, err = tr.AddLink("/another/place", "/home")
 	if err != nil {
 		t.Fatalf("unexpected an error on add link: %+v", err)
 	}
 
-	myHome, _ := tr.AddPath("/another/place/wagoodman")
-
-	_, ref := tr.File("/home/wagoodman")
-	if ref == nil {
-		t.Fatalf("expected a ref but got none")
+	// the test.... do we stop when a cycle is detected?
+	exists, resolvedPath, _, err := tr.resolveFile("/home/wagoodman", true)
+	if err != ErrLinkCycleDetected {
+		t.Fatalf("should have gotten an error on resolving a file")
 	}
 
-	if ref.ID() != myHome.ID() {
-		t.Errorf("failed to resolve to home: %+v != %+v", ref.ID(), myHome.ID())
-	}
-}
-
-func TestFileTree_Symlink_RelativeParent(t *testing.T) {
-	tr := NewFileTree()
-	_, err := tr.AddLink("/home", "../another/place")
-	if err != nil {
-		t.Fatalf("unexpected an error on add link: %+v", err)
-	}
-	myHome, _ := tr.AddPath("/another/place/wagoodman")
-
-	_, ref := tr.File("/home/wagoodman")
-	if ref == nil {
-		t.Fatalf("expected a ref but got none")
+	if resolvedPath != "/home" {
+		t.Errorf("cycle path should be hinted in resolved path, given %q", resolvedPath)
 	}
 
-	if ref.ID() != myHome.ID() {
-		t.Errorf("failed to resolve to home: %+v != %+v", ref.ID(), myHome.ID())
-	}
-}
-
-func TestFileTree_Symlink_RelativeParent_AboveRoot(t *testing.T) {
-	tr := NewFileTree()
-	// a user cannot pop above root (will resolve to / per https://9p.io/sys/doc/lexnames.html)
-	_, err := tr.AddLink("/home", "../../../../another/place")
-	if err != nil {
-		t.Fatalf("unexpected an error on add link: %+v", err)
-	}
-	myHome, _ := tr.AddPath("/another/place/wagoodman")
-
-	_, ref := tr.File("/home/wagoodman")
-	if ref == nil {
-		t.Fatalf("expected a ref but got none")
+	if exists {
+		t.Errorf("resolution should not exist in cycle")
 	}
 
-	if ref.ID() != myHome.ID() {
-		t.Errorf("failed to resolve to home: %+v != %+v", ref.ID(), myHome.ID())
-	}
 }

@@ -48,23 +48,27 @@ func TestUnionFileTree_Squash(t *testing.T) {
 		t.Fatal("original and new node ids changed after squash")
 	}
 
-	if squashed.File(newNode.Path).ID() != newNode.ID() {
+	_, _, f, err := squashed.File(newNode.Path, false)
+	if f.ID() != newNode.ID() {
 		t.Fatal("failed to overwrite a path in the squash tree")
 	}
 
-	if base.File("/home/wagoodman/more") == nil {
+	_, _, f, err = base.File("/home/wagoodman/more", false)
+	if f == nil {
 		t.Fatal("base was never created")
 	}
 
-	if originalMore.ID() != base.File("/home/wagoodman/more").ID() {
+	if originalMore.ID() != f.ID() {
 		t.Fatal("base path ref ID changed!")
 	}
 
-	if top.File("/home/wagoodman/more") != nil {
+	_, _, f, err = top.File("/home/wagoodman/more", false)
+	if f != nil {
 		t.Fatal("top file should have been implicitly nil but wasn't")
 	}
 
-	if squashed.File("/home/wagoodman/more") == nil {
+	_, _, f, err = squashed.File("/home/wagoodman/more", false)
+	if f == nil {
 		t.Fatal("implicit file was copied to squash")
 	}
 

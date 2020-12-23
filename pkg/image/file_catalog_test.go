@@ -411,7 +411,11 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 			catalog := testFileCatalog(t)
 
 			// Add file tree root to catalog
-			catalog.Add(*(fileTree.File("/")), file.Metadata{}, &Layer{})
+			exists, _, f, _ := fileTree.File("/", false)
+			if !exists {
+				t.Fatalf("nice going, you somehow deleted / [the universe then collapsed on itself]")
+			}
+			catalog.Add(*f, file.Metadata{}, &Layer{})
 
 			tc.setup(t, testFilePaths, fileTree, &catalog)
 
