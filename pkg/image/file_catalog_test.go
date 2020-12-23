@@ -150,15 +150,15 @@ func TestFileCatalog_Add(t *testing.T) {
 	}
 
 	catalog := testFileCatalog(t)
-	catalog.Add(ref, metadata, layer)
+	catalog.Add(*ref, metadata, layer)
 
 	expected := FileCatalogEntry{
-		File:     ref,
+		File:     *ref,
 		Metadata: metadata,
 		Layer:    layer,
 	}
 
-	actual, err := catalog.Get(ref)
+	actual, err := catalog.Get(*ref)
 	if err != nil {
 		t.Fatalf("could not get by ref: %+v", err)
 	}
@@ -215,9 +215,9 @@ func TestFileCatalog_FileContents(t *testing.T) {
 	}
 
 	catalog := testFileCatalog(t)
-	catalog.Add(ref, metadata, layer)
+	catalog.Add(*ref, metadata, layer)
 
-	reader, err := catalog.FileContents(ref)
+	reader, err := catalog.FileContents(*ref)
 	if err != nil {
 		t.Fatalf("could not get contents by ref: %+v", err)
 	}
@@ -237,8 +237,8 @@ func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[f
 	ref1 := file.NewFileReference("path/branch/one/file-1.txt")
 	ref2 := file.NewFileReference("path/branch/two/file-2.txt")
 	entries := map[file.Reference]string{
-		ref1: "first file\n",
-		ref2: "second file\n",
+		*ref1: "first file\n",
+		*ref2: "second file\n",
 	}
 
 	catalog := testFileCatalog(t)
@@ -262,7 +262,7 @@ func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[f
 		catalog.Add(ref, metadata, layer)
 	}
 
-	var refs = []file.Reference{ref1, ref2}
+	var refs = []file.Reference{*ref1, *ref2}
 
 	return catalog, entries, refs
 }
