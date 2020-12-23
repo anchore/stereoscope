@@ -141,12 +141,12 @@ func (t *FileTree) File(path file.Path, followBaseLink bool) (bool, file.Path, *
 	// symlink resolution!... within the context of container images (which is outside of the responsibility of this object)
 	// the only really valid resolution of symlinks is in squash trees (both for an image and a layer --NOT for trees
 	// that represent a single union FS layer.
-	exists, p, ref, err := t.resolveFile(path, followBaseLink)
-	return exists, p, ref, err
+	return t.resolveFile(path, followBaseLink)
 }
 
 // resolveFile takes the given path and returns the file.Reference at that path (if there is one). This helper will
-// do link resolution for getting to the basename in the path, but will NOT resolve the basename itself.
+// do link resolution for getting to the basename in the path, but will NOT resolve the basename itself unless
+// told to do so with the followBaseLink option.
 func (t *FileTree) resolveFile(path file.Path, followBaseLink bool) (bool, file.Path, *file.Reference, error) {
 	var pathParts = strings.Split(string(path.Normalize()), file.DirSeparator)
 	var currentPathStr string
@@ -199,6 +199,8 @@ func (t *FileTree) resolveFile(path file.Path, followBaseLink bool) (bool, file.
 	return exists, currentPath, currentRef, nil
 }
 
+// followBasePath takes the given path (which CANNOT have symlinks for constituent paths) and returns the file.Reference
+// for the path by following any links from the base path forward.
 func (t *FileTree) followBasePath(realPath file.Path) (bool, file.Path, *file.Reference, error) {
 	// note: this assumes that callers are passing paths in which the constituent parts are NOT symlinks
 	ref, exists := t.pathToFileRef[realPath.ID()]
@@ -255,6 +257,7 @@ func (t *FileTree) followBasePath(realPath file.Path) (bool, file.Path, *file.Re
 	return true, currentPath, currentRef, nil
 }
 
+// glob queries the tree with the given glob pattern, returning matching paths from the tree (including symlinks).
 func (t *FileTree) glob(query string) ([]string, error) {
 	if len(query) == 0 {
 		return nil, fmt.Errorf("no glob pattern given")
@@ -313,9 +316,8 @@ func (t *FileTree) setFile(path file.Path, ref *file.Reference) error {
 	return nil
 }
 
-// AddPath adds a new path to the tree. It also adds any
-// ancestors of the path that are not already present in the tree. The resulting
-// file.Reference of the new (leaf) addition is returned.
+// AddPath adds a new path to the tree. It also adds any ancestors of the path that are not already
+// present in the tree. The resulting file.Reference of the new (leaf) addition is returned.
 func (t *FileTree) AddPath(path file.Path) (*file.Reference, error) {
 	if f, ok := t.pathToFileRef[path.ID()]; ok {
 		return f, nil
@@ -329,6 +331,8 @@ func (t *FileTree) AddPath(path file.Path) (*file.Reference, error) {
 	return f, t.addPath(path, f)
 }
 
+// AddLink adds a new path to the tree with a new file.Reference with a absolute or relative link path captured.
+// The resulting file.Reference of the new (leaf) addition is returned.
 func (t *FileTree) AddLink(path file.Path, linkPath file.Path) (*file.Reference, error) {
 	if f, ok := t.pathToFileRef[path.ID()]; ok {
 		return f, nil
@@ -343,6 +347,7 @@ func (t *FileTree) AddLink(path file.Path, linkPath file.Path) (*file.Reference,
 	return f, t.addPath(path, f)
 }
 
+// addParentPaths adds paths into the tree for all constituent paths, but does NOT attach a file.Reference for each new path.
 func (t *FileTree) addParentPaths(path file.Path) error {
 	parent, err := path.ParentPath()
 	if err != nil {
@@ -372,6 +377,7 @@ func (t *FileTree) addParentPaths(path file.Path) error {
 	return nil
 }
 
+// addPath adds the given path to the tree with the specific file.Reference.
 func (t *FileTree) addPath(path file.Path, ref *file.Reference) error {
 	if err := mustMatch(path, ref); err != nil {
 		return err

@@ -10,11 +10,19 @@ import (
 	"github.com/bmatcuk/doublestar/v2"
 )
 
+// basic interface assertion
+var _ doublestar.File = (*fileAdapter)(nil)
+var _ doublestar.OS = (*osAdapter)(nil)
+var _ os.FileInfo = (*fileinfoAdapter)(nil)
+
+// fileAdapter is an object meant to implement the doublestar.File for getting Lstat results for an entire directory.
 type fileAdapter struct {
-	os   *osAdapter
-	name string
+	os       *osAdapter
+	filetree *FileTree
+	name     string
 }
 
+// Close implements io.Closer but is a nop
 func (f *fileAdapter) Close() error {
 	return nil
 }
@@ -39,14 +47,14 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]os.FileInfo, 0)
-	exists, p, _, err := f.os.ft.resolveFile(file.Path(f.name), true)
+	exists, p, _, err := f.filetree.resolveFile(file.Path(f.name), true)
 	if err != nil {
 		return ret, err
 	}
 	if !exists {
 		return ret, nil
 	}
-	for idx, child := range f.os.ft.tree.Children(p) {
+	for idx, child := range f.filetree.tree.Children(p) {
 		if idx == n && n != -1 {
 			break
 		}
@@ -60,13 +68,13 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 	return ret, nil
 }
 
+// fileAdapter is an object meant to implement the doublestar.OS for basic file queries (stat, lstat, and open).
 type osAdapter struct {
 	ft *FileTree
 }
 
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
-// FileInfo describes the symbolic link. Lstat makes no attempt to follow the link. If there is an error,
-// it will be of type *PathError.
+// FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
 func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
 	exists, p, ref, err := a.ft.resolveFile(file.Path(name), true)
 	if err != nil {
@@ -89,15 +97,20 @@ func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
 	}, nil
 }
 
+// Open the given file path and return a doublestar.File.
 func (a *osAdapter) Open(name string) (doublestar.File, error) {
-	return &fileAdapter{a, name}, nil
+	return &fileAdapter{
+		os:       a,
+		filetree: a.ft,
+		name:     name}, nil
 }
 
+// PathSeparator returns the standard separator between path entries for the underlying filesystem.
 func (a *osAdapter) PathSeparator() rune {
 	return []rune(file.DirSeparator)[0]
 }
 
-// Stat returns a FileInfo describing the named file. If there is an error, it will be of type *PathError.
+// Stat returns a FileInfo describing the named file.
 func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
 	exists, p, ref, err := a.ft.resolveFile(file.Path(name), true)
 	if err != nil {
@@ -119,24 +132,29 @@ func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
 	}, nil
 }
 
+// fileinfoAdapter is meant to implement the os.FileInfo interface intended only for glob searching. This does NOT
+// report correct metadata for all behavior.
 type fileinfoAdapter struct {
-	name    string
-	dir     bool
-	symlink bool
+	name    string // the basename of the file
+	dir     bool   // whether this is a directory or not
+	symlink bool   // whether this is a symlink or not
 }
 
-// base name of the file
+// Name base name of the file
 func (a *fileinfoAdapter) Name() string {
 	return path.Base(a.name)
 }
 
-// length in bytes for regular files; system-dependent for others
+// Size is a dummy return value (since it is not important for globbing). Traditionally this would be the length in
+// bytes for regular files.
 func (a *fileinfoAdapter) Size() int64 {
 	return 1
 }
 
-// file mode bits
+// Mode returns the file mode bits for the given file. Note that the only important bits in the bitset is the
+// dir and symlink indicators; no other values can be used.
 func (a *fileinfoAdapter) Mode() os.FileMode {
+	// default to a typical mode value
 	mode := os.FileMode(0o755)
 	if a.dir {
 		mode |= os.ModeDir
@@ -147,17 +165,17 @@ func (a *fileinfoAdapter) Mode() os.FileMode {
 	return mode
 }
 
-// modification time
+// ModTime returns a dummy value. Traditionally would be the modification time for the given file.
 func (a *fileinfoAdapter) ModTime() time.Time {
 	return time.Now()
 }
 
-// abbreviation for Mode().IsDir()
+// IsDir is an abbreviation for Mode().IsDir().
 func (a *fileinfoAdapter) IsDir() bool {
 	return a.dir
 }
 
-// underlying data source (can return nil)
+// Sys contains underlying data source (nothing in this case).
 func (a *fileinfoAdapter) Sys() interface{} {
 	return nil
 }
