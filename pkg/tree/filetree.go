@@ -134,8 +134,8 @@ func (t *FileTree) File(path file.Path, followBaseLink bool) (bool, file.Path, *
 	// Therefore we can safely lookup the path first without worrying about symlink resolution yet... if there is a
 	// hit, return it! If not, fallback to symlink resolution.
 
-	if ref, ok := t.pathToFileRef[path.ID()]; ok && (ref == nil || ref != nil && ref.LinkPath == "") {
-		return true, path, ref, nil
+	if ref, exists := t.pathToFileRef[path.ID()]; exists && (ref == nil || (ref != nil && ref.LinkPath == "")) {
+		return exists, path, ref, nil
 	}
 
 	// symlink resolution!... within the context of container images (which is outside of the responsibility of this object)
@@ -332,7 +332,9 @@ func (t *FileTree) AddPath(path file.Path) (*file.Reference, error) {
 }
 
 // AddLink adds a new path to the tree with a new file.Reference with a absolute or relative link path captured.
-// The resulting file.Reference of the new (leaf) addition is returned.
+// The resulting file.Reference of the new (leaf) addition is returned. Note: this can represent either a symlink or
+// a hardlink, however, it is up to the caller to orient the given linkPath to be appropriate for the circumstance
+// (e.g. symlink linkPath can be relative or absolute paths, where a given hardlink MUST be absolute).
 func (t *FileTree) AddLink(path file.Path, linkPath file.Path) (*file.Reference, error) {
 	if f, ok := t.pathToFileRef[path.ID()]; ok {
 		return f, nil

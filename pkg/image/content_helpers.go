@@ -2,9 +2,10 @@ package image
 
 import (
 	"fmt"
+	"io"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree"
-	"io"
 )
 
 // fetchFileContentsByPath is a common helper function for resolving the file contents for a path from the file

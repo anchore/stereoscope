@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
@@ -53,9 +54,8 @@ func (l *Layer) trackReadProgress(metadata LayerMetadata) *progress.Manual {
 	return prog
 }
 
-// Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
-// file tree, and the layer squash tree.
-func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
+// readMetadata populates layer metadata from the underlying layer tar.
+func (l *Layer) readMetadata(imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
 	metadata, err := readLayerMetadata(imgMetadata, l.layer, idx)
 	if err != nil {
 		return err
@@ -68,9 +68,6 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 	l.Metadata = metadata
 	l.Tree = tree.NewFileTree()
-	l.fileCatalog = catalog
-
-	monitor := l.trackReadProgress(metadata)
 
 	if uncompressedLayersCacheDir != "" {
 		rawReader, err := l.layer.Uncompressed()
@@ -93,26 +90,46 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	} else {
 		l.content = l.layer.Uncompressed
 	}
+	return nil
+}
+
+// Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
+// file tree, and the layer squash tree.
+func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
+	if err := l.readMetadata(imgMetadata, idx, uncompressedLayersCacheDir); err != nil {
+		return err
+	}
+
+	l.fileCatalog = catalog
 
 	reader, err := l.content()
 	if err != nil {
 		return fmt.Errorf("unable to obtail layer=%q tar: %w", l.Metadata.Digest, err)
 	}
+	monitor := l.trackReadProgress(l.Metadata)
 
 	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
 		var fileReference *file.Reference
-		if metadata.TypeFlag == tar.TypeSymlink || metadata.TypeFlag == tar.TypeLink {
+		switch metadata.TypeFlag {
+		case tar.TypeSymlink:
+			// symlinks can by relative or absolute path references, take the data as is
 			fileReference, err = l.Tree.AddLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
 				return err
 			}
-		} else {
+		case tar.TypeLink:
+			// hard link MUST be interpreted as an absolute path
+			p := filepath.Clean(file.DirSeparator + metadata.Linkname)
+			fileReference, err = l.Tree.AddLink(file.Path(metadata.Path), file.Path(p))
+			if err != nil {
+				return err
+			}
+		default:
 			fileReference, err = l.Tree.AddPath(file.Path(metadata.Path))
 			if err != nil {
 				return err
 			}
 		}
-
 		if fileReference == nil {
 			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.Linkname)
 		}
