@@ -1,33 +1,33 @@
-package tree
+package filetree
 
 import (
-	"sort"
-
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
+	"sort"
 )
 
-type NodeVisitor func(node.Node) error
+type NodeVisitor func(*FileNode) error
 
 type WalkConditions struct {
 	// Return true when the walker should stop traversing (before visiting current node)
-	ShouldTerminate func(node.Node) bool
+	ShouldTerminate func(*FileNode) bool
 
 	// Whether we should visit the current node. Note: this will continue down the same traversal
 	// path, only "skipping" over a single node (but still potentially visiting children later)
 	// Return true to visit the current node.
-	ShouldVisit func(node.Node) bool
+	ShouldVisit func(*FileNode) bool
 
 	// Whether we should consider children of this node to be included in the traversal path.
 	// Return true to traverse children of this node.
-	ShouldContinueBranch func(node.Node) bool
+	ShouldContinueBranch func(*FileNode) bool
 }
 
 // DepthFirstWalker implements stateful depth-first Tree traversal.
 type DepthFirstWalker struct {
 	visitor    NodeVisitor
 	tree       Reader
-	stack      node.Stack
-	visited    node.Set
+	stack      file.Path
+	visited    file.Path
 	conditions WalkConditions
 }
 
@@ -48,7 +48,7 @@ func NewDepthFirstWalkerWithConditions(reader Reader, visitor NodeVisitor, condi
 	}
 }
 
-func (w *DepthFirstWalker) Walk(from node.Node) node.Node {
+func (w *DepthFirstWalker) Walk(from *FileNode) *FileNode {
 	w.stack.Push(from)
 
 	for w.stack.Size() > 0 {

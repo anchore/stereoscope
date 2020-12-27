@@ -3,6 +3,7 @@ package image
 import (
 	"archive/tar"
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"io"
 	"os"
 	"path"
@@ -12,7 +13,6 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/tree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
@@ -27,10 +27,10 @@ type Layer struct {
 	// Metadata contains select layer attributes
 	Metadata LayerMetadata
 	// Tree is a filetree that represents the structure of the layer tar contents ("diff tree")
-	Tree *tree.FileTree
+	Tree *filetree.FileTree
 	// SquashedTree is a filetree that represents the combination of this layers diff tree and all diff trees
 	// in lower layers relative to this one.
-	SquashedTree *tree.FileTree
+	SquashedTree *filetree.FileTree
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
 	fileCatalog *FileCatalog
 }
@@ -67,7 +67,7 @@ func (l *Layer) readMetadata(imgMetadata Metadata, idx int, uncompressedLayersCa
 		metadata.MediaType)
 
 	l.Metadata = metadata
-	l.Tree = tree.NewFileTree()
+	l.Tree = filetree.NewFileTree()
 
 	if uncompressedLayersCacheDir != "" {
 		rawReader, err := l.layer.Uncompressed()
@@ -113,19 +113,19 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		switch metadata.TypeFlag {
 		case tar.TypeSymlink:
 			// symlinks can by relative or absolute path references, take the data as is
-			fileReference, err = l.Tree.AddLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
 				return err
 			}
 		case tar.TypeLink:
 			// hard link MUST be interpreted as an absolute path
 			p := filepath.Clean(file.DirSeparator + metadata.Linkname)
-			fileReference, err = l.Tree.AddLink(file.Path(metadata.Path), file.Path(p))
+			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(p))
 			if err != nil {
 				return err
 			}
 		default:
-			fileReference, err = l.Tree.AddPath(file.Path(metadata.Path))
+			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
 			if err != nil {
 				return err
 			}

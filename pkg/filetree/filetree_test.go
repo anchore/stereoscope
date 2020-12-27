@@ -1,4 +1,4 @@
-package tree
+package filetree
 
 import (
 	"errors"
@@ -12,14 +12,11 @@ import (
 func TestFileTree_AddPath(t *testing.T) {
 	tr := NewFileTree()
 	path := file.Path("/home")
-	fileNode, err := tr.AddPath(path)
+	fileNode, err := tr.AddFile(path)
 	if err != nil {
-		t.Fatal("could not add path", err)
+		t.Fatalf("could not add path: %+v", err)
 	}
 
-	if len(tr.pathToFileRef) != 2 {
-		t.Fatal("unexpected file count", len(tr.pathToFileRef))
-	}
 	_, _, f, _ := tr.File(path, false)
 	if f != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
@@ -29,13 +26,9 @@ func TestFileTree_AddPath(t *testing.T) {
 func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	tr := NewFileTree()
 	path := file.Path("/home/wagoodman/awesome/file.txt")
-	fileNode, err := tr.AddPath(path)
+	fileNode, err := tr.AddFile(path)
 	if err != nil {
 		t.Fatal("could not add path", err)
-	}
-
-	if len(tr.pathToFileRef) != 5 {
-		t.Fatal("unexpected file count", len(tr.pathToFileRef))
 	}
 
 	_, _, f, _ := tr.File(path, false)
@@ -46,13 +39,17 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	parent := file.Path("/home/wagoodman")
 	child := file.Path("/home/wagoodman/awesome")
 
-	children := tr.tree.Children(parent)
+	_, n, err := tr.node(parent, LinkStrategy{})
+	if err != nil {
+		t.Fatalf("could not get parent node: %+v", err)
+	}
+	children := tr.tree.Children(n)
 
 	if len(children) != 1 {
 		t.Fatal("unexpected child count", len(children))
 	}
 
-	if children[0].ID() != child.ID() {
+	if children[0].ID() != idByPath(child) {
 		t.Fatal("unexpected child", children[0])
 	}
 }
@@ -60,7 +57,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 func TestFileTree_RemovePath(t *testing.T) {
 	tr := NewFileTree()
 	path := file.Path("/home/wagoodman/awesome/file.txt")
-	_, err := tr.AddPath(path)
+	_, err := tr.AddFile(path)
 	if err != nil {
 		t.Fatal("could not add path", err)
 	}
@@ -72,10 +69,6 @@ func TestFileTree_RemovePath(t *testing.T) {
 
 	if len(tr.tree.Nodes()) != 3 {
 		t.Fatal("unexpected node count", len(tr.tree.Nodes()), tr.tree.Nodes())
-	}
-
-	if len(tr.pathToFileRef) != 3 {
-		t.Fatal("unexpected file count", len(tr.pathToFileRef))
 	}
 
 	_, _, f, _ := tr.File(path, false)
@@ -101,13 +94,33 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 		"/home/nothing.txt",
 		"/home/dir",
 		"/place/example.gif",
+		"/sym-linked-dest/another/a-.gif",
+		"/hard-linked-dest/something/b-.gif",
 	}
 
 	for _, p := range paths {
-		_, err := tr.AddPath(file.Path(p))
+		_, err := tr.AddFile(file.Path(p))
 		if err != nil {
 			t.Fatalf("failed to add path ('%s'): %+v", p, err)
 		}
+	}
+
+	// absolute symlink
+	_, err := tr.AddSymLink("/home/elsewhere/symlink", "/sym-linked-dest")
+	if err != nil {
+		t.Fatalf("could notsetup link: %+v", err)
+	}
+
+	// relative symlink
+	_, err = tr.AddSymLink("/home/again/symlink", "../../../sym-linked-dest")
+	if err != nil {
+		t.Fatalf("could notsetup link: %+v", err)
+	}
+
+	// hardlink
+	_, err = tr.AddHardLink("/home/elsewhere/hardlink", "/hard-linked-dest")
+	if err != nil {
+		t.Fatalf("could notsetup link: %+v", err)
 	}
 
 	tests := []struct {
@@ -115,6 +128,53 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 		expected []string
 		err      bool
 	}{
+		///////////////////////
+		// symlinked paths
+		{
+			// parent is an absolute & relative symlink
+			g: "**/a-.gif",
+			expected: []string{
+				"/home/elsewhere/symlink/another/a-.gif",
+				"/home/again/symlink/another/a-.gif",
+				"/sym-linked-dest/another/a-.gif",
+			},
+		},
+		{
+			// parent is an absolute symlink
+			g: "**/symlink/another/a-.gif",
+			expected: []string{
+				"/home/elsewhere/symlink/another/a-.gif",
+			},
+		},
+		///////////////////////
+		// hardlinked paths
+		{
+			// parent is a hardlink
+			g: "**/b-.gif",
+			expected: []string{
+				"/home/elsewhere/hardlink/something/b-.gif",
+				"/hard-linked-dest/something/b-.gif",
+			},
+		},
+		{
+			// parent is a hardlink
+			g: "**/hardlink/something/b-.gif",
+			expected: []string{
+				"/home/elsewhere/hardlink/something/b-.gif",
+			},
+		},
+		///////////////////////
+		// mixed links
+		{
+			// parent is a hardlink or symlink
+			g: "**/elsewhere/**/?-.gif",
+			expected: []string{
+				"/home/elsewhere/symlink/another/a-.gif",
+				"/home/elsewhere/hardlink/something/b-.gif",
+			},
+		},
+		////////////////////////
+		// real paths
 		{
 			g: "/home/wagoodman/**/file.txt",
 			expected: []string{
@@ -214,8 +274,8 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			actualSet := internal.NewStringSet()
 			expectedSet := internal.NewStringSet()
 
-			for _, f := range actual {
-				actualSet.Add(string(f.Path))
+			for _, r := range actual {
+				actualSet.Add(string(r.Path))
 			}
 
 			for _, e := range test.expected {
@@ -225,483 +285,9 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 				}
 			}
 
-			for _, f := range actual {
-				if !expectedSet.Contains(string(f.Path)) {
-					t.Errorf("extra search hit: %+v", f)
-				}
-			}
-
-		})
-	}
-
-}
-
-func TestFileTree_FilesByGlob_WithAbsoluteLinks_Parent(t *testing.T) {
-	tr := NewFileTree()
-
-	paths := []string{
-		"/home/wagoodman/awesome/file.txt",
-		"/home/wagoodman/file.txt",
-		"/home/wagoodman/b-file.txt",
-		// target for a link
-		"/linked-spot/nested/spot/file.txt",
-		"/home/a-file.txt",
-		"/home/nothing.txt",
-		"/home/dir",
-		"/place/example.gif",
-	}
-
-	for _, p := range paths {
-		_, err := tr.AddPath(file.Path(p))
-		if err != nil {
-			t.Fatalf("failed to add path ('%s'): %+v", p, err)
-		}
-	}
-
-	_, err := tr.AddLink("/home/wagoodman/some/deeply", "/linked-spot")
-	if err != nil {
-		t.Fatalf("could notsetup link: %+v", err)
-	}
-
-	tests := []struct {
-		g        string
-		expected []string
-		err      bool
-	}{
-		{
-			g: "/home/wagoodman/some/**",
-			expected: []string{
-				"/linked-spot/nested/spot/file.txt", // link
-			},
-		},
-		{
-			g: "/home/wagoodman/**/file.txt",
-			expected: []string{
-				"/linked-spot/nested/spot/file.txt", // link
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-			},
-		},
-		{
-			g: "/home/wagoodman/**",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // link
-			},
-		},
-		{
-			g:        "file.txt",
-			expected: []string{},
-		},
-		{
-			g:        "*file.txt",
-			expected: []string{},
-		},
-		{
-			g: "**/*file.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // link
-				"/home/a-file.txt",
-			},
-		},
-		{
-			g: "*/example.gif",
-			expected: []string{
-				"/place/example.gif",
-			},
-		},
-		{
-			g: "/**/file.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/linked-spot/nested/spot/file.txt", // link & target
-			},
-		},
-		{
-			g: "/**/?-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-				"/home/wagoodman/b-file.txt",
-			},
-		},
-		{
-			g: "/**/*-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-				"/home/wagoodman/b-file.txt",
-			},
-		},
-		{
-			g: "**/a-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-			},
-		},
-		{
-			g: "/**/*.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // line & target
-				"/home/a-file.txt",
-				"/home/nothing.txt",
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.g, func(t *testing.T) {
-			t.Log("PATTERN: ", test.g)
-			actual, err := tr.FilesByGlob(test.g)
-			if err != nil && !test.err {
-				t.Fatal("failed to search by glob:", err)
-			} else if err == nil && test.err {
-				t.Fatalf("expected an error but did not get one")
-			} else if err != nil && test.err {
-				// we expected an error, nothing else matters
-				return
-			}
-
-			actualSet := internal.NewStringSet()
-			expectedSet := internal.NewStringSet()
-
-			for _, f := range actual {
-				actualSet.Add(string(f.Path))
-			}
-
-			for _, e := range test.expected {
-				expectedSet.Add(e)
-				if !actualSet.Contains(e) {
-					t.Errorf("missing search hit: %s", e)
-				}
-			}
-
-			for _, f := range actual {
-				if !expectedSet.Contains(string(f.Path)) {
-					t.Errorf("extra search hit: %+v", f)
-				}
-			}
-
-		})
-	}
-
-}
-
-func TestFileTree_FilesByGlob_WithAbsoluteLinks(t *testing.T) {
-	tr := NewFileTree()
-
-	paths := []string{
-		"/home/wagoodman/awesome/file.txt",
-		"/home/wagoodman/file.txt",
-		"/home/wagoodman/b-file.txt",
-		// target for a link
-		"/linked-spot/nested/spot/file.txt",
-		"/home/a-file.txt",
-		"/home/nothing.txt",
-		"/home/dir",
-		"/place/example.gif",
-	}
-
-	for _, p := range paths {
-		_, err := tr.AddPath(file.Path(p))
-		if err != nil {
-			t.Fatalf("failed to add path ('%s'): %+v", p, err)
-		}
-	}
-
-	_, err := tr.AddLink("/home/wagoodman/some/deeply/nested/spot/file.txt", "/linked-spot/nested/spot/file.txt")
-	if err != nil {
-		t.Fatalf("could notsetup link: %+v", err)
-	}
-
-	tests := []struct {
-		g        string
-		expected []string
-		err      bool
-	}{
-		{
-			g: "/home/wagoodman/some/**",
-			expected: []string{
-				"/linked-spot/nested/spot/file.txt", // link
-			},
-		},
-		{
-			g: "/home/wagoodman/**/file.txt",
-			expected: []string{
-				"/linked-spot/nested/spot/file.txt", // link
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-			},
-		},
-		{
-			g: "/home/wagoodman/**",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // link
-			},
-		},
-		{
-			g:        "file.txt",
-			expected: []string{},
-		},
-		{
-			g:        "*file.txt",
-			expected: []string{},
-		},
-		{
-			g: "**/*file.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // link
-				"/home/a-file.txt",
-			},
-		},
-		{
-			g: "*/example.gif",
-			expected: []string{
-				"/place/example.gif",
-			},
-		},
-		{
-			g: "/**/file.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/linked-spot/nested/spot/file.txt", // link & target
-			},
-		},
-		{
-			g: "/**/?-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-				"/home/wagoodman/b-file.txt",
-			},
-		},
-		{
-			g: "/**/*-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-				"/home/wagoodman/b-file.txt",
-			},
-		},
-		{
-			g: "**/a-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-			},
-		},
-		{
-			g: "/**/*.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // link & target
-				"/home/a-file.txt",
-				"/home/nothing.txt",
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.g, func(t *testing.T) {
-			t.Log("PATTERN: ", test.g)
-			actual, err := tr.FilesByGlob(test.g)
-			if err != nil && !test.err {
-				t.Fatal("failed to search by glob:", err)
-			} else if err == nil && test.err {
-				t.Fatalf("expected an error but did not get one")
-			} else if err != nil && test.err {
-				// we expected an error, nothing else matters
-				return
-			}
-
-			actualSet := internal.NewStringSet()
-			expectedSet := internal.NewStringSet()
-
-			for _, f := range actual {
-				actualSet.Add(string(f.Path))
-			}
-
-			for _, e := range test.expected {
-				expectedSet.Add(e)
-				if !actualSet.Contains(e) {
-					t.Errorf("missing search hit: %s", e)
-				}
-			}
-
-			for _, f := range actual {
-				if !expectedSet.Contains(string(f.Path)) {
-					t.Errorf("extra search hit: %+v", f)
-				}
-			}
-
-		})
-	}
-
-}
-
-func TestFileTree_FilesByGlob_WithRelativeLinks(t *testing.T) {
-	tr := NewFileTree()
-
-	paths := []string{
-		"/home/wagoodman/awesome/file.txt",
-		"/home/wagoodman/file.txt",
-		"/home/wagoodman/b-file.txt",
-		// target for a link
-		"/linked-spot/nested/spot/file.txt",
-		"/home/a-file.txt",
-		"/home/nothing.txt",
-		"/home/dir",
-		"/place/example.gif",
-	}
-
-	for _, p := range paths {
-		_, err := tr.AddPath(file.Path(p))
-		if err != nil {
-			t.Fatalf("failed to add path ('%s'): %+v", p, err)
-		}
-	}
-
-	_, err := tr.AddLink("/home/wagoodman/some/deeply", "../../../../linked-spot")
-	if err != nil {
-		t.Fatalf("could notsetup link: %+v", err)
-	}
-
-	tests := []struct {
-		g        string
-		expected []string
-		err      bool
-	}{
-		{
-			g: "/home/wagoodman/some/**",
-			expected: []string{
-				"/linked-spot/nested/spot/file.txt", // link
-			},
-		},
-		{
-			g: "/home/wagoodman/**/file.txt",
-			expected: []string{
-				"/linked-spot/nested/spot/file.txt", // link
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-			},
-		},
-		{
-			g: "/home/wagoodman/**",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // link
-			},
-		},
-		{
-			g:        "file.txt",
-			expected: []string{},
-		},
-		{
-			g:        "*file.txt",
-			expected: []string{},
-		},
-		{
-			g: "**/*file.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // link
-				"/home/a-file.txt",
-			},
-		},
-		{
-			g: "*/example.gif",
-			expected: []string{
-				"/place/example.gif",
-			},
-		},
-		{
-			g: "/**/file.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/linked-spot/nested/spot/file.txt", // link & target
-			},
-		},
-		{
-			g: "/**/?-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-				"/home/wagoodman/b-file.txt",
-			},
-		},
-		{
-			g: "/**/*-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-				"/home/wagoodman/b-file.txt",
-			},
-		},
-		{
-			g: "**/a-file.txt",
-			expected: []string{
-				"/home/a-file.txt",
-			},
-		},
-		{
-			g: "/**/*.txt",
-			expected: []string{
-				"/home/wagoodman/awesome/file.txt",
-				"/home/wagoodman/file.txt",
-				"/home/wagoodman/b-file.txt",
-				"/linked-spot/nested/spot/file.txt", // link & target
-				"/home/a-file.txt",
-				"/home/nothing.txt",
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.g, func(t *testing.T) {
-			t.Log("PATTERN: ", test.g)
-			actual, err := tr.FilesByGlob(test.g)
-			if err != nil && !test.err {
-				t.Fatal("failed to search by glob:", err)
-			} else if err == nil && test.err {
-				t.Fatalf("expected an error but did not get one")
-			} else if err != nil && test.err {
-				// we expected an error, nothing else matters
-				return
-			}
-
-			actualSet := internal.NewStringSet()
-			expectedSet := internal.NewStringSet()
-
-			for _, f := range actual {
-				actualSet.Add(string(f.Path))
-			}
-
-			for _, e := range test.expected {
-				expectedSet.Add(e)
-				if !actualSet.Contains(e) {
-					t.Errorf("missing search hit: %s", e)
-				}
-			}
-
-			for _, f := range actual {
-				if !expectedSet.Contains(string(f.Path)) {
-					t.Errorf("extra search hit: %+v", f)
+			for _, r := range actual {
+				if !expectedSet.Contains(string(r.Path)) {
+					t.Errorf("extra search hit: %+v", r)
 				}
 			}
 
@@ -712,10 +298,10 @@ func TestFileTree_FilesByGlob_WithRelativeLinks(t *testing.T) {
 
 func TestFileTree_Merge(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddPath("/home/wagoodman/awesome/file-1.txt")
+	tr1.AddFile("/home/wagoodman/awesome/file-1.txt")
 
 	tr2 := NewFileTree()
-	tr2.AddPath("/home/wagoodman/awesome/file-2.txt")
+	tr2.AddFile("/home/wagoodman/awesome/file-2.txt")
 
 	tr1.merge(tr2)
 
@@ -728,10 +314,10 @@ func TestFileTree_Merge(t *testing.T) {
 
 func TestFileTree_Merge_Overwrite(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+	tr1.AddFile("/home/wagoodman/awesome/file.txt")
 
 	tr2 := NewFileTree()
-	newRef, _ := tr2.AddPath("/home/wagoodman/awesome/file.txt")
+	newRef, _ := tr2.AddFile("/home/wagoodman/awesome/file.txt")
 
 	tr1.merge(tr2)
 
@@ -744,10 +330,10 @@ func TestFileTree_Merge_Overwrite(t *testing.T) {
 
 func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+	tr1.AddFile("/home/wagoodman/awesome/file.txt")
 
 	tr2 := NewFileTree()
-	tr2.AddPath("/home/wagoodman/.wh..wh..opq")
+	tr2.AddFile("/home/wagoodman/.wh..wh..opq")
 
 	tr1.merge(tr2)
 
@@ -767,10 +353,10 @@ func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 
 func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddPath("/home")
+	tr1.AddFile("/home")
 
 	tr2 := NewFileTree()
-	tr2.AddPath("/home/luhring/.wh..wh..opq")
+	tr2.AddFile("/home/luhring/.wh..wh..opq")
 
 	tr1.merge(tr2)
 
@@ -783,10 +369,10 @@ func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
 
 func TestFileTree_Merge_Whiteout(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddPath("/home/wagoodman/awesome/file.txt")
+	tr1.AddFile("/home/wagoodman/awesome/file.txt")
 
 	tr2 := NewFileTree()
-	tr2.AddPath("/home/wagoodman/awesome/.wh.file.txt")
+	tr2.AddFile("/home/wagoodman/awesome/.wh.file.txt")
 
 	tr1.merge(tr2)
 
@@ -965,14 +551,14 @@ func TestFileTree_File_Symlink(t *testing.T) {
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("%s (follow=%+v)", test.name, test.followBase), func(t *testing.T) {
 			tr := NewFileTree()
-			_, err := tr.AddLink(test.buildLinkSource, test.buildLinkDest)
+			_, err := tr.AddSymLink(test.buildLinkSource, test.buildLinkDest)
 			if err != nil {
 				t.Fatalf("unexpected an error on add link: %+v", err)
 			}
 
 			var realRef *file.Reference
 			if test.buildRealPath != "" {
-				realRef, _ = tr.AddPath(test.buildRealPath)
+				realRef, _ = tr.AddFile(test.buildRealPath)
 			}
 
 			exists, p, ref, err := tr.File(test.requestPath, test.followBase)
@@ -1018,26 +604,22 @@ func TestFileTree_File_Symlink(t *testing.T) {
 func TestFileTree_ResolveFile_MultipleIndirections(t *testing.T) {
 	tr := NewFileTree()
 	// first indirection
-	_, err := tr.AddLink("/home", "/another/place")
+	_, err := tr.AddSymLink("/home", "/another/place")
 	if err != nil {
 		t.Fatalf("unexpected an error on add link: %+v", err)
 	}
 
 	// second indirection
-	_, err = tr.AddLink("/another/place", "/someother/place")
+	_, err = tr.AddSymLink("/another/place", "/someother/place")
 	if err != nil {
 		t.Fatalf("unexpected an error on add link: %+v", err)
 	}
 
 	// concrete file
-	realHome, _ := tr.AddPath("/someother/place/wagoodman")
-
-	if len(tr.pathToFileRef) != 7 {
-		t.Fatal("unexpected file count", len(tr.pathToFileRef))
-	}
+	realHome, _ := tr.AddFile("/someother/place/wagoodman")
 
 	// the test.... do we resolve through multiple indirections?
-	exists, resolvedPath, resolvedHome, err := tr.resolveFile("/home/wagoodman", true)
+	exists, resolvedPath, resolvedHome, err := tr.File("/home/wagoodman", true)
 	if err != nil {
 		t.Fatalf("should not have gotten an error on resolving a file: %+v", err)
 	}
@@ -1062,19 +644,19 @@ func TestFileTree_ResolveFile_MultipleIndirections(t *testing.T) {
 func TestFileTree_ResolveFile_CycleDetection(t *testing.T) {
 	tr := NewFileTree()
 	// first indirection
-	_, err := tr.AddLink("/home", "/another/place")
+	_, err := tr.AddSymLink("/home", "/another/place")
 	if err != nil {
 		t.Fatalf("unexpected an error on add link: %+v", err)
 	}
 
 	// second indirection
-	_, err = tr.AddLink("/another/place", "/home")
+	_, err = tr.AddSymLink("/another/place", "/home")
 	if err != nil {
 		t.Fatalf("unexpected an error on add link: %+v", err)
 	}
 
 	// the test.... do we stop when a cycle is detected?
-	exists, resolvedPath, _, err := tr.resolveFile("/home/wagoodman", true)
+	exists, resolvedPath, _, err := tr.File("/home/wagoodman", true)
 	if err != ErrLinkCycleDetected {
 		t.Fatalf("should have gotten an error on resolving a file")
 	}

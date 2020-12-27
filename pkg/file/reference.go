@@ -12,23 +12,16 @@ type ID uint64
 // Reference represents a unique file. This is useful when path is not good enough (i.e. you have the same file path for two files in two different container image layers, and you need to be able to distinguish them apart)
 type Reference struct {
 	id       ID
-	Path     Path
-	LinkPath Path
+	RealPath Path // file path with NO symlinks or hardlinks in constituent paths
 }
 
 // NewFileReference creates a new unique file reference for the given path.
 func NewFileReference(path Path) *Reference {
 	nextID++
 	return &Reference{
-		Path: path,
-		id:   ID(nextID),
+		RealPath: path,
+		id:       ID(nextID),
 	}
-}
-
-func NewFileLinkReference(path, linkPath Path) *Reference {
-	ref := NewFileReference(path)
-	ref.LinkPath = linkPath.Normalize()
-	return ref
 }
 
 // ID returns the unique ID for this file reference.
@@ -38,5 +31,5 @@ func (f *Reference) ID() ID {
 
 // String returns a string representation of the path with a unique ID.
 func (f *Reference) String() string {
-	return fmt.Sprintf("[%v] %v", f.id, f.Path)
+	return fmt.Sprintf("[%v] real=%q", f.id, f.RealPath)
 }

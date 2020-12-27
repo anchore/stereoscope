@@ -4,11 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"io"
 	"io/ioutil"
 
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/tree"
 )
 
 var ErrFileNotFound = fmt.Errorf("could not find file")
@@ -93,7 +93,7 @@ func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Read
 
 	// cache the result to a directory and return a DeferredReadCloser to not allocate file handles unless they are
 	// actively being used.
-	tempFile, err := ioutil.TempFile(c.contentsCacheDir, ref.Path.Basename()+"-")
+	tempFile, err := ioutil.TempFile(c.contentsCacheDir, ref.RealPath.Basename()+"-")
 	if err != nil {
 		return nil, fmt.Errorf("unable to create content response cache: %w", err)
 	}
@@ -120,7 +120,7 @@ func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Read
 func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
 	entry, ok := c.catalog[f.ID()]
 	if !ok {
-		return nil, fmt.Errorf("could not find file: %+v", f.Path)
+		return nil, fmt.Errorf("could not find file: %+v", f.RealPath)
 	}
 
 	sourceTarReader, err := entry.Layer.layer.Uncompressed()
@@ -206,7 +206,7 @@ func (c *FileCatalog) buildTarContentsRequests(files ...file.Reference) (map[*La
 // TODO: translate this to a leaf-check? Also does this need to be directly on the FileCatalog?
 // HasEntriesForAllFilesInTree checks to see if the catalog has an entry for
 // every node ( file / directory) in the FileTree.
-func (c *FileCatalog) HasEntriesForAllFilesInTree(tree tree.FileTree) bool {
+func (c *FileCatalog) HasEntriesForAllFilesInTree(tree filetree.FileTree) bool {
 	for _, f := range tree.AllFiles() {
 		if !c.Exists(f) {
 			return false

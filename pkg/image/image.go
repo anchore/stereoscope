@@ -3,13 +3,13 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"io"
 
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/tree"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/wagoodman/go-partybus"
@@ -165,7 +165,7 @@ func (i *Image) Read() error {
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
 func (i *Image) squash(prog *progress.Manual) error {
-	var lastSquashTree *tree.FileTree
+	var lastSquashTree *filetree.FileTree
 
 	for idx, layer := range i.Layers {
 		if idx == 0 {
@@ -174,7 +174,7 @@ func (i *Image) squash(prog *progress.Manual) error {
 			continue
 		}
 
-		var unionTree = tree.NewUnionTree()
+		var unionTree = filetree.NewUnionFileTree()
 		unionTree.PushTree(lastSquashTree)
 		unionTree.PushTree(layer.Tree)
 
@@ -195,7 +195,7 @@ func (i *Image) squash(prog *progress.Manual) error {
 }
 
 // SquashedTree returns the pre-computed image squash file tree.
-func (i *Image) SquashedTree() *tree.FileTree {
+func (i *Image) SquashedTree() *filetree.FileTree {
 	return i.Layers[len(i.Layers)-1].SquashedTree
 }
 
@@ -228,13 +228,13 @@ func (i *Image) MultipleFileContentsByRef(refs ...file.Reference) (map[file.Refe
 // the layer squash of the given layer index argument.
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int) (*file.Reference, error) {
-	_, _, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.Path, true)
+	_, _, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, true)
 	return resolvedRef, err
 }
 
 // ResolveLinkByLayerSquash resolves a symlink or hardlink for the given file reference relative to the result from the image squash.
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByImageSquash(ref file.Reference) (*file.Reference, error) {
-	_, _, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.Path, true)
+	_, _, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, true)
 	return resolvedRef, err
 }

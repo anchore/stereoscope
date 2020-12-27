@@ -1,20 +1,20 @@
 package integration
 
 import (
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/anchore/stereoscope/pkg/tree"
 )
 
-func compareLayerSquashTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.Image, ignorePaths []file.Path) {
+func compareLayerSquashTrees(t *testing.T, expected map[uint]*filetree.FileTree, i *image.Image, ignorePaths []file.Path) {
 	t.Helper()
 	if len(expected) != len(i.Layers) {
 		t.Fatalf("mismatched layers (%d!=%d)", len(expected), len(i.Layers))
 	}
 
-	var actual = make([]*tree.FileTree, 0)
+	var actual = make([]*filetree.FileTree, 0)
 	for _, l := range i.Layers {
 		actual = append(actual, l.SquashedTree)
 	}
@@ -22,13 +22,13 @@ func compareLayerSquashTrees(t *testing.T, expected map[uint]*tree.FileTree, i *
 	compareTrees(t, expected, actual, ignorePaths)
 }
 
-func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.Image, ignorePaths []file.Path) {
+func compareLayerTrees(t *testing.T, expected map[uint]*filetree.FileTree, i *image.Image, ignorePaths []file.Path) {
 	t.Helper()
 	if len(expected) != len(i.Layers) {
 		t.Fatalf("mismatched layers (%d!=%d)", len(expected), len(i.Layers))
 	}
 
-	var actual = make([]*tree.FileTree, 0)
+	var actual = make([]*filetree.FileTree, 0)
 	for _, l := range i.Layers {
 		actual = append(actual, l.Tree)
 	}
@@ -36,7 +36,7 @@ func compareLayerTrees(t *testing.T, expected map[uint]*tree.FileTree, i *image.
 	compareTrees(t, expected, actual, ignorePaths)
 }
 
-func compareTrees(t *testing.T, expected map[uint]*tree.FileTree, actual []*tree.FileTree, ignorePaths []file.Path) {
+func compareTrees(t *testing.T, expected map[uint]*filetree.FileTree, actual []*filetree.FileTree, ignorePaths []file.Path) {
 	t.Helper()
 
 	for idx, expected := range expected {
@@ -81,7 +81,7 @@ func compareTrees(t *testing.T, expected map[uint]*tree.FileTree, actual []*tree
 	}
 }
 
-func compareSquashTree(t *testing.T, expected *tree.FileTree, i *image.Image) {
+func compareSquashTree(t *testing.T, expected *filetree.FileTree, i *image.Image) {
 	t.Helper()
 
 	actual := i.SquashedTree()

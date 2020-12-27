@@ -12,7 +12,7 @@ func (f References) Swap(idx1, idx2 int) {
 }
 
 func (f References) Less(idx1, idx2 int) bool {
-	return f[idx1].Path < f[idx2].Path
+	return f[idx1].RealPath < f[idx2].RealPath
 }
 
 func (f References) Equal(other References) bool {

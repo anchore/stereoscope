@@ -5,8 +5,6 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-
-	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
 const (
@@ -17,11 +15,6 @@ const (
 
 // Path represents a file path
 type Path string
-
-// ID is the normalized file path, used for file tree node identification
-func (p Path) ID() node.ID {
-	return node.ID(p.Normalize())
-}
 
 // Normalize returns the cleaned file path representation (trimmed of spaces and resolve relative notations)
 func (p Path) Normalize() Path {

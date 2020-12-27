@@ -1,10 +1,10 @@
-package tree
+package filetree
 
 import (
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
-type FileTreeReader interface {
+type Reader interface {
 	AllFiles() []file.Reference
 	HasPath(path file.Path) bool
 	File(path file.Path) *file.Reference

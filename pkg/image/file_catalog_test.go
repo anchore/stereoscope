@@ -3,6 +3,7 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/go-test/deep"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -15,7 +16,6 @@ import (
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/tree"
 )
 
 var testFilePaths = []file.Path{
@@ -245,8 +245,8 @@ func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[f
 
 	for ref := range entries {
 		metadata := file.Metadata{
-			Path:          string(ref.Path),
-			TarHeaderName: string(ref.Path),
+			Path:          string(ref.RealPath),
+			TarHeaderName: string(ref.RealPath),
 			Size:          fileSize,
 		}
 
@@ -342,14 +342,14 @@ func TestFileCatalog_MultipleFileContents_WithCache(t *testing.T) {
 func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 	cases := []struct {
 		name     string
-		setup    func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog)
+		setup    func(t *testing.T, filePaths []file.Path, fileTree *filetree.FileTree, catalog *FileCatalog)
 		expected bool
 	}{
 		{
 			name: "identical set of files",
-			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
+			setup: func(t *testing.T, filePaths []file.Path, fileTree *filetree.FileTree, catalog *FileCatalog) {
 				for _, p := range filePaths {
-					f, err := fileTree.AddPath(p)
+					f, err := fileTree.AddFile(p)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -360,9 +360,9 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 		},
 		{
 			name: "catalog missing one file that tree has",
-			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
+			setup: func(t *testing.T, filePaths []file.Path, fileTree *filetree.FileTree, catalog *FileCatalog) {
 				for i, p := range filePaths {
-					f, err := fileTree.AddPath(p)
+					f, err := fileTree.AddFile(p)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -376,14 +376,14 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 		},
 		{
 			name: "tree missing one file that catalog has",
-			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
+			setup: func(t *testing.T, filePaths []file.Path, fileTree *filetree.FileTree, catalog *FileCatalog) {
 				for i, p := range filePaths {
 					if i == 1 { // add filePaths[1] to only the catalog, not the tree
 						catalog.Add(*file.NewFileReference(p), file.Metadata{}, &Layer{})
 						return
 					}
 
-					f, err := fileTree.AddPath(p)
+					f, err := fileTree.AddFile(p)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -394,7 +394,7 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 		},
 		{
 			name: "no files added to tree",
-			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
+			setup: func(t *testing.T, filePaths []file.Path, fileTree *filetree.FileTree, catalog *FileCatalog) {
 				for _, p := range filePaths {
 					f := file.NewFileReference(p)
 					catalog.Add(*f, file.Metadata{}, &Layer{})
@@ -406,7 +406,7 @@ func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fileTree := tree.NewFileTree()
+			fileTree := filetree.NewFileTree()
 
 			catalog := testFileCatalog(t)
 

@@ -1,8 +1,7 @@
-package tree
+package filetree
 
 import (
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -14,6 +13,11 @@ import (
 var _ doublestar.File = (*fileAdapter)(nil)
 var _ doublestar.OS = (*osAdapter)(nil)
 var _ os.FileInfo = (*fileinfoAdapter)(nil)
+
+type GlobResult struct {
+	Path      file.Path
+	Reference file.Reference
+}
 
 // fileAdapter is an object meant to implement the doublestar.File for getting Lstat results for an entire directory.
 type fileAdapter struct {
@@ -47,14 +51,18 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]os.FileInfo, 0)
-	exists, p, _, err := f.filetree.resolveFile(file.Path(f.name), true)
+	_, fn, err := f.filetree.node(file.Path(f.name), LinkStrategy{
+		FollowAncestorLinks: true,
+		FollowBasenameLinks: true,
+	})
 	if err != nil {
 		return ret, err
 	}
-	if !exists {
+	if fn == nil {
 		return ret, nil
 	}
-	for idx, child := range f.filetree.tree.Children(p) {
+
+	for idx, child := range f.filetree.tree.Children(fn) {
 		if idx == n && n != -1 {
 			break
 		}
@@ -70,30 +78,26 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 
 // fileAdapter is an object meant to implement the doublestar.OS for basic file queries (stat, lstat, and open).
 type osAdapter struct {
-	ft *FileTree
+	filetree *FileTree
 }
 
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
 func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
-	exists, p, ref, err := a.ft.resolveFile(file.Path(name), true)
+	_, fn, err := a.filetree.node(file.Path(name), LinkStrategy{
+		FollowAncestorLinks: true,
+		FollowBasenameLinks: false,
+	})
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}
-	if !exists {
+	if fn == nil {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
 
-	isDir := len(a.ft.tree.Children(p)) > 0
-
-	isLink := false
-	if ref != nil {
-		isLink = ref.LinkPath != ""
-	}
 	return &fileinfoAdapter{
-		name:    name,
-		dir:     isDir,
-		symlink: isLink,
+		virtualPath: file.Path(name),
+		node:        *fn,
 	}, nil
 }
 
@@ -101,8 +105,9 @@ func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
 func (a *osAdapter) Open(name string) (doublestar.File, error) {
 	return &fileAdapter{
 		os:       a,
-		filetree: a.ft,
-		name:     name}, nil
+		filetree: a.filetree,
+		name:     name,
+	}, nil
 }
 
 // PathSeparator returns the standard separator between path entries for the underlying filesystem.
@@ -112,37 +117,32 @@ func (a *osAdapter) PathSeparator() rune {
 
 // Stat returns a FileInfo describing the named file.
 func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
-	exists, p, ref, err := a.ft.resolveFile(file.Path(name), true)
+	_, fn, err := a.filetree.node(file.Path(name), LinkStrategy{
+		FollowAncestorLinks: true,
+		FollowBasenameLinks: true,
+	})
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}
-	if !exists {
+	if fn == nil {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
-	isDir := len(a.ft.tree.Children(p)) > 0
-	isLink := false
-	if ref != nil {
-		isLink = ref.LinkPath != ""
-	}
-
 	return &fileinfoAdapter{
-		name:    name,
-		dir:     isDir,
-		symlink: isLink,
+		virtualPath: file.Path(name),
+		node:        *fn,
 	}, nil
 }
 
 // fileinfoAdapter is meant to implement the os.FileInfo interface intended only for glob searching. This does NOT
 // report correct metadata for all behavior.
 type fileinfoAdapter struct {
-	name    string // the basename of the file
-	dir     bool   // whether this is a directory or not
-	symlink bool   // whether this is a symlink or not
+	virtualPath file.Path
+	node        FileNode
 }
 
 // Name base name of the file
 func (a *fileinfoAdapter) Name() string {
-	return path.Base(a.name)
+	return a.virtualPath.Basename()
 }
 
 // Size is a dummy return value (since it is not important for globbing). Traditionally this would be the length in
@@ -156,10 +156,13 @@ func (a *fileinfoAdapter) Size() int64 {
 func (a *fileinfoAdapter) Mode() os.FileMode {
 	// default to a typical mode value
 	mode := os.FileMode(0o755)
-	if a.dir {
+	if a.IsDir() {
 		mode |= os.ModeDir
 	}
-	if a.symlink {
+	// the underlying implementation for symlinks and hardlinks share the same semantics in the tree implementation
+	// (meaning resolution is required) where as in a real file system this is taken care of by the driver
+	// by making the file point to the same inode as another --making the indirection transparent to applications.
+	if a.node.FileType == file.TypeSymlink || a.node.FileType == file.TypeHardLink {
 		mode |= os.ModeSymlink
 	}
 	return mode
@@ -172,7 +175,7 @@ func (a *fileinfoAdapter) ModTime() time.Time {
 
 // IsDir is an abbreviation for Mode().IsDir().
 func (a *fileinfoAdapter) IsDir() bool {
-	return a.dir
+	return a.node.FileType == file.TypeDir
 }
 
 // Sys contains underlying data source (nothing in this case).
