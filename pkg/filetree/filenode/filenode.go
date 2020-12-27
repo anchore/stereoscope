@@ -1,6 +1,8 @@
-package filetree
+package filenode
 
 import (
+	"path/filepath"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
@@ -12,7 +14,7 @@ type FileNode struct {
 	Reference *file.Reference
 }
 
-func newDir(p file.Path, ref *file.Reference) *FileNode {
+func NewDir(p file.Path, ref *file.Reference) *FileNode {
 	return &FileNode{
 		RealPath:  p,
 		FileType:  file.TypeDir,
@@ -20,7 +22,7 @@ func newDir(p file.Path, ref *file.Reference) *FileNode {
 	}
 }
 
-func newFile(p file.Path, ref *file.Reference) *FileNode {
+func NewFile(p file.Path, ref *file.Reference) *FileNode {
 	return &FileNode{
 		RealPath:  p,
 		FileType:  file.TypeReg,
@@ -28,7 +30,7 @@ func newFile(p file.Path, ref *file.Reference) *FileNode {
 	}
 }
 
-func newSymLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
+func NewSymLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
 	return &FileNode{
 		RealPath:  p,
 		FileType:  file.TypeSymlink,
@@ -37,7 +39,9 @@ func newSymLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
 	}
 }
 
-func newHardLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
+func NewHardLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
+	// hard link MUST be interpreted as an absolute path
+	linkPath = file.Path(filepath.Clean(file.DirSeparator + string(linkPath)))
 	return &FileNode{
 		RealPath:  p,
 		FileType:  file.TypeHardLink,
@@ -47,7 +51,7 @@ func newHardLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
 }
 
 func (n *FileNode) ID() node.ID {
-	return idByPath(n.RealPath)
+	return IdByPath(n.RealPath)
 }
 
 func (n *FileNode) Copy() node.Node {
@@ -59,10 +63,10 @@ func (n *FileNode) Copy() node.Node {
 	}
 }
 
-func (n *FileNode) isLink() bool {
+func (n *FileNode) IsLink() bool {
 	return n.FileType == file.TypeHardLink || n.FileType == file.TypeSymlink
 }
 
-func idByPath(p file.Path) node.ID {
+func IdByPath(p file.Path) node.ID {
 	return node.ID(p.Normalize())
 }

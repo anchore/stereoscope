@@ -31,5 +31,8 @@ func (f *Reference) ID() ID {
 
 // String returns a string representation of the path with a unique ID.
 func (f *Reference) String() string {
+	if f == nil {
+		return "[nil]"
+	}
 	return fmt.Sprintf("[%v] real=%q", f.id, f.RealPath)
 }

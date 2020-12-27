@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"os"
 
 	"github.com/anchore/stereoscope"
@@ -26,8 +27,9 @@ func main() {
 	// Show the filetree for each layer
 	for idx, layer := range image.Layers {
 		fmt.Printf("Walking layer: %d", idx)
-		layer.Tree.Walk(func(path file.Path, f *file.Reference) {
+		layer.Tree.Walk(func(path file.Path, f filenode.FileNode) error {
 			fmt.Println("   ", path)
+			return nil
 		})
 		fmt.Println("-----------------------------")
 	}
@@ -36,8 +38,9 @@ func main() {
 	// Show the squashed filetree for each layer
 	for idx, layer := range image.Layers {
 		fmt.Printf("Walking squashed layer: %d", idx)
-		layer.SquashedTree.Walk(func(path file.Path, f *file.Reference) {
+		layer.SquashedTree.Walk(func(path file.Path, f filenode.FileNode) error {
 			fmt.Println("   ", path)
+			return nil
 		})
 		fmt.Println("-----------------------------")
 	}
@@ -45,8 +48,9 @@ func main() {
 	////////////////////////////////////////////////////////////////
 	// Show the final squashed tree
 	fmt.Printf("Walking squashed image (same as the last layer squashed tree)")
-	image.SquashedTree().Walk(func(path file.Path, f *file.Reference) {
+	image.SquashedTree().Walk(func(path file.Path, f filenode.FileNode) error {
 		fmt.Println("   ", path)
+		return nil
 	})
 
 	////////////////////////////////////////////////////////////////

@@ -44,8 +44,9 @@ func TestDFS_WalkAll(t *testing.T) {
 	}
 
 	actual := make([]node.ID, 0)
-	visitor := func(node node.Node) {
+	visitor := func(node node.Node) error {
 		actual = append(actual, node.ID())
+		return nil
 	}
 
 	walker := NewDepthFirstWalker(tr, visitor)
@@ -70,8 +71,9 @@ func TestDFS_Walk(t *testing.T) {
 	}
 
 	actual := make([]node.ID, 0)
-	visitor := func(node node.Node) {
+	visitor := func(node node.Node) error {
 		actual = append(actual, node.ID())
+		return nil
 	}
 
 	walker := NewDepthFirstWalker(tr, visitor)
@@ -93,8 +95,9 @@ func TestDFS_Walk_ShouldTerminate(t *testing.T) {
 	}
 
 	actual := make([]node.ID, 0)
-	visitor := func(node node.Node) {
+	visitor := func(node node.Node) error {
 		actual = append(actual, node.ID())
+		return nil
 	}
 
 	h := WalkConditions{
@@ -128,8 +131,9 @@ func TestDFS_Walk_ShouldVisit(t *testing.T) {
 	}
 
 	actual := make([]node.ID, 0)
-	visitor := func(node node.Node) {
+	visitor := func(node node.Node) error {
 		actual = append(actual, node.ID())
+		return nil
 	}
 
 	h := WalkConditions{
@@ -159,8 +163,9 @@ func TestDFS_Walk_ShouldPruneBranch(t *testing.T) {
 	}
 
 	actual := make([]node.ID, 0)
-	visitor := func(node node.Node) {
+	visitor := func(node node.Node) error {
 		actual = append(actual, node.ID())
+		return nil
 	}
 
 	h := WalkConditions{

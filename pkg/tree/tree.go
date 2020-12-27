@@ -25,9 +25,17 @@ func NewTree() *Tree {
 func (t *Tree) Copy() *Tree {
 	ct := NewTree()
 	for k, v := range t.nodes {
+		if v == nil {
+			ct.nodes[k] = nil
+			continue
+		}
 		ct.nodes[k] = v.Copy()
 	}
 	for k, v := range t.parent {
+		if v == nil {
+			ct.parent[k] = nil
+			continue
+		}
 		ct.parent[k] = v.Copy()
 	}
 	for from, lookup := range t.children {
@@ -35,6 +43,10 @@ func (t *Tree) Copy() *Tree {
 			ct.children[from] = make(map[node.ID]node.Node)
 		}
 		for to, v := range lookup {
+			if v == nil {
+				ct.children[from][to] = nil
+				continue
+			}
 			ct.children[from][to] = v.Copy()
 		}
 	}
@@ -54,7 +66,10 @@ func (t *Tree) Roots() node.Nodes {
 
 // HasNode indicates is the given node ID exists in the Tree.
 func (t *Tree) HasNode(id node.ID) bool {
-	return t.nodes[id] != nil
+	if _, exists := t.nodes[id]; exists {
+		return true
+	}
+	return false
 }
 
 // Node returns a node object for the given ID.
@@ -92,6 +107,13 @@ func (t *Tree) addNode(n node.Node) error {
 func (t *Tree) Replace(old node.Node, new node.Node) error {
 	if !t.HasNode(old.ID()) {
 		return fmt.Errorf("cannot replace node not in the Tree")
+	}
+
+	if old.ID() == new.ID() {
+		// the underlying objects may be different, but the ID's match. Simply track the new [already existing] node
+		// and keep all existing relationships.
+		t.nodes[new.ID()] = new
+		return nil
 	}
 
 	// add the new node

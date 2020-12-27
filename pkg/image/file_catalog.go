@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/filetree"
 	"io"
 	"io/ioutil"
 
@@ -203,15 +202,15 @@ func (c *FileCatalog) buildTarContentsRequests(files ...file.Reference) (map[*La
 	return allRequests, nil
 }
 
-// TODO: translate this to a leaf-check? Also does this need to be directly on the FileCatalog?
-// HasEntriesForAllFilesInTree checks to see if the catalog has an entry for
-// every node ( file / directory) in the FileTree.
-func (c *FileCatalog) HasEntriesForAllFilesInTree(tree filetree.FileTree) bool {
-	for _, f := range tree.AllFiles() {
-		if !c.Exists(f) {
-			return false
-		}
-	}
-
-	return true
-}
+//// TODO: translate this to a leaf-check? Also does this need to be directly on the FileCatalog?
+//// HasEntriesForAllFilesInTree checks to see if the catalog has an entry for
+//// every node ( file / directory) in the FileTree.
+//func (c *FileCatalog) HasEntriesForAllFilesInTree(tree filetree.FileTree) bool {
+//	for _, f := range tree.AllFiles() {
+//		if !c.Exists(f) {
+//			return false
+//		}
+//	}
+//
+//	return true
+//}

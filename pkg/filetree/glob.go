@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/bmatcuk/doublestar/v2"
 )
@@ -137,7 +139,7 @@ func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
 // report correct metadata for all behavior.
 type fileinfoAdapter struct {
 	virtualPath file.Path
-	node        FileNode
+	node        filenode.FileNode
 }
 
 // Name base name of the file

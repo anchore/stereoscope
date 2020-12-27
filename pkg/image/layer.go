@@ -3,16 +3,15 @@ package image
 import (
 	"archive/tar"
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/filetree"
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
@@ -118,9 +117,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 				return err
 			}
 		case tar.TypeLink:
-			// hard link MUST be interpreted as an absolute path
-			p := filepath.Clean(file.DirSeparator + metadata.Linkname)
-			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(p))
+			fileReference, err = l.Tree.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
 				return err
 			}

@@ -48,20 +48,22 @@ func NewDepthFirstWalkerWithConditions(reader Reader, visitor NodeVisitor, condi
 	}
 }
 
-func (w *DepthFirstWalker) Walk(from node.Node) node.Node {
+func (w *DepthFirstWalker) Walk(from node.Node) (node.Node, error) {
 	w.stack.Push(from)
 
 	for w.stack.Size() > 0 {
 		current := w.stack.Pop()
 		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(current) {
-			return current
+			return current, nil
 		}
 		cid := current.ID()
 
 		// visit
 		if w.visitor != nil && !w.visited.Contains(cid) {
 			if w.conditions.ShouldVisit == nil || w.conditions.ShouldVisit != nil && w.conditions.ShouldVisit(current) {
-				w.visitor(current)
+				if err := w.visitor(current); err != nil {
+					return current, err
+				}
 				w.visited.Add(cid)
 			}
 		}
@@ -78,13 +80,16 @@ func (w *DepthFirstWalker) Walk(from node.Node) node.Node {
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
-func (w *DepthFirstWalker) WalkAll() {
+func (w *DepthFirstWalker) WalkAll() error {
 	for _, from := range w.tree.Roots() {
-		w.Walk(from)
+		if _, err := w.Walk(from); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (w *DepthFirstWalker) Visited(n node.Node) bool {

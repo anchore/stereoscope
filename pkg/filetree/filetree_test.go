@@ -3,6 +3,7 @@ package filetree
 import (
 	"errors"
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"testing"
 
 	"github.com/anchore/stereoscope/internal"
@@ -49,7 +50,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 		t.Fatal("unexpected child count", len(children))
 	}
 
-	if children[0].ID() != idByPath(child) {
+	if children[0].ID() != filenode.IdByPath(child) {
 		t.Fatal("unexpected child", children[0])
 	}
 }
@@ -140,10 +141,11 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			},
 		},
 		{
-			// parent is an absolute symlink
+			// parent is an absolute & relative symlink
 			g: "**/symlink/another/a-.gif",
 			expected: []string{
 				"/home/elsewhere/symlink/another/a-.gif",
+				"/home/again/symlink/another/a-.gif",
 			},
 		},
 		///////////////////////
@@ -303,7 +305,9 @@ func TestFileTree_Merge(t *testing.T) {
 	tr2 := NewFileTree()
 	tr2.AddFile("/home/wagoodman/awesome/file-2.txt")
 
-	tr1.merge(tr2)
+	if err := tr1.merge(tr2); err != nil {
+		t.Fatalf("error on merge : %+v", err)
+	}
 
 	for _, p := range []file.Path{"/home/wagoodman/awesome/file-1.txt", "/home/wagoodman/awesome/file-2.txt"} {
 		if !tr1.HasPath(p) {
@@ -319,7 +323,9 @@ func TestFileTree_Merge_Overwrite(t *testing.T) {
 	tr2 := NewFileTree()
 	newRef, _ := tr2.AddFile("/home/wagoodman/awesome/file.txt")
 
-	tr1.merge(tr2)
+	if err := tr1.merge(tr2); err != nil {
+		t.Fatalf("error on merge : %+v", err)
+	}
 
 	_, _, f, _ := tr1.File("/home/wagoodman/awesome/file.txt", false)
 	if f.ID() != newRef.ID() {
@@ -335,7 +341,9 @@ func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 	tr2 := NewFileTree()
 	tr2.AddFile("/home/wagoodman/.wh..wh..opq")
 
-	tr1.merge(tr2)
+	if err := tr1.merge(tr2); err != nil {
+		t.Fatalf("error on merge : %+v", err)
+	}
 
 	for _, p := range []file.Path{"/home/wagoodman", "/home"} {
 		if !tr1.HasPath(p) {
@@ -358,7 +366,9 @@ func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
 	tr2 := NewFileTree()
 	tr2.AddFile("/home/luhring/.wh..wh..opq")
 
-	tr1.merge(tr2)
+	if err := tr1.merge(tr2); err != nil {
+		t.Fatalf("error on merge : %+v", err)
+	}
 
 	for _, p := range []file.Path{"/home/luhring", "/home"} {
 		if !tr1.HasPath(p) {
@@ -374,7 +384,9 @@ func TestFileTree_Merge_Whiteout(t *testing.T) {
 	tr2 := NewFileTree()
 	tr2.AddFile("/home/wagoodman/awesome/.wh.file.txt")
 
-	tr1.merge(tr2)
+	if err := tr1.merge(tr2); err != nil {
+		t.Fatalf("error on merge : %+v", err)
+	}
 
 	for _, p := range []file.Path{"/home/wagoodman/awesome", "/home/wagoodman", "/home"} {
 		if !tr1.HasPath(p) {

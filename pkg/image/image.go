@@ -3,8 +3,9 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/filetree"
 	"io"
+
+	"github.com/anchore/stereoscope/pkg/filetree"
 
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"

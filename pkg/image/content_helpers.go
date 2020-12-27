@@ -2,8 +2,9 @@ package image
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/filetree"
 	"io"
+
+	"github.com/anchore/stereoscope/pkg/filetree"
 
 	"github.com/anchore/stereoscope/pkg/file"
 )
