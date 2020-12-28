@@ -144,7 +144,6 @@ func (t *FileTree) File(path file.Path, followBasenameLink bool) (bool, file.Pat
 }
 
 func (t *FileTree) node(p file.Path, strategy LinkStrategy) (file.Path, *filenode.FileNode, error) {
-	// TODO: critical! should this consider symlinks? or be an option to?
 	if !strategy.FollowLinks() {
 		n := t.tree.Node(filenode.IdByPath(p))
 		if n == nil {
@@ -664,7 +663,7 @@ func (t *FileTree) hasRealPath(path file.Path) bool {
 //	}
 //}
 
-// Walk takes a visitor function and invokes it for all file.References within the FileTree in depth-first ordering.
+// Walk takes a visitor function and invokes it for all paths within the FileTree in depth-first ordering.
 func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error) error {
 	return NewDepthFirstWalker(t, fn, nil).WalkAll()
 }

@@ -109,19 +109,31 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 	// absolute symlink
 	_, err := tr.AddSymLink("/home/elsewhere/symlink", "/sym-linked-dest")
 	if err != nil {
-		t.Fatalf("could notsetup link: %+v", err)
+		t.Fatalf("could not setup link: %+v", err)
 	}
 
 	// relative symlink
 	_, err = tr.AddSymLink("/home/again/symlink", "../../../sym-linked-dest")
 	if err != nil {
-		t.Fatalf("could notsetup link: %+v", err)
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	// dead symlink (dir)
+	_, err = tr.AddSymLink("/home/again/deadsymlink", "../ijustdontexist")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	// dead symlink (to txt)
+	_, err = tr.AddSymLink("/home/again/dead.txt", "../ialsojustdontexist")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
 	}
 
 	// hardlink
 	_, err = tr.AddHardLink("/home/elsewhere/hardlink", "/hard-linked-dest")
 	if err != nil {
-		t.Fatalf("could notsetup link: %+v", err)
+		t.Fatalf("could not setup link: %+v", err)
 	}
 
 	tests := []struct {
@@ -262,7 +274,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.g, func(t *testing.T) {
-			t.Log("PATTERN: ", test.g)
+			//t.Log("PATTERN: ", test.g)
 			actual, err := tr.FilesByGlob(test.g)
 			if err != nil && !test.err {
 				t.Fatal("failed to search by glob:", err)

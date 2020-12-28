@@ -58,7 +58,7 @@ func (n *FileNode) Copy() node.Node {
 	return &FileNode{
 		RealPath:  n.RealPath,
 		FileType:  n.FileType,
-		LinkPath:  n.RealPath,
+		LinkPath:  n.LinkPath,
 		Reference: n.Reference,
 	}
 }

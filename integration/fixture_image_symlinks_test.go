@@ -57,9 +57,15 @@ func TestImageSymlinks(t *testing.T) {
 
 func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedResolve, actualResolve *file.Reference) {
 	t.Helper()
+	if expectedResolve == nil && actualResolve != nil || expectedResolve != nil && actualResolve == nil {
+		t.Fatalf("one of the resolved file.References is nil: expected=%+v actual=%+v", expectedResolve, actualResolve)
+	}
+	if expectedResolve == nil && actualResolve == nil {
+		return
+	}
 	if actualResolve.ID() != expectedResolve.ID() {
-		var exLayer int = -1
-		var acLayer int = -1
+		var exLayer = -1
+		var acLayer = -1
 		var exType byte = 0x0
 		var acType byte = 0x0
 
@@ -80,12 +86,18 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 }
 
 func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Reference, *file.Reference) {
-	link := i.Layers[cfg.linkLayer].Tree.File(file.Path(cfg.linkPath))
+	_, _, link, err := i.Layers[cfg.linkLayer].Tree.File(file.Path(cfg.linkPath), false)
+	if err != nil {
+		t.Fatalf("unable to get link: %+v", err)
+	}
 	if link == nil {
 		t.Fatalf("missing expected link: %s", cfg.linkPath)
 	}
 
-	expectedResolve := i.Layers[cfg.resolveLayer].Tree.File(file.Path(cfg.expectedPath))
+	_, _, expectedResolve, err := i.Layers[cfg.resolveLayer].Tree.File(file.Path(cfg.expectedPath), false)
+	if err != nil {
+		t.Fatalf("unable to get resolved link: %+v", err)
+	}
 	if expectedResolve == nil {
 		t.Fatalf("missing expected path: %s", expectedResolve)
 	}

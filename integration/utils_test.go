@@ -2,6 +2,7 @@ package integration
 
 import (
 	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -87,14 +88,22 @@ func compareSquashTree(t *testing.T, expected *filetree.FileTree, i *image.Image
 	actual := i.SquashedTree()
 	if !expected.Equal(actual) {
 		t.Log("Walking expected squashed tree:")
-		expected.Walk(func(p file.Path, f *file.Reference) {
+		err := expected.Walk(func(p file.Path, _ filenode.FileNode) error {
 			t.Log("   ", p)
+			return nil
 		})
+		if err != nil {
+			t.Fatalf("failed to walk tree: %+v", err)
+		}
 
 		t.Log("Walking actual squashed tree:")
-		actual.Walk(func(p file.Path, f *file.Reference) {
+		err = actual.Walk(func(p file.Path, _ filenode.FileNode) error {
 			t.Log("   ", p)
+			return nil
 		})
+		if err != nil {
+			t.Fatalf("failed to walk tree: %+v", err)
+		}
 
 		extra, missing := expected.PathDiff(actual)
 		t.Errorf("path differences: extra=%+v missing=%+v", extra, missing)
