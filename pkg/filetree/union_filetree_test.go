@@ -59,12 +59,12 @@ func TestUnionFileTree_Squash(t *testing.T) {
 		t.Fatal("original and new node ids changed after squash")
 	}
 
-	_, _, f, err := squashed.File(newNode.RealPath)
+	_, f, _ := squashed.File(newNode.RealPath)
 	if f.ID() != newNode.ID() {
 		t.Fatal("failed to overwrite a path in the squash Tree")
 	}
 
-	_, _, f, err = base.File("/home/wagoodman/more")
+	_, f, _ = base.File("/home/wagoodman/more")
 	if f == nil {
 		t.Fatal("base was never created")
 	}
@@ -73,17 +73,17 @@ func TestUnionFileTree_Squash(t *testing.T) {
 		t.Fatal("base path ref ID changed!")
 	}
 
-	_, _, f, err = top.File("/home/wagoodman/more")
+	_, f, _ = top.File("/home/wagoodman/more")
 	if f != nil {
 		t.Fatal("top file should have been implicitly nil but wasn't")
 	}
 
-	_, _, f, err = squashed.File("/home/wagoodman/more")
+	_, f, _ = squashed.File("/home/wagoodman/more")
 	if f != nil {
 		t.Fatal("file override to a dir has original properties")
 	}
 
-	_, _, f, err = squashed.File("/home/wagoodman/moredir")
+	_, f, _ = squashed.File("/home/wagoodman/moredir")
 	if f == nil {
 		t.Fatal("dir override to a dir is missing original properties")
 	}

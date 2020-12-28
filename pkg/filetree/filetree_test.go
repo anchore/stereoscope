@@ -18,7 +18,7 @@ func TestFileTree_AddPath(t *testing.T) {
 		t.Fatalf("could not add path: %+v", err)
 	}
 
-	_, _, f, _ := tr.File(path)
+	_, f, _ := tr.File(path)
 	if f != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
 	}
@@ -32,7 +32,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 		t.Fatal("could not add path", err)
 	}
 
-	_, _, f, _ := tr.File(path)
+	_, f, _ := tr.File(path)
 	if f != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
 	}
@@ -72,7 +72,7 @@ func TestFileTree_RemovePath(t *testing.T) {
 		t.Fatal("unexpected node count", len(tr.tree.Nodes()), tr.tree.Nodes())
 	}
 
-	_, _, f, _ := tr.File(path)
+	_, f, _ := tr.File(path)
 	if f != nil {
 		t.Fatal("expected file to be missing")
 	}
@@ -353,7 +353,7 @@ func TestFileTree_Merge_Overwrite(t *testing.T) {
 		t.Fatalf("error on merge : %+v", err)
 	}
 
-	_, _, f, _ := tr1.File("/home/wagoodman/awesome/file.txt")
+	_, f, _ := tr1.File("/home/wagoodman/awesome/file.txt")
 	if f.ID() != newRef.ID() {
 		t.Fatalf("did not overwrite paths on merge")
 	}
@@ -609,7 +609,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 				realRef, _ = tr.AddFile(test.buildRealPath)
 			}
 
-			exists, p, ref, err := tr.File(test.requestPath, test.linkOptions...)
+			exists, ref, err := tr.File(test.requestPath, test.linkOptions...)
 			if err != nil && !test.expectedErr {
 				t.Fatalf("unexpected error: %+v", err)
 			} else if err == nil && test.expectedErr {
@@ -628,13 +628,13 @@ func TestFileTree_File_Symlink(t *testing.T) {
 				t.Fatalf("expected path to exist, but does NOT")
 			}
 
-			// validate path...
-			if p != test.expectedResolvedPath {
-				t.Fatalf("unexpected path difference: %+v != %v", p, test.expectedResolvedPath)
-			}
-
 			// validate ref...
-			if realRef != nil {
+			if realRef != nil && ref != nil {
+				// validate path...
+				if ref.RealPath != test.expectedResolvedPath {
+					t.Fatalf("unexpected path difference: %+v != %v", ref.RealPath, test.expectedResolvedPath)
+				}
+
 				if ref.ID() == realRef.ID() && !test.expectedRealRef {
 					t.Errorf("refs should not be the same: resolve(%+v) == reaal(%+v)", ref, realRef)
 				} else if ref.ID() != realRef.ID() && test.expectedRealRef {
@@ -667,17 +667,18 @@ func TestFileTree_ResolveFile_MultipleIndirections(t *testing.T) {
 	realHome, _ := tr.AddFile("/someother/place/wagoodman")
 
 	// the test.... do we resolve through multiple indirections?
-	exists, resolvedPath, resolvedHome, err := tr.File("/home/wagoodman", FollowBasenameLinks)
+	request := file.Path("/home/wagoodman")
+	exists, resolvedHome, err := tr.File(request, FollowBasenameLinks)
 	if err != nil {
 		t.Fatalf("should not have gotten an error on resolving a file: %+v", err)
 	}
 	if !exists {
-		t.Fatalf("expected path does not exist: %+v", resolvedPath)
+		t.Fatalf("expected path does not exist: %+v", request)
 	}
 
 	// we are expecting the resolution for /home/wagoodman to result in /someother/place/wagoodman
-	if resolvedPath != "/someother/place/wagoodman" {
-		t.Fatalf("path resolution through link failed: %+v", resolvedPath)
+	if resolvedHome.RealPath != "/someother/place/wagoodman" {
+		t.Fatalf("path resolution through link failed (from %+v)", request)
 	}
 
 	if resolvedHome == nil {
@@ -704,13 +705,9 @@ func TestFileTree_ResolveFile_CycleDetection(t *testing.T) {
 	}
 
 	// the test.... do we stop when a cycle is detected?
-	exists, resolvedPath, _, err := tr.File("/home/wagoodman", FollowBasenameLinks)
+	exists, _, err := tr.File("/home/wagoodman", FollowBasenameLinks)
 	if err != ErrLinkCycleDetected {
 		t.Fatalf("should have gotten an error on resolving a file")
-	}
-
-	if resolvedPath != "/home" {
-		t.Errorf("cycle path should be hinted in resolved path, given %q", resolvedPath)
 	}
 
 	if exists {

@@ -103,7 +103,7 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 }
 
 // File fetches a file.Reference for the given path. Returns nil if the path does not exist in the FileTree.
-func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, file.Path, *file.Reference, error) {
+func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, *file.Reference, error) {
 	userStrategy := newLinkResolutionStrategy(options...)
 	// For:             /some/path/here
 	// Where:           /some/path -> /other/place
@@ -123,26 +123,26 @@ func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, 
 	// Therefore we can safely lookup the path first without worrying about symlink resolution yet... if there is a
 	// hit, return it! If not, fallback to symlink resolution.
 
-	currentPath, currentNode, err := t.node(path, linkResolutionStrategy{})
+	_, currentNode, err := t.node(path, linkResolutionStrategy{})
 	if err != nil {
-		return false, currentPath, nil, err
+		return false, nil, err
 	}
 	if currentNode != nil && (!currentNode.IsLink() || currentNode.IsLink() && !userStrategy.FollowBasenameLinks) {
-		return true, path, currentNode.Reference, nil
+		return true, currentNode.Reference, nil
 	}
 
 	// symlink resolution!... within the context of container images (which is outside of the responsibility of this object)
 	// the only really valid resolution of symlinks is in squash trees (both for an image and a layer --NOT for trees
 	// that represent a single union FS layer.
-	currentPath, currentNode, err = t.node(path, linkResolutionStrategy{
+	_, currentNode, err = t.node(path, linkResolutionStrategy{
 		FollowAncestorLinks:          true,
 		FollowBasenameLinks:          userStrategy.FollowBasenameLinks,
 		DoNotFollowDeadBasenameLinks: userStrategy.DoNotFollowDeadBasenameLinks,
 	})
 	if currentNode != nil {
-		return true, currentPath, currentNode.Reference, err
+		return true, currentNode.Reference, err
 	}
-	return false, currentPath, nil, err
+	return false, nil, err
 }
 
 func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (file.Path, *filenode.FileNode, error) {
@@ -651,7 +651,7 @@ func (t *FileTree) Equal(other *FileTree) bool {
 
 // HasPath indicates is the given path is in the file Tree.
 func (t *FileTree) HasPath(path file.Path) bool {
-	exists, _, _, err := t.File(path, FollowBasenameLinks)
+	exists, _, err := t.File(path, FollowBasenameLinks)
 	if err != nil {
 		return false
 	}

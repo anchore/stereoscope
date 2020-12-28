@@ -230,7 +230,7 @@ func (i *Image) MultipleFileContentsByRef(refs ...file.Reference) (map[file.Refe
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.Reference, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
-	_, _, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)
+	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)
 	return resolvedRef, err
 }
 
@@ -238,6 +238,6 @@ func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options 
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree.LinkResolutionOption) (*file.Reference, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
-	_, _, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, allOptions...)
+	_, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, allOptions...)
 	return resolvedRef, err
 }
