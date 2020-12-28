@@ -147,7 +147,7 @@ func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, 
 
 func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (file.Path, *filenode.FileNode, error) {
 	if !strategy.FollowLinks() {
-		n := t.tree.Node(filenode.IdByPath(p))
+		n := t.tree.Node(filenode.IDByPath(p))
 		if n == nil {
 			return p, nil, nil
 		}
@@ -163,7 +163,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (file.Path
 			return currentPath, currentNode, err
 		}
 	} else {
-		n := t.tree.Node(filenode.IdByPath(currentPath))
+		n := t.tree.Node(filenode.IDByPath(currentPath))
 		if n != nil {
 			currentNode = n.(*filenode.FileNode)
 		}
@@ -533,7 +533,7 @@ func (t *FileTree) setFileNode(fn *filenode.FileNode) error {
 		return fmt.Errorf("must provide a FileNode when adding paths")
 	}
 
-	if existingNode := t.tree.Node(filenode.IdByPath(fn.RealPath)); existingNode != nil {
+	if existingNode := t.tree.Node(filenode.IDByPath(fn.RealPath)); existingNode != nil {
 		return t.tree.Replace(existingNode, fn)
 	}
 
@@ -658,27 +658,6 @@ func (t *FileTree) HasPath(path file.Path) bool {
 	return exists
 }
 
-// hasNode indicates is the given path is in the file Tree.
-func (t *FileTree) hasNode(path file.Path, strategy linkResolutionStrategy) bool {
-	_, fn, err := t.node(path, strategy)
-	if err != nil {
-		return false
-	}
-	return fn != nil
-}
-
-// hasRealPath indicates is the given path is in the file Tree.
-func (t *FileTree) hasRealPath(path file.Path) bool {
-	_, fn, err := t.node(path, linkResolutionStrategy{
-		FollowAncestorLinks: false,
-		FollowBasenameLinks: false,
-	})
-	if err != nil {
-		return false
-	}
-	return fn != nil
-}
-
 // TODO: critical! are these still needed? try out basic.go before deleting them...
 
 //// fileByPathID indicates if the given node ID is in the FileTree (useful for Tree -> FileTree node resolution).
@@ -710,6 +689,7 @@ func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error) erro
 // merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
 // are path conflicts. This is the basis function for squashing (where the current Tree is the bottom Tree and the
 // given Tree is the top Tree).
+// nolint:gocognit
 func (t *FileTree) merge(upper *FileTree) error {
 	conditions := tree.WalkConditions{
 		ShouldContinueBranch: func(n node.Node) bool {
@@ -791,7 +771,7 @@ func (t *FileTree) hasOpaqueDirectory(directoryPath file.Path) bool {
 
 //
 //func mustMatch(path file.Path, ref *file.Reference) error {
-//	if ref != nil && filenode.IdByPath(path) != filenode.IdByPath(ref.RealPath) {
+//	if ref != nil && filenode.IDByPath(path) != filenode.IDByPath(ref.RealPath) {
 //		return fmt.Errorf("unable to add path for mismatched reference value: %+v != %+v", path, ref.RealPath)
 //	}
 //	return nil

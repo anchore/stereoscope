@@ -45,6 +45,7 @@ func NewDepthFirstWalker(tree *FileTree, visitor FileNodeVisitor, conditions *Wa
 	return w
 }
 
+// nolint:gocognit
 func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNode, error) {
 	w.pathStack.Push(from)
 

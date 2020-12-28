@@ -51,7 +51,7 @@ func NewHardLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
 }
 
 func (n *FileNode) ID() node.ID {
-	return IdByPath(n.RealPath)
+	return IDByPath(n.RealPath)
 }
 
 func (n *FileNode) Copy() node.Node {
@@ -67,6 +67,6 @@ func (n *FileNode) IsLink() bool {
 	return n.FileType == file.TypeHardLink || n.FileType == file.TypeSymlink
 }
 
-func IdByPath(p file.Path) node.ID {
+func IDByPath(p file.Path) node.ID {
 	return node.ID(p.Normalize())
 }

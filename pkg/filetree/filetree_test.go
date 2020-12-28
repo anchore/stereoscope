@@ -50,7 +50,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 		t.Fatal("unexpected child count", len(children))
 	}
 
-	if children[0].ID() != filenode.IdByPath(child) {
+	if children[0].ID() != filenode.IDByPath(child) {
 		t.Fatal("unexpected child", children[0])
 	}
 }
