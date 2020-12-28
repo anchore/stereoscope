@@ -33,7 +33,7 @@ type DepthFirstPathWalker struct {
 	conditions   WalkConditions
 }
 
-func NewDepthFirstWalker(tree *FileTree, visitor FileNodeVisitor, conditions *WalkConditions) *DepthFirstPathWalker {
+func NewDepthFirstPathWalker(tree *FileTree, visitor FileNodeVisitor, conditions *WalkConditions) *DepthFirstPathWalker {
 	w := &DepthFirstPathWalker{
 		visitor:      visitor,
 		tree:         tree,
@@ -56,8 +56,9 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 	for w.pathStack.Size() > 0 {
 		currentPath = w.pathStack.Pop()
 		_, currentNode, err = w.tree.node(currentPath, linkResolutionStrategy{
-			FollowAncestorLinks: true,
-			FollowBasenameLinks: true,
+			FollowAncestorLinks:          true,
+			FollowBasenameLinks:          true,
+			DoNotFollowDeadBasenameLinks: true,
 		})
 		if err != nil {
 			return "", nil, err

@@ -683,7 +683,7 @@ func (t *FileTree) HasPath(path file.Path) bool {
 
 // Walk takes a visitor function and invokes it for all paths within the FileTree in depth-first ordering.
 func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error) error {
-	return NewDepthFirstWalker(t, fn, nil).WalkAll()
+	return NewDepthFirstPathWalker(t, fn, nil).WalkAll()
 }
 
 // merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
