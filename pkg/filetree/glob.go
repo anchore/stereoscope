@@ -17,8 +17,10 @@ var _ doublestar.OS = (*osAdapter)(nil)
 var _ os.FileInfo = (*fileinfoAdapter)(nil)
 
 type GlobResult struct {
-	Path      file.Path
-	Reference file.Reference
+	MatchPath  file.Path
+	RealPath   file.Path
+	IsDeadLink bool
+	Reference  file.Reference
 }
 
 // fileAdapter is an object meant to implement the doublestar.File for getting Lstat results for an entire directory.
@@ -53,7 +55,7 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]os.FileInfo, 0)
-	_, fn, err := f.filetree.node(file.Path(f.name), LinkStrategy{
+	_, fn, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
@@ -80,15 +82,18 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 
 // fileAdapter is an object meant to implement the doublestar.OS for basic file queries (stat, lstat, and open).
 type osAdapter struct {
-	filetree *FileTree
+	filetree                     *FileTree
+	doNotFollowDeadBasenameLinks bool
 }
 
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
 func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
-	_, fn, err := a.filetree.node(file.Path(name), LinkStrategy{
+	_, fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
-		FollowBasenameLinks: false,
+		// Lstat by definition requires that basename symlinks are not followed
+		FollowBasenameLinks:          false,
+		DoNotFollowDeadBasenameLinks: false,
 	})
 	if err != nil {
 		return &fileinfoAdapter{}, err
@@ -119,9 +124,10 @@ func (a *osAdapter) PathSeparator() rune {
 
 // Stat returns a FileInfo describing the named file.
 func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
-	_, fn, err := a.filetree.node(file.Path(name), LinkStrategy{
-		FollowAncestorLinks: true,
-		FollowBasenameLinks: true,
+	_, fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+		FollowAncestorLinks:          true,
+		FollowBasenameLinks:          true,
+		DoNotFollowDeadBasenameLinks: a.doNotFollowDeadBasenameLinks,
 	})
 	if err != nil {
 		return &fileinfoAdapter{}, err

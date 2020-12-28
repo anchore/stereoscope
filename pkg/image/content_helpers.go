@@ -12,7 +12,7 @@ import (
 // fetchFileContentsByPath is a common helper function for resolving the file contents for a path from the file
 // catalog relative to the given tree.
 func fetchFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, path file.Path) (io.ReadCloser, error) {
-	exists, _, fileReference, err := ft.File(path, true)
+	exists, _, fileReference, err := ft.File(path, filetree.FollowBasenameLinks)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +32,7 @@ func fetchFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, pa
 func fetchMultipleFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
 	fileReferences := make([]file.Reference, len(paths))
 	for idx, p := range paths {
-		exists, _, fileReference, err := ft.File(p, true)
+		exists, _, fileReference, err := ft.File(p, filetree.FollowBasenameLinks)
 		if err != nil {
 			return nil, err
 		}

@@ -111,13 +111,17 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		var fileReference *file.Reference
 		switch metadata.TypeFlag {
 		case tar.TypeSymlink:
-			// symlinks can by relative or absolute path references, take the data as is
 			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
 				return err
 			}
 		case tar.TypeLink:
 			fileReference, err = l.Tree.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			if err != nil {
+				return err
+			}
+		case tar.TypeDir:
+			fileReference, err = l.Tree.AddDir(file.Path(metadata.Path))
 			if err != nil {
 				return err
 			}

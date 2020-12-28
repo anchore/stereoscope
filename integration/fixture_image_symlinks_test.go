@@ -2,6 +2,7 @@ package integration
 
 import (
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"io/ioutil"
 	"testing"
 
@@ -17,6 +18,7 @@ type linkFetchConfig struct {
 	expectedPath     string
 	perspectiveLayer int
 	contents         string
+	linkOptions      []filetree.LinkResolutionOption
 }
 
 func TestImageSymlinks(t *testing.T) {
@@ -66,8 +68,8 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 	if actualResolve.ID() != expectedResolve.ID() {
 		var exLayer = -1
 		var acLayer = -1
-		var exType byte = 0x0
-		var acType byte = 0x0
+		var exType byte
+		var acType byte
 
 		eM, err := i.FileCatalog.Get(*expectedResolve)
 		if err == nil {
@@ -86,7 +88,7 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 }
 
 func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Reference, *file.Reference) {
-	_, _, link, err := i.Layers[cfg.linkLayer].Tree.File(file.Path(cfg.linkPath), false)
+	_, _, link, err := i.Layers[cfg.linkLayer].Tree.File(file.Path(cfg.linkPath), cfg.linkOptions...)
 	if err != nil {
 		t.Fatalf("unable to get link: %+v", err)
 	}
@@ -94,7 +96,7 @@ func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Referen
 		t.Fatalf("missing expected link: %s", cfg.linkPath)
 	}
 
-	_, _, expectedResolve, err := i.Layers[cfg.resolveLayer].Tree.File(file.Path(cfg.expectedPath), false)
+	_, _, expectedResolve, err := i.Layers[cfg.resolveLayer].Tree.File(file.Path(cfg.expectedPath), cfg.linkOptions...)
 	if err != nil {
 		t.Fatalf("unable to get resolved link: %+v", err)
 	}
@@ -102,7 +104,7 @@ func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Referen
 		t.Fatalf("missing expected path: %s", expectedResolve)
 	}
 
-	actualResolve, err := i.ResolveLinkByLayerSquash(*link, cfg.perspectiveLayer)
+	actualResolve, err := i.ResolveLinkByLayerSquash(*link, cfg.perspectiveLayer, cfg.linkOptions...)
 	if err != nil {
 		t.Fatalf("failed to resolve link=%+v: %+v", link, err)
 	}
@@ -199,6 +201,7 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 			resolveLayer:     6,
 			expectedPath:     "/link-indirect",
 			perspectiveLayer: 8,
+			linkOptions:      []filetree.LinkResolutionOption{filetree.DoNotFollowDeadBasenameLinks},
 		},
 	}
 

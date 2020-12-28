@@ -18,7 +18,7 @@ func TestFileTree_AddPath(t *testing.T) {
 		t.Fatalf("could not add path: %+v", err)
 	}
 
-	_, _, f, _ := tr.File(path, false)
+	_, _, f, _ := tr.File(path)
 	if f != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
 	}
@@ -32,7 +32,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 		t.Fatal("could not add path", err)
 	}
 
-	_, _, f, _ := tr.File(path, false)
+	_, _, f, _ := tr.File(path)
 	if f != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
 	}
@@ -40,7 +40,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	parent := file.Path("/home/wagoodman")
 	child := file.Path("/home/wagoodman/awesome")
 
-	_, n, err := tr.node(parent, LinkStrategy{})
+	_, n, err := tr.node(parent, linkResolutionStrategy{})
 	if err != nil {
 		t.Fatalf("could not get parent node: %+v", err)
 	}
@@ -72,7 +72,7 @@ func TestFileTree_RemovePath(t *testing.T) {
 		t.Fatal("unexpected node count", len(tr.tree.Nodes()), tr.tree.Nodes())
 	}
 
-	_, _, f, _ := tr.File(path, false)
+	_, _, f, _ := tr.File(path)
 	if f != nil {
 		t.Fatal("expected file to be missing")
 	}
@@ -125,7 +125,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 	}
 
 	// dead symlink (to txt)
-	_, err = tr.AddSymLink("/home/again/dead.txt", "../ialsojustdontexist")
+	_, err = tr.AddSymLink("/home/again/dead.jpg", "../ialsojustdontexist")
 	if err != nil {
 		t.Fatalf("could not setup link: %+v", err)
 	}
@@ -137,7 +137,8 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 	}
 
 	tests := []struct {
-		g        string
+		pattern  string
+		options  []LinkResolutionOption
 		expected []string
 		err      bool
 	}{
@@ -145,7 +146,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 		// symlinked paths
 		{
 			// parent is an absolute & relative symlink
-			g: "**/a-.gif",
+			pattern: "**/a-.gif",
 			expected: []string{
 				"/home/elsewhere/symlink/another/a-.gif",
 				"/home/again/symlink/another/a-.gif",
@@ -154,17 +155,30 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 		},
 		{
 			// parent is an absolute & relative symlink
-			g: "**/symlink/another/a-.gif",
+			pattern: "**/symlink/another/a-.gif",
 			expected: []string{
 				"/home/elsewhere/symlink/another/a-.gif",
 				"/home/again/symlink/another/a-.gif",
+			},
+		},
+		{
+			// symlink with dead basename (follow)
+			pattern:  "**/dead.jpg",
+			expected: []string{},
+		},
+		{
+			// symlink with dead basename (do not follow)
+			pattern: "**/dead.jpg",
+			options: []LinkResolutionOption{DoNotFollowDeadBasenameLinks},
+			expected: []string{
+				"/home/again/dead.jpg",
 			},
 		},
 		///////////////////////
 		// hardlinked paths
 		{
 			// parent is a hardlink
-			g: "**/b-.gif",
+			pattern: "**/b-.gif",
 			expected: []string{
 				"/home/elsewhere/hardlink/something/b-.gif",
 				"/hard-linked-dest/something/b-.gif",
@@ -172,7 +186,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 		},
 		{
 			// parent is a hardlink
-			g: "**/hardlink/something/b-.gif",
+			pattern: "**/hardlink/something/b-.gif",
 			expected: []string{
 				"/home/elsewhere/hardlink/something/b-.gif",
 			},
@@ -181,7 +195,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 		// mixed links
 		{
 			// parent is a hardlink or symlink
-			g: "**/elsewhere/**/?-.gif",
+			pattern: "**/elsewhere/**/?-.gif",
 			expected: []string{
 				"/home/elsewhere/symlink/another/a-.gif",
 				"/home/elsewhere/hardlink/something/b-.gif",
@@ -190,7 +204,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 		////////////////////////
 		// real paths
 		{
-			g: "/home/wagoodman/**/file.txt",
+			pattern: "/home/wagoodman/**/file.txt",
 			expected: []string{
 				"/home/wagoodman/some/deeply/nested/spot/file.txt",
 				"/home/wagoodman/awesome/file.txt",
@@ -198,7 +212,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			},
 		},
 		{
-			g: "/home/wagoodman/**",
+			pattern: "/home/wagoodman/**",
 			expected: []string{
 				// note: this will only find files, not dirs
 				"/home/wagoodman/awesome/file.txt",
@@ -208,15 +222,15 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			},
 		},
 		{
-			g:        "file.txt",
+			pattern:  "file.txt",
 			expected: []string{},
 		},
 		{
-			g:        "*file.txt",
+			pattern:  "*file.txt",
 			expected: []string{},
 		},
 		{
-			g: "**/*file.txt",
+			pattern: "**/*file.txt",
 			expected: []string{
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
@@ -226,13 +240,13 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			},
 		},
 		{
-			g: "*/example.gif",
+			pattern: "*/example.gif",
 			expected: []string{
 				"/place/example.gif",
 			},
 		},
 		{
-			g: "/**/file.txt",
+			pattern: "/**/file.txt",
 			expected: []string{
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
@@ -240,27 +254,27 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			},
 		},
 		{
-			g: "/**/*-file.txt",
+			pattern: "/**/*-file.txt",
 			expected: []string{
 				"/home/a-file.txt",
 				"/home/wagoodman/b-file.txt",
 			},
 		},
 		{
-			g: "/**/?-file.txt",
+			pattern: "/**/?-file.txt",
 			expected: []string{
 				"/home/a-file.txt",
 				"/home/wagoodman/b-file.txt",
 			},
 		},
 		{
-			g: "**/a-file.txt",
+			pattern: "**/a-file.txt",
 			expected: []string{
 				"/home/a-file.txt",
 			},
 		},
 		{
-			g: "/**/*.txt",
+			pattern: "/**/*.txt",
 			expected: []string{
 				"/home/wagoodman/awesome/file.txt",
 				"/home/wagoodman/file.txt",
@@ -273,9 +287,9 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.g, func(t *testing.T) {
-			//t.Log("PATTERN: ", test.g)
-			actual, err := tr.FilesByGlob(test.g)
+		t.Run(test.pattern, func(t *testing.T) {
+			//t.Log("PATTERN: ", test.pattern)
+			actual, err := tr.FilesByGlob(test.pattern, test.options...)
 			if err != nil && !test.err {
 				t.Fatal("failed to search by glob:", err)
 			} else if err == nil && test.err {
@@ -289,7 +303,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			expectedSet := internal.NewStringSet()
 
 			for _, r := range actual {
-				actualSet.Add(string(r.Path))
+				actualSet.Add(string(r.MatchPath))
 			}
 
 			for _, e := range test.expected {
@@ -300,7 +314,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			}
 
 			for _, r := range actual {
-				if !expectedSet.Contains(string(r.Path)) {
+				if !expectedSet.Contains(string(r.MatchPath)) {
 					t.Errorf("extra search hit: %+v", r)
 				}
 			}
@@ -339,7 +353,7 @@ func TestFileTree_Merge_Overwrite(t *testing.T) {
 		t.Fatalf("error on merge : %+v", err)
 	}
 
-	_, _, f, _ := tr1.File("/home/wagoodman/awesome/file.txt", false)
+	_, _, f, _ := tr1.File("/home/wagoodman/awesome/file.txt")
 	if f.ID() != newRef.ID() {
 		t.Fatalf("did not overwrite paths on merge")
 	}
@@ -421,7 +435,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 		buildLinkSource      file.Path // ln -s <SOURCE> DEST
 		buildLinkDest        file.Path // ln -s SOURCE <DEST>
 		buildRealPath        file.Path // a real file that should exist (or not if "")
-		followBase           bool      // whether to follow the base request path (do link resolution)
+		linkOptions          []LinkResolutionOption
 		requestPath          file.Path // the path to check against
 		expectedExists       bool      // if the request path should exist or not
 		expectedResolvedPath file.Path // the expected path for a request result
@@ -434,7 +448,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "/another/place",
 			buildRealPath:        "/another/place",
-			followBase:           true,
+			linkOptions:          []LinkResolutionOption{FollowBasenameLinks},
 			requestPath:          "/home",
 			expectedExists:       true,
 			expectedResolvedPath: "/another/place",
@@ -446,7 +460,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "/another/place",
 			buildRealPath:        "/another/place",
-			followBase:           false,
+			linkOptions:          []LinkResolutionOption{},
 			requestPath:          "/home",
 			expectedExists:       true,
 			expectedResolvedPath: "/home",
@@ -460,7 +474,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "/another/place",
 			buildRealPath:        "/another/place/wagoodman",
-			followBase:           true, // a nop for this case (note the expected path and ref)
+			linkOptions:          []LinkResolutionOption{FollowBasenameLinks}, // a nop for this case (note the expected path and ref)
 			requestPath:          "/home/wagoodman",
 			expectedExists:       true,
 			expectedResolvedPath: "/another/place/wagoodman",
@@ -471,7 +485,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "/another/place",
 			buildRealPath:        "/another/place/wagoodman",
-			followBase:           false, // a nop for this case (note the expected path and ref)
+			linkOptions:          []LinkResolutionOption{}, // a nop for this case (note the expected path and ref)
 			requestPath:          "/home/wagoodman",
 			expectedExists:       true,
 			expectedResolvedPath: "/another/place/wagoodman",
@@ -484,7 +498,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "../../another/place",
 			buildRealPath:        "/another/place",
-			followBase:           true,
+			linkOptions:          []LinkResolutionOption{FollowBasenameLinks},
 			requestPath:          "/home",
 			expectedExists:       true,
 			expectedResolvedPath: "/another/place",
@@ -495,7 +509,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource: "/home",
 			buildLinkDest:   "../../another/place/wagoodman",
 			buildRealPath:   "/another/place/wagoodman",
-			followBase:      false,
+			linkOptions:     []LinkResolutionOption{},
 			requestPath:     "/home",
 			expectedExists:  true,
 			// note that since the request matches the link source and we are NOT following, we get the link ref back
@@ -508,7 +522,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "../../another/place",
 			buildRealPath:        "/another/place/wagoodman",
-			followBase:           true, // this is a nop since the parent is a link
+			linkOptions:          []LinkResolutionOption{FollowBasenameLinks}, // this is a nop since the parent is a link
 			requestPath:          "/home/wagoodman",
 			expectedExists:       true,
 			expectedResolvedPath: "/another/place/wagoodman",
@@ -519,7 +533,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "../../another/place",
 			buildRealPath:        "/another/place/wagoodman",
-			followBase:           false, // this is a nop since the parent is a link
+			linkOptions:          []LinkResolutionOption{}, // this is a nop since the parent is a link
 			requestPath:          "/home/wagoodman",
 			expectedExists:       true,
 			expectedResolvedPath: "/another/place/wagoodman",
@@ -530,7 +544,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			name:            "request base is DEAD symlink",
 			buildLinkSource: "/home",
 			buildLinkDest:   "/mwahaha/i/go/to/nowhere",
-			followBase:      false,
+			linkOptions:     []LinkResolutionOption{},
 			requestPath:     "/home",
 			// since we did not follow, the paths should exist to the symlink file
 			expectedResolvedPath: "/home",
@@ -540,11 +554,21 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			name:            "request base is DEAD symlink",
 			buildLinkSource: "/home",
 			buildLinkDest:   "/mwahaha/i/go/to/nowhere",
-			followBase:      true,
+			linkOptions:     []LinkResolutionOption{FollowBasenameLinks},
 			requestPath:     "/home",
 			// we are following the path, which goes to nowhere.... the first failed path is resolved and returned
 			expectedResolvedPath: "/mwahaha",
 			expectedExists:       false,
+		},
+		{
+			name:            "request base is DEAD symlink (which we don't follow)",
+			buildLinkSource: "/home",
+			buildLinkDest:   "/mwahaha/i/go/to/nowhere",
+			linkOptions:     []LinkResolutionOption{FollowBasenameLinks, DoNotFollowDeadBasenameLinks},
+			requestPath:     "/home",
+			// we are following the path, which goes to nowhere.... the first failed path is resolved and returned
+			expectedResolvedPath: "/home",
+			expectedExists:       true,
 		},
 		///////////////
 		// trying to resolve to above root
@@ -553,7 +577,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "../../../../../../../../../../../../another/place",
 			buildRealPath:        "/another/place/wagoodman",
-			followBase:           true, // this is a nop since the parent is a link
+			linkOptions:          []LinkResolutionOption{FollowBasenameLinks}, // this is a nop since the parent is a link
 			requestPath:          "/home/wagoodman",
 			expectedExists:       true,
 			expectedResolvedPath: "/another/place/wagoodman",
@@ -564,7 +588,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			buildLinkSource:      "/home",
 			buildLinkDest:        "../../../../../../../../../../../../another/place",
 			buildRealPath:        "/another/place/wagoodman",
-			followBase:           false, // this is a nop since the parent is a link
+			linkOptions:          []LinkResolutionOption{}, // this is a nop since the parent is a link
 			requestPath:          "/home/wagoodman",
 			expectedExists:       true,
 			expectedResolvedPath: "/another/place/wagoodman",
@@ -573,7 +597,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("%s (follow=%+v)", test.name, test.followBase), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s (follow=%+v)", test.name, test.linkOptions), func(t *testing.T) {
 			tr := NewFileTree()
 			_, err := tr.AddSymLink(test.buildLinkSource, test.buildLinkDest)
 			if err != nil {
@@ -585,7 +609,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 				realRef, _ = tr.AddFile(test.buildRealPath)
 			}
 
-			exists, p, ref, err := tr.File(test.requestPath, test.followBase)
+			exists, p, ref, err := tr.File(test.requestPath, test.linkOptions...)
 			if err != nil && !test.expectedErr {
 				t.Fatalf("unexpected error: %+v", err)
 			} else if err == nil && test.expectedErr {
@@ -643,7 +667,7 @@ func TestFileTree_ResolveFile_MultipleIndirections(t *testing.T) {
 	realHome, _ := tr.AddFile("/someother/place/wagoodman")
 
 	// the test.... do we resolve through multiple indirections?
-	exists, resolvedPath, resolvedHome, err := tr.File("/home/wagoodman", true)
+	exists, resolvedPath, resolvedHome, err := tr.File("/home/wagoodman", FollowBasenameLinks)
 	if err != nil {
 		t.Fatalf("should not have gotten an error on resolving a file: %+v", err)
 	}
@@ -680,7 +704,7 @@ func TestFileTree_ResolveFile_CycleDetection(t *testing.T) {
 	}
 
 	// the test.... do we stop when a cycle is detected?
-	exists, resolvedPath, _, err := tr.File("/home/wagoodman", true)
+	exists, resolvedPath, _, err := tr.File("/home/wagoodman", FollowBasenameLinks)
 	if err != ErrLinkCycleDetected {
 		t.Fatalf("should have gotten an error on resolving a file")
 	}
