@@ -1,12 +1,21 @@
 package filetree
 
 import (
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 )
+
+// prevent link cycles for paths that are self-referential (e.g. /home/wagoodman -> /home, which resolves
+// to /home/wagoodman/home, which resolves to /home/wagoodman/home/home, and so on...).
+// This is an arbitrarily large number (but not "too" large).
+const maxDirDepth = 500
+
+var ErrMaxTraversalDepth = errors.New("max allowable directory traversal depth reached (maybe a link cycle?)")
 
 type FileNodeVisitor func(file.Path, filenode.FileNode) error
 
@@ -65,6 +74,11 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 		}
 		if currentNode == nil {
 			return "", nil, fmt.Errorf("nil Node at path=%q", currentPath)
+		}
+
+		// prevent infinite loop
+		if strings.Count(string(currentPath.Normalize()), file.DirSeparator) >= maxDirDepth {
+			return currentPath, currentNode, ErrMaxTraversalDepth
 		}
 
 		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(currentPath, *currentNode) {

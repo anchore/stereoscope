@@ -1,6 +1,7 @@
 package filetree
 
 import (
+	"errors"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/go-test/deep"
@@ -226,6 +227,52 @@ func TestDFS_WalkAll_ConditionalBranchPruning(t *testing.T) {
 	}
 
 	assertExpectedTraversal(t, possiblePaths, actualPaths)
+}
+
+func TestDFS_WalkAll_MaxDirDepthTerminatesTraversal(t *testing.T) {
+	tr := NewFileTree()
+
+	possiblePaths := make(map[string]*file.Reference)
+
+	// absolute symlink
+	_, err := tr.AddSymLink("/home/wagoodman", "/home")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+	// since we are following base links on walk, we should NOT expect the symlink ref at the link destination
+	possiblePaths["/home/wagoodman"] = nil
+	possiblePaths["/home"] = nil
+
+	// </setup tree...>
+
+	actualMaxDepth := -1
+	shouldTerminate := func(path file.Path, node filenode.FileNode) bool {
+		if actualMaxDepth > maxDirDepth*2 {
+			// test stop gap
+			t.Fatalf("did not prevent max dir depth traversal")
+			return true
+		}
+		return false
+	}
+
+	visitor := func(path file.Path, node filenode.FileNode) error {
+		actualMaxDepth = strings.Count(string(path.Normalize()), file.DirSeparator)
+		return nil
+	}
+
+	walker := NewDepthFirstPathWalker(tr, visitor, &WalkConditions{
+		ShouldTerminate: shouldTerminate,
+	})
+	if err = walker.WalkAll(); !errors.Is(err, ErrMaxTraversalDepth) {
+		t.Fatalf("expected max traversal error, but got another error instead: %+v", err)
+	} else if err == nil {
+		t.Fatalf("expected max traversal error, but got none")
+	}
+
+	if actualMaxDepth == -1 || actualMaxDepth > maxDirDepth {
+		t.Fatalf("never traversed or went above allowable threshold")
+	}
+
 }
 
 func assertExpectedTraversal(t *testing.T, expected, actual map[string]*file.Reference) {

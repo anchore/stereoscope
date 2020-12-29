@@ -660,32 +660,9 @@ func (t *FileTree) HasPath(path file.Path) bool {
 	return exists
 }
 
-// TODO: critical! are these still needed? try out basic.go before deleting them...
-
-//// fileByPathID indicates if the given Node ID is in the FileTree (useful for Tree -> FileTree Node resolution).
-//func (t *FileTree) fileByPathID(id Node.ID) *file.Reference {
-//	return t.tree.Node(id).(*filenode.FileNode).Reference
-//}
-//
-//// VisitorFn, used for traversal, wraps the given user function (meant to walk file.References) with a function that
-//// can resolve an underlying tree Node to a file.Reference.
-//func (t *FileTree) VisitorFn(fn func(file.Reference)) func(Node.Node) {
-//	return func(Node Node.Node) {
-//		fn(t.fileByPathID(Node.ID()))
-//	}
-//}
-//
-//// ConditionFn, used for conditioning traversal, wraps the given user function (meant to walk file.References) with a
-//// function that can resolve an underlying tree Node to a file.Reference.
-//func (t *FileTree) ConditionFn(fn func(file.Reference) bool) func(Node.Node) bool {
-//	return func(Node Node.Node) bool {
-//		return fn(t.fileByPathID(Node.ID()))
-//	}
-//}
-
 // Walk takes a visitor function and invokes it for all paths within the FileTree in depth-first ordering.
-func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error) error {
-	return NewDepthFirstPathWalker(t, fn, nil).WalkAll()
+func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error, conditions *WalkConditions) error {
+	return NewDepthFirstPathWalker(t, fn, conditions).WalkAll()
 }
 
 // merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there

@@ -649,7 +649,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 	}
 }
 
-func TestFileTree_ResolveFile_MultipleIndirections(t *testing.T) {
+func TestFileTree_File_MultipleIndirections(t *testing.T) {
 	tr := NewFileTree()
 	// first indirection
 	_, err := tr.AddSymLink("/home", "/another/place")
@@ -690,7 +690,7 @@ func TestFileTree_ResolveFile_MultipleIndirections(t *testing.T) {
 	}
 }
 
-func TestFileTree_ResolveFile_CycleDetection(t *testing.T) {
+func TestFileTree_File_CycleDetection(t *testing.T) {
 	tr := NewFileTree()
 	// first indirection
 	_, err := tr.AddSymLink("/home", "/another/place")

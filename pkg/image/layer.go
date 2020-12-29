@@ -108,6 +108,16 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	monitor := l.trackReadProgress(l.Metadata)
 
 	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
+		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
+		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
+		// This is ok, and the FileTree will account for this by automatically adding directories for non-existing
+		// constituent paths. If later there happens to be a tar header entry for an already added constituent path
+		// the FileNode will be updated with the new file.Reference. If there is no tar header entry for constituent
+		// paths the FileTree is still structurally consistent (all paths can be iterated even though there may not have
+		// been a tar header entry for part of the given path).
+		//
+		// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
+		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
 		var fileReference *file.Reference
 		switch metadata.TypeFlag {
 		case tar.TypeSymlink:
@@ -140,10 +150,6 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 		monitor.N++
 	}
-
-	// TODO: It's possible that directories can be added to the FileTree that aren't stored in the FileCatalog.
-	//  Given this, we should think about the extent to which entries in the tree should be present in the catalog,
-	//  and we should consider the impact to consumers as they query this library for "directories" in the image.
 
 	monitor.SetCompleted()
 

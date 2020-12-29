@@ -91,7 +91,7 @@ func compareSquashTree(t *testing.T, expected *filetree.FileTree, i *image.Image
 		err := expected.Walk(func(p file.Path, _ filenode.FileNode) error {
 			t.Log("   ", p)
 			return nil
-		})
+		}, nil)
 		if err != nil {
 			t.Fatalf("failed to walk tree: %+v", err)
 		}
@@ -100,7 +100,7 @@ func compareSquashTree(t *testing.T, expected *filetree.FileTree, i *image.Image
 		err = actual.Walk(func(p file.Path, _ filenode.FileNode) error {
 			t.Log("   ", p)
 			return nil
-		})
+		}, nil)
 		if err != nil {
 			t.Fatalf("failed to walk tree: %+v", err)
 		}
