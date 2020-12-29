@@ -55,7 +55,7 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 
 	for w.pathStack.Size() > 0 {
 		currentPath = w.pathStack.Pop()
-		_, currentNode, err = w.tree.node(currentPath, linkResolutionStrategy{
+		currentNode, err = w.tree.node(currentPath, linkResolutionStrategy{
 			FollowAncestorLinks:          true,
 			FollowBasenameLinks:          true,
 			DoNotFollowDeadBasenameLinks: true,

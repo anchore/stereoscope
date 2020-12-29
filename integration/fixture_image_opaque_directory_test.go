@@ -13,7 +13,7 @@ func TestImage_SquashedTree_OpaqueDirectoryExistsInFileCatalog(t *testing.T) {
 
 	tree := image.SquashedTree()
 	path := "/usr/lib/jvm"
-	_, _, ref, err := tree.File(file.Path(path), filetree.FollowBasenameLinks)
+	_, ref, err := tree.File(file.Path(path), filetree.FollowBasenameLinks)
 	if err != nil {
 		t.Fatalf("unable to get file=%q : %+v", path, err)
 	}

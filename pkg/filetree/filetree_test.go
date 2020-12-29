@@ -40,7 +40,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	parent := file.Path("/home/wagoodman")
 	child := file.Path("/home/wagoodman/awesome")
 
-	_, n, err := tr.node(parent, linkResolutionStrategy{})
+	n, err := tr.node(parent, linkResolutionStrategy{})
 	if err != nil {
 		t.Fatalf("could not get parent node: %+v", err)
 	}

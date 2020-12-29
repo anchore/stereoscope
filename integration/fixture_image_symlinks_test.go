@@ -88,7 +88,7 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 }
 
 func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Reference, *file.Reference) {
-	_, _, link, err := i.Layers[cfg.linkLayer].Tree.File(file.Path(cfg.linkPath), cfg.linkOptions...)
+	_, link, err := i.Layers[cfg.linkLayer].Tree.File(file.Path(cfg.linkPath), cfg.linkOptions...)
 	if err != nil {
 		t.Fatalf("unable to get link: %+v", err)
 	}
@@ -96,7 +96,7 @@ func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Referen
 		t.Fatalf("missing expected link: %s", cfg.linkPath)
 	}
 
-	_, _, expectedResolve, err := i.Layers[cfg.resolveLayer].Tree.File(file.Path(cfg.expectedPath), cfg.linkOptions...)
+	_, expectedResolve, err := i.Layers[cfg.resolveLayer].Tree.File(file.Path(cfg.expectedPath), cfg.linkOptions...)
 	if err != nil {
 		t.Fatalf("unable to get resolved link: %+v", err)
 	}

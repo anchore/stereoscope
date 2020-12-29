@@ -55,7 +55,7 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]os.FileInfo, 0)
-	_, fn, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
+	fn, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
@@ -89,7 +89,7 @@ type osAdapter struct {
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
 func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
-	_, fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		// Lstat by definition requires that basename symlinks are not followed
 		FollowBasenameLinks:          false,
@@ -124,7 +124,7 @@ func (a *osAdapter) PathSeparator() rune {
 
 // Stat returns a FileInfo describing the named file.
 func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
-	_, fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks:          true,
 		FollowBasenameLinks:          true,
 		DoNotFollowDeadBasenameLinks: a.doNotFollowDeadBasenameLinks,
