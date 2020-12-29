@@ -209,8 +209,10 @@ func TestFileCatalog_FileContents(t *testing.T) {
 		TarHeaderName: p,
 	}
 
+	v1Layer := testLayerContent{content: actualReadCloser}
 	layer := &Layer{
-		layer: &testLayerContent{content: actualReadCloser},
+		layer:   &v1Layer,
+		content: v1Layer.Uncompressed,
 	}
 
 	catalog := testFileCatalog(t)
@@ -253,9 +255,12 @@ func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[f
 		actualReadCloser, cleanup := getTarFixture(t, "fixture-1")
 		t.Cleanup(cleanup)
 
+		v1Layer := testLayerContent{content: actualReadCloser}
 		layer := &Layer{
 			// note: since this test is using the same tar, it is as if it is a request for two files in the same layer
-			layer: &testLayerContent{content: actualReadCloser},
+
+			layer:   &v1Layer,
+			content: v1Layer.Uncompressed,
 		}
 
 		catalog.Add(ref, metadata, layer)
