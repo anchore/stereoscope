@@ -50,13 +50,13 @@ func TestUnionFileTree_Squash(t *testing.T) {
 	nodes := squashed.AllFiles()
 	if len(nodes) != 7 {
 		for _, n := range nodes {
-			t.Logf("   found node: %+v", n)
+			t.Logf("   found Node: %+v", n)
 		}
 		t.Fatalf("unexpected squashed Tree number of nodes: %d", len(nodes))
 	}
 
 	if originalNode.ID() == newNode.ID() {
-		t.Fatal("original and new node ids changed after squash")
+		t.Fatal("original and new Node ids changed after squash")
 	}
 
 	_, f, _ := squashed.File(newNode.RealPath)
@@ -116,7 +116,7 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 	nodes := squashed.AllRealPaths()
 	if len(nodes) != 3 {
 		for _, n := range nodes {
-			t.Logf("   found node: %+v", n)
+			t.Logf("   found Node: %+v", n)
 		}
 		t.Fatal("unexpected squashed Tree number of paths", len(nodes))
 	}

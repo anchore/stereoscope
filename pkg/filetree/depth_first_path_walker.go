@@ -11,16 +11,16 @@ import (
 type FileNodeVisitor func(file.Path, filenode.FileNode) error
 
 type WalkConditions struct {
-	// Return true when the walker should stop traversing (before visiting current node)
+	// Return true when the walker should stop traversing (before visiting current Node)
 	ShouldTerminate func(file.Path, filenode.FileNode) bool
 
-	// Whether we should visit the current node. Note: this will continue down the same traversal
-	// path, only "skipping" over a single node (but still potentially visiting children later)
-	// Return true to visit the current node.
+	// Whether we should visit the current Node. Note: this will continue down the same traversal
+	// path, only "skipping" over a single Node (but still potentially visiting children later)
+	// Return true to visit the current Node.
 	ShouldVisit func(file.Path, filenode.FileNode) bool
 
-	// Whether we should consider children of this node to be included in the traversal path.
-	// Return true to traverse children of this node.
+	// Whether we should consider children of this Node to be included in the traversal path.
+	// Return true to traverse children of this Node.
 	ShouldContinueBranch func(file.Path, filenode.FileNode) bool
 }
 
@@ -64,7 +64,7 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 			return "", nil, err
 		}
 		if currentNode == nil {
-			return "", nil, fmt.Errorf("nil node at path=%q", currentPath)
+			return "", nil, fmt.Errorf("nil Node at path=%q", currentPath)
 		}
 
 		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(currentPath, *currentNode) {

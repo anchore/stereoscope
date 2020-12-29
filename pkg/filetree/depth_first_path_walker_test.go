@@ -144,7 +144,7 @@ func TestDFS_WalkAll_EarlyTermination(t *testing.T) {
 
 	conditions := WalkConditions{
 		ShouldTerminate: func(p file.Path, fn filenode.FileNode) bool {
-			// the first node after /home/wagoodman
+			// the first Node after /home/wagoodman
 			if p == "/place" {
 				return true
 			}

@@ -103,8 +103,8 @@ func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
 	}
 
 	return &fileinfoAdapter{
-		virtualPath: file.Path(name),
-		node:        *fn,
+		VirtualPath: file.Path(name),
+		Node:        *fn,
 	}, nil
 }
 
@@ -136,21 +136,21 @@ func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
 	return &fileinfoAdapter{
-		virtualPath: file.Path(name),
-		node:        *fn,
+		VirtualPath: file.Path(name),
+		Node:        *fn,
 	}, nil
 }
 
 // fileinfoAdapter is meant to implement the os.FileInfo interface intended only for glob searching. This does NOT
 // report correct metadata for all behavior.
 type fileinfoAdapter struct {
-	virtualPath file.Path
-	node        filenode.FileNode
+	VirtualPath file.Path
+	Node        filenode.FileNode
 }
 
 // Name base name of the file
 func (a *fileinfoAdapter) Name() string {
-	return a.virtualPath.Basename()
+	return a.VirtualPath.Basename()
 }
 
 // Size is a dummy return value (since it is not important for globbing). Traditionally this would be the length in
@@ -170,7 +170,7 @@ func (a *fileinfoAdapter) Mode() os.FileMode {
 	// the underlying implementation for symlinks and hardlinks share the same semantics in the tree implementation
 	// (meaning resolution is required) where as in a real file system this is taken care of by the driver
 	// by making the file point to the same inode as another --making the indirection transparent to applications.
-	if a.node.FileType == file.TypeSymlink || a.node.FileType == file.TypeHardLink {
+	if a.Node.FileType == file.TypeSymlink || a.Node.FileType == file.TypeHardLink {
 		mode |= os.ModeSymlink
 	}
 	return mode
@@ -183,7 +183,7 @@ func (a *fileinfoAdapter) ModTime() time.Time {
 
 // IsDir is an abbreviation for Mode().IsDir().
 func (a *fileinfoAdapter) IsDir() bool {
-	return a.node.FileType == file.TypeDir
+	return a.Node.FileType == file.TypeDir
 }
 
 // Sys contains underlying data source (nothing in this case).

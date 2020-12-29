@@ -42,7 +42,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 
 	n, err := tr.node(parent, linkResolutionStrategy{})
 	if err != nil {
-		t.Fatalf("could not get parent node: %+v", err)
+		t.Fatalf("could not get parent Node: %+v", err)
 	}
 	children := tr.tree.Children(n)
 
@@ -69,7 +69,7 @@ func TestFileTree_RemovePath(t *testing.T) {
 	}
 
 	if len(tr.tree.Nodes()) != 3 {
-		t.Fatal("unexpected node count", len(tr.tree.Nodes()), tr.tree.Nodes())
+		t.Fatal("unexpected Node count", len(tr.tree.Nodes()), tr.tree.Nodes())
 	}
 
 	_, f, _ := tr.File(path)
