@@ -1,6 +1,7 @@
 package image
 
 import (
+	"archive/tar"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -240,4 +241,82 @@ func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, allOptions...)
 	return resolvedRef, err
+}
+
+func (i *Image) IterateContent(observers ...ContentObserver) error {
+	if len(observers) == 0 {
+		return fmt.Errorf("no content observers provided")
+	}
+
+	var subscriptions []chan<- ContentObservation
+	for _, observer := range observers {
+		subscription := make(chan ContentObservation)
+		subscriptions = append(subscriptions, subscription)
+		go observer.ObserveContent(subscription)
+	}
+
+	defer func() {
+		for idx := range subscriptions {
+			close(subscriptions[idx])
+		}
+	}()
+
+	for _, l := range i.Layers {
+		// get the (potentially) cached layer tar
+		layerTarReader, err := l.content()
+		if err != nil {
+			return err
+		}
+
+		// we generate the TarVisitor dynamically to prevent usage of the loop variables within the function literal
+		tarVisitor := func(index int, header *tar.Header, tarReader io.Reader) error {
+			entry, err := i.FileCatalog.getByLayerTarIndex(l.Metadata.Digest, index)
+			if err != nil {
+				return fmt.Errorf("unexpected error while visiting tar path=%q : %w", header.Name, err)
+			}
+
+			// quick/cheap gut check of the secondary index (pseudo protection against if the underlying tar has changed
+			// between the initial read and this access --not perfect, but is something).
+			if entry.Metadata.TarHeaderName != header.Name {
+				return fmt.Errorf("mismatched tar header names : %q != %q", header.Name, entry.Metadata.TarHeaderName)
+			}
+
+			for idx, observer := range observers {
+				// we don't want to prepare an individual reader for a observer if that observer is not interested
+				// in observing the content --otherwise we are copying bytes around that will never be be used which
+				// is wasteful.
+				if observer.IsInterestedIn(entry.File) {
+
+					// read the bytes from the tar or use previously cached contents (potentially populating the cache entry now)
+					uniqueContentReader, err := i.FileCatalog.prepareContentReader(entry.File, tarReader)
+					if err != nil {
+						return err
+					}
+
+					// push new content to the interested observer
+					subscriptions[idx] <- ContentObservation{
+						Entry:   entry,
+						Content: uniqueContentReader,
+					}
+				}
+			}
+			return nil
+		}
+
+		if err := file.TarIterator(layerTarReader, tarVisitor); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+type ContentObservation struct {
+	Entry   FileCatalogEntry
+	Content io.ReadCloser
+}
+
+type ContentObserver interface {
+	IsInterestedIn(file.Reference) bool
+	ObserveContent(<-chan ContentObservation)
 }

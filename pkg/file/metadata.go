@@ -10,6 +10,8 @@ type Metadata struct {
 	TarHeaderName string
 	// Linkname is populated only for hardlinks / symlinks, can be an absolute or relative.
 	Linkname string
+	// Index indicates the number in the tar header sequence this header appears
+	SequenceIndex int
 	// Size of the file in bytes.
 	Size    int64
 	UserID  int
