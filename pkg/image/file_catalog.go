@@ -17,7 +17,11 @@ var cacheFileSizeThreshold int64 = 5 * file.MB
 // FileCatalog represents all file metadata and source tracing for all files contained within the image layer
 // blobs (i.e. everything except for the image index/manifest/metadata files).
 type FileCatalog struct {
-	catalog          map[file.ID]*FileCatalogEntry
+	// catalog is the primary record, mapping file.IDs to all metadata for that file
+	catalog map[file.ID]*FileCatalogEntry
+	// byLayerTarIndex is a secondary index by layer Digest and the tar header sequence number to a single file.ID. This
+	// is a useful index to lookup catalog entries while iterating through the underlying tars.
+	byLayerTarIndex  map[string]map[int]file.ID
 	contentsCacheDir string
 	// contentsCachePath is a mapping of the paths for each file ID already previously requested by a caller. This is
 	// to prevent duplicated or unnecessary tar content requests (which can be expensive)
@@ -35,6 +39,7 @@ type FileCatalogEntry struct {
 func NewFileCatalog(contentsCacheDir string) FileCatalog {
 	return FileCatalog{
 		catalog:           make(map[file.ID]*FileCatalogEntry),
+		byLayerTarIndex:   make(map[string]map[int]file.ID),
 		contentsCachePath: make(map[file.ID]string),
 		contentsCacheDir:  contentsCacheDir,
 	}
@@ -42,11 +47,21 @@ func NewFileCatalog(contentsCacheDir string) FileCatalog {
 
 // Add creates a new FileCatalogEntry for the given file reference and metadata, cataloged by the ID of the
 // file reference (overwriting any existing entries without warning).
-func (c *FileCatalog) Add(f file.Reference, m file.Metadata, s *Layer) {
+func (c *FileCatalog) Add(f file.Reference, m file.Metadata, l *Layer) {
+	// add a primary entry
 	c.catalog[f.ID()] = &FileCatalogEntry{
 		File:     f,
 		Metadata: m,
-		Layer:    s,
+		Layer:    l,
+	}
+
+	// add a secondary entry by layer and path within the layer
+	if l != nil {
+		if _, exists := c.byLayerTarIndex[l.Metadata.Digest]; !exists {
+			// this may be a newly observed layer...
+			c.byLayerTarIndex[l.Metadata.Digest] = make(map[int]file.ID)
+		}
+		c.byLayerTarIndex[l.Metadata.Digest][m.SequenceIndex] = f.ID()
 	}
 }
 
@@ -66,11 +81,22 @@ func (c *FileCatalog) Get(f file.Reference) (FileCatalogEntry, error) {
 	return *value, nil
 }
 
-// handleContentResponse returns a io.ReadCloser for the given file reference that does not take up precious file
+func (c *FileCatalog) getByLayerTarIndex(digest string, index int) (FileCatalogEntry, error) {
+	if layerSequences, exists := c.byLayerTarIndex[digest]; exists {
+		if fileID, exists := layerSequences[index]; exists {
+			if value, exists := c.catalog[fileID]; exists {
+				return *value, nil
+			}
+		}
+	}
+	return FileCatalogEntry{}, ErrFileNotFound
+}
+
+// prepareContentReader returns a io.ReadCloser for the given file reference that does not take up precious file
 // descriptors until the first Read() call on the io.ReadCloser. This function is additionally responsible for handling
 // caching of previous results into a cache directory in case future calls are interested in the results as well as
 // provide a non-memory-intensive Reader for the file reference by storing to disk.
-func (c *FileCatalog) handleContentResponse(ref file.Reference, tarReader io.Reader) (io.ReadCloser, error) {
+func (c *FileCatalog) prepareContentReader(ref file.Reference, tarReader io.Reader) (io.ReadCloser, error) {
 	entry, err := c.Get(ref)
 	if err != nil {
 		return nil, err
@@ -139,7 +165,7 @@ func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
 	}
 	defer fileReader.Close()
 
-	return c.handleContentResponse(f, fileReader)
+	return c.prepareContentReader(f, fileReader)
 }
 
 // MultipleFileContents returns the contents of all provided file references. Returns an error if any of the file
@@ -162,7 +188,8 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 		visitor := func(tarHeaderNameToFileReference file.TarContentsRequest) file.TarVisitor {
 			// create a visitor function tailored for reading the contents of files in the current request and
 			// handling the content request via the FileCatalog (for caching and normalizing the io.ReadCloser returned)
-			return func(header *tar.Header, contents io.Reader) error {
+			return func(index int, header *tar.Header, tarReader io.Reader) error {
+				// TODO: it is possible (though unlikely) for there to be two matching header names, we should account for this.
 				if fileRef, ok := tarHeaderNameToFileReference[header.Name]; ok {
 					discoveredFiles++
 					// process the given tar entry
@@ -171,7 +198,7 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 					}
 
 					// read the bytes from the tar or use previously cached contents
-					results[fileRef], err = c.handleContentResponse(fileRef, contents)
+					results[fileRef], err = c.prepareContentReader(fileRef, tarReader)
 					if err != nil {
 						return err
 					}
