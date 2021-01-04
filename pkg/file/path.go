@@ -3,9 +3,8 @@ package file
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"strings"
-
-	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
 const (
@@ -17,18 +16,17 @@ const (
 // Path represents a file path
 type Path string
 
-// ID is the normalized file path, used for file tree node identification
-func (p Path) ID() node.ID {
-	return node.ID(p.Normalize())
-}
-
-// Normalize returns the cleaned file path representation (trimmed of spaces)
+// Normalize returns the cleaned file path representation (trimmed of spaces and resolve relative notations)
 func (p Path) Normalize() Path {
 	trimmed := strings.Trim(string(p), " ")
 	if trimmed == "/" {
 		return Path(trimmed)
 	}
-	return Path(strings.TrimRight(trimmed, DirSeparator))
+	return Path(filepath.Clean(strings.TrimRight(trimmed, DirSeparator)))
+}
+
+func (p Path) IsAbsolutePath() bool {
+	return strings.HasPrefix(string(p), DirSeparator)
 }
 
 // Basename of the path (i.e. filename)
@@ -72,14 +70,28 @@ func (p Path) ParentPath() (Path, error) {
 	return sanitized, nil
 }
 
-// AllPaths returns all valid constituent paths (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman )
+// AllPaths returns all constituent paths of the current path + the current path itself (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman, /home/wagoodman/file.txt )
 func (p Path) AllPaths() []Path {
+	fullPaths := p.ConstituentPaths()
+	if p != "/" {
+		fullPaths = append(fullPaths, p)
+	}
+	return fullPaths
+}
+
+// ConstituentPaths returns all constituent paths for the current path (not including the current path itself) (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman )
+func (p Path) ConstituentPaths() []Path {
 	parents := strings.Split(strings.Trim(string(p), DirSeparator), DirSeparator)
-	fullPaths := make([]Path, len(parents)+1)
+	fullPaths := make([]Path, len(parents))
 	for idx := range parents {
 		cur := DirSeparator + strings.Join(parents[:idx], DirSeparator)
 		fullPaths[idx] = Path(cur)
 	}
-	fullPaths[len(parents)] = p
 	return fullPaths
 }
+
+type Paths []Path
+
+func (p Paths) Len() int           { return len(p) }
+func (p Paths) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
+func (p Paths) Less(i, j int) bool { return string(p[i]) < string(p[j]) }

@@ -1,10 +1,12 @@
-package tree
+package filetree
+
+import "fmt"
 
 type UnionFileTree struct {
 	trees []*FileTree
 }
 
-func NewUnionTree() *UnionFileTree {
+func NewUnionFileTree() *UnionFileTree {
 	return &UnionFileTree{
 		trees: make([]*FileTree, 0),
 	}
@@ -33,7 +35,9 @@ func (u *UnionFileTree) Squash() (*FileTree, error) {
 			continue
 		}
 
-		squashedTree.Merge(refTree)
+		if err = squashedTree.merge(refTree); err != nil {
+			return nil, fmt.Errorf("unable to squash layer=%d : %w", layerIdx, err)
+		}
 	}
 	return squashedTree, nil
 }

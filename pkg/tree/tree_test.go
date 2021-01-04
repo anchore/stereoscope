@@ -30,7 +30,7 @@ func (n *testNode) Copy() node.Node {
 
 func TestTree_AddRoot(t *testing.T) {
 	rootIds := []int{1, 3}
-	tr := newTree()
+	tr := NewTree()
 
 	for _, id := range rootIds {
 		err := tr.AddRoot(newTestNode(id))
@@ -51,7 +51,7 @@ func TestTree_AddRoot(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("could not find root in tree.Roots() (%v)", id)
+			t.Errorf("could not find root in Tree.Roots() (%v)", id)
 		}
 	}
 
@@ -62,7 +62,7 @@ func TestTree_AddRoot(t *testing.T) {
 }
 
 func TestTree_AddChild(t *testing.T) {
-	tr := newTree()
+	tr := NewTree()
 
 	zero, one := newTestNode(0), newTestNode(1)
 	err := tr.AddChild(zero, one)
@@ -81,7 +81,7 @@ func TestTree_AddChild(t *testing.T) {
 }
 
 func TestTree_AddChild_Nested(t *testing.T) {
-	tr := newTree()
+	tr := NewTree()
 
 	zero, one, two, three := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3)
 	err := tr.AddChild(zero, one)
@@ -119,7 +119,7 @@ func TestTree_AddChild_Nested(t *testing.T) {
 }
 
 func TestTree_RemoveNode(t *testing.T) {
-	tr := newTree()
+	tr := NewTree()
 
 	zero, one := newTestNode(0), newTestNode(1)
 	err := tr.AddChild(zero, one)
@@ -148,7 +148,7 @@ func TestTree_RemoveNode(t *testing.T) {
 }
 
 func TestTree_RemoveNode_Nested(t *testing.T) {
-	tr := newTree()
+	tr := NewTree()
 
 	zero, one, two, three := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3)
 	err := tr.AddChild(zero, one)
@@ -191,7 +191,7 @@ func TestTree_RemoveNode_Nested(t *testing.T) {
 }
 
 func TestTree_RemoveNode_Root(t *testing.T) {
-	tr := newTree()
+	tr := NewTree()
 
 	zero, one, two, three := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3)
 	err := tr.AddChild(zero, one)
@@ -224,19 +224,19 @@ func TestTree_RemoveNode_Root(t *testing.T) {
 
 	nodes := tr.Nodes()
 	if len(nodes) != 0 {
-		t.Fatal("unexpected length of tree nodes", len(nodes))
+		t.Fatal("unexpected length of Tree nodes", len(nodes))
 	}
 
 	for _, id := range []int{0, 1, 2, 3} {
 		if tr.HasNode(toId(id)) {
-			t.Fatal("node should no longer be part of the tree", id)
+			t.Fatal("node should no longer be part of the Tree", id)
 		}
 	}
 
 }
 
 func TestTree_Replace(t *testing.T) {
-	tr := newTree()
+	tr := NewTree()
 
 	zero, one, two, three, four := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3), newTestNode(4)
 	err := tr.AddChild(zero, one)

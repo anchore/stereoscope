@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/tree"
 )
 
 var ErrFileNotFound = fmt.Errorf("could not find file")
@@ -71,7 +70,7 @@ func (c *FileCatalog) Get(f file.Reference) (FileCatalogEntry, error) {
 // descriptors until the first Read() call on the io.ReadCloser. This function is additionally responsible for handling
 // caching of previous results into a cache directory in case future calls are interested in the results as well as
 // provide a non-memory-intensive Reader for the file reference by storing to disk.
-func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Reader) (io.ReadCloser, error) {
+func (c *FileCatalog) handleContentResponse(ref file.Reference, tarReader io.Reader) (io.ReadCloser, error) {
 	entry, err := c.Get(ref)
 	if err != nil {
 		return nil, err
@@ -79,7 +78,7 @@ func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Read
 
 	if entry.Metadata.Size <= cacheFileSizeThreshold {
 		// this is a small file, read the contents into memory and return a reader
-		theBytes, err := ioutil.ReadAll(contents)
+		theBytes, err := ioutil.ReadAll(tarReader)
 		if err != nil {
 			return nil, fmt.Errorf("unable to handle in-memory content response: %w", err)
 		}
@@ -93,14 +92,14 @@ func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Read
 
 	// cache the result to a directory and return a DeferredReadCloser to not allocate file handles unless they are
 	// actively being used.
-	tempFile, err := ioutil.TempFile(c.contentsCacheDir, ref.Path.Basename()+"-")
+	tempFile, err := ioutil.TempFile(c.contentsCacheDir, ref.RealPath.Basename()+"-")
 	if err != nil {
 		return nil, fmt.Errorf("unable to create content response cache: %w", err)
 	}
 	defer tempFile.Close()
 
 	// stream the contents from the reader directly into the temp file
-	if _, err := io.Copy(tempFile, contents); err != nil {
+	if _, err := io.Copy(tempFile, tarReader); err != nil {
 		return nil, fmt.Errorf("unable to copy content response to cache: %w", err)
 	}
 
@@ -120,10 +119,16 @@ func (c *FileCatalog) handleContentResponse(ref file.Reference, contents io.Read
 func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
 	entry, ok := c.catalog[f.ID()]
 	if !ok {
-		return nil, fmt.Errorf("could not find file: %+v", f.Path)
+		return nil, fmt.Errorf("could not find file: %+v", f.RealPath)
 	}
 
-	sourceTarReader, err := entry.Layer.layer.Uncompressed()
+	// check and see if there is a cache hit for the current file, if so, use that
+	if cacheValue, exists := c.contentsCachePath[f.ID()]; exists {
+		return file.NewDeferredReadCloser(cacheValue), nil
+	}
+
+	// get the (potentially) cached layer tar
+	sourceTarReader, err := entry.Layer.content()
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +152,7 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 
 	results := make(map[file.Reference]io.ReadCloser)
 	for layer, tarHeaderNameToFileReference := range requestsByLayer {
-		sourceTarReader, err := layer.layer.Uncompressed()
+		sourceTarReader, err := layer.content()
 		if err != nil {
 			return nil, fmt.Errorf("unable to obtain layer tar reader: %w", err)
 		}
@@ -164,6 +169,8 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 					if _, ok := results[fileRef]; ok {
 						return fmt.Errorf("duplicate entries: %+v", fileRef)
 					}
+
+					// read the bytes from the tar or use previously cached contents
 					results[fileRef], err = c.handleContentResponse(fileRef, contents)
 					if err != nil {
 						return err
@@ -201,17 +208,4 @@ func (c *FileCatalog) buildTarContentsRequests(files ...file.Reference) (map[*La
 		allRequests[layer][record.Metadata.TarHeaderName] = f
 	}
 	return allRequests, nil
-}
-
-// TODO: translate this to a leaf-check? Also does this need to be directly on the FileCatalog?
-// HasEntriesForAllFilesInTree checks to see if the catalog has an entry for
-// every node ( file / directory) in the FileTree.
-func (c *FileCatalog) HasEntriesForAllFilesInTree(tree tree.FileTree) bool {
-	for _, f := range tree.AllFiles() {
-		if !c.Exists(f) {
-			return false
-		}
-	}
-
-	return true
 }

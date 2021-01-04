@@ -6,7 +6,23 @@ import (
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
-// DepthFirstWalker implements stateful depth-first tree traversal.
+type NodeVisitor func(node.Node) error
+
+type WalkConditions struct {
+	// Return true when the walker should stop traversing (before visiting current node)
+	ShouldTerminate func(node.Node) bool
+
+	// Whether we should visit the current node. Note: this will continue down the same traversal
+	// path, only "skipping" over a single node (but still potentially visiting children later)
+	// Return true to visit the current node.
+	ShouldVisit func(node.Node) bool
+
+	// Whether we should consider children of this node to be included in the traversal path.
+	// Return true to traverse children of this node.
+	ShouldContinueBranch func(node.Node) bool
+}
+
+// DepthFirstWalker implements stateful depth-first Tree traversal.
 type DepthFirstWalker struct {
 	visitor    NodeVisitor
 	tree       Reader
@@ -32,20 +48,22 @@ func NewDepthFirstWalkerWithConditions(reader Reader, visitor NodeVisitor, condi
 	}
 }
 
-func (w *DepthFirstWalker) Walk(from node.Node) node.Node {
+func (w *DepthFirstWalker) Walk(from node.Node) (node.Node, error) {
 	w.stack.Push(from)
 
 	for w.stack.Size() > 0 {
 		current := w.stack.Pop()
 		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(current) {
-			return current
+			return current, nil
 		}
 		cid := current.ID()
 
 		// visit
 		if w.visitor != nil && !w.visited.Contains(cid) {
 			if w.conditions.ShouldVisit == nil || w.conditions.ShouldVisit != nil && w.conditions.ShouldVisit(current) {
-				w.visitor(current)
+				if err := w.visitor(current); err != nil {
+					return current, err
+				}
 				w.visited.Add(cid)
 			}
 		}
@@ -62,13 +80,16 @@ func (w *DepthFirstWalker) Walk(from node.Node) node.Node {
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
-func (w *DepthFirstWalker) WalkAll() {
+func (w *DepthFirstWalker) WalkAll() error {
 	for _, from := range w.tree.Roots() {
-		w.Walk(from)
+		if _, err := w.Walk(from); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func (w *DepthFirstWalker) Visited(n node.Node) bool {

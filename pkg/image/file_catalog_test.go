@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/tree"
 )
 
 var testFilePaths = []file.Path{
@@ -150,15 +149,15 @@ func TestFileCatalog_Add(t *testing.T) {
 	}
 
 	catalog := testFileCatalog(t)
-	catalog.Add(ref, metadata, layer)
+	catalog.Add(*ref, metadata, layer)
 
 	expected := FileCatalogEntry{
-		File:     ref,
+		File:     *ref,
 		Metadata: metadata,
 		Layer:    layer,
 	}
 
-	actual, err := catalog.Get(ref)
+	actual, err := catalog.Get(*ref)
 	if err != nil {
 		t.Fatalf("could not get by ref: %+v", err)
 	}
@@ -210,14 +209,16 @@ func TestFileCatalog_FileContents(t *testing.T) {
 		TarHeaderName: p,
 	}
 
+	v1Layer := testLayerContent{content: actualReadCloser}
 	layer := &Layer{
-		layer: &testLayerContent{content: actualReadCloser},
+		layer:   &v1Layer,
+		content: v1Layer.Uncompressed,
 	}
 
 	catalog := testFileCatalog(t)
-	catalog.Add(ref, metadata, layer)
+	catalog.Add(*ref, metadata, layer)
 
-	reader, err := catalog.FileContents(ref)
+	reader, err := catalog.FileContents(*ref)
 	if err != nil {
 		t.Fatalf("could not get contents by ref: %+v", err)
 	}
@@ -237,16 +238,16 @@ func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[f
 	ref1 := file.NewFileReference("path/branch/one/file-1.txt")
 	ref2 := file.NewFileReference("path/branch/two/file-2.txt")
 	entries := map[file.Reference]string{
-		ref1: "first file\n",
-		ref2: "second file\n",
+		*ref1: "first file\n",
+		*ref2: "second file\n",
 	}
 
 	catalog := testFileCatalog(t)
 
 	for ref := range entries {
 		metadata := file.Metadata{
-			Path:          string(ref.Path),
-			TarHeaderName: string(ref.Path),
+			Path:          string(ref.RealPath),
+			TarHeaderName: string(ref.RealPath),
 			Size:          fileSize,
 		}
 
@@ -254,15 +255,18 @@ func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[f
 		actualReadCloser, cleanup := getTarFixture(t, "fixture-1")
 		t.Cleanup(cleanup)
 
+		v1Layer := testLayerContent{content: actualReadCloser}
 		layer := &Layer{
 			// note: since this test is using the same tar, it is as if it is a request for two files in the same layer
-			layer: &testLayerContent{content: actualReadCloser},
+
+			layer:   &v1Layer,
+			content: v1Layer.Uncompressed,
 		}
 
 		catalog.Add(ref, metadata, layer)
 	}
 
-	var refs = []file.Reference{ref1, ref2}
+	var refs = []file.Reference{*ref1, *ref2}
 
 	return catalog, entries, refs
 }
@@ -337,89 +341,4 @@ func TestFileCatalog_MultipleFileContents_WithCache(t *testing.T) {
 
 	// ensure contents are expected via the API (not verifying manually)
 	assertMultipleFileContents(t, expected, actual)
-}
-
-func TestFileCatalog_HasEntriesForAllFilesInTree(t *testing.T) {
-	cases := []struct {
-		name     string
-		setup    func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog)
-		expected bool
-	}{
-		{
-			name: "identical set of files",
-			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
-				for _, p := range filePaths {
-					f, err := fileTree.AddPathAndAncestors(p)
-					if err != nil {
-						t.Fatal(err)
-					}
-					catalog.Add(f, file.Metadata{}, &Layer{})
-				}
-			},
-			expected: true,
-		},
-		{
-			name: "catalog missing one file that tree has",
-			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
-				for i, p := range filePaths {
-					f, err := fileTree.AddPathAndAncestors(p)
-					if err != nil {
-						t.Fatal(err)
-					}
-
-					if i != 1 { // don't add filePaths[1] to the catalog
-						catalog.Add(f, file.Metadata{}, &Layer{})
-					}
-				}
-			},
-			expected: false,
-		},
-		{
-			name: "tree missing one file that catalog has",
-			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
-				for i, p := range filePaths {
-					if i == 1 { // add filePaths[1] to only the catalog, not the tree
-						catalog.Add(file.NewFileReference(p), file.Metadata{}, &Layer{})
-						return
-					}
-
-					f, err := fileTree.AddPathAndAncestors(p)
-					if err != nil {
-						t.Fatal(err)
-					}
-					catalog.Add(f, file.Metadata{}, &Layer{})
-				}
-			},
-			expected: true,
-		},
-		{
-			name: "no files added to tree",
-			setup: func(t *testing.T, filePaths []file.Path, fileTree *tree.FileTree, catalog *FileCatalog) {
-				for _, p := range filePaths {
-					f := file.NewFileReference(p)
-					catalog.Add(f, file.Metadata{}, &Layer{})
-				}
-			},
-			expected: true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			fileTree := tree.NewFileTree()
-
-			catalog := testFileCatalog(t)
-
-			// Add file tree root to catalog
-			catalog.Add(*(fileTree.File("/")), file.Metadata{}, &Layer{})
-
-			tc.setup(t, testFilePaths, fileTree, &catalog)
-
-			result := catalog.HasEntriesForAllFilesInTree(*fileTree)
-
-			if tc.expected != result {
-				t.Errorf("expected %t but got %t", tc.expected, result)
-			}
-		})
-	}
 }

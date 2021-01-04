@@ -1,6 +1,7 @@
 package image
 
 import (
+	"archive/tar"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +11,7 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/tree"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
@@ -25,10 +26,10 @@ type Layer struct {
 	// Metadata contains select layer attributes
 	Metadata LayerMetadata
 	// Tree is a filetree that represents the structure of the layer tar contents ("diff tree")
-	Tree *tree.FileTree
+	Tree *filetree.FileTree
 	// SquashedTree is a filetree that represents the combination of this layers diff tree and all diff trees
 	// in lower layers relative to this one.
-	SquashedTree *tree.FileTree
+	SquashedTree *filetree.FileTree
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
 	fileCatalog *FileCatalog
 }
@@ -52,9 +53,8 @@ func (l *Layer) trackReadProgress(metadata LayerMetadata) *progress.Manual {
 	return prog
 }
 
-// Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
-// file tree, and the layer squash tree.
-func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
+// readMetadata populates layer metadata from the underlying layer tar.
+func (l *Layer) readMetadata(imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
 	metadata, err := readLayerMetadata(imgMetadata, l.layer, idx)
 	if err != nil {
 		return err
@@ -66,14 +66,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		metadata.MediaType)
 
 	l.Metadata = metadata
-	l.Tree = tree.NewFileTree()
-	l.fileCatalog = catalog
-
-	// Add tree root to catalog in case it's not added during TAR reading
-	root := l.Tree.File("/")
-	catalog.Add(*root, file.Metadata{}, l)
-
-	monitor := l.trackReadProgress(metadata)
+	l.Tree = filetree.NewFileTree()
 
 	if uncompressedLayersCacheDir != "" {
 		rawReader, err := l.layer.Uncompressed()
@@ -96,28 +89,67 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	} else {
 		l.content = l.layer.Uncompressed
 	}
+	return nil
+}
+
+// Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
+// file tree, and the layer squash tree.
+func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
+	if err := l.readMetadata(imgMetadata, idx, uncompressedLayersCacheDir); err != nil {
+		return err
+	}
+
+	l.fileCatalog = catalog
 
 	reader, err := l.content()
 	if err != nil {
 		return fmt.Errorf("unable to obtail layer=%q tar: %w", l.Metadata.Digest, err)
 	}
+	monitor := l.trackReadProgress(l.Metadata)
 
 	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
-		fileNode, err := l.Tree.AddPathAndAncestors(file.Path(metadata.Path))
-		l.Metadata.Size += metadata.Size
-
-		catalog.Add(fileNode, metadata, l)
-
-		if err != nil {
-			return err
+		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
+		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
+		// This is ok, and the FileTree will account for this by automatically adding directories for non-existing
+		// constituent paths. If later there happens to be a tar header entry for an already added constituent path
+		// the FileNode will be updated with the new file.Reference. If there is no tar header entry for constituent
+		// paths the FileTree is still structurally consistent (all paths can be iterated even though there may not have
+		// been a tar header entry for part of the given path).
+		//
+		// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
+		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
+		var fileReference *file.Reference
+		switch metadata.TypeFlag {
+		case tar.TypeSymlink:
+			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			if err != nil {
+				return err
+			}
+		case tar.TypeLink:
+			fileReference, err = l.Tree.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			if err != nil {
+				return err
+			}
+		case tar.TypeDir:
+			fileReference, err = l.Tree.AddDir(file.Path(metadata.Path))
+			if err != nil {
+				return err
+			}
+		default:
+			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
+			if err != nil {
+				return err
+			}
 		}
+		if fileReference == nil {
+			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.Linkname)
+		}
+
+		l.Metadata.Size += metadata.Size
+		catalog.Add(*fileReference, metadata, l)
 
 		monitor.N++
 	}
-
-	// TODO: It's possible that directories can be added to the FileTree that aren't stored in the FileCatalog.
-	//  Given this, we should think about the extent to which entries in the tree should be present in the catalog,
-	//  and we should consider the impact to consumers as they query this library for "directories" in the image.
 
 	monitor.SetCompleted()
 

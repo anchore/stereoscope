@@ -68,7 +68,7 @@ func TestPath_Sanitize_ID(t *testing.T) {
 	patha := Path("/some/path/to/a")
 	pathb := Path("/some/path/to/a/")
 
-	if patha.ID() != pathb.ID() {
+	if patha.Normalize() != pathb.Normalize() {
 		t.Fatalf("paths not equal: '%+v'!='%+v'", patha, pathb)
 	}
 }
@@ -93,11 +93,11 @@ func TestPath_ParentPath_Root(t *testing.T) {
 	if err != nil {
 		t.Fatal("expected /home to have parent path:", err)
 	}
-	if parent.ID() != Path("/").ID() {
+	if parent.Normalize() != Path("/").Normalize() {
 		t.Fatalf("expected /home parent to be / , got '%v':", parent)
 	}
 
-	path = Path("/")
+	path = "/"
 
 	parent, err = path.ParentPath()
 	if err == nil {
@@ -112,7 +112,7 @@ func TestPath_Whiteout(t *testing.T) {
 		t.Fatal("path should be a whiteout")
 	}
 
-	path = Path("/some/path/to/.wh..wh..opq")
+	path = "/some/path/to/.wh..wh..opq"
 
 	if !path.IsWhiteout() {
 		t.Fatal("path should be a whiteout")

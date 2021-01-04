@@ -2,6 +2,7 @@ package integration
 
 import (
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/imagetest"
 	"testing"
 )
@@ -12,9 +13,12 @@ func TestImage_SquashedTree_OpaqueDirectoryExistsInFileCatalog(t *testing.T) {
 
 	tree := image.SquashedTree()
 	path := "/usr/lib/jvm"
-	ref := tree.File(file.Path(path))
+	_, ref, err := tree.File(file.Path(path), filetree.FollowBasenameLinks)
+	if err != nil {
+		t.Fatalf("unable to get file=%q : %+v", path, err)
+	}
 
-	_, err := image.FileCatalog.Get(*ref)
+	_, err = image.FileCatalog.Get(*ref)
 	if err != nil {
 		t.Fatal(err)
 	}

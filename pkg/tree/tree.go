@@ -6,24 +6,55 @@ import (
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
-// tree represents a simple tree data structure.
-type tree struct {
+// Tree represents a simple Tree data structure.
+type Tree struct {
 	nodes    map[node.ID]node.Node
 	children map[node.ID]map[node.ID]node.Node
 	parent   map[node.ID]node.Node
 }
 
-// newTree returns an instance of a tree.
-func newTree() *tree {
-	return &tree{
+// NewTree returns an instance of a Tree.
+func NewTree() *Tree {
+	return &Tree{
 		nodes:    make(map[node.ID]node.Node),
 		children: make(map[node.ID]map[node.ID]node.Node),
 		parent:   make(map[node.ID]node.Node),
 	}
 }
 
+func (t *Tree) Copy() *Tree {
+	ct := NewTree()
+	for k, v := range t.nodes {
+		if v == nil {
+			ct.nodes[k] = nil
+			continue
+		}
+		ct.nodes[k] = v.Copy()
+	}
+	for k, v := range t.parent {
+		if v == nil {
+			ct.parent[k] = nil
+			continue
+		}
+		ct.parent[k] = v.Copy()
+	}
+	for from, lookup := range t.children {
+		if _, exists := ct.children[from]; !exists {
+			ct.children[from] = make(map[node.ID]node.Node)
+		}
+		for to, v := range lookup {
+			if v == nil {
+				ct.children[from][to] = nil
+				continue
+			}
+			ct.children[from][to] = v.Copy()
+		}
+	}
+	return ct
+}
+
 // Roots is all of the nodes with no parents.
-func (t *tree) Roots() node.Nodes {
+func (t *Tree) Roots() node.Nodes {
 	var nodes = make([]node.Node, 0)
 	for _, n := range t.nodes {
 		if parent := t.parent[n.ID()]; parent == nil {
@@ -33,18 +64,21 @@ func (t *tree) Roots() node.Nodes {
 	return nodes
 }
 
-// HasNode indicates is the given node ID exists in the tree.
-func (t *tree) HasNode(id node.ID) bool {
-	return t.nodes[id] != nil
+// HasNode indicates is the given node ID exists in the Tree.
+func (t *Tree) HasNode(id node.ID) bool {
+	if _, exists := t.nodes[id]; exists {
+		return true
+	}
+	return false
 }
 
 // Node returns a node object for the given ID.
-func (t *tree) Node(id node.ID) node.Node {
+func (t *Tree) Node(id node.ID) node.Node {
 	return t.nodes[id]
 }
 
-// Nodes returns all nodes in the tree.
-func (t *tree) Nodes() node.Nodes {
+// Nodes returns all nodes in the Tree.
+func (t *Tree) Nodes() node.Nodes {
 	if len(t.nodes) == 0 {
 		return nil
 	}
@@ -58,8 +92,8 @@ func (t *tree) Nodes() node.Nodes {
 	return nodes
 }
 
-// addNode adds the node to the tree; returns an error on node ID collisions.
-func (t *tree) addNode(n node.Node) error {
+// addNode adds the node to the Tree; returns an error on node ID collisions.
+func (t *Tree) addNode(n node.Node) error {
 	if _, exists := t.nodes[n.ID()]; exists {
 		return fmt.Errorf("node ID collision: %+v", n.ID())
 	}
@@ -70,9 +104,16 @@ func (t *tree) addNode(n node.Node) error {
 }
 
 // Replace takes the given old node and replaces it with the given new one.
-func (t *tree) Replace(old node.Node, new node.Node) error {
+func (t *Tree) Replace(old node.Node, new node.Node) error {
 	if !t.HasNode(old.ID()) {
-		return fmt.Errorf("cannot replace node not in the tree")
+		return fmt.Errorf("cannot replace node not in the Tree")
+	}
+
+	if old.ID() == new.ID() {
+		// the underlying objects may be different, but the ID's match. Simply track the new [already existing] node
+		// and keep all existing relationships.
+		t.nodes[new.ID()] = new
+		return nil
 	}
 
 	// add the new node
@@ -106,13 +147,13 @@ func (t *tree) Replace(old node.Node, new node.Node) error {
 	return nil
 }
 
-// AddRoot adds a node to the tree (with no parent).
-func (t *tree) AddRoot(n node.Node) error {
+// AddRoot adds a node to the Tree (with no parent).
+func (t *Tree) AddRoot(n node.Node) error {
 	return t.addNode(n)
 }
 
-// AddChild adds a node to the tree under the given parent.
-func (t *tree) AddChild(from, to node.Node) error {
+// AddChild adds a node to the Tree under the given parent.
+func (t *Tree) AddChild(from, to node.Node) error {
 	var (
 		fid = from.ID()
 		tid = to.ID()
@@ -145,8 +186,8 @@ func (t *tree) AddChild(from, to node.Node) error {
 	return nil
 }
 
-// RemoveNode deletes the node from the tree and returns the removed node.
-func (t *tree) RemoveNode(n node.Node) (node.Nodes, error) {
+// RemoveNode deletes the node from the Tree and returns the removed node.
+func (t *Tree) RemoveNode(n node.Node) (node.Nodes, error) {
 	removedNodes := make([]node.Node, 0)
 	nid := n.ID()
 	if _, ok := t.nodes[nid]; !ok {
@@ -174,7 +215,7 @@ func (t *tree) RemoveNode(n node.Node) (node.Nodes, error) {
 }
 
 // Children returns all children of the given node.
-func (t *tree) Children(n node.Node) node.Nodes {
+func (t *Tree) Children(n node.Node) node.Nodes {
 	nid := n.ID()
 	if _, ok := t.children[nid]; !ok {
 		return nil
@@ -195,9 +236,13 @@ func (t *tree) Children(n node.Node) node.Nodes {
 }
 
 // Parent returns the parent of the given node (or nil if it is a root)
-func (t *tree) Parent(n node.Node) node.Node {
+func (t *Tree) Parent(n node.Node) node.Node {
 	if parent, ok := t.parent[n.ID()]; ok {
 		return parent
 	}
 	return nil
+}
+
+func (t *Tree) Length() int {
+	return len(t.nodes)
 }

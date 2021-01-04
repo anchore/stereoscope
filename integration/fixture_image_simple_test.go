@@ -2,6 +2,7 @@ package integration
 
 import (
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -9,7 +10,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	"github.com/anchore/stereoscope/pkg/tree"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
@@ -125,20 +125,20 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 
 func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 	t.Log("Asserting squashed trees...")
-	one := tree.NewFileTree()
-	one.AddPath("/somefile-1.txt")
+	one := filetree.NewFileTree()
+	one.AddFile("/somefile-1.txt")
 
-	two := tree.NewFileTree()
-	two.AddPath("/somefile-1.txt")
-	two.AddPath("/somefile-2.txt")
+	two := filetree.NewFileTree()
+	two.AddFile("/somefile-1.txt")
+	two.AddFile("/somefile-2.txt")
 
-	three := tree.NewFileTree()
-	three.AddPath("/somefile-1.txt")
-	three.AddPath("/somefile-2.txt")
-	three.AddPathAndAncestors("/really/.wh..wh..opq")
-	three.AddPathAndAncestors("/really/nested/file-3.txt")
+	three := filetree.NewFileTree()
+	three.AddFile("/somefile-1.txt")
+	three.AddFile("/somefile-2.txt")
+	three.AddFile("/really/.wh..wh..opq")
+	three.AddFile("/really/nested/file-3.txt")
 
-	expectedTrees := map[uint]*tree.FileTree{
+	expectedTrees := map[uint]*filetree.FileTree{
 		0: one,
 		1: two,
 		2: three,
@@ -152,27 +152,27 @@ func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 
 	compareLayerSquashTrees(t, expectedTrees, i, ignorePaths)
 
-	squashed := tree.NewFileTree()
-	squashed.AddPath("/somefile-1.txt")
-	squashed.AddPath("/somefile-2.txt")
-	squashed.AddPathAndAncestors("/really/nested/file-3.txt")
+	squashed := filetree.NewFileTree()
+	squashed.AddFile("/somefile-1.txt")
+	squashed.AddFile("/somefile-2.txt")
+	squashed.AddFile("/really/nested/file-3.txt")
 
 	compareSquashTree(t, squashed, i)
 }
 
 func assertImageSimpleTrees(t *testing.T, i *image.Image) {
 	t.Log("Asserting trees...")
-	one := tree.NewFileTree()
-	one.AddPath("/somefile-1.txt")
+	one := filetree.NewFileTree()
+	one.AddFile("/somefile-1.txt")
 
-	two := tree.NewFileTree()
-	two.AddPath("/somefile-2.txt")
+	two := filetree.NewFileTree()
+	two.AddFile("/somefile-2.txt")
 
-	three := tree.NewFileTree()
-	three.AddPathAndAncestors("/really/.wh..wh..opq")
-	three.AddPathAndAncestors("/really/nested/file-3.txt")
+	three := filetree.NewFileTree()
+	three.AddFile("/really/.wh..wh..opq")
+	three.AddFile("/really/nested/file-3.txt")
 
-	expectedTrees := map[uint]*tree.FileTree{
+	expectedTrees := map[uint]*filetree.FileTree{
 		0: one,
 		1: two,
 		2: three,
@@ -210,16 +210,16 @@ func assertImageSimpleContents(t *testing.T, i *image.Image) {
 	}
 
 	for fileRef, actual := range actualContents {
-		expected, ok := expectedContents[string(fileRef.Path)]
+		expected, ok := expectedContents[string(fileRef.RealPath)]
 		if !ok {
-			t.Errorf("extra path found: %+v", fileRef.Path)
+			t.Errorf("extra path found: %+v", fileRef.RealPath)
 		}
 		b, err := ioutil.ReadAll(actual)
 		if err != nil {
 			t.Errorf("failed to read %+v : %+v", fileRef, err)
 		}
 		if expected != string(b) {
-			t.Errorf("mismatched contents (%s)", fileRef.Path)
+			t.Errorf("mismatched contents (%s)", fileRef.RealPath)
 		}
 	}
 }
