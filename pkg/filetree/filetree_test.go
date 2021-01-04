@@ -428,6 +428,76 @@ func TestFileTree_Merge_Whiteout(t *testing.T) {
 
 }
 
+func TestFileTree_Merge_DirOverride(t *testing.T) {
+	tr1 := NewFileTree()
+	tr1.AddFile("/home/wagoodman/awesome/place")
+
+	tr2 := NewFileTree()
+	tr2.AddFile("/home/wagoodman/awesome/place/thing.txt")
+
+	if err := tr1.merge(tr2); err != nil {
+		t.Fatalf("error on merge : %+v", err)
+	}
+
+	for _, p := range []file.Path{"/home/wagoodman/awesome/place", "/home/wagoodman/awesome/place/thing.txt"} {
+		if !tr1.HasPath(p) {
+			t.Errorf("missing expected path: %s", p)
+		}
+	}
+
+	n, err := tr1.node("/home/wagoodman/awesome/place", linkResolutionStrategy{})
+	if err != nil {
+		t.Fatalf("could not get override dir: %+v", err)
+	}
+	if n == nil {
+		t.Fatalf("somehow override path does not exist?")
+	}
+
+	if n.FileType != file.TypeDir {
+		t.Errorf("did not override to dir")
+	}
+
+}
+
+func TestFileTree_Merge_RemoveChildPathsOnOverride(t *testing.T) {
+	lowerTree := NewFileTree()
+	// add a file in the lower tree, which implicitly adds "/home/wagoodman/awesome/place" as a directory type
+	lowerTree.AddFile("/home/wagoodman/awesome/place/thing.txt")
+
+	upperTree := NewFileTree()
+	// add "/home/wagoodman/awesome/place" as a file type in the upper treee
+	upperTree.AddFile("/home/wagoodman/awesome/place")
+
+	// merge the upper tree into the lower tree
+	if err := lowerTree.merge(upperTree); err != nil {
+		t.Fatalf("error on merge : %+v", err)
+	}
+
+	// the directory should still exist
+	if !lowerTree.HasPath("/home/wagoodman/awesome/place") {
+		t.Errorf("missing expected path!")
+	}
+
+	// since "/home/wagoodman/awesome/place" is now a file and not a directory, it should not have any children
+	if lowerTree.HasPath("/home/wagoodman/awesome/place/thing.txt") {
+		t.Errorf("extra path!")
+	}
+
+	// explicitly ensure that the dir that was overridden to a file is explicitly that
+	fileNode, err := lowerTree.node("/home/wagoodman/awesome/place", linkResolutionStrategy{})
+	if err != nil {
+		t.Fatalf("could not get override dir: %+v", err)
+	}
+	if fileNode == nil {
+		t.Fatalf("somehow override path does not exist?")
+	}
+
+	if fileNode.FileType != file.TypeReg {
+		t.Errorf("did not override to dir")
+	}
+
+}
+
 func TestFileTree_File_Symlink(t *testing.T) {
 
 	tests := []struct {
