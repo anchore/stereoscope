@@ -146,8 +146,10 @@ func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, 
 }
 
 func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*filenode.FileNode, error) {
+	normalizedPath := p.Normalize()
+	nodeID := filenode.IDByPath(normalizedPath)
 	if !strategy.FollowLinks() {
-		n := t.tree.Node(filenode.IDByPath(p))
+		n := t.tree.Node(nodeID)
 		if n == nil {
 			return nil, nil
 		}
@@ -157,12 +159,12 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*filenode
 	var currentNode *filenode.FileNode
 	var err error
 	if strategy.FollowAncestorLinks {
-		currentNode, err = t.resolveAncestorLinks(p)
+		currentNode, err = t.resolveAncestorLinks(normalizedPath)
 		if err != nil {
 			return currentNode, err
 		}
 	} else {
-		n := t.tree.Node(filenode.IDByPath(p))
+		n := t.tree.Node(nodeID)
 		if n != nil {
 			currentNode = n.(*filenode.FileNode)
 		}
@@ -181,11 +183,19 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*filenode
 
 // return FileNode of the basename in the given path (no resolution is done at or past the basename).
 func (t *FileTree) resolveAncestorLinks(path file.Path) (*filenode.FileNode, error) {
-	var pathParts = strings.Split(string(path.Normalize()), file.DirSeparator)
+	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
+	// use it, otherwise, continue with ancestor resolution
+	currentNode, err := t.node(path, linkResolutionStrategy{})
+	if err != nil {
+		return nil, err
+	}
+	if currentNode != nil {
+		return currentNode, nil
+	}
+
+	var pathParts = strings.Split(string(path), file.DirSeparator)
 	var currentPathStr string
 	var currentPath file.Path
-	var currentNode *filenode.FileNode
-	var err error
 
 	// iterate through all parts of the path, replacing path elements with link resolutions where possible.
 	for idx, part := range pathParts {
@@ -195,7 +205,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path) (*filenode.FileNode, err
 		}
 
 		// cumulatively gather where we are currently at and provide a rich object
-		currentPath = file.Path(currentPathStr + file.DirSeparator + part).Normalize()
+		currentPath = file.Path(currentPathStr + file.DirSeparator + part)
 		currentPathStr = string(currentPath)
 
 		// fetch the Node with NO link resolution strategy

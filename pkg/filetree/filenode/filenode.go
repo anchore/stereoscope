@@ -68,5 +68,5 @@ func (n *FileNode) IsLink() bool {
 }
 
 func IDByPath(p file.Path) node.ID {
-	return node.ID(p.Normalize())
+	return node.ID(p)
 }
