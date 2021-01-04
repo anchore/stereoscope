@@ -35,6 +35,27 @@ func (f *fileAdapter) Close() error {
 	return nil
 }
 
+// isInPathResolutionLoop is meant to detect if the current path doubles back on a node that is an ancestor of the
+// current path.
+func (f *fileAdapter) isInPathResolutionLoop() (bool, error) {
+	allPathSet := file.NewPathSet()
+	allPaths := file.Path(f.name).AllPaths()
+	for _, p := range allPaths {
+		fn, err := f.filetree.node(p, linkResolutionStrategy{
+			FollowAncestorLinks: true,
+			FollowBasenameLinks: true,
+		})
+		if err != nil {
+			return false, err
+		}
+		allPathSet.Add(file.Path(fn.ID()))
+	}
+	// we want to allow for getting children out of the first iteration of a infinite path, but NOT allowing
+	// beyond the second iteration down an infinite path.
+	diff := len(allPaths) - len(allPathSet)
+	return diff > 1, nil
+}
+
 // Readdir reads the contents of the directory associated with file and
 // returns a slice of up to n FileInfo values, as would be returned
 // by Lstat, in directory order. Subsequent calls on the same file will yield
@@ -50,6 +71,12 @@ func (f *fileAdapter) Close() error {
 // nil error. If it encounters an error before the end of the
 // directory, Readdir returns the FileInfo read until that point
 // and a non-nil error.
+//
+// In order to prevent infinite recursion into paths with self-referential
+// links (and similar cases) it is important that this function not return
+// children for paths where we have doubled back on ourselves. The FIRST
+// time through should be faithful to the return, but not the SECOND time
+// around.
 func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 	if f == nil {
 		return nil, os.ErrInvalid
@@ -64,6 +91,11 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 	}
 	if fn == nil {
 		return ret, nil
+	}
+
+	isInPathResolutionLoop, err := f.isInPathResolutionLoop()
+	if err != nil || isInPathResolutionLoop {
+		return ret, err
 	}
 
 	for idx, child := range f.filetree.tree.Children(fn) {

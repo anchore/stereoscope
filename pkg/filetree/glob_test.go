@@ -114,7 +114,63 @@ func TestFileInfoAdapter(t *testing.T) {
 
 		})
 	}
+}
 
+func TestFileInfoAdapter_PreventInfiniteLoop(t *testing.T) {
+	tr := NewFileTree()
+	tr.AddFile("/usr/bin/busybox")
+	tr.AddSymLink("/usr/bin/X11", ".")
+
+	tests := []struct {
+		name       string
+		path       string
+		childCount int
+	}{
+		{
+			name:       "children on real path",
+			path:       "/usr/bin",
+			childCount: 2,
+		},
+		{
+			name:       "first link iteration shows children",
+			path:       "/usr/bin/X11",
+			childCount: 2,
+		},
+		{
+			name:       "second link iteration DOES NOT show children",
+			path:       "/usr/bin/X11/X11",
+			childCount: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := fileAdapter{
+				os: &osAdapter{
+					filetree:                     tr,
+					doNotFollowDeadBasenameLinks: false,
+				},
+				filetree: tr,
+				name:     test.path,
+			}
+
+			fileInfos, err := adapter.Readdir(-1)
+			if err != nil {
+				t.Fatalf("could not read dir: %+v", err)
+			}
+			if err = adapter.Close(); err != nil {
+				t.Fatalf("close should have no effect")
+			}
+
+			if len(fileInfos) != test.childCount {
+				for _, f := range fileInfos {
+					t.Logf("   actual: %+v", f)
+				}
+				t.Errorf("unexpected number of files: %d != %d", len(fileInfos), test.childCount)
+			}
+
+		})
+	}
 }
 
 func TestOSAdapter_Lstat(t *testing.T) {

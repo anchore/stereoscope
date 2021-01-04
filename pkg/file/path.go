@@ -73,7 +73,9 @@ func (p Path) ParentPath() (Path, error) {
 // AllPaths returns all constituent paths of the current path + the current path itself (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman, /home/wagoodman/file.txt )
 func (p Path) AllPaths() []Path {
 	fullPaths := p.ConstituentPaths()
-	fullPaths = append(fullPaths, p)
+	if p != "/" {
+		fullPaths = append(fullPaths, p)
+	}
 	return fullPaths
 }
 
