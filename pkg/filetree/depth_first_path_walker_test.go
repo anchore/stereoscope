@@ -135,7 +135,8 @@ func TestDFS_WalkAll_EarlyTermination(t *testing.T) {
 		}
 		delete(possiblePaths, p)
 	}
-	// </delete>
+
+	// start the test
 
 	actualPaths := make(map[string]*file.Reference, 0)
 	visitor := func(path file.Path, node filenode.FileNode) error {
@@ -170,7 +171,8 @@ func TestDFS_WalkAll_ConditionalVisit(t *testing.T) {
 			delete(possiblePaths, p)
 		}
 	}
-	// </delete>
+
+	// start the test
 
 	actualPaths := make(map[string]*file.Reference, 0)
 	visitor := func(path file.Path, node filenode.FileNode) error {
@@ -204,7 +206,8 @@ func TestDFS_WalkAll_ConditionalBranchPruning(t *testing.T) {
 			delete(possiblePaths, p)
 		}
 	}
-	// </delete>
+
+	// start the test
 
 	actualPaths := make(map[string]*file.Reference, 0)
 	visitor := func(path file.Path, node filenode.FileNode) error {
@@ -243,7 +246,7 @@ func TestDFS_WalkAll_MaxDirDepthTerminatesTraversal(t *testing.T) {
 	possiblePaths["/home/wagoodman"] = nil
 	possiblePaths["/home"] = nil
 
-	// </setup tree...>
+	// start the test
 
 	actualMaxDepth := -1
 	shouldTerminate := func(path file.Path, node filenode.FileNode) bool {
@@ -277,7 +280,7 @@ func TestDFS_WalkAll_MaxDirDepthTerminatesTraversal(t *testing.T) {
 
 func assertExpectedTraversal(t *testing.T, expected, actual map[string]*file.Reference) {
 	t.Helper()
-	if len(actual) != len(expected) {
+	if len(expected) != len(actual) {
 		t.Errorf("Did not traverse all nodes (expected %d, got %d)", len(expected), len(actual))
 	}
 

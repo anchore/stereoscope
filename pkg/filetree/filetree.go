@@ -181,7 +181,8 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*filenode
 	return currentNode, err
 }
 
-// return FileNode of the basename in the given path (no resolution is done at or past the basename).
+// return FileNode of the basename in the given path (no resolution is done at or past the basename). Note: it is
+// assumed that the given path has already been normalized.
 func (t *FileTree) resolveAncestorLinks(path file.Path) (*filenode.FileNode, error) {
 	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
 	// use it, otherwise, continue with ancestor resolution
@@ -199,7 +200,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path) (*filenode.FileNode, err
 
 	// iterate through all parts of the path, replacing path elements with link resolutions where possible.
 	for idx, part := range pathParts {
-		if (part == "" || part == file.DirSeparator) && idx == 0 {
+		if part == "" {
 			// note: this means that we will NEVER resolve a symlink or file.Reference for /, which is OK
 			continue
 		}
