@@ -612,9 +612,6 @@ func (t *FileTree) Reader() tree.Reader {
 
 // PathDiff shows the path differences between two trees (useful for testing)
 func (t *FileTree) PathDiff(other *FileTree) (extra, missing []file.Path) {
-	extra = make([]file.Path, 0)
-	missing = make([]file.Path, 0)
-
 	ourPaths := internal.NewStringSet()
 	for _, fn := range t.tree.Nodes() {
 		ourPaths.Add(string(fn.ID()))

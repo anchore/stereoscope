@@ -70,19 +70,14 @@ func (p Path) ParentPath() (Path, error) {
 	return sanitized, nil
 }
 
-// AllPaths returns all valid constituent paths (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman, /home/wagoodman/file.txt )
+// AllPaths returns all constituent paths of the current path + the current path itself (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman, /home/wagoodman/file.txt )
 func (p Path) AllPaths() []Path {
-	parents := strings.Split(strings.Trim(string(p), DirSeparator), DirSeparator)
-	fullPaths := make([]Path, len(parents)+1)
-	for idx := range parents {
-		cur := DirSeparator + strings.Join(parents[:idx], DirSeparator)
-		fullPaths[idx] = Path(cur)
-	}
-	fullPaths[len(parents)] = p
+	fullPaths := p.ConstituentPaths()
+	fullPaths = append(fullPaths, p)
 	return fullPaths
 }
 
-// ConstituentPaths returns all valid constituent paths (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman )
+// ConstituentPaths returns all constituent paths for the current path (not including the current path itself) (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman )
 func (p Path) ConstituentPaths() []Path {
 	parents := strings.Split(strings.Trim(string(p), DirSeparator), DirSeparator)
 	fullPaths := make([]Path, len(parents))

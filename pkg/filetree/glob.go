@@ -156,7 +156,7 @@ func (a *fileinfoAdapter) Name() string {
 // Size is a dummy return value (since it is not important for globbing). Traditionally this would be the length in
 // bytes for regular files.
 func (a *fileinfoAdapter) Size() int64 {
-	return 1
+	panic("not implemented")
 }
 
 // Mode returns the file mode bits for the given file. Note that the only important bits in the bitset is the
@@ -178,7 +178,7 @@ func (a *fileinfoAdapter) Mode() os.FileMode {
 
 // ModTime returns a dummy value. Traditionally would be the modification time for the given file.
 func (a *fileinfoAdapter) ModTime() time.Time {
-	return time.Now()
+	panic("not implemented")
 }
 
 // IsDir is an abbreviation for Mode().IsDir().
@@ -188,5 +188,5 @@ func (a *fileinfoAdapter) IsDir() bool {
 
 // Sys contains underlying data source (nothing in this case).
 func (a *fileinfoAdapter) Sys() interface{} {
-	return nil
+	panic("not implemented")
 }
