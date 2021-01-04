@@ -705,14 +705,14 @@ func (t *FileTree) merge(upper *FileTree) error {
 			return nil
 		}
 
-		originalNode, err := t.node(upperNode.RealPath, linkResolutionStrategy{
+		lowerNode, err := t.node(upperNode.RealPath, linkResolutionStrategy{
 			FollowAncestorLinks: false,
 			FollowBasenameLinks: false,
 		})
 		if err != nil {
 			return fmt.Errorf("filetree merge failed when looking for path=%q : %w", upperNode.RealPath, err)
 		}
-		if originalNode == nil {
+		if lowerNode == nil {
 			// there is no existing Node... add parents and prepare to set
 			if err := t.addParentPaths(upperNode.RealPath); err != nil {
 				return fmt.Errorf("could not add parent paths to lower: %w", err)
@@ -722,10 +722,18 @@ func (t *FileTree) merge(upper *FileTree) error {
 		nodeCopy := *upperNode
 
 		// keep original file references if the upper tree does not have them (only for the same file types)
-		if originalNode != nil && originalNode.Reference != nil && upperNode.Reference == nil && upperNode.FileType == originalNode.FileType {
-			nodeCopy.Reference = originalNode.Reference
+		if lowerNode != nil && lowerNode.Reference != nil && upperNode.Reference == nil && upperNode.FileType == lowerNode.FileType {
+			nodeCopy.Reference = lowerNode.Reference
 		}
 
+		if lowerNode != nil && upperNode.FileType != file.TypeDir && lowerNode.FileType == file.TypeDir {
+			// NOTE: both upperNode and lowerNode paths are the same, and does not have an effect
+			// on removal of child paths
+			err := t.RemoveChildPaths(upperNode.RealPath)
+			if err != nil {
+				return fmt.Errorf("filetree merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+			}
+		}
 		// graft a copy of the upper Node with potential lower information into the lower tree
 		if err := t.setFileNode(&nodeCopy); err != nil {
 			return fmt.Errorf("filetree merge failed to set file Node (Node=%+v): %w", nodeCopy, err)

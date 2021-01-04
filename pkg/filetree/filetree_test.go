@@ -3,8 +3,9 @@ package filetree
 import (
 	"errors"
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"testing"
+
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
