@@ -659,9 +659,9 @@ func (t *FileTree) Equal(other *FileTree) bool {
 	return len(extra) == 0 && len(missing) == 0
 }
 
-// HasPath indicates is the given path is in the file Tree.
-func (t *FileTree) HasPath(path file.Path) bool {
-	exists, _, err := t.File(path, FollowBasenameLinks)
+// HasPath indicates is the given path is in the file Tree (with optional link resolution options).
+func (t *FileTree) HasPath(path file.Path, options ...LinkResolutionOption) bool {
+	exists, _, err := t.File(path, options...)
 	if err != nil {
 		return false
 	}
