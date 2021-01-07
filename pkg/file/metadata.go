@@ -1,6 +1,10 @@
 package file
 
-import "os"
+import (
+	"archive/tar"
+	"os"
+	"path"
+)
 
 // Metadata represents all file metadata of interest (used today for in-tar file resolution).
 type Metadata struct {
@@ -18,4 +22,18 @@ type Metadata struct {
 	TypeFlag byte
 	IsDir    bool
 	Mode     os.FileMode
+}
+
+func NewMetadata(header *tar.Header) Metadata {
+	return Metadata{
+		Path:          path.Clean(DirSeparator + header.Name),
+		TarHeaderName: header.Name,
+		TypeFlag:      header.Typeflag,
+		Linkname:      header.Linkname,
+		Size:          header.FileInfo().Size(),
+		Mode:          header.FileInfo().Mode(),
+		UserID:        header.Uid,
+		GroupID:       header.Gid,
+		IsDir:         header.FileInfo().IsDir(),
+	}
 }

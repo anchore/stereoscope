@@ -1,7 +1,6 @@
 package image
 
 import (
-	"archive/tar"
 	"bytes"
 	"fmt"
 	"io"
@@ -42,11 +41,11 @@ func NewFileCatalog(contentsCacheDir string) FileCatalog {
 
 // Add creates a new FileCatalogEntry for the given file reference and metadata, cataloged by the ID of the
 // file reference (overwriting any existing entries without warning).
-func (c *FileCatalog) Add(f file.Reference, m file.Metadata, s *Layer) {
+func (c *FileCatalog) Add(f file.Reference, m file.Metadata, l *Layer) {
 	c.catalog[f.ID()] = &FileCatalogEntry{
 		File:     f,
 		Metadata: m,
-		Layer:    s,
+		Layer:    l,
 	}
 }
 
@@ -127,19 +126,16 @@ func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
 		return file.NewDeferredReadCloser(cacheValue), nil
 	}
 
-	// get the (potentially) cached layer tar
-	sourceTarReader, err := entry.Layer.content()
+	// get header + content reader from the underlying tar
+	tarEntry, err := entry.Layer.indexedContent.Entry(entry.Metadata.TarHeaderName)
 	if err != nil {
 		return nil, err
 	}
-
-	fileReader, err := file.ReaderFromTar(sourceTarReader, entry.Metadata.TarHeaderName)
-	if err != nil {
-		return nil, err
+	if tarEntry != nil {
+		return c.handleContentResponse(f, tarEntry.Reader)
 	}
-	defer fileReader.Close()
 
-	return c.handleContentResponse(f, fileReader)
+	return nil, nil
 }
 
 // MultipleFileContents returns the contents of all provided file references. Returns an error if any of the file
@@ -152,40 +148,27 @@ func (c *FileCatalog) MultipleFileContents(files ...file.Reference) (map[file.Re
 
 	results := make(map[file.Reference]io.ReadCloser)
 	for layer, tarHeaderNameToFileReference := range requestsByLayer {
-		sourceTarReader, err := layer.content()
-		if err != nil {
-			return nil, fmt.Errorf("unable to obtain layer tar reader: %w", err)
-		}
 		discoveredFiles := 0
-
-		// we generate the TarVisitor dynamically to prevent usage of the loop variables within the function literal
-		visitor := func(tarHeaderNameToFileReference file.TarContentsRequest) file.TarVisitor {
-			// create a visitor function tailored for reading the contents of files in the current request and
-			// handling the content request via the FileCatalog (for caching and normalizing the io.ReadCloser returned)
-			return func(header *tar.Header, contents io.Reader) error {
-				if fileRef, ok := tarHeaderNameToFileReference[header.Name]; ok {
-					discoveredFiles++
-					// process the given tar entry
-					if _, ok := results[fileRef]; ok {
-						return fmt.Errorf("duplicate entries: %+v", fileRef)
-					}
-
-					// read the bytes from the tar or use previously cached contents
-					results[fileRef], err = c.handleContentResponse(fileRef, contents)
-					if err != nil {
-						return err
-					}
-				}
-
-				if discoveredFiles == len(tarHeaderNameToFileReference) {
-					return file.ErrTarStopIteration
-				}
-				return nil
+		for tarHeaderName, fileRef := range tarHeaderNameToFileReference {
+			// get header + content reader from the underlying tar
+			tarEntry, err := layer.indexedContent.Entry(tarHeaderName)
+			if err != nil {
+				return nil, err
 			}
-		}(tarHeaderNameToFileReference)
+			if tarEntry != nil {
+				discoveredFiles++
+				// process the given tar entry
+				if _, ok := results[fileRef]; ok {
+					return nil, fmt.Errorf("duplicate entries: %+v", fileRef)
+				}
 
-		if err := file.TarIterator(sourceTarReader, visitor); err != nil {
-			return nil, err
+				// read the bytes from the tar or use previously cached contents
+				results[fileRef], err = c.handleContentResponse(fileRef, tarEntry.Reader)
+				if err != nil {
+					return nil, err
+				}
+			}
+
 		}
 	}
 
