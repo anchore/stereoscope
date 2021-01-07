@@ -206,23 +206,11 @@ func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(i.SquashedTree(), &i.FileCatalog, path)
 }
 
-// MultipleFileContentsFromSquash fetches file contents for all given paths, relative to the image squash tree.
-// If any one path does not exist an error is returned for the entire request.
-func (i *Image) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
-	return fetchMultipleFileContentsByPath(i.SquashedTree(), &i.FileCatalog, paths...)
-}
-
 // FileContentsByRef fetches file contents for a single file reference, irregardless of the source layer.
 // If the path does not exist an error is returned.
 // This is a convenience function provided by the FileCatalog.
 func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 	return i.FileCatalog.FileContents(ref)
-}
-
-// FileContentsByRef fetches file contents for all file references given, irregardless of the source layer.
-// If any one path does not exist an error is returned for the entire request.
-func (i *Image) MultipleFileContentsByRef(refs ...file.Reference) (map[file.Reference]io.ReadCloser, error) {
-	return i.FileCatalog.MultipleFileContents(refs...)
 }
 
 // ResolveLinkByLayerSquash resolves a symlink or hardlink for the given file reference relative to the result from

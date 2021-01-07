@@ -26,26 +26,3 @@ func fetchFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, pa
 	}
 	return reader, nil
 }
-
-// fetchMultipleFileContentsByPath is a common helper function for resolving the file contents for all paths from the
-// file catalog relative to the given tree. If any one path does not exist in the given tree then an error is returned.
-func fetchMultipleFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
-	fileReferences := make([]file.Reference, len(paths))
-	for idx, p := range paths {
-		exists, fileReference, err := ft.File(p, filetree.FollowBasenameLinks)
-		if err != nil {
-			return nil, err
-		}
-		if !exists && fileReference == nil {
-			return nil, fmt.Errorf("could not find file path in Tree: %s", p)
-		}
-
-		fileReferences[idx] = *fileReference
-	}
-
-	readers, err := fileCatalog.MultipleFileContents(fileReferences...)
-	if err != nil {
-		return nil, err
-	}
-	return readers, nil
-}
