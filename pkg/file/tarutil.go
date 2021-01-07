@@ -23,7 +23,7 @@ type tarFile struct {
 }
 
 // TarVisitor is a visitor function meant to be used in conjunction with the TarIterator.
-type TarVisitor func(*tar.Header, io.Reader) error
+type TarVisitor func(TarFileEntry) error
 
 // TarContentsRequest is a map of tarHeaderNames -> file.References to aid in simplifying content retrieval.
 type TarContentsRequest map[string]Reference
@@ -52,7 +52,7 @@ func TarIterator(reader io.Reader, visitor TarVisitor) error {
 			return err
 		}
 
-		if err := visitor(hdr, tarReader); err != nil {
+		if err := visitor(TarFileEntry{Header: hdr, Reader: tarReader}); err != nil {
 			if errors.Is(err, ErrTarStopIteration) {
 				return nil
 			}
@@ -66,10 +66,10 @@ func TarIterator(reader io.Reader, visitor TarVisitor) error {
 func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) {
 	var result io.ReadCloser
 
-	visitor := func(header *tar.Header, contentReader io.Reader) error {
-		if header.Name == tarPath {
+	visitor := func(entry TarFileEntry) error {
+		if entry.Header.Name == tarPath {
 			result = &tarFile{
-				Reader: contentReader,
+				Reader: entry.Reader,
 				Closer: reader,
 			}
 			return ErrTarStopIteration
@@ -90,9 +90,9 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 // MetadataFromTar returns the tar metadata from the header info.
 func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
 	var metadata *Metadata
-	visitor := func(header *tar.Header, _ io.Reader) error {
-		if header.Name == tarPath {
-			m := assembleMetadata(header)
+	visitor := func(entry TarFileEntry) error {
+		if entry.Header.Name == tarPath {
+			m := NewMetadata(entry.Header)
 			metadata = &m
 			return ErrTarStopIteration
 		}
@@ -107,24 +107,25 @@ func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
 	return *metadata, nil
 }
 
+// TODO: delete but keep tests
 // EnumerateFileMetadataFromTar populates and returns a Metadata object for all files in the tar.
 func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 	result := make(chan Metadata)
 	go func() {
-		visitor := func(header *tar.Header, contents io.Reader) error {
+		visitor := func(entry TarFileEntry) error {
 			// always ensure relative Path notations are not parsed as part of the filename
-			name := path.Clean(DirSeparator + header.Name)
+			name := path.Clean(DirSeparator + entry.Header.Name)
 			if name == "." {
 				return nil
 			}
 
-			switch header.Typeflag {
+			switch entry.Header.Typeflag {
 			case tar.TypeXGlobalHeader:
-				log.Errorf("unexpected tar file: (XGlobalHeader): type=%v name=%s", header.Typeflag, name)
+				log.Errorf("unexpected tar file: (XGlobalHeader): type=%v name=%s", entry.Header.Typeflag, name)
 			case tar.TypeXHeader:
-				log.Errorf("unexpected tar file (XHeader): type=%v name=%s", header.Typeflag, name)
+				log.Errorf("unexpected tar file (XHeader): type=%v name=%s", entry.Header.Typeflag, name)
 			default:
-				result <- assembleMetadata(header)
+				result <- NewMetadata(entry.Header)
 			}
 			return nil
 		}
@@ -136,20 +137,6 @@ func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
 		close(result)
 	}()
 	return result
-}
-
-func assembleMetadata(header *tar.Header) Metadata {
-	return Metadata{
-		Path:          path.Clean(DirSeparator + header.Name),
-		TarHeaderName: header.Name,
-		TypeFlag:      header.Typeflag,
-		Linkname:      header.Linkname,
-		Size:          header.FileInfo().Size(),
-		Mode:          header.FileInfo().Mode(),
-		UserID:        header.Uid,
-		GroupID:       header.Gid,
-		IsDir:         header.FileInfo().IsDir(),
-	}
 }
 
 // UntarToDirectory writes the contents of the given tar reader to the given destination

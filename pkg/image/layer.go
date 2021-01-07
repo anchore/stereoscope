@@ -22,7 +22,8 @@ type Layer struct {
 	// layer is the raw layer metadata and content provider from the GCR lib
 	layer v1.Layer
 	// content provides an io.ReadCloser for the underlying layer tar (either directly from the GCR lib or a cache dir)
-	content file.OpenerFn
+	content        file.Opener
+	indexedContent *file.IndexedTarReader
 	// Metadata contains select layer attributes
 	Metadata LayerMetadata
 	// Tree is a filetree that represents the structure of the layer tar contents ("diff tree")
@@ -68,27 +69,29 @@ func (l *Layer) readMetadata(imgMetadata Metadata, idx int, uncompressedLayersCa
 	l.Metadata = metadata
 	l.Tree = filetree.NewFileTree()
 
-	if uncompressedLayersCacheDir != "" {
-		rawReader, err := l.layer.Uncompressed()
-		if err != nil {
-			return err
-		}
-
-		tarPath := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest+".tar")
-
-		fh, err := os.Create(tarPath)
-		if err != nil {
-			return fmt.Errorf("unable to create layer cache dir=%q : %w", tarPath, err)
-		}
-
-		if _, err := io.Copy(fh, rawReader); err != nil {
-			return fmt.Errorf("unable to populate layer cache dir=%q : %w", tarPath, err)
-		}
-
-		l.content = file.OpenerFromPath{Path: tarPath}.Open
-	} else {
-		l.content = l.layer.Uncompressed
+	if uncompressedLayersCacheDir == "" {
+		return fmt.Errorf("no cache directory given")
 	}
+
+	rawReader, err := l.layer.Uncompressed()
+	if err != nil {
+		return err
+	}
+	// TODO: type assert if is a file pointer, in which case don't copy the underlying data to the cache
+
+	tarPath := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest+".tar")
+
+	fh, err := os.Create(tarPath)
+	if err != nil {
+		return fmt.Errorf("unable to create layer cache dir=%q : %w", tarPath, err)
+	}
+
+	if _, err := io.Copy(fh, rawReader); err != nil {
+		return fmt.Errorf("unable to populate layer cache dir=%q : %w", tarPath, err)
+	}
+
+	l.content = file.OpenerFromPath{Path: tarPath}
+
 	return nil
 }
 
@@ -101,13 +104,16 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 	l.fileCatalog = catalog
 
-	reader, err := l.content()
+	reader, err := l.content.Open()
 	if err != nil {
 		return fmt.Errorf("unable to obtail layer=%q tar: %w", l.Metadata.Digest, err)
 	}
 	monitor := l.trackReadProgress(l.Metadata)
 
-	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
+	// TODO: move to testable function
+	visitor := func(entry file.TarFileEntry) error {
+		metadata := file.NewMetadata(entry.Header)
+
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
 		// This is ok, and the FileTree will account for this by automatically adding directories for non-existing
@@ -149,6 +155,12 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		catalog.Add(*fileReference, metadata, l)
 
 		monitor.N++
+		return nil
+	}
+
+	l.indexedContent, err = file.NewIndexedTarReader(reader, visitor)
+	if err != nil {
+		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 	}
 
 	monitor.SetCompleted()
