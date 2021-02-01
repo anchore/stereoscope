@@ -3,11 +3,12 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/go-test/deep"
-	"github.com/google/go-containerregistry/pkg/name"
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/go-test/deep"
+	"github.com/google/go-containerregistry/pkg/name"
 )
 
 func TestImageAdditionalMetadata(t *testing.T) {
@@ -95,4 +96,25 @@ func TestImageAdditionalMetadata(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestImage_SquashedTree(t *testing.T) {
+	t.Run("zero layers", func(t *testing.T) {
+		i := Image{
+			Layers: []*Layer{},
+		}
+
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("panicked (and recovered) while computing squashed tree for image with zero layers: %v", r)
+			}
+		}()
+
+		// Asserting that this call doesn't panic (regression: https://github.com/anchore/stereoscope/issues/56)
+		result := i.SquashedTree()
+
+		if result == nil {
+			t.Error("expected an initialized, empty FileTree, but got a nil FileTree")
+		}
+	})
 }
