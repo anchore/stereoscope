@@ -197,7 +197,14 @@ func (i *Image) squash(prog *progress.Manual) error {
 
 // SquashedTree returns the pre-computed image squash file tree.
 func (i *Image) SquashedTree() *filetree.FileTree {
-	return i.Layers[len(i.Layers)-1].SquashedTree
+	layerCount := len(i.Layers)
+
+	if layerCount == 0 {
+		return filetree.NewFileTree()
+	}
+
+	topLayer := i.Layers[layerCount-1]
+	return topLayer.SquashedTree
 }
 
 // FileContentsFromSquash fetches file contents for a single path, relative to the image squash tree.
