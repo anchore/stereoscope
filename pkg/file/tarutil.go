@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -22,11 +21,15 @@ type tarFile struct {
 	io.Closer
 }
 
+// TarFileEntry represents the header, contents, and list position of an entry within a tar file.
+type TarFileEntry struct {
+	Sequence int64
+	Header   tar.Header
+	Reader   io.Reader
+}
+
 // TarVisitor is a visitor function meant to be used in conjunction with the TarIterator.
 type TarVisitor func(TarFileEntry) error
-
-// TarContentsRequest is a map of tarHeaderNames -> file.References to aid in simplifying content retrieval.
-type TarContentsRequest map[string]Reference
 
 // ErrFileNotFound returned from ReaderFromTar if a file is not found in the given archive.
 type ErrFileNotFound struct {
@@ -42,7 +45,7 @@ func (e *ErrFileNotFound) Error() string {
 // or if the visitor function returns a ErrTarStopIteration sentinel error.
 func TarIterator(reader io.Reader, visitor TarVisitor) error {
 	tarReader := tar.NewReader(reader)
-
+	var sequence int64
 	for {
 		hdr, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
@@ -52,12 +55,17 @@ func TarIterator(reader io.Reader, visitor TarVisitor) error {
 			return err
 		}
 
-		if err := visitor(TarFileEntry{Header: hdr, Reader: tarReader}); err != nil {
+		if err := visitor(TarFileEntry{
+			Sequence: sequence,
+			Header:   *hdr,
+			Reader:   tarReader,
+		}); err != nil {
 			if errors.Is(err, ErrTarStopIteration) {
 				return nil
 			}
 			return fmt.Errorf("failed to visit tar entry=%q : %w", hdr.Name, err)
 		}
+		sequence++
 	}
 	return nil
 }
@@ -92,7 +100,7 @@ func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
 	var metadata *Metadata
 	visitor := func(entry TarFileEntry) error {
 		if entry.Header.Name == tarPath {
-			m := NewMetadata(entry.Header)
+			m := NewMetadata(entry.Header, entry.Sequence)
 			metadata = &m
 			return ErrTarStopIteration
 		}
@@ -107,57 +115,12 @@ func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
 	return *metadata, nil
 }
 
-// TODO: delete but keep tests
-// EnumerateFileMetadataFromTar populates and returns a Metadata object for all files in the tar.
-func EnumerateFileMetadataFromTar(reader io.Reader) <-chan Metadata {
-	result := make(chan Metadata)
-	go func() {
-		visitor := func(entry TarFileEntry) error {
-			// always ensure relative Path notations are not parsed as part of the filename
-			name := path.Clean(DirSeparator + entry.Header.Name)
-			if name == "." {
-				return nil
-			}
-
-			switch entry.Header.Typeflag {
-			case tar.TypeXGlobalHeader:
-				log.Errorf("unexpected tar file: (XGlobalHeader): type=%v name=%s", entry.Header.Typeflag, name)
-			case tar.TypeXHeader:
-				log.Errorf("unexpected tar file (XHeader): type=%v name=%s", entry.Header.Typeflag, name)
-			default:
-				result <- NewMetadata(entry.Header)
-			}
-			return nil
-		}
-
-		if err := TarIterator(reader, visitor); err != nil {
-			log.Errorf("failed to extract metadata from tar: %w", err)
-		}
-
-		close(result)
-	}()
-	return result
-}
-
 // UntarToDirectory writes the contents of the given tar reader to the given destination
 func UntarToDirectory(reader io.Reader, dst string) error {
-	tr := tar.NewReader(reader)
+	visitor := func(entry TarFileEntry) error {
+		target := filepath.Join(dst, entry.Header.Name)
 
-	for {
-		header, err := tr.Next()
-
-		switch {
-		case err == io.EOF:
-			return nil
-		case err != nil:
-			return err
-		case header == nil:
-			continue
-		}
-
-		target := filepath.Join(dst, header.Name)
-
-		switch header.Typeflag {
+		switch entry.Header.Typeflag {
 		case tar.TypeDir:
 			if _, err := os.Stat(target); err != nil {
 				if err := os.MkdirAll(target, 0755); err != nil {
@@ -166,13 +129,13 @@ func UntarToDirectory(reader io.Reader, dst string) error {
 			}
 
 		case tar.TypeReg:
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(header.Mode))
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(entry.Header.Mode))
 			if err != nil {
 				return err
 			}
 
 			// limit the reader on each file read to prevent decompression bomb attacks
-			numBytes, err := io.Copy(f, io.LimitReader(tr, perFileReadLimit))
+			numBytes, err := io.Copy(f, io.LimitReader(entry.Reader, perFileReadLimit))
 			if numBytes >= perFileReadLimit || errors.Is(err, io.EOF) {
 				return fmt.Errorf("zip read limit hit (potential decompression bomb attack)")
 			}
@@ -184,5 +147,8 @@ func UntarToDirectory(reader io.Reader, dst string) error {
 				log.Errorf("failed to close file during untar of path=%q: %w", f.Name(), err)
 			}
 		}
+		return nil
 	}
+
+	return TarIterator(reader, visitor)
 }

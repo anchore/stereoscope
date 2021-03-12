@@ -12,6 +12,7 @@ type Metadata struct {
 	Path string
 	// TarHeaderName is the exact entry name as found within a tar header
 	TarHeaderName string
+	TarSequence   int64
 	// Linkname is populated only for hardlinks / symlinks, can be an absolute or relative.
 	Linkname string
 	// Size of the file in bytes.
@@ -24,10 +25,11 @@ type Metadata struct {
 	Mode     os.FileMode
 }
 
-func NewMetadata(header *tar.Header) Metadata {
+func NewMetadata(header tar.Header, sequence int64) Metadata {
 	return Metadata{
 		Path:          path.Clean(DirSeparator + header.Name),
 		TarHeaderName: header.Name,
+		TarSequence:   sequence,
 		TypeFlag:      header.Typeflag,
 		Linkname:      header.Linkname,
 		Size:          header.FileInfo().Size(),

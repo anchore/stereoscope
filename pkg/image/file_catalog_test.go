@@ -34,7 +34,7 @@ var (
 	tarCachePath           = path.Join(fixturesPath, "tar-cache")
 )
 
-func getTarFixture(t *testing.T, name string) (io.ReadCloser, func()) {
+func getTarFixture(t *testing.T, name string) (*os.File, func()) {
 	generatorScriptName := name + ".sh"
 	generatorScriptPath := path.Join(fixturesGeneratorsPath, generatorScriptName)
 	if !fileExists(t, generatorScriptPath) {
@@ -168,7 +168,6 @@ func TestFileCatalog_Add(t *testing.T) {
 }
 
 type testLayerContent struct {
-	content io.ReadCloser
 }
 
 func (t *testLayerContent) Digest() (v1.Hash, error) {
@@ -184,7 +183,7 @@ func (t *testLayerContent) Compressed() (io.ReadCloser, error) {
 }
 
 func (t *testLayerContent) Uncompressed() (io.ReadCloser, error) {
-	return t.content, nil
+	panic("not implemented")
 }
 
 func (t *testLayerContent) Size() (int64, error) {
@@ -196,7 +195,7 @@ func (t *testLayerContent) MediaType() (types.MediaType, error) {
 }
 
 func TestFileCatalog_FileContents(t *testing.T) {
-	actualReadCloser, cleanup := getTarFixture(t, "fixture-1")
+	fixtureFile, cleanup := getTarFixture(t, "fixture-1")
 	defer cleanup()
 
 	// a real path & contents from the fixture
@@ -209,10 +208,13 @@ func TestFileCatalog_FileContents(t *testing.T) {
 		TarHeaderName: p,
 	}
 
-	v1Layer := testLayerContent{content: actualReadCloser}
+	tr, err := file.NewTarIndex(fixtureFile)
+	if err != nil {
+		t.Fatalf("unable to get indexed reader")
+	}
 	layer := &Layer{
-		layer:   &v1Layer,
-		content: v1Layer.Uncompressed,
+		layer:          &testLayerContent{},
+		indexedContent: tr,
 	}
 
 	catalog := testFileCatalog(t)
@@ -252,15 +254,17 @@ func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[f
 		}
 
 		// these "layers" cannot share the same readcloser
-		actualReadCloser, cleanup := getTarFixture(t, "fixture-1")
+		fixtureFile, cleanup := getTarFixture(t, "fixture-1")
 		t.Cleanup(cleanup)
 
-		v1Layer := testLayerContent{content: actualReadCloser}
+		tr, err := file.NewTarIndex(fixtureFile)
+		if err != nil {
+			t.Fatalf("unable to get indexed reader")
+		}
 		layer := &Layer{
 			// note: since this test is using the same tar, it is as if it is a request for two files in the same layer
-
-			layer:   &v1Layer,
-			content: v1Layer.Uncompressed,
+			layer:          &testLayerContent{},
+			indexedContent: tr,
 		}
 
 		catalog.Add(ref, metadata, layer)
@@ -292,9 +296,13 @@ func TestFileCatalog_MultipleFileContents_NoCache(t *testing.T) {
 	// note: the file size is below the cache threshold
 	catalog, expected, refs := setupMultipleFileContents(t, 20)
 
-	actual, err := catalog.MultipleFileContents(refs...)
-	if err != nil {
-		t.Fatalf("could not get contents by ref: %+v", err)
+	actual := make(map[file.Reference]io.ReadCloser)
+	for _, ref := range refs {
+		a, err := catalog.FileContents(ref)
+		if err != nil {
+			t.Fatalf("could not get contents by ref=%+v: %+v", ref, err)
+		}
+		actual[ref] = a
 	}
 
 	assertMultipleFileContents(t, expected, actual)
@@ -304,9 +312,13 @@ func TestFileCatalog_MultipleFileContents_WithCache(t *testing.T) {
 	// note: the file size is above the cache threshold
 	catalog, expected, refs := setupMultipleFileContents(t, 2*cacheFileSizeThreshold)
 
-	actual, err := catalog.MultipleFileContents(refs...)
-	if err != nil {
-		t.Fatalf("could not get contents by ref: %+v", err)
+	actual := make(map[file.Reference]io.ReadCloser)
+	for _, ref := range refs {
+		a, err := catalog.FileContents(ref)
+		if err != nil {
+			t.Fatalf("could not get contents by ref=%+v: %+v", ref, err)
+		}
+		actual[ref] = a
 	}
 
 	if len(catalog.contentsCachePath) != len(refs) {

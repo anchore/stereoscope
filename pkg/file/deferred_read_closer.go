@@ -1,6 +1,7 @@
 package file
 
 import (
+	"errors"
 	"io"
 	"os"
 )
@@ -41,6 +42,9 @@ func (d *DeferredReadCloser) Close() error {
 	}
 
 	err := d.file.Close()
+	if err != nil && errors.Is(err, os.ErrClosed) {
+		err = nil
+	}
 	d.file = nil
 	return err
 }

@@ -127,13 +127,22 @@ func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
 	}
 
 	// get header + content reader from the underlying tar
-	tarEntry, err := entry.Layer.indexedContent.Entry(entry.Metadata.TarHeaderName)
+	tarEntries, err := entry.Layer.indexedContent.EntriesByName(entry.Metadata.TarHeaderName)
 	if err != nil {
 		return nil, err
 	}
-	if tarEntry != nil {
-		return c.handleContentResponse(f, tarEntry.Reader)
-	}
 
+	switch len(tarEntries) {
+	case 0:
+		return nil, nil
+	case 1:
+		return c.handleContentResponse(f, tarEntries[0].Reader)
+	default:
+		for _, e := range tarEntries {
+			if e.Sequence == entry.Metadata.TarSequence {
+				return c.handleContentResponse(f, e.Reader)
+			}
+		}
+	}
 	return nil, nil
 }

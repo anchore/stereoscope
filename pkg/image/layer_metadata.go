@@ -15,8 +15,8 @@ type LayerMetadata struct {
 	Size int64
 }
 
-// readLayerMetadata extracts the most pertinent information from the underlying layer tar.
-func readLayerMetadata(imgMetadata Metadata, layer v1.Layer, idx int) (LayerMetadata, error) {
+// newLayerMetadata aggregates pertinent layer metadata information.
+func newLayerMetadata(imgMetadata Metadata, layer v1.Layer, idx int) (LayerMetadata, error) {
 	mediaType, err := layer.MediaType()
 	if err != nil {
 		return LayerMetadata{}, err
