@@ -10,16 +10,27 @@ import (
 	"time"
 )
 
-func TestIndexedTarReader_GoCase(t *testing.T) {
-	fixture, cleanup := getTarFixture(t, "fixture-1")
-	defer cleanup()
+func BenchmarkIndexedTarIndex(b *testing.B) {
+	fixture := getTarFixture(b, "fixture-1")
+	var err error
+	var ti *TarIndex
+	for i := 0; i < b.N; i++ {
+		ti, err = NewTarIndex(fixture.Name())
+		if err != nil {
+			b.Fatalf("failure during benchmark: %+v", err)
+		}
+	}
+	b.Logf("underlying file: %s", ti.filePath)
+}
 
-	reader, err := NewTarIndex(fixture)
+func TestIndexedTarIndex_GoCase(t *testing.T) {
+	fixture := getTarFixture(t, "fixture-1")
+
+	reader, err := NewTarIndex(fixture.Name())
 	if err != nil {
 		t.Fatal("could not get file reader from tar:", err)
 	}
 
-	// all contents + header sizes are below the block size, so accounting for padding will be necessary
 	expected := map[string]string{
 		"path/branch/one/file-1.txt": "first file\n",
 		"path/branch/two/file-2.txt": "second file\n",
@@ -57,7 +68,7 @@ func TestIndexedTarReader_GoCase(t *testing.T) {
 func TestIndexedTarReader_DuplicateEntries(t *testing.T) {
 	fixture := duplicateEntryTarballFixture(t)
 
-	reader, err := NewTarIndex(fixture)
+	reader, err := NewTarIndex(fixture.Name())
 	if err != nil {
 		t.Fatal("could not get file reader from tar:", err)
 	}

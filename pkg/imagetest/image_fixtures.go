@@ -19,7 +19,7 @@ const (
 	ImagePrefix = "stereoscope-fixture"
 )
 
-func GetFixtureImage(t *testing.T, source, name string) (*image.Image, func()) {
+func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 	t.Helper()
 
 	sourceObj := image.ParseSourceScheme(source)
@@ -53,11 +53,12 @@ func GetFixtureImage(t *testing.T, source, name string) (*image.Image, func()) {
 	if err != nil {
 		t.Fatal("could not get tar image:", err)
 	}
+	t.Cleanup(stereoscope.Cleanup)
 
-	return i, stereoscope.Cleanup
+	return i
 }
 
-func GetGoldenFixtureImage(t *testing.T, name string) *image.Image {
+func GetGoldenFixtureImage(t testing.TB, name string) *image.Image {
 	t.Helper()
 
 	imageName, _ := getFixtureImageInfo(t, name)
@@ -66,7 +67,7 @@ func GetGoldenFixtureImage(t *testing.T, name string) *image.Image {
 	return getFixtureImageFromTar(t, tarPath)
 }
 
-func UpdateGoldenFixtureImage(t *testing.T, name string) {
+func UpdateGoldenFixtureImage(t testing.TB, name string) {
 	t.Helper()
 
 	t.Log(aurora.Reverse(aurora.Red("!!! UPDATING GOLDEN FIXTURE IMAGE !!!")), name)
@@ -82,7 +83,7 @@ func isSkopeoAvailable() bool {
 	return err == nil
 }
 
-func skopeoCopyDockerArchiveToPath(t *testing.T, dockerArchivePath, destination string) {
+func skopeoCopyDockerArchiveToPath(t testing.TB, dockerArchivePath, destination string) {
 	if !isSkopeoAvailable() {
 		t.Fatalf("cannot find skopeo executable")
 	}
@@ -100,7 +101,7 @@ func skopeoCopyDockerArchiveToPath(t *testing.T, dockerArchivePath, destination 
 	}
 }
 
-func getFixtureImageFromTar(t *testing.T, tarPath string) *image.Image {
+func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
 	t.Helper()
 
 	request := fmt.Sprintf("docker-archive:%s", tarPath)
@@ -113,14 +114,14 @@ func getFixtureImageFromTar(t *testing.T, tarPath string) *image.Image {
 	return i
 }
 
-func getFixtureImageInfo(t *testing.T, name string) (string, string) {
+func getFixtureImageInfo(t testing.TB, name string) (string, string) {
 	t.Helper()
 	version := fixtureVersion(t, name)
 	imageName := fmt.Sprintf("%s-%s", ImagePrefix, name)
 	return imageName, version
 }
 
-func LoadFixtureImageIntoDocker(t *testing.T, name string) string {
+func LoadFixtureImageIntoDocker(t testing.TB, name string) string {
 	t.Helper()
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
@@ -136,7 +137,7 @@ func LoadFixtureImageIntoDocker(t *testing.T, name string) string {
 	return fullImageName
 }
 
-func getFixtureImageTarPath(t *testing.T, fixtureName, tarStoreDir, tarFileName string) string {
+func getFixtureImageTarPath(t testing.TB, fixtureName, tarStoreDir, tarFileName string) string {
 	t.Helper()
 	imageName, imageVersion := getFixtureImageInfo(t, fixtureName)
 	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
@@ -169,14 +170,14 @@ func getFixtureImageTarPath(t *testing.T, fixtureName, tarStoreDir, tarFileName 
 	return tarPath
 }
 
-func GetFixtureImageTarPath(t *testing.T, name string) string {
+func GetFixtureImageTarPath(t testing.TB, name string) string {
 	t.Helper()
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	tarFileName := fmt.Sprintf("%s-%s.tar", imageName, imageVersion)
 	return getFixtureImageTarPath(t, name, CacheDir, tarFileName)
 }
 
-func fixtureVersion(t *testing.T, name string) string {
+func fixtureVersion(t testing.TB, name string) string {
 	t.Helper()
 	contextPath := path.Join(testutils.TestFixturesDir, name)
 	dockerfileHash, err := dirHash(t, contextPath)
@@ -186,7 +187,7 @@ func fixtureVersion(t *testing.T, name string) string {
 	return dockerfileHash
 }
 
-func hasImage(t *testing.T, imageName string) bool {
+func hasImage(t testing.TB, imageName string) bool {
 	t.Helper()
 	cmd := exec.Command("docker", "image", "inspect", imageName)
 	cmd.Env = os.Environ()
@@ -194,7 +195,7 @@ func hasImage(t *testing.T, imageName string) bool {
 	return err == nil
 }
 
-func buildImage(t *testing.T, contextDir, name, tag string) error {
+func buildImage(t testing.TB, contextDir, name, tag string) error {
 	t.Helper()
 	fullTag := fmt.Sprintf("%s:%s", name, tag)
 	latestTag := fmt.Sprintf("%s:latest", name)
@@ -207,7 +208,7 @@ func buildImage(t *testing.T, contextDir, name, tag string) error {
 	return cmd.Run()
 }
 
-func saveImage(t *testing.T, image, path string) error {
+func saveImage(t testing.TB, image, path string) error {
 	t.Helper()
 
 	outfile, err := os.Create(path)

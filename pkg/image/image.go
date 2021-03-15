@@ -77,7 +77,7 @@ func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...Addi
 	imgObj := &Image{
 		image:            image,
 		contentCacheDir:  contentCacheDir,
-		FileCatalog:      NewFileCatalog(contentCacheDir),
+		FileCatalog:      NewFileCatalog(),
 		overrideMetadata: additionalMetadata,
 	}
 	return imgObj

@@ -41,36 +41,32 @@ func NewLayer(layer v1.Layer) *Layer {
 	}
 }
 
-func (l *Layer) getUncompressedTar(uncompressedLayersCacheDir string) (*os.File, error) {
+func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string, error) {
 	if uncompressedLayersCacheDir == "" {
-		return nil, fmt.Errorf("no cache directory given")
+		return "", fmt.Errorf("no cache directory given")
 	}
 
 	tarPath := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest+".tar")
 
 	if _, err := os.Stat(tarPath); !os.IsNotExist(err) {
-		return os.Open(tarPath)
+		return tarPath, nil
 	}
 
 	rawReader, err := l.layer.Uncompressed()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	fh, err := os.Create(tarPath)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create layer cache dir=%q : %w", tarPath, err)
+		return "", fmt.Errorf("unable to create layer cache dir=%q : %w", tarPath, err)
 	}
 
 	if _, err := io.Copy(fh, rawReader); err != nil {
-		return nil, fmt.Errorf("unable to populate layer cache dir=%q : %w", tarPath, err)
+		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", tarPath, err)
 	}
 
-	if _, err := fh.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("unable to seek to begining of layer tar=%q : %w", tarPath, err)
-	}
-
-	return fh, nil
+	return tarPath, nil
 }
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
@@ -91,12 +87,12 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 	monitor := trackReadProgress(l.Metadata)
 
-	cachedFile, err := l.getUncompressedTar(uncompressedLayersCacheDir)
+	tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
 	if err != nil {
 		return err
 	}
 
-	l.indexedContent, err = file.NewTarIndex(cachedFile, l.tarVisitor(monitor))
+	l.indexedContent, err = file.NewTarIndex(tarFilePath, l.tarVisitor(monitor))
 	if err != nil {
 		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 	}

@@ -7,8 +7,7 @@ import (
 )
 
 func TestFileMetadataFromTar(t *testing.T) {
-	tarReader, cleanup := getTarFixture(t, "fixture-1")
-	defer cleanup()
+	tarReader := getTarFixture(t, "fixture-1")
 
 	expected := []Metadata{
 		{Path: "/path", TarSequence: 0, TarHeaderName: "path/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true},

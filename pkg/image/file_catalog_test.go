@@ -17,14 +17,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
-var testFilePaths = []file.Path{
-	"/home",
-	"/home/dan",
-	"/home/alex",
-	"/home/alfredo",
-	"/home/alfredo/special-file",
-}
-
 const (
 	fixturesPath = "test-fixtures"
 )
@@ -66,13 +58,13 @@ func getTarFixture(t *testing.T, name string) (*os.File, func()) {
 		}
 	}
 
-	file, err := os.Open(tarFixturePath)
+	fh, err := os.Open(tarFixturePath)
 	if err != nil {
 		t.Fatalf("could not open tar fixture '%s'", tarFixturePath)
 	}
 
-	return file, func() {
-		file.Close()
+	return fh, func() {
+		fh.Close()
 	}
 }
 
@@ -108,18 +100,6 @@ func fileExists(t *testing.T, filename string) bool {
 	return !info.IsDir()
 }
 
-func testFileCatalog(t *testing.T) FileCatalog {
-	tempDir, err := ioutil.TempDir("", "stereoscope-file-catalog-test")
-	if err != nil {
-		t.Fatalf("could not create tempfile: %+v", err)
-	}
-	t.Cleanup(func() {
-		os.RemoveAll(tempDir)
-	})
-
-	return NewFileCatalog(tempDir)
-}
-
 func TestFileCatalog_Add(t *testing.T) {
 	ref := file.NewFileReference("/somepath")
 
@@ -148,7 +128,7 @@ func TestFileCatalog_Add(t *testing.T) {
 		fileCatalog:  nil,
 	}
 
-	catalog := testFileCatalog(t)
+	catalog := NewFileCatalog()
 	catalog.Add(*ref, metadata, layer)
 
 	expected := FileCatalogEntry{
@@ -208,7 +188,7 @@ func TestFileCatalog_FileContents(t *testing.T) {
 		TarHeaderName: p,
 	}
 
-	tr, err := file.NewTarIndex(fixtureFile)
+	tr, err := file.NewTarIndex(fixtureFile.Name())
 	if err != nil {
 		t.Fatalf("unable to get indexed reader")
 	}
@@ -217,7 +197,7 @@ func TestFileCatalog_FileContents(t *testing.T) {
 		indexedContent: tr,
 	}
 
-	catalog := testFileCatalog(t)
+	catalog := NewFileCatalog()
 	catalog.Add(*ref, metadata, layer)
 
 	reader, err := catalog.FileContents(*ref)
@@ -233,124 +213,4 @@ func TestFileCatalog_FileContents(t *testing.T) {
 	for _, d := range deep.Equal([]byte(expected), actual) {
 		t.Errorf("diff: %+v", d)
 	}
-}
-
-func setupMultipleFileContents(t *testing.T, fileSize int64) (FileCatalog, map[file.Reference]string, []file.Reference) {
-	// a real path & contents from the fixture
-	ref1 := file.NewFileReference("path/branch/one/file-1.txt")
-	ref2 := file.NewFileReference("path/branch/two/file-2.txt")
-	entries := map[file.Reference]string{
-		*ref1: "first file\n",
-		*ref2: "second file\n",
-	}
-
-	catalog := testFileCatalog(t)
-
-	for ref := range entries {
-		metadata := file.Metadata{
-			Path:          string(ref.RealPath),
-			TarHeaderName: string(ref.RealPath),
-			Size:          fileSize,
-		}
-
-		// these "layers" cannot share the same readcloser
-		fixtureFile, cleanup := getTarFixture(t, "fixture-1")
-		t.Cleanup(cleanup)
-
-		tr, err := file.NewTarIndex(fixtureFile)
-		if err != nil {
-			t.Fatalf("unable to get indexed reader")
-		}
-		layer := &Layer{
-			// note: since this test is using the same tar, it is as if it is a request for two files in the same layer
-			layer:          &testLayerContent{},
-			indexedContent: tr,
-		}
-
-		catalog.Add(ref, metadata, layer)
-	}
-
-	var refs = []file.Reference{*ref1, *ref2}
-
-	return catalog, entries, refs
-}
-
-func assertMultipleFileContents(t *testing.T, expectedContents map[file.Reference]string, actualReaders map[file.Reference]io.ReadCloser) {
-	for ref, actualReader := range actualReaders {
-		expectedStr, ok := expectedContents[ref]
-		if !ok {
-			t.Fatalf("could not find ref: %+v", ref)
-		}
-		actualBytes, err := ioutil.ReadAll(actualReader)
-		if err != nil {
-			t.Fatalf("could not read content reader: %+v", err)
-		}
-
-		for _, d := range deep.Equal([]byte(expectedStr), actualBytes) {
-			t.Errorf("diff: %+v", d)
-		}
-	}
-}
-
-func TestFileCatalog_MultipleFileContents_NoCache(t *testing.T) {
-	// note: the file size is below the cache threshold
-	catalog, expected, refs := setupMultipleFileContents(t, 20)
-
-	actual := make(map[file.Reference]io.ReadCloser)
-	for _, ref := range refs {
-		a, err := catalog.FileContents(ref)
-		if err != nil {
-			t.Fatalf("could not get contents by ref=%+v: %+v", ref, err)
-		}
-		actual[ref] = a
-	}
-
-	assertMultipleFileContents(t, expected, actual)
-}
-
-func TestFileCatalog_MultipleFileContents_WithCache(t *testing.T) {
-	// note: the file size is above the cache threshold
-	catalog, expected, refs := setupMultipleFileContents(t, 2*cacheFileSizeThreshold)
-
-	actual := make(map[file.Reference]io.ReadCloser)
-	for _, ref := range refs {
-		a, err := catalog.FileContents(ref)
-		if err != nil {
-			t.Fatalf("could not get contents by ref=%+v: %+v", ref, err)
-		}
-		actual[ref] = a
-	}
-
-	if len(catalog.contentsCachePath) != len(refs) {
-		t.Fatalf("did not cache results")
-	}
-
-	// ensure the cache is there and the contents are what you would expect
-	for cacheID, p := range catalog.contentsCachePath {
-		fh, err := os.Open(p)
-		if err != nil {
-			t.Fatalf("could not get cache file=%+v : %+v", cacheID, err)
-		}
-		cachedBytes, err := ioutil.ReadAll(fh)
-		if err != nil {
-			t.Fatalf("could not read cache file=%+v : %+v", cacheID, err)
-		}
-
-		entry, ok := catalog.catalog[cacheID]
-		if !ok {
-			t.Fatalf("could not find entry for ID=%+v", cacheID)
-		}
-
-		expectedStr, ok := expected[entry.File]
-		if !ok {
-			t.Fatalf("could not find expected result for ref=%+v", entry.File)
-		}
-
-		if expectedStr != string(cachedBytes) {
-			t.Errorf("mismatched contents: %q != %q", expectedStr, string(cachedBytes))
-		}
-	}
-
-	// ensure contents are expected via the API (not verifying manually)
-	assertMultipleFileContents(t, expected, actual)
 }

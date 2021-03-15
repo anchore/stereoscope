@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func copyFile(t *testing.T, src, dst string) {
+func copyFile(t testing.TB, src, dst string) {
 	t.Helper()
 
 	in, err := os.Open(src)
@@ -30,13 +30,13 @@ func copyFile(t *testing.T, src, dst string) {
 	}
 }
 
-func fileOrDirExists(t *testing.T, filename string) bool {
+func fileOrDirExists(t testing.TB, filename string) bool {
 	t.Helper()
 	_, err := os.Stat(filename)
 	return !os.IsNotExist(err)
 }
 
-func dirHash(t *testing.T, root string) (string, error) {
+func dirHash(t testing.TB, root string) (string, error) {
 	t.Helper()
 	hasher := sha256.New()
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {

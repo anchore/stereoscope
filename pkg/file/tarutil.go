@@ -45,14 +45,19 @@ func (e *ErrFileNotFound) Error() string {
 // or if the visitor function returns a ErrTarStopIteration sentinel error.
 func TarIterator(reader io.Reader, visitor TarVisitor) error {
 	tarReader := tar.NewReader(reader)
-	var sequence int64
+	var sequence int64 = -1
 	for {
+		sequence++
+
 		hdr, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
 			return err
+		}
+		if hdr == nil {
+			continue
 		}
 
 		if err := visitor(TarFileEntry{
@@ -65,7 +70,6 @@ func TarIterator(reader io.Reader, visitor TarVisitor) error {
 			}
 			return fmt.Errorf("failed to visit tar entry=%q : %w", hdr.Name, err)
 		}
-		sequence++
 	}
 	return nil
 }
