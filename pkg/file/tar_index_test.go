@@ -10,17 +10,17 @@ import (
 	"time"
 )
 
-func BenchmarkIndexedTarIndex(b *testing.B) {
+var ti *TarIndex
+
+func BenchmarkTarIndex(b *testing.B) {
 	fixture := getTarFixture(b, "fixture-1")
 	var err error
-	var ti *TarIndex
 	for i := 0; i < b.N; i++ {
 		ti, err = NewTarIndex(fixture.Name())
 		if err != nil {
 			b.Fatalf("failure during benchmark: %+v", err)
 		}
 	}
-	b.Logf("underlying file: %s", ti.filePath)
 }
 
 func TestIndexedTarIndex_GoCase(t *testing.T) {

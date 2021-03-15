@@ -3,7 +3,6 @@ package image
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 
 	"github.com/anchore/stereoscope/pkg/file"
 )
@@ -21,6 +20,7 @@ type FileCatalogEntry struct {
 	File     file.Reference
 	Metadata file.Metadata
 	Layer    *Layer
+	Contents file.Opener
 }
 
 // NewFileCatalog returns an empty FileCatalog.
@@ -32,11 +32,12 @@ func NewFileCatalog() FileCatalog {
 
 // Add creates a new FileCatalogEntry for the given file reference and metadata, cataloged by the ID of the
 // file reference (overwriting any existing entries without warning).
-func (c *FileCatalog) Add(f file.Reference, m file.Metadata, l *Layer) {
+func (c *FileCatalog) Add(f file.Reference, m file.Metadata, l *Layer, opener file.Opener) {
 	c.catalog[f.ID()] = &FileCatalogEntry{
 		File:     f,
 		Metadata: m,
 		Layer:    l,
+		Contents: opener,
 	}
 }
 
@@ -64,17 +65,9 @@ func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("could not find file: %+v", f.RealPath)
 	}
 
-	// get header + content reader from the underlying tar
-	tarEntries, err := catalogEntry.Layer.indexedContent.EntriesByName(catalogEntry.Metadata.TarHeaderName)
-	if err != nil {
-		return nil, err
+	if catalogEntry.Contents == nil {
+		return nil, fmt.Errorf("no contents available for file: %+v", f.RealPath)
 	}
 
-	for _, tarEntry := range tarEntries {
-		if tarEntry.Sequence == catalogEntry.Metadata.TarSequence {
-			return ioutil.NopCloser(tarEntry.Reader), nil
-		}
-	}
-
-	return nil, nil
+	return catalogEntry.Contents(), nil
 }

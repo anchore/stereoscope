@@ -28,8 +28,8 @@ type TarFileEntry struct {
 	Reader   io.Reader
 }
 
-// TarVisitor is a visitor function meant to be used in conjunction with the TarIterator.
-type TarVisitor func(TarFileEntry) error
+// TarFileVisitor is a visitor function meant to be used in conjunction with the TarIterator.
+type TarFileVisitor func(TarFileEntry) error
 
 // ErrFileNotFound returned from ReaderFromTar if a file is not found in the given archive.
 type ErrFileNotFound struct {
@@ -43,7 +43,7 @@ func (e *ErrFileNotFound) Error() string {
 // TarIterator is a function that reads across a tar and invokes a visitor function for each entry discovered. The iterator
 // stops when there are no more entries to read, if there is an error in the underlying reader or visitor function,
 // or if the visitor function returns a ErrTarStopIteration sentinel error.
-func TarIterator(reader io.Reader, visitor TarVisitor) error {
+func TarIterator(reader io.Reader, visitor TarFileVisitor) error {
 	tarReader := tar.NewReader(reader)
 	var sequence int64 = -1
 	for {

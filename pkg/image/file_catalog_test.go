@@ -129,7 +129,7 @@ func TestFileCatalog_Add(t *testing.T) {
 	}
 
 	catalog := NewFileCatalog()
-	catalog.Add(*ref, metadata, layer)
+	catalog.Add(*ref, metadata, layer, nil)
 
 	expected := FileCatalogEntry{
 		File:     *ref,
@@ -197,8 +197,21 @@ func TestFileCatalog_FileContents(t *testing.T) {
 		indexedContent: tr,
 	}
 
+	entries, err := tr.EntriesByName(p)
+	if err != nil {
+		t.Fatalf("unable to get entryies: %+v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("bad entries len: %d", len(entries))
+	}
+
+	opener := func() io.ReadCloser {
+		return ioutil.NopCloser(entries[0].Reader)
+	}
+
 	catalog := NewFileCatalog()
-	catalog.Add(*ref, metadata, layer)
+	catalog.Add(*ref, metadata, layer, opener)
 
 	reader, err := catalog.FileContents(*ref)
 	if err != nil {

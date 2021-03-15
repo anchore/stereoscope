@@ -1,29 +1,22 @@
 package file
 
 import (
-	"archive/tar"
 	"fmt"
 	"io"
 	"os"
 )
 
-type tarIndexEntry struct {
-	header          tar.Header
-	sequence        int64
-	payloadLocation int64
-}
+type TarIndexVisitor func(TarIndexEntry) error
 
 // TarIndex is a tar reader capable of O(1) fetching of entry contents after the first read.
 type TarIndex struct {
-	filePath    string
-	indexByName map[string][]tarIndexEntry
+	indexByName map[string][]TarIndexEntry
 }
 
 // NewTarIndex creates a new TarIndex that is already indexed.
-func NewTarIndex(tarFilePath string, onIndex ...TarVisitor) (*TarIndex, error) {
+func NewTarIndex(tarFilePath string, onIndex ...TarIndexVisitor) (*TarIndex, error) {
 	t := &TarIndex{
-		filePath:    tarFilePath,
-		indexByName: make(map[string][]tarIndexEntry),
+		indexByName: make(map[string][]TarIndexEntry),
 	}
 	fh, err := os.Open(tarFilePath)
 	if err != nil {
@@ -34,7 +27,7 @@ func NewTarIndex(tarFilePath string, onIndex ...TarVisitor) (*TarIndex, error) {
 }
 
 // indexEntries records all tar header locations indexed by header names.
-func (t *TarIndex) indexEntries(file *os.File, onIndex ...TarVisitor) error {
+func (t *TarIndex) indexEntries(file *os.File, onIndex ...TarIndexVisitor) error {
 	visitor := func(entry TarFileEntry) error {
 		payloadLocation, err := file.Seek(0, io.SeekCurrent)
 		if err != nil {
@@ -43,16 +36,17 @@ func (t *TarIndex) indexEntries(file *os.File, onIndex ...TarVisitor) error {
 
 		// keep track of the header position for this entry; the current file position is where the entry
 		// body payload starts (after the header has been read).
-		index := tarIndexEntry{
+		index := TarIndexEntry{
+			path:            file.Name(),
 			sequence:        entry.Sequence,
-			payloadLocation: payloadLocation,
 			header:          entry.Header,
+			payloadLocation: payloadLocation,
 		}
 		t.indexByName[entry.Header.Name] = append(t.indexByName[entry.Header.Name], index)
 
 		// run though the visitors
 		for _, visitor := range onIndex {
-			if err := visitor(index.toTarFileEntry(file.Name())); err != nil {
+			if err := visitor(index); err != nil {
 				return fmt.Errorf("failed visitor on tar index: %w", err)
 			}
 		}
@@ -68,16 +62,9 @@ func (t *TarIndex) EntriesByName(name string) ([]TarFileEntry, error) {
 	if indexes, exists := t.indexByName[name]; exists {
 		entries := make([]TarFileEntry, len(indexes))
 		for i, index := range indexes {
-			entries[i] = index.toTarFileEntry(t.filePath)
+			entries[i] = index.ToTarFileEntry()
 		}
 		return entries, nil
 	}
 	return nil, nil
-}
-
-func (t *tarIndexEntry) toTarFileEntry(tarFilePath string) TarFileEntry {
-	return TarFileEntry{
-		Header: t.header,
-		Reader: newDeferredPartialReadCloser(tarFilePath, t.payloadLocation, t.header.Size),
-	}
 }

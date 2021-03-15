@@ -92,7 +92,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		return err
 	}
 
-	l.indexedContent, err = file.NewTarIndex(tarFilePath, l.tarVisitor(monitor))
+	l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor))
 	if err != nil {
 		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 	}
@@ -116,10 +116,11 @@ func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
 }
 
-func (l *Layer) tarVisitor(monitor *progress.Manual) file.TarVisitor {
-	return func(entry file.TarFileEntry) error {
+func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
+	return func(index file.TarIndexEntry) error {
 		var err error
-		m := file.NewMetadata(entry.Header, entry.Sequence)
+		var entry = index.ToTarFileEntry()
+		metadata := file.NewMetadata(entry.Header, entry.Sequence)
 
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
@@ -132,34 +133,34 @@ func (l *Layer) tarVisitor(monitor *progress.Manual) file.TarVisitor {
 		// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
 		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
 		var fileReference *file.Reference
-		switch m.TypeFlag {
+		switch metadata.TypeFlag {
 		case tar.TypeSymlink:
-			fileReference, err = l.Tree.AddSymLink(file.Path(m.Path), file.Path(m.Linkname))
+			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
 				return err
 			}
 		case tar.TypeLink:
-			fileReference, err = l.Tree.AddHardLink(file.Path(m.Path), file.Path(m.Linkname))
+			fileReference, err = l.Tree.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
 				return err
 			}
 		case tar.TypeDir:
-			fileReference, err = l.Tree.AddDir(file.Path(m.Path))
+			fileReference, err = l.Tree.AddDir(file.Path(metadata.Path))
 			if err != nil {
 				return err
 			}
 		default:
-			fileReference, err = l.Tree.AddFile(file.Path(m.Path))
+			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
 			if err != nil {
 				return err
 			}
 		}
 		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during tar iteration", m.Path, m.Linkname)
+			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.Linkname)
 		}
 
-		l.Metadata.Size += m.Size
-		l.fileCatalog.Add(*fileReference, m, l)
+		l.Metadata.Size += metadata.Size
+		l.fileCatalog.Add(*fileReference, metadata, l, index.Open)
 
 		monitor.N++
 		return nil

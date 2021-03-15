@@ -119,8 +119,12 @@ jobs:
           header: benchmark
           message: |
             ### Benchmark Test Results
-            <details><summary>Benchmark results from the latest changes vs base branch</summary>
+
+            <details>
+              <summary>Benchmark results from the latest changes vs base branch</summary>
+
             ```
             ${{ steps.benchmark.outputs.result }}
             ```
+
             </details>
