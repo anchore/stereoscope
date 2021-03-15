@@ -1,7 +1,7 @@
 TEMPDIR = ./.tmp
-RESULTSDIR = $(TEMPDIR)/results
-COVER_REPORT = $(RESULTSDIR)/cover.report
-COVER_TOTAL = $(RESULTSDIR)/cover.total
+RESULTSDIR = test/results
+COVER_REPORT = $(RESULTSDIR)/unit-coverage-details.txt
+COVER_TOTAL = $(RESULTSDIR)/unit-coverage-summary.txt
 LINTCMD = $(TEMPDIR)/golangci-lint run --tests=false --config .golangci.yaml
 BOLD := $(shell tput -T linux bold)
 PURPLE := $(shell tput -T linux setaf 5)
@@ -14,8 +14,16 @@ SUCCESS := $(BOLD)$(GREEN)
 # the quality gate lower threshold for unit test total % coverage (by function statements)
 COVERAGE_THRESHOLD := 45
 
+ifeq "$(strip $(VERSION))" ""
+    override VERSION = $(shell git describe --always --tags --dirty)
+endif
+
 ifndef TEMPDIR
     $(error TEMPDIR is not set)
+endif
+
+ifndef REF_NAME
+	REF_NAME = $(VERSION)
 endif
 
 define title
@@ -23,11 +31,11 @@ define title
 endef
 
 .PHONY: all
-all: static-analysis test ## Run all checks (linting, unit tests, integration tests, and dependencies license checks)
+all: static-analysis test ## Run all checks (linting, all tests, and dependencies license checks)
 	@printf '$(SUCCESS)All checks pass!$(RESET)\n'
 
 .PHONY: test
-test: unit integration ## Run all tests (currently unit & integration)
+test: unit integration benchmark ## Run all levels of test
 
 .PHONY: help
 help:
@@ -37,8 +45,11 @@ help:
 ci-bootstrap: bootstrap
 	sudo apt install -y bc
 
+$(RESULTSDIR):
+	mkdir -p $(RESULTSDIR)
+
 .PHONY: boostrap
-bootstrap: ## Download and install all project dependencies (+ prep tooling in the ./tmp dir)
+bootstrap: $(RESULTSDIR) ## Download and install all project dependencies (+ prep tooling in the ./tmp dir)
 	$(call title,Downloading dependencies)
 	@pwd
 	# prep temp dirs
@@ -47,6 +58,7 @@ bootstrap: ## Download and install all project dependencies (+ prep tooling in t
 	# install go dependencies
 	go mod download
 	# install utilities
+	[ -f "$(TEMPDIR)/benchstat" ] || GO111MODULE=off GOBIN=$(shell realpath $(TEMPDIR)) go get -u golang.org/x/perf/cmd/benchstat
 	[ -f "$(TEMPDIR)/golangci" ] || curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(TEMPDIR)/ v1.26.0
 	[ -f "$(TEMPDIR)/bouncer" ] || curl -sSfL https://raw.githubusercontent.com/wagoodman/go-bouncer/master/bouncer.sh | sh -s -- -b $(TEMPDIR)/ v0.2.0
 
@@ -66,39 +78,42 @@ lint-fix: ## Auto-format all source code + run golangci lint fixers
 	gofmt -w -s .
 	$(LINTCMD) --fix
 
+.PHONY: check-licenses
+check-licenses:
+	$(call title,Validating licenses for go dependencies)
+	$(TEMPDIR)/bouncer check
+
 .PHONY: unit
-unit: ## Run unit tests (with coverage)
+unit: $(RESULTSDIR) ## Run unit tests (with coverage)
 	$(call title,Running unit tests)
 	go test --race -coverprofile $(COVER_REPORT) $(shell go list ./... | grep -v anchore/stereoscope/integration)
 	@go tool cover -func $(COVER_REPORT) | grep total |  awk '{print substr($$3, 1, length($$3)-1)}' > $(COVER_TOTAL)
 	@echo "Coverage: $$(cat $(COVER_TOTAL))"
 	@if [ $$(echo "$$(cat $(COVER_TOTAL)) >= $(COVERAGE_THRESHOLD)" | bc -l) -ne 1 ]; then echo "$(RED)$(BOLD)Failed coverage quality gate (> $(COVERAGE_THRESHOLD)%)$(RESET)" && false; fi
 
+.PHONY: benchmark
+benchmark: $(RESULTSDIR) ## Run benchmark tests and compare against the baseline (if available)
+	$(call title,Running benchmark tests)
+	go test -p 1 -run=^Benchmark -bench=. -count=5 -benchmem ./... | tee $(RESULTSDIR)/benchmark-$(REF_NAME).txt
+	(test -s $(RESULTSDIR)/benchmark-main.txt && \
+		$(TEMPDIR)/benchstat $(RESULTSDIR)/benchmark-main.txt $(RESULTSDIR)/benchmark-$(REF_NAME).txt || \
+		$(TEMPDIR)/benchstat $(RESULTSDIR)/benchmark-$(REF_NAME).txt) \
+			| tee $(RESULTSDIR)/benchstat.txt
+
+.PHONY: show-benchstat
+show-benchstat:
+	@cat $(RESULTSDIR)/benchstat.txt
+
 # note: this is used by CI to determine if the integration test fixture cache (docker image tars) should be busted
 .PHONY: integration-fingerprint
 integration-fingerprint:
-	find integration/test-fixtures/image-* -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee integration/test-fixtures/cache.fingerprint
+	find test/integration/test-fixtures/image-* -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee test/integration/test-fixtures/cache.fingerprint
 
 .PHONY: integration
 integration: ## Run integration tests
 	$(call title,Running integration tests)
-	go test ./integration
+	go test ./test/integration
 
 .PHONY: clear-test-cache
 clear-test-cache: ## Delete all test cache (built docker image tars)
 	find . -type f -wholename "**/test-fixtures/cache/*.tar" -delete
-
-.PHONY: check-pipeline
-check-pipeline: ## Run local CircleCI pipeline locally (sanity check)
-	$(call title,Check pipeline)
-	# note: this is meant for local development & testing of the pipeline, NOT to be run in CI
-	mkdir -p $(TEMPDIR)
-	circleci config process .circleci/config.yml > .tmp/circleci.yml
-	circleci local execute -c .tmp/circleci.yml --job "Static Analysis"
-	circleci local execute -c .tmp/circleci.yml --job "Unit & Integration Tests (go-latest)"
-	@printf '$(SUCCESS)Pipeline checks pass!$(RESET)\n'
-
-.PHONY: check-licenses
-check-licenses:
-	$(call title,Validating licenses for go dependencies)
-	$(TEMPDIR)/bouncer check

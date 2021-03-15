@@ -45,8 +45,7 @@ func TestImageSymlinks(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			i, cleanup := imagetest.GetFixtureImage(t, c.source, "image-symlinks")
-			t.Cleanup(cleanup)
+			i := imagetest.GetFixtureImage(t, c.source, "image-symlinks")
 			assertImageSymlinkLinkResolution(t, i)
 		})
 	}

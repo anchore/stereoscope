@@ -3,6 +3,7 @@ package integration
 import (
 	"fmt"
 	"github.com/anchore/stereoscope/pkg/filetree"
+	"io"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -56,8 +57,7 @@ func TestSimpleImage(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			i, cleanup := imagetest.GetFixtureImage(t, c.source, "image-simple")
-			t.Cleanup(cleanup)
+			i := imagetest.GetFixtureImage(t, c.source, "image-simple")
 
 			assertImageSimpleMetadata(t, i, c)
 			assertImageSimpleTrees(t, i)
@@ -73,6 +73,7 @@ func TestSimpleImage(t *testing.T) {
 }
 
 func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues testCase) {
+	t.Helper()
 	t.Log("Asserting metadata...")
 	if i.Metadata.Size != 65 {
 		t.Errorf("unexpected image size: %d", i.Metadata.Size)
@@ -81,7 +82,7 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 		t.Errorf("unexpected image media type: %+v", i.Metadata.MediaType)
 	}
 	if len(i.Metadata.Tags) != expectedValues.tagCount {
-		t.Errorf("unexpected number of tags: %d : %+v", len(i.Metadata.Tags), i.Metadata.Tags)
+		t.Errorf("unexpected number of tags: %d != %d : %+v", len(i.Metadata.Tags), expectedValues.tagCount, i.Metadata.Tags)
 	} else if expectedValues.tagCount > 0 {
 		if !strings.HasPrefix(i.Metadata.Tags[0].String(), fmt.Sprintf("%s-image-simple:", imagetest.ImagePrefix)) {
 			t.Errorf("unexpected image tag: %+v", i.Metadata.Tags)
@@ -189,15 +190,6 @@ func assertImageSimpleTrees(t *testing.T, i *image.Image) {
 
 func assertImageSimpleContents(t *testing.T, i *image.Image) {
 	t.Log("Asserting contents...")
-	actualContents, err := i.MultipleFileContentsFromSquash(
-		"/somefile-1.txt",
-		"/somefile-2.txt",
-		"/really/nested/file-3.txt",
-	)
-
-	if err != nil {
-		t.Fatal("unable to fetch multiple contents", err)
-	}
 
 	expectedContents := map[string]string{
 		"/somefile-1.txt":           "this file has contents",
@@ -205,21 +197,30 @@ func assertImageSimpleContents(t *testing.T, i *image.Image) {
 		"/really/nested/file-3.txt": "another file!\nwith lines...",
 	}
 
+	actualContents := make(map[string]io.Reader)
+	for path := range expectedContents {
+		reader, err := i.FileContentsFromSquash(file.Path(path))
+		if err != nil {
+			t.Fatal("unable to fetch multiple contents", err)
+		}
+		actualContents[path] = reader
+	}
+
 	if len(expectedContents) != len(actualContents) {
 		t.Fatalf("mismatched number of contents: %d!=%d", len(expectedContents), len(actualContents))
 	}
 
-	for fileRef, actual := range actualContents {
-		expected, ok := expectedContents[string(fileRef.RealPath)]
+	for path, actual := range actualContents {
+		expected, ok := expectedContents[path]
 		if !ok {
-			t.Errorf("extra path found: %+v", fileRef.RealPath)
+			t.Errorf("extra path found: %+v", path)
 		}
 		b, err := ioutil.ReadAll(actual)
 		if err != nil {
-			t.Errorf("failed to read %+v : %+v", fileRef, err)
+			t.Errorf("failed to read %+v : %+v", path, err)
 		}
 		if expected != string(b) {
-			t.Errorf("mismatched contents (%s)", fileRef.RealPath)
+			t.Errorf("mismatched contents (%s)", path)
 		}
 	}
 }

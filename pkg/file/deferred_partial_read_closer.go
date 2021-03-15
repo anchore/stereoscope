@@ -47,8 +47,9 @@ func (d *deferredPartialReadCloser) Read(b []byte) (int, error) {
 	}
 	n, err := d.reader.Read(b)
 	if err != nil && errors.Is(err, io.EOF) {
-		closeErr := d.file.Close()
-		if closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+		// we've reached the end of the file, force a release of the file descriptor. If the file has already been
+		// closed, ignore the error.
+		if closeErr := d.file.Close(); !errors.Is(closeErr, os.ErrClosed) {
 			err = closeErr
 		}
 	}
@@ -63,6 +64,7 @@ func (d *deferredPartialReadCloser) Close() error {
 
 	err := d.file.Close()
 	if err != nil && errors.Is(err, os.ErrClosed) {
+		// ignore the fact that this file has already been closed
 		err = nil
 	}
 	d.file = nil
