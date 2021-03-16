@@ -2,6 +2,7 @@ package integration
 
 import (
 	"fmt"
+	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"io"
 	"io/ioutil"
@@ -14,6 +15,42 @@ import (
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
+var bi *image.Image
+var by []byte
+
+var simpleImageTestCases = []testCase{
+	{
+		name:           "FromTarball",
+		source:         "docker-archive",
+		imageMediaType: v1Types.DockerManifestSchema2,
+		layerMediaType: v1Types.DockerLayer,
+		tagCount:       1,
+	},
+	{
+		name:           "FromDocker",
+		source:         "docker",
+		imageMediaType: v1Types.DockerManifestSchema2,
+		layerMediaType: v1Types.DockerLayer,
+		// name:hash
+		// name:latest
+		tagCount: 2,
+	},
+	{
+		name:           "FromOciTarball",
+		source:         "oci-archive",
+		imageMediaType: v1Types.OCIManifestSchema1,
+		layerMediaType: v1Types.OCILayer,
+		tagCount:       0,
+	},
+	{
+		name:           "FromOciDirectory",
+		source:         "oci-dir",
+		imageMediaType: v1Types.OCIManifestSchema1,
+		layerMediaType: v1Types.OCILayer,
+		tagCount:       0,
+	},
+}
+
 type testCase struct {
 	name           string
 	source         string
@@ -23,39 +60,7 @@ type testCase struct {
 }
 
 func TestSimpleImage(t *testing.T) {
-	cases := []testCase{
-		{
-			name:           "FromTarball",
-			source:         "docker-archive",
-			imageMediaType: v1Types.DockerManifestSchema2,
-			layerMediaType: v1Types.DockerLayer,
-			tagCount:       1,
-		},
-		{
-			name:           "FromDocker",
-			source:         "docker",
-			imageMediaType: v1Types.DockerManifestSchema2,
-			layerMediaType: v1Types.DockerLayer,
-			// name:hash
-			// name:latest
-			tagCount: 2,
-		},
-		{
-			name:           "FromOciTarball",
-			source:         "oci-archive",
-			imageMediaType: v1Types.OCIManifestSchema1,
-			layerMediaType: v1Types.OCILayer,
-			tagCount:       0,
-		},
-		{
-			name:           "FromOciDirectory",
-			source:         "oci-dir",
-			imageMediaType: v1Types.OCIManifestSchema1,
-			layerMediaType: v1Types.OCILayer,
-			tagCount:       0,
-		},
-	}
-	for _, c := range cases {
+	for _, c := range simpleImageTestCases {
 		t.Run(c.name, func(t *testing.T) {
 			i := imagetest.GetFixtureImage(t, c.source, "image-simple")
 
@@ -66,10 +71,47 @@ func TestSimpleImage(t *testing.T) {
 		})
 	}
 
-	if len(cases) < len(image.AllSources) {
+	if len(simpleImageTestCases) < len(image.AllSources) {
 		t.Fatalf("probably missed a source during testing, double check that all image.sources are covered")
 	}
 
+}
+
+func BenchmarkSimpleImage_GetImage(b *testing.B) {
+	var err error
+	for _, c := range simpleImageTestCases {
+		request := imagetest.PrepareFixtureImage(b, c.source, "image-simple")
+		b.Cleanup(stereoscope.Cleanup)
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				bi, err = stereoscope.GetImage(request)
+				if err != nil {
+					b.Fatal("could not get fixture image:", err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
+	for _, c := range simpleImageTestCases {
+		img := imagetest.GetFixtureImage(b, c.source, "image-simple")
+		paths := img.SquashedTree().AllFiles()
+		if len(paths) == 0 {
+			b.Fatalf("expected paths but found none")
+		}
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for _, ref := range paths {
+					f, err := img.FileCatalog.Get(ref)
+					if err != nil {
+						b.Fatalf("unable to read: %+v", err)
+					}
+					by, err = ioutil.ReadAll(f.Contents())
+				}
+			}
+		})
+	}
 }
 
 func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues testCase) {

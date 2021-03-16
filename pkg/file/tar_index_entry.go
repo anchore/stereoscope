@@ -6,10 +6,10 @@ import (
 )
 
 type TarIndexEntry struct {
-	path            string
-	sequence        int64
-	header          tar.Header
-	payloadLocation int64
+	path         string
+	sequence     int64
+	header       tar.Header
+	seekPosition int64
 }
 
 func (t *TarIndexEntry) ToTarFileEntry() TarFileEntry {
@@ -21,5 +21,5 @@ func (t *TarIndexEntry) ToTarFileEntry() TarFileEntry {
 }
 
 func (t *TarIndexEntry) Open() io.ReadCloser {
-	return newDeferredPartialReadCloser(t.path, t.payloadLocation, t.header.Size)
+	return newLazyBoundedReadCloser(t.path, t.seekPosition, t.header.Size)
 }

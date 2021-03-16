@@ -28,7 +28,7 @@ type TarFileEntry struct {
 	Reader   io.Reader
 }
 
-// TarFileVisitor is a visitor function meant to be used in conjunction with the TarIterator.
+// TarFileVisitor is a visitor function meant to be used in conjunction with the IterateTar.
 type TarFileVisitor func(TarFileEntry) error
 
 // ErrFileNotFound returned from ReaderFromTar if a file is not found in the given archive.
@@ -40,10 +40,10 @@ func (e *ErrFileNotFound) Error() string {
 	return fmt.Sprintf("file not found (path=%s)", e.Path)
 }
 
-// TarIterator is a function that reads across a tar and invokes a visitor function for each entry discovered. The iterator
+// IterateTar is a function that reads across a tar and invokes a visitor function for each entry discovered. The iterator
 // stops when there are no more entries to read, if there is an error in the underlying reader or visitor function,
 // or if the visitor function returns a ErrTarStopIteration sentinel error.
-func TarIterator(reader io.Reader, visitor TarFileVisitor) error {
+func IterateTar(reader io.Reader, visitor TarFileVisitor) error {
 	tarReader := tar.NewReader(reader)
 	var sequence int64 = -1
 	for {
@@ -88,7 +88,7 @@ func ReaderFromTar(reader io.ReadCloser, tarPath string) (io.ReadCloser, error) 
 		}
 		return nil
 	}
-	if err := TarIterator(reader, visitor); err != nil {
+	if err := IterateTar(reader, visitor); err != nil {
 		return nil, err
 	}
 
@@ -110,7 +110,7 @@ func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
 		}
 		return nil
 	}
-	if err := TarIterator(reader, visitor); err != nil {
+	if err := IterateTar(reader, visitor); err != nil {
 		return Metadata{}, err
 	}
 	if metadata == nil {
@@ -154,5 +154,5 @@ func UntarToDirectory(reader io.Reader, dst string) error {
 		return nil
 	}
 
-	return TarIterator(reader, visitor)
+	return IterateTar(reader, visitor)
 }

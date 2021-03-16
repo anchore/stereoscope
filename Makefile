@@ -94,7 +94,7 @@ unit: $(RESULTSDIR) ## Run unit tests (with coverage)
 .PHONY: benchmark
 benchmark: $(RESULTSDIR) ## Run benchmark tests and compare against the baseline (if available)
 	$(call title,Running benchmark tests)
-	go test -p 1 -run=^Benchmark -bench=. -count=5 -benchmem ./... | tee $(RESULTSDIR)/benchmark-$(REF_NAME).txt
+	go test -cpu 2 -p 1 -run=^Benchmark -bench=. -count=5 -benchmem ./... | tee $(RESULTSDIR)/benchmark-$(REF_NAME).txt
 	(test -s $(RESULTSDIR)/benchmark-main.txt && \
 		$(TEMPDIR)/benchstat $(RESULTSDIR)/benchmark-main.txt $(RESULTSDIR)/benchmark-$(REF_NAME).txt || \
 		$(TEMPDIR)/benchstat $(RESULTSDIR)/benchmark-$(REF_NAME).txt) \

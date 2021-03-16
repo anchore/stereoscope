@@ -12,10 +12,11 @@ type Metadata struct {
 	Path string
 	// TarHeaderName is the exact entry name as found within a tar header
 	TarHeaderName string
-	TarSequence   int64
-	// Linkname is populated only for hardlinks / symlinks, can be an absolute or relative.
+	// TarSequence is the nth header in the tar file this entry was found
+	TarSequence int64
+	// Linkname is populated only for hardlinks / symlinks, can be an absolute or relative
 	Linkname string
-	// Size of the file in bytes.
+	// Size of the file in bytes
 	Size    int64
 	UserID  int
 	GroupID int

@@ -18,43 +18,41 @@ func NewTarIndex(tarFilePath string, onIndex ...TarIndexVisitor) (*TarIndex, err
 	t := &TarIndex{
 		indexByName: make(map[string][]TarIndexEntry),
 	}
-	fh, err := os.Open(tarFilePath)
+	tarFileHandle, err := os.Open(tarFilePath)
 	if err != nil {
 		return nil, err
 	}
-	defer fh.Close()
-	return t, t.indexEntries(fh, onIndex...)
-}
+	defer tarFileHandle.Close()
 
-// indexEntries records all tar header locations indexed by header names.
-func (t *TarIndex) indexEntries(file *os.File, onIndex ...TarIndexVisitor) error {
 	visitor := func(entry TarFileEntry) error {
-		payloadLocation, err := file.Seek(0, io.SeekCurrent)
+		// keep track of the current location (just after reading the tar header) as this is the file content for the
+		// current entry being processed.
+		entrySeekPosition, err := tarFileHandle.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return fmt.Errorf("unable to read current position in tar: %v", err)
 		}
 
-		// keep track of the header position for this entry; the current file position is where the entry
+		// keep track of the header position for this entry; the current tarFileHandle position is where the entry
 		// body payload starts (after the header has been read).
-		index := TarIndexEntry{
-			path:            file.Name(),
-			sequence:        entry.Sequence,
-			header:          entry.Header,
-			payloadLocation: payloadLocation,
+		indexEntry := TarIndexEntry{
+			path:         tarFileHandle.Name(),
+			sequence:     entry.Sequence,
+			header:       entry.Header,
+			seekPosition: entrySeekPosition,
 		}
-		t.indexByName[entry.Header.Name] = append(t.indexByName[entry.Header.Name], index)
+		t.indexByName[entry.Header.Name] = append(t.indexByName[entry.Header.Name], indexEntry)
 
 		// run though the visitors
 		for _, visitor := range onIndex {
-			if err := visitor(index); err != nil {
-				return fmt.Errorf("failed visitor on tar index: %w", err)
+			if err := visitor(indexEntry); err != nil {
+				return fmt.Errorf("failed visitor on tar indexEntry: %w", err)
 			}
 		}
 
 		return nil
 	}
 
-	return TarIterator(file, visitor)
+	return t, IterateTar(tarFileHandle, visitor)
 }
 
 // EntriesByName fetches all TarFileEntries for the given tar header name.

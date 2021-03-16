@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestDeferredPartialReadCloser(t *testing.T) {
+func TestDeferredReadCloser(t *testing.T) {
 	p := "test-fixtures/a-file.txt"
 	fh, err := os.Open(p)
 	if err != nil {
@@ -18,7 +18,7 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dReader := newDeferredPartialReadCloser(p, 0, int64(len(expectedContents)))
+	dReader := NewLazyReadCloser(p)
 
 	if dReader.file != nil {
 		t.Fatalf("should not have a file, but we do somehow")
@@ -44,29 +44,4 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 	if dReader.file != nil {
 		t.Fatalf("should not have a file, but we do somehow")
 	}
-}
-
-func TestDeferredPartialReadCloser_PartialRead(t *testing.T) {
-	p := "test-fixtures/a-file.txt"
-	fh, err := os.Open(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	contents, err := ioutil.ReadAll(fh)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var start, size = 10, 7
-	dReader := newDeferredPartialReadCloser(p, int64(start), int64(size))
-
-	actualContents, err := ioutil.ReadAll(dReader)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(contents[start:start+size], actualContents) {
-		t.Fatalf("unexpected contents: %s", string(actualContents))
-	}
-
 }

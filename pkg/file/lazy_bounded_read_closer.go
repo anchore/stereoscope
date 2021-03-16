@@ -6,23 +6,24 @@ import (
 	"os"
 )
 
-var _ io.ReadCloser = (*deferredPartialReadCloser)(nil)
+var _ io.ReadCloser = (*lazyBoundedReadCloser)(nil)
 
-// deferredPartialReadCloser is a "lazy" read closer, allocating a file descriptor for the given path only upon the first Read() call.
+// lazyBoundedReadCloser is a "lazy" read closer, allocating a file descriptor for the given path only upon the first Read() call.
 // Additionally only part of the file is allowed to be read, starting at a given position.
-type deferredPartialReadCloser struct {
+type lazyBoundedReadCloser struct {
 	// path is the path to be opened
 	path string
-	// file is the io.ReadCloser source for the path
-	file   *os.File
+	// file is active file handle for the given path
+	file *os.File
+	// reader is the LimitedReader that wraps the open file
 	reader io.Reader
 	start  int64
 	size   int64
 }
 
 // NewDeferredPartialReadCloser creates a new NewDeferredPartialReadCloser for the given path.
-func newDeferredPartialReadCloser(path string, start, size int64) *deferredPartialReadCloser {
-	return &deferredPartialReadCloser{
+func newLazyBoundedReadCloser(path string, start, size int64) *lazyBoundedReadCloser {
+	return &lazyBoundedReadCloser{
 		path:  path,
 		start: start,
 		size:  size,
@@ -30,7 +31,7 @@ func newDeferredPartialReadCloser(path string, start, size int64) *deferredParti
 }
 
 // Read implements the io.Reader interface for the previously loaded path, opening the file upon the first invocation.
-func (d *deferredPartialReadCloser) Read(b []byte) (int, error) {
+func (d *lazyBoundedReadCloser) Read(b []byte) (int, error) {
 	if d.reader == nil {
 		file, err := os.Open(d.path)
 		if err != nil {
@@ -50,14 +51,14 @@ func (d *deferredPartialReadCloser) Read(b []byte) (int, error) {
 		// we've reached the end of the file, force a release of the file descriptor. If the file has already been
 		// closed, ignore the error.
 		if closeErr := d.file.Close(); !errors.Is(closeErr, os.ErrClosed) {
-			err = closeErr
+			return n, closeErr
 		}
 	}
 	return n, err
 }
 
 // Close implements the io.Closer interface for the previously loaded path / opened file.
-func (d *deferredPartialReadCloser) Close() error {
+func (d *lazyBoundedReadCloser) Close() error {
 	if d.file == nil {
 		return nil
 	}

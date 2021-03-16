@@ -19,7 +19,7 @@ const (
 	ImagePrefix = "stereoscope-fixture"
 )
 
-func GetFixtureImage(t testing.TB, source, name string) *image.Image {
+func PrepareFixtureImage(t testing.TB, source, name string) string {
 	t.Helper()
 
 	sourceObj := image.ParseSourceScheme(source)
@@ -47,7 +47,14 @@ func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 	default:
 		t.Fatalf("could not determine source: %+v", source)
 	}
-	request := fmt.Sprintf("%s:%s", source, location)
+
+	return fmt.Sprintf("%s:%s", source, location)
+}
+
+func GetFixtureImage(t testing.TB, source, name string) *image.Image {
+	t.Helper()
+
+	request := PrepareFixtureImage(t, source, name)
 
 	i, err := stereoscope.GetImage(request)
 	if err != nil {

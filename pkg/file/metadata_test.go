@@ -25,7 +25,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 		return nil
 	}
 
-	if err := TarIterator(tarReader, visitor); err != nil {
+	if err := IterateTar(tarReader, visitor); err != nil {
 		t.Fatalf("unable to iterate through tar: %+v", err)
 	}
 
