@@ -80,6 +80,10 @@ func TestSimpleImage(t *testing.T) {
 func BenchmarkSimpleImage_GetImage(b *testing.B) {
 	var err error
 	for _, c := range simpleImageTestCases {
+		if c.source == "docker" {
+			// skip benchmark testing against the docker daemon
+			continue
+		}
 		request := imagetest.PrepareFixtureImage(b, c.source, "image-simple")
 		b.Cleanup(stereoscope.Cleanup)
 		b.Run(c.name, func(b *testing.B) {
@@ -95,6 +99,11 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 
 func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 	for _, c := range simpleImageTestCases {
+		if c.source == "docker" {
+			// skip benchmark testing against the docker daemon
+			continue
+		}
+
 		img := imagetest.GetFixtureImage(b, c.source, "image-simple")
 		paths := img.SquashedTree().AllFiles()
 		if len(paths) == 0 {
