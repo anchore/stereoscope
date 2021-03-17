@@ -52,8 +52,6 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 }
 
 func GetFixtureImage(t testing.TB, source, name string) *image.Image {
-	t.Helper()
-
 	request := PrepareFixtureImage(t, source, name)
 
 	i, err := stereoscope.GetImage(request)
@@ -66,8 +64,6 @@ func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 }
 
 func GetGoldenFixtureImage(t testing.TB, name string) *image.Image {
-	t.Helper()
-
 	imageName, _ := getFixtureImageInfo(t, name)
 	tarFileName := imageName + testutils.GoldenFileExt
 	tarPath := getFixtureImageTarPath(t, name, testutils.GoldenFileDirPath, tarFileName)
@@ -75,8 +71,6 @@ func GetGoldenFixtureImage(t testing.TB, name string) *image.Image {
 }
 
 func UpdateGoldenFixtureImage(t testing.TB, name string) {
-	t.Helper()
-
 	t.Log(aurora.Reverse(aurora.Red("!!! UPDATING GOLDEN FIXTURE IMAGE !!!")), name)
 
 	imageName, _ := getFixtureImageInfo(t, name)
@@ -109,8 +103,6 @@ func skopeoCopyDockerArchiveToPath(t testing.TB, dockerArchivePath, destination 
 }
 
 func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
-	t.Helper()
-
 	request := fmt.Sprintf("docker-archive:%s", tarPath)
 
 	i, err := stereoscope.GetImage(request)
@@ -122,20 +114,18 @@ func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
 }
 
 func getFixtureImageInfo(t testing.TB, name string) (string, string) {
-	t.Helper()
 	version := fixtureVersion(t, name)
 	imageName := fmt.Sprintf("%s-%s", ImagePrefix, name)
 	return imageName, version
 }
 
 func LoadFixtureImageIntoDocker(t testing.TB, name string) string {
-	t.Helper()
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
 
-	if !hasImage(t, fullImageName) {
+	if !hasImage(fullImageName) {
 		contextPath := path.Join(testutils.TestFixturesDir, name)
-		err := buildImage(t, contextPath, imageName, imageVersion)
+		err := buildImage(contextPath, imageName, imageVersion)
 		if err != nil {
 			t.Fatal("could not build fixture image:", err)
 		}
@@ -145,7 +135,6 @@ func LoadFixtureImageIntoDocker(t testing.TB, name string) string {
 }
 
 func getFixtureImageTarPath(t testing.TB, fixtureName, tarStoreDir, tarFileName string) string {
-	t.Helper()
 	imageName, imageVersion := getFixtureImageInfo(t, fixtureName)
 	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
 	tarPath := path.Join(tarStoreDir, tarFileName)
@@ -160,9 +149,9 @@ func getFixtureImageTarPath(t testing.TB, fixtureName, tarStoreDir, tarFileName 
 
 	// if the image tar does not exist, make it
 	if !fileOrDirExists(t, tarPath) {
-		if !hasImage(t, fullImageName) {
+		if !hasImage(fullImageName) {
 			contextPath := path.Join(testutils.TestFixturesDir, fixtureName)
-			err := buildImage(t, contextPath, imageName, imageVersion)
+			err := buildImage(contextPath, imageName, imageVersion)
 			if err != nil {
 				t.Fatal("could not build fixture image:", err)
 			}
@@ -178,32 +167,25 @@ func getFixtureImageTarPath(t testing.TB, fixtureName, tarStoreDir, tarFileName 
 }
 
 func GetFixtureImageTarPath(t testing.TB, name string) string {
-	t.Helper()
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	tarFileName := fmt.Sprintf("%s-%s.tar", imageName, imageVersion)
 	return getFixtureImageTarPath(t, name, CacheDir, tarFileName)
 }
 
 func fixtureVersion(t testing.TB, name string) string {
-	t.Helper()
 	contextPath := path.Join(testutils.TestFixturesDir, name)
-	dockerfileHash, err := dirHash(t, contextPath)
-	if err != nil {
-		panic(err)
-	}
+	dockerfileHash := dirHash(t, contextPath)
 	return dockerfileHash
 }
 
-func hasImage(t testing.TB, imageName string) bool {
-	t.Helper()
+func hasImage(imageName string) bool {
 	cmd := exec.Command("docker", "image", "inspect", imageName)
 	cmd.Env = os.Environ()
 	err := cmd.Run()
 	return err == nil
 }
 
-func buildImage(t testing.TB, contextDir, name, tag string) error {
-	t.Helper()
+func buildImage(contextDir, name, tag string) error {
 	fullTag := fmt.Sprintf("%s:%s", name, tag)
 	latestTag := fmt.Sprintf("%s:latest", name)
 	cmd := exec.Command("docker", "build", "-t", fullTag, "-t", latestTag, ".")
@@ -216,8 +198,6 @@ func buildImage(t testing.TB, contextDir, name, tag string) error {
 }
 
 func saveImage(t testing.TB, image, path string) error {
-	t.Helper()
-
 	outfile, err := os.Create(path)
 	if err != nil {
 		t.Fatal("unable to create file for docker image tar:", err)
@@ -225,7 +205,7 @@ func saveImage(t testing.TB, image, path string) error {
 	defer func() {
 		err := outfile.Close()
 		if err != nil {
-			panic(err)
+			t.Fatalf("unable to close file path=%q : %+v", path, err)
 		}
 	}()
 

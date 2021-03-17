@@ -13,7 +13,7 @@ var _ io.ReadCloser = (*lazyBoundedReadCloser)(nil)
 type lazyBoundedReadCloser struct {
 	// path is the path to be opened
 	path string
-	// file is active file handle for the given path
+	// file is the active file handle for the given path
 	file *os.File
 	// reader is the LimitedReader that wraps the open file
 	reader io.Reader
