@@ -8,8 +8,7 @@ import (
 )
 
 func TestImage_SquashedTree_OpaqueDirectoryExistsInFileCatalog(t *testing.T) {
-	image, cleanup := imagetest.GetFixtureImage(t, "docker-archive", "image-opaque-directory")
-	defer cleanup()
+	image := imagetest.GetFixtureImage(t, "docker-archive", "image-opaque-directory")
 
 	tree := image.SquashedTree()
 	path := "/usr/lib/jvm"

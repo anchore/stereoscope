@@ -19,7 +19,7 @@ const (
 	ImagePrefix = "stereoscope-fixture"
 )
 
-func GetFixtureImage(t *testing.T, source, name string) (*image.Image, func()) {
+func PrepareFixtureImage(t testing.TB, source, name string) string {
 	t.Helper()
 
 	sourceObj := image.ParseSourceScheme(source)
@@ -47,28 +47,30 @@ func GetFixtureImage(t *testing.T, source, name string) (*image.Image, func()) {
 	default:
 		t.Fatalf("could not determine source: %+v", source)
 	}
-	request := fmt.Sprintf("%s:%s", source, location)
+
+	return fmt.Sprintf("%s:%s", source, location)
+}
+
+func GetFixtureImage(t testing.TB, source, name string) *image.Image {
+	request := PrepareFixtureImage(t, source, name)
 
 	i, err := stereoscope.GetImage(request)
 	if err != nil {
 		t.Fatal("could not get tar image:", err)
 	}
+	t.Cleanup(stereoscope.Cleanup)
 
-	return i, stereoscope.Cleanup
+	return i
 }
 
-func GetGoldenFixtureImage(t *testing.T, name string) *image.Image {
-	t.Helper()
-
+func GetGoldenFixtureImage(t testing.TB, name string) *image.Image {
 	imageName, _ := getFixtureImageInfo(t, name)
 	tarFileName := imageName + testutils.GoldenFileExt
 	tarPath := getFixtureImageTarPath(t, name, testutils.GoldenFileDirPath, tarFileName)
 	return getFixtureImageFromTar(t, tarPath)
 }
 
-func UpdateGoldenFixtureImage(t *testing.T, name string) {
-	t.Helper()
-
+func UpdateGoldenFixtureImage(t testing.TB, name string) {
 	t.Log(aurora.Reverse(aurora.Red("!!! UPDATING GOLDEN FIXTURE IMAGE !!!")), name)
 
 	imageName, _ := getFixtureImageInfo(t, name)
@@ -82,7 +84,7 @@ func isSkopeoAvailable() bool {
 	return err == nil
 }
 
-func skopeoCopyDockerArchiveToPath(t *testing.T, dockerArchivePath, destination string) {
+func skopeoCopyDockerArchiveToPath(t testing.TB, dockerArchivePath, destination string) {
 	if !isSkopeoAvailable() {
 		t.Fatalf("cannot find skopeo executable")
 	}
@@ -100,9 +102,7 @@ func skopeoCopyDockerArchiveToPath(t *testing.T, dockerArchivePath, destination 
 	}
 }
 
-func getFixtureImageFromTar(t *testing.T, tarPath string) *image.Image {
-	t.Helper()
-
+func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
 	request := fmt.Sprintf("docker-archive:%s", tarPath)
 
 	i, err := stereoscope.GetImage(request)
@@ -113,21 +113,19 @@ func getFixtureImageFromTar(t *testing.T, tarPath string) *image.Image {
 	return i
 }
 
-func getFixtureImageInfo(t *testing.T, name string) (string, string) {
-	t.Helper()
+func getFixtureImageInfo(t testing.TB, name string) (string, string) {
 	version := fixtureVersion(t, name)
 	imageName := fmt.Sprintf("%s-%s", ImagePrefix, name)
 	return imageName, version
 }
 
-func LoadFixtureImageIntoDocker(t *testing.T, name string) string {
-	t.Helper()
+func LoadFixtureImageIntoDocker(t testing.TB, name string) string {
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
 
-	if !hasImage(t, fullImageName) {
+	if !hasImage(fullImageName) {
 		contextPath := path.Join(testutils.TestFixturesDir, name)
-		err := buildImage(t, contextPath, imageName, imageVersion)
+		err := buildImage(contextPath, imageName, imageVersion)
 		if err != nil {
 			t.Fatal("could not build fixture image:", err)
 		}
@@ -136,8 +134,7 @@ func LoadFixtureImageIntoDocker(t *testing.T, name string) string {
 	return fullImageName
 }
 
-func getFixtureImageTarPath(t *testing.T, fixtureName, tarStoreDir, tarFileName string) string {
-	t.Helper()
+func getFixtureImageTarPath(t testing.TB, fixtureName, tarStoreDir, tarFileName string) string {
 	imageName, imageVersion := getFixtureImageInfo(t, fixtureName)
 	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
 	tarPath := path.Join(tarStoreDir, tarFileName)
@@ -152,9 +149,9 @@ func getFixtureImageTarPath(t *testing.T, fixtureName, tarStoreDir, tarFileName 
 
 	// if the image tar does not exist, make it
 	if !fileOrDirExists(t, tarPath) {
-		if !hasImage(t, fullImageName) {
+		if !hasImage(fullImageName) {
 			contextPath := path.Join(testutils.TestFixturesDir, fixtureName)
-			err := buildImage(t, contextPath, imageName, imageVersion)
+			err := buildImage(contextPath, imageName, imageVersion)
 			if err != nil {
 				t.Fatal("could not build fixture image:", err)
 			}
@@ -169,33 +166,26 @@ func getFixtureImageTarPath(t *testing.T, fixtureName, tarStoreDir, tarFileName 
 	return tarPath
 }
 
-func GetFixtureImageTarPath(t *testing.T, name string) string {
-	t.Helper()
+func GetFixtureImageTarPath(t testing.TB, name string) string {
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	tarFileName := fmt.Sprintf("%s-%s.tar", imageName, imageVersion)
 	return getFixtureImageTarPath(t, name, CacheDir, tarFileName)
 }
 
-func fixtureVersion(t *testing.T, name string) string {
-	t.Helper()
+func fixtureVersion(t testing.TB, name string) string {
 	contextPath := path.Join(testutils.TestFixturesDir, name)
-	dockerfileHash, err := dirHash(t, contextPath)
-	if err != nil {
-		panic(err)
-	}
+	dockerfileHash := dirHash(t, contextPath)
 	return dockerfileHash
 }
 
-func hasImage(t *testing.T, imageName string) bool {
-	t.Helper()
+func hasImage(imageName string) bool {
 	cmd := exec.Command("docker", "image", "inspect", imageName)
 	cmd.Env = os.Environ()
 	err := cmd.Run()
 	return err == nil
 }
 
-func buildImage(t *testing.T, contextDir, name, tag string) error {
-	t.Helper()
+func buildImage(contextDir, name, tag string) error {
 	fullTag := fmt.Sprintf("%s:%s", name, tag)
 	latestTag := fmt.Sprintf("%s:latest", name)
 	cmd := exec.Command("docker", "build", "-t", fullTag, "-t", latestTag, ".")
@@ -207,9 +197,7 @@ func buildImage(t *testing.T, contextDir, name, tag string) error {
 	return cmd.Run()
 }
 
-func saveImage(t *testing.T, image, path string) error {
-	t.Helper()
-
+func saveImage(t testing.TB, image, path string) error {
 	outfile, err := os.Create(path)
 	if err != nil {
 		t.Fatal("unable to create file for docker image tar:", err)
@@ -217,7 +205,7 @@ func saveImage(t *testing.T, image, path string) error {
 	defer func() {
 		err := outfile.Close()
 		if err != nil {
-			panic(err)
+			t.Fatalf("unable to close file path=%q : %+v", path, err)
 		}
 	}()
 

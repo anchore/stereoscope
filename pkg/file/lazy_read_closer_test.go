@@ -18,7 +18,7 @@ func TestDeferredReadCloser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dReader := NewDeferredReadCloser(p)
+	dReader := NewLazyReadCloser(p)
 
 	if dReader.file != nil {
 		t.Fatalf("should not have a file, but we do somehow")

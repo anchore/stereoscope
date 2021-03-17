@@ -21,8 +21,8 @@ import (
 type Layer struct {
 	// layer is the raw layer metadata and content provider from the GCR lib
 	layer v1.Layer
-	// content provides an io.ReadCloser for the underlying layer tar (either directly from the GCR lib or a cache dir)
-	content file.OpenerFn
+	// indexedContent provides index access to the cached and unzipped layer tar
+	indexedContent *file.TarIndex
 	// Metadata contains select layer attributes
 	Metadata LayerMetadata
 	// Tree is a filetree that represents the structure of the layer tar contents ("diff tree")
@@ -41,73 +41,87 @@ func NewLayer(layer v1.Layer) *Layer {
 	}
 }
 
-func (l *Layer) trackReadProgress(metadata LayerMetadata) *progress.Manual {
-	prog := &progress.Manual{}
+func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string, error) {
+	if uncompressedLayersCacheDir == "" {
+		return "", fmt.Errorf("no cache directory given")
+	}
 
-	bus.Publish(partybus.Event{
-		Type:   event.ReadLayer,
-		Source: metadata,
-		Value:  progress.Monitorable(prog),
-	})
+	tarPath := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest+".tar")
 
-	return prog
-}
+	if _, err := os.Stat(tarPath); !os.IsNotExist(err) {
+		return tarPath, nil
+	}
 
-// readMetadata populates layer metadata from the underlying layer tar.
-func (l *Layer) readMetadata(imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
-	metadata, err := readLayerMetadata(imgMetadata, l.layer, idx)
+	rawReader, err := l.layer.Uncompressed()
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
-		metadata.Index,
-		metadata.Digest,
-		metadata.MediaType)
-
-	l.Metadata = metadata
-	l.Tree = filetree.NewFileTree()
-
-	if uncompressedLayersCacheDir != "" {
-		rawReader, err := l.layer.Uncompressed()
-		if err != nil {
-			return err
-		}
-
-		tarPath := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest+".tar")
-
-		fh, err := os.Create(tarPath)
-		if err != nil {
-			return fmt.Errorf("unable to create layer cache dir=%q : %w", tarPath, err)
-		}
-
-		if _, err := io.Copy(fh, rawReader); err != nil {
-			return fmt.Errorf("unable to populate layer cache dir=%q : %w", tarPath, err)
-		}
-
-		l.content = file.OpenerFromPath{Path: tarPath}.Open
-	} else {
-		l.content = l.layer.Uncompressed
+	fh, err := os.Create(tarPath)
+	if err != nil {
+		return "", fmt.Errorf("unable to create layer cache dir=%q : %w", tarPath, err)
 	}
-	return nil
+
+	if _, err := io.Copy(fh, rawReader); err != nil {
+		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", tarPath, err)
+	}
+
+	return tarPath, nil
 }
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
 func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
-	if err := l.readMetadata(imgMetadata, idx, uncompressedLayersCacheDir); err != nil {
+	var err error
+	l.Tree = filetree.NewFileTree()
+	l.fileCatalog = catalog
+	l.Metadata, err = newLayerMetadata(imgMetadata, l.layer, idx)
+	if err != nil {
 		return err
 	}
 
-	l.fileCatalog = catalog
+	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
+		l.Metadata.Index,
+		l.Metadata.Digest,
+		l.Metadata.MediaType)
 
-	reader, err := l.content()
+	monitor := trackReadProgress(l.Metadata)
+
+	tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
 	if err != nil {
-		return fmt.Errorf("unable to obtail layer=%q tar: %w", l.Metadata.Digest, err)
+		return err
 	}
-	monitor := l.trackReadProgress(l.Metadata)
 
-	for metadata := range file.EnumerateFileMetadataFromTar(reader) {
+	l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor))
+	if err != nil {
+		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
+	}
+
+	monitor.SetCompleted()
+
+	return nil
+}
+
+// FetchContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
+// An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+// This is a convenience function provided by the FileCatalog.
+func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
+	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
+}
+
+// FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
+// An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+// This is a convenience function provided by the FileCatalog.
+func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
+	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
+}
+
+func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
+	return func(index file.TarIndexEntry) error {
+		var err error
+		var entry = index.ToTarFileEntry()
+		metadata := file.NewMetadata(entry.Header, entry.Sequence)
+
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
 		// This is ok, and the FileTree will account for this by automatically adding directories for non-existing
@@ -146,40 +160,21 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		}
 
 		l.Metadata.Size += metadata.Size
-		catalog.Add(*fileReference, metadata, l)
+		l.fileCatalog.Add(*fileReference, metadata, l, index.Open)
 
 		monitor.N++
+		return nil
 	}
-
-	monitor.SetCompleted()
-
-	return nil
 }
 
-// FetchContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
-// An error is returned if there is no file at the given path and layer or the read operation cannot continue.
-// This is a convenience function provided by the FileCatalog.
-func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
-}
+func trackReadProgress(metadata LayerMetadata) *progress.Manual {
+	p := &progress.Manual{}
 
-// MultipleFileContents reads the file contents for all given paths from the underlying layer blob, relative to the layers "diff tree".
-// An error is returned if any one file path does not exist or the read operation cannot continue.
-// This is a convenience function provided by the FileCatalog.
-func (l *Layer) MultipleFileContents(paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
-	return fetchMultipleFileContentsByPath(l.Tree, l.fileCatalog, paths...)
-}
+	bus.Publish(partybus.Event{
+		Type:   event.ReadLayer,
+		Source: metadata,
+		Value:  progress.Monitorable(p),
+	})
 
-// FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
-// An error is returned if there is no file at the given path and layer or the read operation cannot continue.
-// This is a convenience function provided by the FileCatalog.
-func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
-}
-
-// MultipleFileContents reads the file contents for all given paths from the underlying layer blob, relative to the layers squashed file tree.
-// An error is returned if any one file path does not exist or the read operation cannot continue.
-// This is a convenience function provided by the FileCatalog.
-func (l *Layer) MultipleFileContentsFromSquash(paths ...file.Path) (map[file.Reference]io.ReadCloser, error) {
-	return fetchMultipleFileContentsByPath(l.SquashedTree, l.fileCatalog, paths...)
+	return p
 }

@@ -2,7 +2,9 @@ package integration
 
 import (
 	"fmt"
+	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/filetree"
+	"io"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -13,6 +15,42 @@ import (
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
+var bi *image.Image
+var by []byte
+
+var simpleImageTestCases = []testCase{
+	{
+		name:           "FromTarball",
+		source:         "docker-archive",
+		imageMediaType: v1Types.DockerManifestSchema2,
+		layerMediaType: v1Types.DockerLayer,
+		tagCount:       1,
+	},
+	{
+		name:           "FromDocker",
+		source:         "docker",
+		imageMediaType: v1Types.DockerManifestSchema2,
+		layerMediaType: v1Types.DockerLayer,
+		// name:hash
+		// name:latest
+		tagCount: 2,
+	},
+	{
+		name:           "FromOciTarball",
+		source:         "oci-archive",
+		imageMediaType: v1Types.OCIManifestSchema1,
+		layerMediaType: v1Types.OCILayer,
+		tagCount:       0,
+	},
+	{
+		name:           "FromOciDirectory",
+		source:         "oci-dir",
+		imageMediaType: v1Types.OCIManifestSchema1,
+		layerMediaType: v1Types.OCILayer,
+		tagCount:       0,
+	},
+}
+
 type testCase struct {
 	name           string
 	source         string
@@ -22,42 +60,9 @@ type testCase struct {
 }
 
 func TestSimpleImage(t *testing.T) {
-	cases := []testCase{
-		{
-			name:           "FromTarball",
-			source:         "docker-archive",
-			imageMediaType: v1Types.DockerManifestSchema2,
-			layerMediaType: v1Types.DockerLayer,
-			tagCount:       1,
-		},
-		{
-			name:           "FromDocker",
-			source:         "docker",
-			imageMediaType: v1Types.DockerManifestSchema2,
-			layerMediaType: v1Types.DockerLayer,
-			// name:hash
-			// name:latest
-			tagCount: 2,
-		},
-		{
-			name:           "FromOciTarball",
-			source:         "oci-archive",
-			imageMediaType: v1Types.OCIManifestSchema1,
-			layerMediaType: v1Types.OCILayer,
-			tagCount:       0,
-		},
-		{
-			name:           "FromOciDirectory",
-			source:         "oci-dir",
-			imageMediaType: v1Types.OCIManifestSchema1,
-			layerMediaType: v1Types.OCILayer,
-			tagCount:       0,
-		},
-	}
-	for _, c := range cases {
+	for _, c := range simpleImageTestCases {
 		t.Run(c.name, func(t *testing.T) {
-			i, cleanup := imagetest.GetFixtureImage(t, c.source, "image-simple")
-			t.Cleanup(cleanup)
+			i := imagetest.GetFixtureImage(t, c.source, "image-simple")
 
 			assertImageSimpleMetadata(t, i, c)
 			assertImageSimpleTrees(t, i)
@@ -66,13 +71,60 @@ func TestSimpleImage(t *testing.T) {
 		})
 	}
 
-	if len(cases) < len(image.AllSources) {
+	if len(simpleImageTestCases) < len(image.AllSources) {
 		t.Fatalf("probably missed a source during testing, double check that all image.sources are covered")
 	}
 
 }
 
+func BenchmarkSimpleImage_GetImage(b *testing.B) {
+	var err error
+	for _, c := range simpleImageTestCases {
+		if c.source == "docker" {
+			// skip benchmark testing against the docker daemon
+			continue
+		}
+		request := imagetest.PrepareFixtureImage(b, c.source, "image-simple")
+		b.Cleanup(stereoscope.Cleanup)
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				bi, err = stereoscope.GetImage(request)
+				if err != nil {
+					b.Fatal("could not get fixture image:", err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
+	for _, c := range simpleImageTestCases {
+		if c.source == "docker" {
+			// skip benchmark testing against the docker daemon
+			continue
+		}
+
+		img := imagetest.GetFixtureImage(b, c.source, "image-simple")
+		paths := img.SquashedTree().AllFiles()
+		if len(paths) == 0 {
+			b.Fatalf("expected paths but found none")
+		}
+		b.Run(c.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				for _, ref := range paths {
+					f, err := img.FileCatalog.Get(ref)
+					if err != nil {
+						b.Fatalf("unable to read: %+v", err)
+					}
+					by, err = ioutil.ReadAll(f.Contents())
+				}
+			}
+		})
+	}
+}
+
 func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues testCase) {
+	t.Helper()
 	t.Log("Asserting metadata...")
 	if i.Metadata.Size != 65 {
 		t.Errorf("unexpected image size: %d", i.Metadata.Size)
@@ -81,7 +133,7 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 		t.Errorf("unexpected image media type: %+v", i.Metadata.MediaType)
 	}
 	if len(i.Metadata.Tags) != expectedValues.tagCount {
-		t.Errorf("unexpected number of tags: %d : %+v", len(i.Metadata.Tags), i.Metadata.Tags)
+		t.Errorf("unexpected number of tags: %d != %d : %+v", len(i.Metadata.Tags), expectedValues.tagCount, i.Metadata.Tags)
 	} else if expectedValues.tagCount > 0 {
 		if !strings.HasPrefix(i.Metadata.Tags[0].String(), fmt.Sprintf("%s-image-simple:", imagetest.ImagePrefix)) {
 			t.Errorf("unexpected image tag: %+v", i.Metadata.Tags)
@@ -189,15 +241,6 @@ func assertImageSimpleTrees(t *testing.T, i *image.Image) {
 
 func assertImageSimpleContents(t *testing.T, i *image.Image) {
 	t.Log("Asserting contents...")
-	actualContents, err := i.MultipleFileContentsFromSquash(
-		"/somefile-1.txt",
-		"/somefile-2.txt",
-		"/really/nested/file-3.txt",
-	)
-
-	if err != nil {
-		t.Fatal("unable to fetch multiple contents", err)
-	}
 
 	expectedContents := map[string]string{
 		"/somefile-1.txt":           "this file has contents",
@@ -205,21 +248,30 @@ func assertImageSimpleContents(t *testing.T, i *image.Image) {
 		"/really/nested/file-3.txt": "another file!\nwith lines...",
 	}
 
+	actualContents := make(map[string]io.Reader)
+	for path := range expectedContents {
+		reader, err := i.FileContentsFromSquash(file.Path(path))
+		if err != nil {
+			t.Fatal("unable to fetch multiple contents", err)
+		}
+		actualContents[path] = reader
+	}
+
 	if len(expectedContents) != len(actualContents) {
 		t.Fatalf("mismatched number of contents: %d!=%d", len(expectedContents), len(actualContents))
 	}
 
-	for fileRef, actual := range actualContents {
-		expected, ok := expectedContents[string(fileRef.RealPath)]
+	for path, actual := range actualContents {
+		expected, ok := expectedContents[path]
 		if !ok {
-			t.Errorf("extra path found: %+v", fileRef.RealPath)
+			t.Errorf("extra path found: %+v", path)
 		}
 		b, err := ioutil.ReadAll(actual)
 		if err != nil {
-			t.Errorf("failed to read %+v : %+v", fileRef, err)
+			t.Errorf("failed to read %+v : %+v", path, err)
 		}
 		if expected != string(b) {
-			t.Errorf("mismatched contents (%s)", fileRef.RealPath)
+			t.Errorf("mismatched contents (%s)", path)
 		}
 	}
 }
