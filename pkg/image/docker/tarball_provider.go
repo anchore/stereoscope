@@ -17,17 +17,19 @@ var ErrMultipleManifests = fmt.Errorf("cannot process multiple docker manifests"
 
 // TarballImageProvider is a image.Provider for a docker image (V2) for an existing tar on disk (the output from a "docker image save ..." command).
 type TarballImageProvider struct {
-	path      string
-	extraTags []string
-	tmpDirGen *file.TempDirGenerator
+	path        string
+	extraTags   []string
+	repoDigests []string
+	tmpDirGen   *file.TempDirGenerator
 }
 
 // NewProviderFromTarball creates a new provider instance for the specific image already at the given path.
-func NewProviderFromTarball(path string, tmpDirGen *file.TempDirGenerator, tags ...string) *TarballImageProvider {
+func NewProviderFromTarball(path string, tmpDirGen *file.TempDirGenerator, tags []string, repoDigests []string) *TarballImageProvider {
 	return &TarballImageProvider{
-		path:      path,
-		extraTags: tags,
-		tmpDirGen: tmpDirGen,
+		path:        path,
+		extraTags:   tags,
+		repoDigests: repoDigests,
+		tmpDirGen:   tmpDirGen,
 	}
 }
 
@@ -88,6 +90,8 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 	if len(tags) > 0 {
 		metadata = append(metadata, image.WithTags(tags.ToSlice()...))
 	}
+
+	metadata = append(metadata, image.WithRepoDigests(p.repoDigests))
 
 	contentTempDir, err := p.tmpDirGen.NewTempDir()
 	if err != nil {

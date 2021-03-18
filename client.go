@@ -28,7 +28,7 @@ func GetImage(userStr string) (*image.Image, error) {
 	switch source {
 	case image.DockerTarballSource:
 		// note: the imgStr is the path on disk to the tar file
-		provider = docker.NewProviderFromTarball(imgStr, &tempDirGenerator)
+		provider = docker.NewProviderFromTarball(imgStr, &tempDirGenerator, nil, nil)
 	case image.DockerDaemonSource:
 		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator)
 	case image.OciDirectorySource:

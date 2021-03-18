@@ -72,6 +72,17 @@ func WithConfig(config []byte) AdditionalMetadata {
 	}
 }
 
+func WithRepoDigests(digests []string) AdditionalMetadata {
+	return func(image *Image) error {
+		if digests != nil {
+			image.Metadata.RepoDigests = digests
+		} else {
+			image.Metadata.RepoDigests = []string{}
+		}
+		return nil
+	}
+}
+
 // NewImage provides a new, unread image object.
 func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{
