@@ -115,7 +115,6 @@ jobs:
         uses: marocchino/sticky-pull-request-comment@v2
         if: matrix.go-version == '1.x'
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           header: benchmark
           message: |
             ### Benchmark Test Results
