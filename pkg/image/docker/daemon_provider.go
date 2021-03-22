@@ -213,7 +213,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen, inspectResult.RepoTags...).Provide()
+	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen, inspectResult.RepoTags, inspectResult.RepoDigests).Provide()
 }
 
 func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {

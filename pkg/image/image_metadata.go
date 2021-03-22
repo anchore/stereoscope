@@ -19,6 +19,7 @@ type Metadata struct {
 	RawManifest    []byte
 	ManifestDigest string
 	RawConfig      []byte
+	RepoDigests    []string
 }
 
 // readImageMetadata extracts the most pertinent information from the underlying image tar.
