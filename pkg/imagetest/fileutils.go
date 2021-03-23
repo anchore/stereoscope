@@ -76,9 +76,9 @@ func dirHash(t testing.TB, root string) string {
 	return fmt.Sprintf("%x", hasher.Sum(nil))
 }
 
-func walkEvaluateLinks(path string, virtualPath string, fn filepath.WalkFunc) error {
+func walkEvaluateLinks(root string, virtualPath string, fn filepath.WalkFunc) error {
 	symWalkFunc := func(path string, info os.FileInfo, err error) error {
-		if relativePath, err := filepath.Rel(path, path); err == nil {
+		if relativePath, err := filepath.Rel(root, path); err == nil {
 			path = filepath.Join(virtualPath, relativePath)
 		} else {
 			return err
@@ -100,7 +100,7 @@ func walkEvaluateLinks(path string, virtualPath string, fn filepath.WalkFunc) er
 
 		return fn(path, info, err)
 	}
-	return filepath.Walk(path, symWalkFunc)
+	return filepath.Walk(root, symWalkFunc)
 }
 
 func walk(root string, fn filepath.WalkFunc) error {
