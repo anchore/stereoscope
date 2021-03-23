@@ -43,11 +43,20 @@ func (t *FileTree) Copy() (*FileTree, error) {
 }
 
 // AllFiles returns all files and directories within the FileTree.
-func (t *FileTree) AllFiles() []file.Reference {
+func (t *FileTree) AllFiles(types ...file.Type) []file.Reference {
+	if len(types) == 0 {
+		types = []file.Type{file.TypeReg}
+	}
+
+	typeSet := internal.NewStringSet()
+	for _, t := range types {
+		typeSet.Add(string(t))
+	}
+
 	var files []file.Reference
 	for _, n := range t.tree.Nodes() {
 		f := n.(*filenode.FileNode)
-		if f.FileType == file.TypeReg && f.Reference != nil {
+		if typeSet.Contains(string(f.FileType)) && f.Reference != nil {
 			files = append(files, *f.Reference)
 		}
 	}

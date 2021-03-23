@@ -86,7 +86,7 @@ check-licenses:
 .PHONY: unit
 unit: $(RESULTSDIR) ## Run unit tests (with coverage)
 	$(call title,Running unit tests)
-	go test --race -coverprofile $(COVER_REPORT) $(shell go list ./... | grep -v anchore/stereoscope/integration)
+	go test --race -coverprofile $(COVER_REPORT) $(shell go list ./... | grep -v anchore/stereoscope/test/integration)
 	@go tool cover -func $(COVER_REPORT) | grep total |  awk '{print substr($$3, 1, length($$3)-1)}' > $(COVER_TOTAL)
 	@echo "Coverage: $$(cat $(COVER_TOTAL))"
 	@if [ $$(echo "$$(cat $(COVER_TOTAL)) >= $(COVERAGE_THRESHOLD)" | bc -l) -ne 1 ]; then echo "$(RED)$(BOLD)Failed coverage quality gate (> $(COVERAGE_THRESHOLD)%)$(RESET)" && false; fi
@@ -112,7 +112,7 @@ integration-fingerprint:
 .PHONY: integration
 integration: ## Run integration tests
 	$(call title,Running integration tests)
-	go test ./test/integration
+	go test -v ./test/integration
 
 .PHONY: clear-test-cache
 clear-test-cache: ## Delete all test cache (built docker image tars)

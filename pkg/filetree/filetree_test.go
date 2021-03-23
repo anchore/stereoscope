@@ -786,3 +786,94 @@ func TestFileTree_File_CycleDetection(t *testing.T) {
 	}
 
 }
+
+func TestFileTree_AllFiles(t *testing.T) {
+	tr := NewFileTree()
+
+	paths := []string{
+		"/home/a-file.txt",
+		"/sym-linked-dest/a-.gif",
+		"/hard-linked-dest/b-.gif",
+	}
+
+	for _, p := range paths {
+		_, err := tr.AddFile(file.Path(p))
+		if err != nil {
+			t.Fatalf("failed to add path ('%s'): %+v", p, err)
+		}
+	}
+
+	var err error
+
+	// dir
+	_, err = tr.AddDir("/home")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	// relative symlink
+	_, err = tr.AddSymLink("/home/symlink", "../../../sym-linked-dest")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	// hardlink
+	_, err = tr.AddHardLink("/home/hardlink", "/hard-linked-dest")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	tests := []struct {
+		name     string
+		types    []file.Type
+		expected internal.Set
+	}{
+		{
+			name:     "default-is-reg",
+			types:    []file.Type{},
+			expected: internal.NewStringSet("/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"),
+		},
+		{
+			name:     "reg",
+			types:    []file.Type{file.TypeReg},
+			expected: internal.NewStringSet("/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"),
+		},
+		{
+			name:     "hardlink",
+			types:    []file.Type{file.TypeHardLink},
+			expected: internal.NewStringSet("/home/hardlink"),
+		},
+		{
+			name:     "symlink",
+			types:    []file.Type{file.TypeSymlink},
+			expected: internal.NewStringSet("/home/symlink"),
+		},
+		{
+			name:     "multiple",
+			types:    []file.Type{file.TypeReg, file.TypeSymlink},
+			expected: internal.NewStringSet("/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif", "/home/symlink"),
+		},
+		{
+			name:  "dir",
+			types: []file.Type{file.TypeDir},
+			// note: only explicitly added directories exist in the catalog
+			expected: internal.NewStringSet("/home"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actual := tr.AllFiles(test.types...)
+			if len(actual) != len(test.expected) {
+				t.Fatalf("different size: %d != %d", len(actual), len(test.expected))
+			}
+
+			for _, a := range actual {
+				if !test.expected.Contains(string(a.RealPath)) {
+					t.Errorf("missing: %q", a.RealPath)
+				}
+			}
+		})
+	}
+
+}
