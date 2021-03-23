@@ -21,7 +21,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/sergi/go-diff v1.1.0
 	github.com/spf13/afero v1.2.2
-	github.com/stretchr/testify v1.6.0 // indirect
+	github.com/stretchr/testify v1.6.0
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20200621122631-1a2120f0695a
 	golang.org/x/net v0.0.0-20200602114024-627f9648deb9 // indirect

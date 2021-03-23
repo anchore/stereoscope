@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFileTree_AddPath(t *testing.T) {
@@ -783,6 +783,97 @@ func TestFileTree_File_CycleDetection(t *testing.T) {
 
 	if exists {
 		t.Errorf("resolution should not exist in cycle")
+	}
+
+}
+
+func TestFileTree_AllFiles(t *testing.T) {
+	tr := NewFileTree()
+
+	paths := []string{
+		"/home/a-file.txt",
+		"/sym-linked-dest/a-.gif",
+		"/hard-linked-dest/b-.gif",
+	}
+
+	for _, p := range paths {
+		_, err := tr.AddFile(file.Path(p))
+		if err != nil {
+			t.Fatalf("failed to add path ('%s'): %+v", p, err)
+		}
+	}
+
+	var err error
+
+	// dir
+	_, err = tr.AddDir("/home")
+	if err != nil {
+		t.Fatalf("could not setup dir: %+v", err)
+	}
+
+	// relative symlink
+	_, err = tr.AddSymLink("/home/symlink", "../../../sym-linked-dest")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	// hardlink
+	_, err = tr.AddHardLink("/home/hardlink", "/hard-linked-dest")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	tests := []struct {
+		name     string
+		types    []file.Type
+		expected []string
+	}{
+		{
+			name:     "default-is-reg",
+			types:    []file.Type{},
+			expected: []string{"/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"},
+		},
+		{
+			name:     "reg",
+			types:    []file.Type{file.TypeReg},
+			expected: []string{"/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"},
+		},
+		{
+			name:     "hardlink",
+			types:    []file.Type{file.TypeHardLink},
+			expected: []string{"/home/hardlink"},
+		},
+		{
+			name:     "symlink",
+			types:    []file.Type{file.TypeSymlink},
+			expected: []string{"/home/symlink"},
+		},
+		{
+			name:     "multiple",
+			types:    []file.Type{file.TypeReg, file.TypeSymlink},
+			expected: []string{"/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif", "/home/symlink"},
+		},
+		{
+			name:  "dir",
+			types: []file.Type{file.TypeDir},
+			// note: only explicitly added directories exist in the catalog
+			expected: []string{"/home"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actual := tr.AllFiles(test.types...)
+
+			var realPaths []string
+			for _, a := range actual {
+				realPaths = append(realPaths, string(a.RealPath))
+			}
+
+			for _, e := range test.expected {
+				assert.Contains(t, realPaths, e, "should have contained path")
+			}
+		})
 	}
 
 }

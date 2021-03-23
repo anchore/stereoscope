@@ -4,8 +4,12 @@ import "sort"
 
 type Set map[string]struct{}
 
-func NewStringSet() Set {
-	return make(Set)
+func NewStringSet(start ...string) Set {
+	ret := make(Set)
+	for _, s := range start {
+		ret.Add(s)
+	}
+	return ret
 }
 
 func (s Set) Add(i string) {
