@@ -42,7 +42,7 @@ func (t *FileTree) Copy() (*FileTree, error) {
 	return ct, nil
 }
 
-// AllFiles returns all files and directories within the FileTree.
+// AllFiles returns all files within the FileTree (defaults to regular files only, but you can provide one or more allow types).
 func (t *FileTree) AllFiles(types ...file.Type) []file.Reference {
 	if len(types) == 0 {
 		types = []file.Type{file.TypeReg}

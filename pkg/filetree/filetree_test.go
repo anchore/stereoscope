@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFileTree_AddPath(t *testing.T) {
@@ -808,7 +808,7 @@ func TestFileTree_AllFiles(t *testing.T) {
 	// dir
 	_, err = tr.AddDir("/home")
 	if err != nil {
-		t.Fatalf("could not setup link: %+v", err)
+		t.Fatalf("could not setup dir: %+v", err)
 	}
 
 	// relative symlink
@@ -826,52 +826,52 @@ func TestFileTree_AllFiles(t *testing.T) {
 	tests := []struct {
 		name     string
 		types    []file.Type
-		expected internal.Set
+		expected []string
 	}{
 		{
 			name:     "default-is-reg",
 			types:    []file.Type{},
-			expected: internal.NewStringSet("/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"),
+			expected: []string{"/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"},
 		},
 		{
 			name:     "reg",
 			types:    []file.Type{file.TypeReg},
-			expected: internal.NewStringSet("/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"),
+			expected: []string{"/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"},
 		},
 		{
 			name:     "hardlink",
 			types:    []file.Type{file.TypeHardLink},
-			expected: internal.NewStringSet("/home/hardlink"),
+			expected: []string{"/home/hardlink"},
 		},
 		{
 			name:     "symlink",
 			types:    []file.Type{file.TypeSymlink},
-			expected: internal.NewStringSet("/home/symlink"),
+			expected: []string{"/home/symlink"},
 		},
 		{
 			name:     "multiple",
 			types:    []file.Type{file.TypeReg, file.TypeSymlink},
-			expected: internal.NewStringSet("/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif", "/home/symlink"),
+			expected: []string{"/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif", "/home/symlink"},
 		},
 		{
 			name:  "dir",
 			types: []file.Type{file.TypeDir},
 			// note: only explicitly added directories exist in the catalog
-			expected: internal.NewStringSet("/home"),
+			expected: []string{"/home"},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			actual := tr.AllFiles(test.types...)
-			if len(actual) != len(test.expected) {
-				t.Fatalf("different size: %d != %d", len(actual), len(test.expected))
+
+			var realPaths []string
+			for _, a := range actual {
+				realPaths = append(realPaths, string(a.RealPath))
 			}
 
-			for _, a := range actual {
-				if !test.expected.Contains(string(a.RealPath)) {
-					t.Errorf("missing: %q", a.RealPath)
-				}
+			for _, e := range test.expected {
+				assert.Contains(t, realPaths, e, "should have contained path")
 			}
 		})
 	}
