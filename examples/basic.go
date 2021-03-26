@@ -1,13 +1,13 @@
 package main
 
 import (
+	"archive/tar"
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-	"io/ioutil"
 	"os"
 
 	"github.com/anchore/stereoscope"
-	"github.com/anchore/stereoscope/pkg/file"
 )
 
 func main() {
@@ -70,12 +70,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	content, err := ioutil.ReadAll(contentReader)
+	entry, err := image.FileCatalog.Get(*ref)
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Printf("File content for: %+v\n", filePath)
-	fmt.Println(string(content))
+	fmt.Println(entry.Metadata.TypeFlag, tar.TypeLink)
 }

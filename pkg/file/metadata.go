@@ -17,13 +17,17 @@ type Metadata struct {
 	// Linkname is populated only for hardlinks / symlinks, can be an absolute or relative
 	Linkname string
 	// Size of the file in bytes
-	Size    int64
-	UserID  int
+	Size int64
+	// UserID is the numeric UID of the file
+	UserID int
+	// GroupID is the numeric GID of the file
 	GroupID int
 	// TypeFlag is the tar.TypeFlag entry for the file
 	TypeFlag byte
-	IsDir    bool
-	Mode     os.FileMode
+	// Mode is the mode bits of the file
+	Mode os.FileMode
+	// PAXRecords are the PAX extended header key-value pairs where there may be extended file attributes
+	PAXRecords map[string]string
 }
 
 func NewMetadata(header tar.Header, sequence int64) Metadata {
@@ -37,6 +41,6 @@ func NewMetadata(header tar.Header, sequence int64) Metadata {
 		Mode:          header.FileInfo().Mode(),
 		UserID:        header.Uid,
 		GroupID:       header.Gid,
-		IsDir:         header.FileInfo().IsDir(),
+		PAXRecords:    header.PAXRecords,
 	}
 }
