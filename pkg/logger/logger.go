@@ -1,6 +1,15 @@
 package logger
 
 type Logger interface {
+	MessageLogger
+	FieldLogger
+}
+
+type FieldLogger interface {
+	WithFields(fields ...interface{}) MessageLogger
+}
+
+type MessageLogger interface {
 	Errorf(format string, args ...interface{})
 	Error(args ...interface{})
 	Warnf(format string, args ...interface{})
