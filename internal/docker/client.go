@@ -28,7 +28,10 @@ func GetClient() (*client.Client, error) {
 		if strings.HasPrefix(host, "ssh") {
 			helper, err := connhelper.GetConnectionHelper(host)
 			if err != nil {
-				log.Errorf("failed to fetch docker connection helper: %w", err)
+				log.
+					WithFields("error", err.Error()).
+					Error("failed to fetch docker connection helper")
+
 				instanceErr = err
 				return
 			}
@@ -47,14 +50,20 @@ func GetClient() (*client.Client, error) {
 		if os.Getenv("DOCKER_TLS_VERIFY") != "" && os.Getenv("DOCKER_CERT_PATH") == "" {
 			err := os.Setenv("DOCKER_CERT_PATH", "~/.docker")
 			if err != nil {
-				log.Errorf("failed create docker client: %w", err)
+				log.
+					WithFields("error", err.Error()).
+					Error("failed create docker client")
+
 				instanceErr = err
 				return
 			}
 		}
 		dockerClient, err := client.NewClientWithOpts(clientOpts...)
 		if err != nil {
-			log.Errorf("failed create docker client: %w", err)
+			log.
+				WithFields("error", err.Error()).
+				Error("failed create docker client")
+
 			instanceErr = err
 			return
 		}

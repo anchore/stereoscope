@@ -23,7 +23,9 @@ func GetImage(userStr string) (*image.Image, error) {
 		return nil, err
 	}
 
-	log.Debugf("image: source=%+v location=%+v", source, imgStr)
+	log.
+		WithFields("source", source, "image", imgStr).
+		Debug("obtaining image")
 
 	switch source {
 	case image.DockerTarballSource:
@@ -62,6 +64,8 @@ func SetBus(b *partybus.Bus) {
 
 func Cleanup() {
 	if err := tempDirGenerator.Cleanup(); err != nil {
-		log.Errorf("failed to cleanup: %w", err)
+		log.
+			WithFields("error", err.Error()).
+			Error("failed to cleanup temp directories")
 	}
 }
