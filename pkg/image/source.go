@@ -1,13 +1,16 @@
 package image
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"strings"
+	"time"
 
+	"github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mitchellh/go-homedir"
@@ -20,6 +23,7 @@ const (
 	DockerDaemonSource
 	OciDirectorySource
 	OciTarballSource
+	OciRegistrySource
 )
 
 const SchemeSeparator = ":"
@@ -30,6 +34,7 @@ var sourceStr = [...]string{
 	"DockerDaemon",
 	"OciDirectory",
 	"OciTarball",
+	"OciRegistry",
 }
 
 var AllSources = []Source{
@@ -37,13 +42,14 @@ var AllSources = []Source{
 	DockerDaemonSource,
 	OciDirectorySource,
 	OciTarballSource,
+	OciRegistrySource,
 }
 
 // Source is a concrete a selection of valid concrete image providers.
 type Source uint8
 
-// isDockerReference takes a string and indicates if it conforms to a docker image reference.
-func isDockerReference(imageSpec string) bool {
+// isRegistryReference takes a string and indicates if it conforms to a container image reference.
+func isRegistryReference(imageSpec string) bool {
 	// note: strict validation requires there to be a default registry (e.g. docker.io) which we cannot assume will be provided
 	// we only want to validate the bare minimum number of image specification features, not exhaustive.
 	_, err := name.ParseReference(imageSpec, name.WeakValidation)
@@ -62,6 +68,8 @@ func ParseSourceScheme(source string) Source {
 		return OciDirectorySource
 	case "oci-archive":
 		return OciTarballSource
+	case "oci-registry", "registry":
+		return OciRegistrySource
 	}
 	return UnknownSource
 }
@@ -105,9 +113,21 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 			return UnknownSource, "", fmt.Errorf("unable to expand potential home dir expression: %w", err)
 		}
 	case UnknownSource:
-		if isDockerReference(userInput) {
-			// ignore any source hint since the source is ultimately unknown, see if this could be a docker image
-			return DockerDaemonSource, userInput, nil
+		// ignore any source hint since the source is ultimately unknown, see if this could be a docker image
+		if isRegistryReference(userInput) {
+			// verify that the docker daemon is accessible before assuming we can suggest to use it
+			dockerClient, err := docker.GetClient()
+			if err == nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+				defer cancel()
+				pong, err := dockerClient.Ping(ctx)
+				if err == nil && pong.APIVersion != "" {
+					// the docker daemon exists and is accessible
+					return DockerDaemonSource, userInput, nil
+				}
+			}
+			// fallback to pulling from the registry directly (the daemon is inaccessible due to error or otherwise)
+			return OciRegistrySource, userInput, nil
 		}
 		// invalidate any previous processing if the source is still unknown
 		location = ""

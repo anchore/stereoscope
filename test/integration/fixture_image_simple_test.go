@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/scylladb/go-set"
 	"io"
 	"io/ioutil"
 	"strings"
@@ -60,6 +61,12 @@ type testCase struct {
 }
 
 func TestSimpleImage(t *testing.T) {
+	expectedSet := set.NewIntSet()
+	for _, src := range image.AllSources {
+		expectedSet.Add(int(src))
+	}
+	expectedSet.Remove(int(image.OciRegistrySource))
+
 	for _, c := range simpleImageTestCases {
 		t.Run(c.name, func(t *testing.T) {
 			i := imagetest.GetFixtureImage(t, c.source, "image-simple")
@@ -71,7 +78,7 @@ func TestSimpleImage(t *testing.T) {
 		})
 	}
 
-	if len(simpleImageTestCases) < len(image.AllSources) {
+	if len(simpleImageTestCases) < expectedSet.Size() {
 		t.Fatalf("probably missed a source during testing, double check that all image.sources are covered")
 	}
 
@@ -88,7 +95,7 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 		b.Cleanup(stereoscope.Cleanup)
 		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				bi, err = stereoscope.GetImage(request)
+				bi, err = stereoscope.GetImage(request, nil)
 				if err != nil {
 					b.Fatal("could not get fixture image:", err)
 				}
