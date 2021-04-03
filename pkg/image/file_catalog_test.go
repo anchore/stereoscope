@@ -54,7 +54,7 @@ func getTarFixture(t *testing.T, name string) (*os.File, func()) {
 
 		err = cmd.Run()
 		if err != nil {
-			panic(err)
+			t.Fatalf("could not run command: %+v", err)
 		}
 	}
 
