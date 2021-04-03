@@ -25,7 +25,7 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 		WithFields("source", source, "image", imgStr).
 		Debug("obtaining image")
 
-	source, imgStr, err := image.DetectSource(userStr)
+	source, imgStr, err := image.DetectSource(imgStr)
 	if err != nil {
 		return nil, err
 	}
