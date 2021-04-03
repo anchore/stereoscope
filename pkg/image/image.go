@@ -142,10 +142,9 @@ func (i *Image) Read() error {
 		return err
 	}
 
-	log.Debugf("image metadata: digest=%+v mediaType=%+v tags=%+v",
-		i.Metadata.ID,
-		i.Metadata.MediaType,
-		i.Metadata.Tags)
+	log.
+		WithFields("id", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags).
+		Debug("image metadata")
 
 	v1Layers, err := i.image.Layers()
 	if err != nil {

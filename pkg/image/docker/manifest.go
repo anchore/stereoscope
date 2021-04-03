@@ -51,9 +51,10 @@ func extractManifest(tarPath string) (*dockerManifest, error) {
 	}
 
 	defer func() {
-		err := f.Close()
-		if err != nil {
-			log.Errorf("unable to close tar file (%s): %w", f.Name(), err)
+		if err := f.Close(); err != nil {
+			log.
+				WithFields("path", f.Name(), "error", err.Error()).
+				Error("unable to close tar file")
 		}
 	}()
 
@@ -77,9 +78,10 @@ func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest
 	}
 
 	defer func() {
-		err := f.Close()
-		if err != nil {
-			log.Errorf("unable to close tar file (%s): %w", f.Name(), err)
+		if err := f.Close(); err != nil {
+			log.
+				WithFields("path", f.Name(), "error", err.Error()).
+				Error("unable to close tar file")
 		}
 	}()
 

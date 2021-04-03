@@ -51,7 +51,9 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 
 	theManifest, err := extractManifest(p.path)
 	if err != nil {
-		log.Warnf("could not extract manifest: %+v", err)
+		log.
+			WithFields("error", err.Error()).
+			Warn("could not extract manifest")
 	}
 
 	var tags = internal.NewStringSet()
@@ -68,7 +70,9 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 
 		ociManifest, rawConfig, err = generateOCIManifest(p.path, theManifest)
 		if err != nil {
-			log.Warnf("failed to generate OCI manifest from docker archive: %+v", err)
+			log.
+				WithFields("error", err.Error()).
+				Warn("failed to generate OCI manifest from docker archive")
 		}
 
 		// we may have the config available, use it
@@ -80,7 +84,9 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 	if ociManifest != nil {
 		rawOCIManifest, err = json.Marshal(&ociManifest)
 		if err != nil {
-			log.Warnf("failed to serialize OCI manifest: %+v", err)
+			log.
+				WithFields("error", err.Error()).
+				Warn("failed to serialize OCI manifest")
 		} else {
 			metadata = append(metadata, image.WithManifest(rawOCIManifest))
 		}

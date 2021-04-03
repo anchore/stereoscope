@@ -79,14 +79,19 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 // pull a docker image
 func (p *DaemonImageProvider) pull(ctx context.Context) error {
-	log.Debugf("pulling docker image=%q", p.imageStr)
+	log.
+		WithFields("image", p.imageStr).
+		Debug("pulling docker image")
 
 	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
 	cfg, err := config.Load("")
 	if err != nil {
 		return fmt.Errorf("failed to load docker config: %w", err)
 	}
-	log.Debugf("using docker config=%q", cfg.Filename)
+
+	log.
+		WithFields("path", cfg.Filename).
+		Debug("using docker config")
 
 	var status = newPullStatus()
 	defer func() {
@@ -145,9 +150,10 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to create temp file for image: %w", err)
 	}
 	defer func() {
-		err := tempTarFile.Close()
-		if err != nil {
-			log.Errorf("unable to close temp file (%s): %w", tempTarFile.Name(), err)
+		if err := tempTarFile.Close(); err != nil {
+			log.
+				WithFields("path", tempTarFile.Name(), "error", err.Error()).
+				Error("unable to close temp file")
 		}
 	}()
 
@@ -176,9 +182,10 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to save image tar: %w", err)
 	}
 	defer func() {
-		err := readCloser.Close()
-		if err != nil {
-			log.Errorf("unable to close temp file (%s): %w", tempTarFile.Name(), err)
+		if err := readCloser.Close(); err != nil {
+			log.
+				WithFields("path", tempTarFile.Name(), "error", err.Error()).
+				Error("unable to close temp file")
 		}
 	}()
 

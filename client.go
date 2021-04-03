@@ -20,7 +20,15 @@ var tempDirGenerator = file.NewTempDirGenerator()
 // GetImageFromSource returns an image from the explicitly provided source.
 func GetImageFromSource(imgStr string, source image.Source, registryOptions *image.RegistryOptions) (*image.Image, error) {
 	var provider image.Provider
-	log.Debugf("image: source=%+v location=%+v", source, imgStr)
+
+	log.
+		WithFields("source", source, "image", imgStr).
+		Debug("obtaining image")
+
+	source, imgStr, err := image.DetectSource(userStr)
+	if err != nil {
+		return nil, err
+	}
 
 	switch source {
 	case image.DockerTarballSource:
@@ -81,6 +89,8 @@ func SetBus(b *partybus.Bus) {
 
 func Cleanup() {
 	if err := tempDirGenerator.Cleanup(); err != nil {
-		log.Errorf("failed to cleanup: %w", err)
+		log.
+			WithFields("error", err.Error()).
+			Error("failed to cleanup temp directories")
 	}
 }

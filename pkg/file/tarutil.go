@@ -152,7 +152,9 @@ func UntarToDirectory(reader io.Reader, dst string) error {
 			}
 
 			if err = f.Close(); err != nil {
-				log.Errorf("failed to close file during untar of path=%q: %w", f.Name(), err)
+				log.
+					WithFields("path", f.Name(), "error", err.Error()).
+					Error("failed to close file during untar")
 			}
 		}
 		return nil
