@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -233,12 +234,28 @@ func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOp
 
 	if creds.Username != "" {
 		log.Debugf("using docker credentials for %q", hostname)
-		jsonBytes, _ := json.Marshal(map[string]string{
-			"username": creds.Username,
-			"password": creds.Password,
-		})
-		options.RegistryAuth = base64.StdEncoding.EncodeToString(jsonBytes)
+
+		options.RegistryAuth, err = encodeCredentials(creds.Username, creds.Password)
+		if err != nil {
+			return options, err
+		}
 	}
 
 	return options, nil
+}
+
+func encodeCredentials(username, password string) (string, error) {
+	buffer := &bytes.Buffer{}
+	encoder := json.NewEncoder(buffer)
+	// note: the contents may contain characters that should not be escaped (such as password contents)
+	encoder.SetEscapeHTML(false)
+
+	if err := encoder.Encode(map[string]string{
+		"username": username,
+		"password": password,
+	}); err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(buffer.Bytes()), nil
 }
