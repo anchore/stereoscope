@@ -31,7 +31,7 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 	case image.OciTarballSource:
 		provider = oci.NewProviderFromTarball(imgStr, &tempDirGenerator)
 	case image.OciRegistrySource:
-		provider = oci.NewProviderFromRegistry(imgStr, &tempDirGenerator, registryOptions)
+		provider = oci.NewRegistryImageProvider(imgStr, &tempDirGenerator, registryOptions)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}

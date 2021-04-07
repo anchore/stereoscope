@@ -20,8 +20,8 @@ type RegistryImageProvider struct {
 	registryOptions *image.RegistryOptions
 }
 
-// NewProviderFromRegistry creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions *image.RegistryOptions) *RegistryImageProvider {
+// NewRegistryImageProvider creates a new provider instance for a specific image that will later be cached to the given directory.
+func NewRegistryImageProvider(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions *image.RegistryOptions) *RegistryImageProvider {
 	return &RegistryImageProvider{
 		imageStr:        imgStr,
 		tmpDirGen:       tmpDirGen,
