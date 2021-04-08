@@ -60,33 +60,17 @@ func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOpt
 		}
 		opts = append(opts, remote.WithTransport(t))
 	}
-	registry := ref.Context().RegistryStr()
-	discoveredConfiguredAuth := false
-	for idx, auth := range registryOptions.Credentials {
-		if auth.Authority == registry {
-			if auth.Username != "" && auth.Password != "" {
-				log.Debugf("using registry credentials for %q (config idx=%d)", auth.Authority, idx)
-				opts = append(opts, remote.WithAuth(&authn.Basic{
-					Username: auth.Username,
-					Password: auth.Password,
-				}))
-				discoveredConfiguredAuth = true
-				break
-			} else if auth.Token != "" {
-				log.Debugf("using registry token for %q (config idx=%d)", auth.Authority, idx)
-				opts = append(opts, remote.WithAuth(&authn.Bearer{
-					Token: auth.Token,
-				}))
-				discoveredConfiguredAuth = true
-				break
-			}
-		}
-	}
 
-	if !discoveredConfiguredAuth {
+	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
+	// If no explicit authenticator can be found, then fallback to the keychain.
+	authenticator := registryOptions.Authenticator(ref.Context().RegistryStr())
+	if authenticator != nil {
+		opts = append(opts, remote.WithAuth(authenticator))
+	} else {
 		// use the Keychain specified from a docker config file.
 		log.Debugf("using registry credentials from default keychain")
 		opts = append(opts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
+
 	return opts
 }
