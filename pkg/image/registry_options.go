@@ -3,7 +3,7 @@ package image
 // RegistryOptions for the OCI registry provider.
 type RegistryOptions struct {
 	InsecureSkipTLSVerify bool
-	Auth                  []RegistryCredentials
+	Credentials           []RegistryCredentials
 }
 
 // RegistryCredentials contains any information necessary to authenticate against an OCI-distribution-compliant

@@ -62,7 +62,7 @@ func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOpt
 	}
 	registry := ref.Context().RegistryStr()
 	discoveredConfiguredAuth := false
-	for idx, auth := range registryOptions.Auth {
+	for idx, auth := range registryOptions.Credentials {
 		if auth.Authority == registry {
 			if auth.Username != "" && auth.Password != "" {
 				log.Debugf("using registry credentials for %q (config idx=%d)", auth.Authority, idx)
