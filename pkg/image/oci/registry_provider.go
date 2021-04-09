@@ -68,7 +68,7 @@ func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOpt
 		opts = append(opts, remote.WithAuth(authenticator))
 	} else {
 		// use the Keychain specified from a docker config file.
-		log.Debugf("using registry credentials from default keychain")
+		log.Debugf("no registry credentials configured, using the default keychain")
 		opts = append(opts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 

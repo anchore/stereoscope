@@ -24,18 +24,19 @@ type RegistryCredentials struct {
 // given registry, or there is partial information configured, then nil is returned.
 func (r *RegistryOptions) Authenticator(registry string) authn.Authenticator {
 	for idx, auth := range r.Credentials {
-		if auth.Authority == registry {
-			if auth.Username != "" && auth.Password != "" {
-				log.Debugf("using registry credentials for %q (config idx=%d)", auth.Authority, idx)
-				return &authn.Basic{
-					Username: auth.Username,
-					Password: auth.Password,
-				}
-			} else if auth.Token != "" {
-				log.Debugf("using registry token for %q (config idx=%d)", auth.Authority, idx)
-				return &authn.Bearer{
-					Token: auth.Token,
-				}
+		if auth.Authority != registry {
+			continue
+		}
+		if auth.Username != "" && auth.Password != "" {
+			log.Debugf("using registry credentials for %q (config idx=%d)", auth.Authority, idx)
+			return &authn.Basic{
+				Username: auth.Username,
+				Password: auth.Password,
+			}
+		} else if auth.Token != "" {
+			log.Debugf("using registry token for %q (config idx=%d)", auth.Authority, idx)
+			return &authn.Bearer{
+				Token: auth.Token,
 			}
 		}
 	}

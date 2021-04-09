@@ -118,7 +118,7 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 			// verify that the docker daemon is accessible before assuming we can suggest to use it
 			dockerClient, err := docker.GetClient()
 			if err == nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				pong, err := dockerClient.Ping(ctx)
 				if err == nil && pong.APIVersion != "" {

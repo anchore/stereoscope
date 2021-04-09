@@ -187,6 +187,31 @@ func TestRegistryOptions_Authenticator_Bearer(t *testing.T) {
 			},
 			expected: nil,
 		},
+		{
+			name:     "mismatched registry",
+			registry: "localhost:5000",
+			input: &RegistryOptions{
+				Credentials: []RegistryCredentials{
+					{
+						Authority: "localhost",
+						Token:     "JRR",
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			name:     "missing registry",
+			registry: "localhost:5000",
+			input: &RegistryOptions{
+				Credentials: []RegistryCredentials{
+					{
+						Token: "JRR",
+					},
+				},
+			},
+			expected: nil,
+		},
 	}
 
 	for _, test := range tests {
