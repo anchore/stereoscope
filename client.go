@@ -15,14 +15,9 @@ import (
 
 var tempDirGenerator = file.NewTempDirGenerator()
 
-// GetImage parses the user provided image string and provides an image object
-func GetImage(userStr string) (*image.Image, error) {
+// GetImage returns an image from the explicitly provided source.
+func GetImageFromSource(imgStr string, source image.Source, registryOptions *image.RegistryOptions) (*image.Image, error) {
 	var provider image.Provider
-	source, imgStr, err := image.DetectSource(userStr)
-	if err != nil {
-		return nil, err
-	}
-
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
 	switch source {
@@ -35,6 +30,8 @@ func GetImage(userStr string) (*image.Image, error) {
 		provider = oci.NewProviderFromPath(imgStr, &tempDirGenerator)
 	case image.OciTarballSource:
 		provider = oci.NewProviderFromTarball(imgStr, &tempDirGenerator)
+	case image.OciRegistrySource:
+		provider = oci.NewRegistryImageProvider(imgStr, &tempDirGenerator, registryOptions)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}
@@ -50,6 +47,16 @@ func GetImage(userStr string) (*image.Image, error) {
 	}
 
 	return img, nil
+}
+
+// GetImage parses the user provided image string and provides an image object; note: the source where the image should
+// be referenced from is automatically inferred.
+func GetImage(userStr string, registryOptions *image.RegistryOptions) (*image.Image, error) {
+	source, imgStr, err := image.DetectSource(userStr)
+	if err != nil {
+		return nil, err
+	}
+	return GetImageFromSource(imgStr, source, registryOptions)
 }
 
 func SetLogger(logger logger.Logger) {

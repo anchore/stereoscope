@@ -2,13 +2,14 @@ package integration
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/filetree"
 	"io/ioutil"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/imagetest"
+	"github.com/scylladb/go-set"
 )
 
 type linkFetchConfig struct {
@@ -43,6 +44,13 @@ func TestImageSymlinks(t *testing.T) {
 			source: "oci-dir",
 		},
 	}
+
+	expectedSet := set.NewIntSet()
+	for _, src := range image.AllSources {
+		expectedSet.Add(int(src))
+	}
+	expectedSet.Remove(int(image.OciRegistrySource))
+
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			i := imagetest.GetFixtureImage(t, c.source, "image-symlinks")
@@ -50,7 +58,7 @@ func TestImageSymlinks(t *testing.T) {
 		})
 	}
 
-	if len(cases) < len(image.AllSources) {
+	if len(cases) < expectedSet.Size() {
 		t.Fatalf("probably missed a source during testing, double check that all image.sources are covered")
 	}
 

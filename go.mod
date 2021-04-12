@@ -19,6 +19,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/runc v0.1.1 // indirect
 	github.com/pkg/errors v0.9.1
+	github.com/scylladb/go-set v1.0.2
 	github.com/sergi/go-diff v1.1.0
 	github.com/spf13/afero v1.2.2
 	github.com/stretchr/testify v1.6.0
