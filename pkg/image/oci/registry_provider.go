@@ -20,8 +20,8 @@ type RegistryImageProvider struct {
 	registryOptions *image.RegistryOptions
 }
 
-// NewRegistryImageProvider creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewRegistryImageProvider(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions *image.RegistryOptions) *RegistryImageProvider {
+// NewProviderFromRegistry creates a new provider instance for a specific image that will later be cached to the given directory.
+func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions *image.RegistryOptions) *RegistryImageProvider {
 	return &RegistryImageProvider{
 		imageStr:        imgStr,
 		tmpDirGen:       tmpDirGen,
@@ -43,12 +43,30 @@ func (p *RegistryImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	img, err := remote.Image(ref, prepareRemoteOptions(ref, p.registryOptions)...)
+	descriptor, err := remote.Get(ref, prepareRemoteOptions(ref, p.registryOptions)...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create image from registry: %+v", err)
+		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
 	}
 
-	return image.NewImage(img, imageTempDir), nil
+	img, err := descriptor.Image()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image from registry: %+v", err)
+	}
+
+	// craft a repo digest from the registry reference and the known digest
+	// note: the descriptor is fetched from the registry, and the descriptor digest is the same as the repo digest
+	repoDigest := fmt.Sprintf("%s/%s@%s", ref.Context().RegistryStr(), ref.Context().RepositoryStr(), descriptor.Digest.String())
+
+	metadata := []image.AdditionalMetadata{
+		image.WithRepoDigests([]string{repoDigest}),
+	}
+
+	// make a best effort to get the manifest, should not block getting an image though if it fails
+	if manifestBytes, err := img.RawManifest(); err == nil {
+		metadata = append(metadata, image.WithManifest(manifestBytes))
+	}
+
+	return image.NewImage(img, imageTempDir, metadata...), nil
 }
 
 func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOptions) []remote.Option {
