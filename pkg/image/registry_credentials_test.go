@@ -83,23 +83,31 @@ func TestRegistryCredentials_Authenticator(t *testing.T) {
 
 func basicAuth(expected authn.Basic) func(*testing.T, authn.Authenticator) {
 	return func(t *testing.T, actual authn.Authenticator) {
+		t.Helper()
+
 		assertBasicAuth(t, expected, actual)
 	}
 }
 
 func bearerToken(expected authn.Bearer) func(*testing.T, authn.Authenticator) {
 	return func(t *testing.T, actual authn.Authenticator) {
+		t.Helper()
+
 		assertBearerToken(t, expected, actual)
 	}
 }
 
 func nilAuthenticator() func(*testing.T, authn.Authenticator) {
 	return func(t *testing.T, actual authn.Authenticator) {
+		t.Helper()
+
 		assert.Nil(t, actual)
 	}
 }
 
 func assertBasicAuth(t *testing.T, expected authn.Basic, actual authn.Authenticator) {
+	t.Helper()
+
 	actualBasic, ok := actual.(*authn.Basic)
 	if !ok {
 		t.Fatalf("unable to get basicAuth object: %+v", actual)
@@ -109,6 +117,8 @@ func assertBasicAuth(t *testing.T, expected authn.Basic, actual authn.Authentica
 }
 
 func assertBearerToken(t *testing.T, expected authn.Bearer, actual authn.Authenticator) {
+	t.Helper()
+
 	actualBearer, ok := actual.(*authn.Bearer)
 	if !ok {
 		t.Fatalf("unable to get bearer object: %+v", actual)
