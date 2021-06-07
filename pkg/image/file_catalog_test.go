@@ -188,7 +188,7 @@ func TestFileCatalog_FileContents(t *testing.T) {
 		TarHeaderName: p,
 	}
 
-	tr, err := file.NewTarIndex(fixtureFile.Name())
+	tr, err := file.NewTarIndex(fixtureFile.Name(), nil)
 	if err != nil {
 		t.Fatalf("unable to get indexed reader")
 	}

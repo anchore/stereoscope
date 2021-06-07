@@ -223,9 +223,21 @@ func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(i.SquashedTree(), &i.FileCatalog, path)
 }
 
+// FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types.
+func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
+	var refs []file.Reference
+	for _, ty := range mimeTypes {
+		refsForType, err := fetchFilesByMIMEType(i.SquashedTree(), &i.FileCatalog, ty)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, refsForType...)
+	}
+	return refs, nil
+}
+
 // FileContentsByRef fetches file contents for a single file reference, irregardless of the source layer.
 // If the path does not exist an error is returned.
-// This is a convenience function provided by the FileCatalog.
 func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 	return i.FileCatalog.FileContents(ref)
 }
