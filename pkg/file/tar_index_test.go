@@ -16,7 +16,7 @@ func BenchmarkTarIndex(b *testing.B) {
 	fixture := getTarFixture(b, "fixture-1")
 	var err error
 	for i := 0; i < b.N; i++ {
-		ti, err = NewTarIndex(fixture.Name())
+		ti, err = NewTarIndex(fixture.Name(), nil)
 		if err != nil {
 			b.Fatalf("failure during benchmark: %+v", err)
 		}
@@ -26,7 +26,7 @@ func BenchmarkTarIndex(b *testing.B) {
 func TestIndexedTarIndex_GoCase(t *testing.T) {
 	fixture := getTarFixture(t, "fixture-1")
 
-	reader, err := NewTarIndex(fixture.Name())
+	reader, err := NewTarIndex(fixture.Name(), nil)
 	if err != nil {
 		t.Fatal("could not get file reader from tar:", err)
 	}
@@ -68,7 +68,7 @@ func TestIndexedTarIndex_GoCase(t *testing.T) {
 func TestIndexedTarReader_DuplicateEntries(t *testing.T) {
 	fixture := duplicateEntryTarballFixture(t)
 
-	reader, err := NewTarIndex(fixture.Name())
+	reader, err := NewTarIndex(fixture.Name(), nil)
 	if err != nil {
 		t.Fatal("could not get file reader from tar:", err)
 	}

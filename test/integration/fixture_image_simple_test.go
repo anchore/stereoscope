@@ -16,9 +16,6 @@ import (
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
-var bi *image.Image
-var by []byte
-
 var simpleImageTestCases = []testCase{
 	{
 		name:           "FromTarball",
@@ -95,7 +92,7 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 		b.Cleanup(stereoscope.Cleanup)
 		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				bi, err = stereoscope.GetImage(request, nil)
+				_, err = stereoscope.GetImage(request, nil)
 				if err != nil {
 					b.Fatal("could not get fixture image:", err)
 				}
@@ -123,7 +120,7 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 					if err != nil {
 						b.Fatalf("unable to read: %+v", err)
 					}
-					by, err = ioutil.ReadAll(f.Contents())
+					_, err = ioutil.ReadAll(f.Contents())
 				}
 			}
 		})

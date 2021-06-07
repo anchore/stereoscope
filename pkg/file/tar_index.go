@@ -14,7 +14,7 @@ type TarIndex struct {
 }
 
 // NewTarIndex creates a new TarIndex that is already indexed.
-func NewTarIndex(tarFilePath string, onIndex ...TarIndexVisitor) (*TarIndex, error) {
+func NewTarIndex(tarFilePath string, onIndex TarIndexVisitor) (*TarIndex, error) {
 	t := &TarIndex{
 		indexByName: make(map[string][]TarIndexEntry),
 	}
@@ -43,8 +43,8 @@ func NewTarIndex(tarFilePath string, onIndex ...TarIndexVisitor) (*TarIndex, err
 		t.indexByName[entry.Header.Name] = append(t.indexByName[entry.Header.Name], indexEntry)
 
 		// run though the visitors
-		for _, visitor := range onIndex {
-			if err := visitor(indexEntry); err != nil {
+		if onIndex != nil {
+			if err := onIndex(indexEntry); err != nil {
 				return fmt.Errorf("failed visitor on tar indexEntry: %w", err)
 			}
 		}

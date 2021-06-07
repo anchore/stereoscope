@@ -104,23 +104,52 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 // FetchContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
-// This is a convenience function provided by the FileCatalog.
 func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
 }
 
 // FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
-// This is a convenience function provided by the FileCatalog.
 func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
+}
+
+func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
+	var refs []file.Reference
+	for _, ty := range mimeTypes {
+		refsForType, err := fetchFilesByMIMEType(l.Tree, l.fileCatalog, ty)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, refsForType...)
+	}
+	return refs, nil
+}
+
+func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
+	var refs []file.Reference
+	for _, ty := range mimeTypes {
+		refsForType, err := fetchFilesByMIMEType(l.SquashedTree, l.fileCatalog, ty)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, refsForType...)
+	}
+	return refs, nil
 }
 
 func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 	return func(index file.TarIndexEntry) error {
 		var err error
 		var entry = index.ToTarFileEntry()
-		metadata := file.NewMetadata(entry.Header, entry.Sequence)
+
+		var contents = index.Open()
+		defer func() {
+			if err := contents.Close(); err != nil {
+				log.Warnf("unable to close file while indexing layer: %+v", err)
+			}
+		}()
+		metadata := file.NewMetadata(entry.Header, entry.Sequence, contents)
 
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
