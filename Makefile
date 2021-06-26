@@ -77,6 +77,7 @@ lint-fix: ## Auto-format all source code + run golangci lint fixers
 	$(call title,Running lint fixers)
 	gofmt -w -s .
 	$(LINTCMD) --fix
+	go mod tidy
 
 .PHONY: check-licenses
 check-licenses:
