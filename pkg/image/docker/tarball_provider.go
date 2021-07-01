@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/anchore/stereoscope/pkg/file"
-
 	"github.com/anchore/stereoscope/internal"
+	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/apex/log"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
