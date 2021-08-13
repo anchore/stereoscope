@@ -38,7 +38,12 @@ func (p *RegistryImageProvider) Provide() (*image.Image, error) {
 		return nil, err
 	}
 
-	ref, err := name.ParseReference(p.imageStr)
+	options := make([]name.Option, 0, 2)
+	if p.registryOptions.InsecureSkipTLSVerify {
+		options = append(options, name.Insecure)
+	}
+
+	ref, err := name.ParseReference(p.imageStr, options...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
