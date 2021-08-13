@@ -8,6 +8,7 @@ import (
 // RegistryOptions for the OCI registry provider.
 type RegistryOptions struct {
 	InsecureSkipTLSVerify bool
+	InsecureUseHTTP       bool
 	Credentials           []RegistryCredentials
 }
 

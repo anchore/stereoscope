@@ -38,7 +38,12 @@ func (p *RegistryImageProvider) Provide() (*image.Image, error) {
 		return nil, err
 	}
 
-	ref, err := name.ParseReference(p.imageStr)
+	var options []name.Option
+	if p.registryOptions.InsecureUseHTTP {
+		options = append(options, name.Insecure)
+	}
+
+	ref, err := name.ParseReference(p.imageStr, options...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
