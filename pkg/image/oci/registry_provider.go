@@ -38,7 +38,7 @@ func (p *RegistryImageProvider) Provide() (*image.Image, error) {
 		return nil, err
 	}
 
-	options := make([]name.Option, 0, 2)
+	options := make([]name.Option, 0)
 	if p.registryOptions.InsecureUseHTTP {
 		options = append(options, name.Insecure)
 	}
