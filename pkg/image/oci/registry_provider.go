@@ -71,7 +71,7 @@ func (p *RegistryImageProvider) Provide() (*image.Image, error) {
 
 func prepareReferenceOptions(registryOptions *image.RegistryOptions) []name.Option {
 	var options []name.Option
-	if registryOptions.InsecureUseHTTP {
+	if registryOptions != nil && registryOptions.InsecureUseHTTP {
 		options = append(options, name.Insecure)
 	}
 	return options
