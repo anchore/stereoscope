@@ -2,8 +2,6 @@ package image
 
 import (
 	"fmt"
-	"io"
-
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
@@ -83,7 +81,7 @@ func (c *FileCatalog) GetByMIMEType(mType string) ([]FileCatalogEntry, error) {
 
 // FetchContents reads the file contents for the given file reference from the underlying image/layer blob. An error
 // is returned if there is no file at the given path and layer or the read operation cannot continue.
-func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
+func (c *FileCatalog) FileContents(f file.Reference) (file.ReadSeekAtCloser, error) {
 	catalogEntry, ok := c.catalog[f.ID()]
 	if !ok {
 		return nil, fmt.Errorf("could not find file: %+v", f.RealPath)

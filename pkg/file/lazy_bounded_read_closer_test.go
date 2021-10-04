@@ -18,7 +18,7 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dReader := newLazyBoundedReadCloser(p, 0, int64(len(expectedContents)))
+	dReader := newLazyBoundedReadSeekAtCloser(p, 0, int64(len(expectedContents)))
 
 	if dReader.file != nil {
 		t.Fatalf("should not have a file, but we do somehow")
@@ -58,7 +58,7 @@ func TestDeferredPartialReadCloser_PartialRead(t *testing.T) {
 	}
 
 	var start, size = 10, 7
-	dReader := newLazyBoundedReadCloser(p, int64(start), int64(size))
+	dReader := newLazyBoundedReadSeekAtCloser(p, int64(start), int64(size))
 
 	actualContents, err := ioutil.ReadAll(dReader)
 	if err != nil {

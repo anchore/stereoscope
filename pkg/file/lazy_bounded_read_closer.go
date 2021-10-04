@@ -6,11 +6,11 @@ import (
 	"os"
 )
 
-var _ io.ReadCloser = (*lazyBoundedReadCloser)(nil)
+var _ ReadSeekAtCloser = (*lazyBoundedReadSeekAtCloser)(nil)
 
-// lazyBoundedReadCloser is a "lazy" read closer, allocating a file descriptor for the given path only upon the first Read() call.
+// lazyBoundedReadSeekAtCloser is a "lazy" read closer, allocating a file descriptor for the given path only upon the first Read() call.
 // Additionally only part of the file is allowed to be read, starting at a given position.
-type lazyBoundedReadCloser struct {
+type lazyBoundedReadSeekAtCloser struct {
 	// path is the path to be opened
 	path string
 	// file is the active file handle for the given path
@@ -22,30 +22,38 @@ type lazyBoundedReadCloser struct {
 }
 
 // NewDeferredPartialReadCloser creates a new NewDeferredPartialReadCloser for the given path.
-func newLazyBoundedReadCloser(path string, start, size int64) *lazyBoundedReadCloser {
-	return &lazyBoundedReadCloser{
+func newLazyBoundedReadSeekAtCloser(path string, start, size int64) *lazyBoundedReadSeekAtCloser {
+	return &lazyBoundedReadSeekAtCloser{
 		path:  path,
 		start: start,
 		size:  size,
 	}
 }
 
-// Read implements the io.Reader interface for the previously loaded path, opening the file upon the first invocation.
-func (d *lazyBoundedReadCloser) Read(b []byte) (int, error) {
+func (d *lazyBoundedReadSeekAtCloser) checkOpen() error {
 	if d.reader == nil {
 		file, err := os.Open(d.path)
 		if err != nil {
-			return 0, err
+			return err
 		}
 
 		_, err = file.Seek(d.start, io.SeekStart)
 		if err != nil {
-			return 0, err
+			return err
 		}
 
 		d.file = file
 		d.reader = io.LimitReader(d.file, d.size)
 	}
+	return nil
+}
+
+// Read implements the io.Reader interface for the previously loaded path, opening the file upon the first invocation.
+func (d *lazyBoundedReadSeekAtCloser) Read(b []byte) (int, error) {
+	if err := d.checkOpen(); err != nil {
+		return 0, err
+	}
+
 	n, err := d.reader.Read(b)
 	if err != nil && errors.Is(err, io.EOF) {
 		// we've reached the end of the file, force a release of the file descriptor. If the file has already been
@@ -57,8 +65,22 @@ func (d *lazyBoundedReadCloser) Read(b []byte) (int, error) {
 	return n, err
 }
 
+func (d *lazyBoundedReadSeekAtCloser) ReadAt(b []byte, off int64) (int, error) {
+	if err := d.checkOpen(); err != nil {
+		return 0, err
+	}
+	panic("not implemented")
+}
+
+func (d *lazyBoundedReadSeekAtCloser) Seek(offset int64, whence int) (int64, error) {
+	if err := d.checkOpen(); err != nil {
+		return 0, err
+	}
+	panic("implement me")
+}
+
 // Close implements the io.Closer interface for the previously loaded path / opened file.
-func (d *lazyBoundedReadCloser) Close() error {
+func (d *lazyBoundedReadSeekAtCloser) Close() error {
 	if d.file == nil {
 		return nil
 	}

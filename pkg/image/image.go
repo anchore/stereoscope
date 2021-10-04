@@ -3,8 +3,6 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
-	"io"
-
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -219,7 +217,7 @@ func (i *Image) SquashedTree() *filetree.FileTree {
 
 // FileContentsFromSquash fetches file contents for a single path, relative to the image squash tree.
 // If the path does not exist an error is returned.
-func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
+func (i *Image) FileContentsFromSquash(path file.Path) (file.ReadSeekAtCloser, error) {
 	return fetchFileContentsByPath(i.SquashedTree(), &i.FileCatalog, path)
 }
 
@@ -237,7 +235,7 @@ func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 
 // FileContentsByRef fetches file contents for a single file reference, irregardless of the source layer.
 // If the path does not exist an error is returned.
-func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
+func (i *Image) FileContentsByRef(ref file.Reference) (file.ReadSeekAtCloser, error) {
 	return i.FileCatalog.FileContents(ref)
 }
 

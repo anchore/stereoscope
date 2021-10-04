@@ -1,5 +1,3 @@
 package file
 
-import "io"
-
-type Opener func() io.ReadCloser
+type Opener func() ReadSeekAtCloser

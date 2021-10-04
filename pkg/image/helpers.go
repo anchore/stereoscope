@@ -2,15 +2,13 @@ package image
 
 import (
 	"fmt"
-	"io"
-
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
 // fetchFileContentsByPath is a common helper function for resolving the file contents for a path from the file
 // catalog relative to the given tree.
-func fetchFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, path file.Path) (io.ReadCloser, error) {
+func fetchFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, path file.Path) (file.ReadSeekAtCloser, error) {
 	exists, fileReference, err := ft.File(path, filetree.FollowBasenameLinks)
 	if err != nil {
 		return nil, err

@@ -2,7 +2,6 @@ package file
 
 import (
 	"archive/tar"
-	"io"
 )
 
 type TarIndexEntry struct {
@@ -20,6 +19,6 @@ func (t *TarIndexEntry) ToTarFileEntry() TarFileEntry {
 	}
 }
 
-func (t *TarIndexEntry) Open() io.ReadCloser {
-	return newLazyBoundedReadCloser(t.path, t.seekPosition, t.header.Size)
+func (t *TarIndexEntry) Open() ReadSeekAtCloser {
+	return newLazyBoundedReadSeekAtCloser(t.path, t.seekPosition, t.header.Size)
 }
