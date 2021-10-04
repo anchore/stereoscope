@@ -1,5 +1,10 @@
 # stereoscope
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/anchore/stereoscope)](https://goreportcard.com/report/github.com/anchore/stereoscope)
+[![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/anchore/stereoscope.svg)](https://github.com/anchore/stereoscope)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/anchore/stereoscope/blob/main/LICENSE)
+[![Slack Invite](https://img.shields.io/badge/Slack-Join-blue?logo=slack)](https://anchore.com/slack)
+
 A library for working with container image contents, layer file trees, and squashed file trees.
 
 ## Getting Started
