@@ -3,6 +3,7 @@ package file
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
 	"os"
@@ -20,6 +21,84 @@ var (
 	fixturesGeneratorsPath = path.Join(fixturesPath, "generators")
 	tarCachePath           = path.Join(fixturesPath, "tar-cache")
 )
+
+func TestReaderFromTar_GoCase(t *testing.T) {
+	tarReader := getTarFixture(t, "fixture-1")
+
+	fileReader, err := ReaderFromTar(tarReader, "path/branch/two/file-2.txt")
+	if err != nil {
+		t.Fatal("could not get file reader from tar:", err)
+	}
+
+	contents, err := ioutil.ReadAll(fileReader)
+	if err != nil {
+		t.Fatal("could not read from file reader:", err)
+	}
+
+	if string(contents) != "second file\n" {
+		t.Errorf("unexpected contents: '%s'", string(contents))
+	}
+}
+
+func TestReaderFromTar_MissingFile(t *testing.T) {
+	tarReader := getTarFixture(t, "fixture-1")
+
+	_, err := ReaderFromTar(tarReader, "nOn-ExIsTaNt-paTh")
+	if err == nil {
+		t.Error("expected an error but did not find one")
+	}
+}
+
+func TestMetadataFromTar(t *testing.T) {
+	tests := []struct {
+		name     string
+		fixture  string
+		expected Metadata
+	}{
+		{
+			name:    "path/branch/two/file-2.txt",
+			fixture: "fixture-1",
+			expected: Metadata{
+				Path:          "/path/branch/two/file-2.txt",
+				TarHeaderName: "path/branch/two/file-2.txt",
+				TarSequence:   5,
+				Linkname:      "",
+				Size:          12,
+				UserID:        1337,
+				GroupID:       5432,
+				TypeFlag:      0x30,
+				IsDir:         false,
+				Mode:          0x1ed,
+				MIMEType:      "application/octet-stream",
+			},
+		},
+		{
+			name:    "path/branch/two/",
+			fixture: "fixture-1",
+			expected: Metadata{
+				Path:          "/path/branch/two",
+				TarHeaderName: "path/branch/two/",
+				TarSequence:   4,
+				Linkname:      "",
+				Size:          0,
+				UserID:        1337,
+				GroupID:       5432,
+				TypeFlag:      0x35,
+				IsDir:         true,
+				Mode:          0x800001ed,
+				MIMEType:      "",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			f := getTarFixture(t, "fixture-1")
+			metadata, err := MetadataFromTar(f, test.name)
+			assert.NoError(t, err)
+			assert.Equal(t, test.expected, metadata)
+		})
+	}
+}
 
 func getTarFixture(t testing.TB, name string) *os.File {
 	generatorScriptName := name + ".sh"
@@ -95,31 +174,4 @@ func fileExists(t testing.TB, filename string) bool {
 		t.Fatal(err)
 	}
 	return !info.IsDir()
-}
-
-func TestReaderFromTar_GoCase(t *testing.T) {
-	tarReader := getTarFixture(t, "fixture-1")
-
-	fileReader, err := ReaderFromTar(tarReader, "path/branch/two/file-2.txt")
-	if err != nil {
-		t.Fatal("could not get file reader from tar:", err)
-	}
-
-	contents, err := ioutil.ReadAll(fileReader)
-	if err != nil {
-		t.Fatal("could not read from file reader:", err)
-	}
-
-	if string(contents) != "second file\n" {
-		t.Errorf("unexpected contents: '%s'", string(contents))
-	}
-}
-
-func TestReaderFromTar_MissingFile(t *testing.T) {
-	tarReader := getTarFixture(t, "fixture-1")
-
-	_, err := ReaderFromTar(tarReader, "nOn-ExIsTaNt-paTh")
-	if err == nil {
-		t.Error("expected an error but did not find one")
-	}
 }

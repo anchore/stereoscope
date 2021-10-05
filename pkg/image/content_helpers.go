@@ -25,3 +25,26 @@ func fetchFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, pa
 	}
 	return reader, nil
 }
+
+// fetchFileContentsByPath is a common helper function for resolving file references for a MIME type from the file
+// catalog relative to the given tree.
+func fetchFilesByMIMEType(ft *filetree.FileTree, fileCatalog *FileCatalog, mType string) ([]file.Reference, error) {
+	fileEntries, err := fileCatalog.GetByMIMEType(mType)
+	if err != nil {
+		return nil, fmt.Errorf("unable to fetch file references by MIME type: %w", err)
+	}
+
+	var refs []file.Reference
+	for _, entry := range fileEntries {
+		_, ref, err := ft.File(entry.File.RealPath, filetree.FollowBasenameLinks)
+		if err != nil {
+			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.File.RealPath, err)
+		}
+
+		// we know this entry exists in the tree, keep track of the reference for this file
+		if ref != nil && ref.ID() == entry.File.ID() {
+			refs = append(refs, *ref)
+		}
+	}
+	return refs, nil
+}
