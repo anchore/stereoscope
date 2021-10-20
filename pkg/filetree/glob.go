@@ -3,6 +3,7 @@ package filetree
 import (
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 
@@ -112,7 +113,7 @@ func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 		if idx == n && n != -1 {
 			break
 		}
-		requestPath := filepath.Join(f.name, filepath.Base(string(child.ID())))
+		requestPath := path.Join(f.name, filepath.Base(string(child.ID())))
 		r, err := f.os.Lstat(requestPath)
 		if err == nil {
 			// Lstat by default returns an error when the path cannot be found
