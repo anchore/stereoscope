@@ -13,8 +13,10 @@ import (
 
 // basic interface assertion
 var _ fs.File = (*fileAdapter)(nil)
+var _ fs.ReadDirFile = (*fileAdapter)(nil)
 var _ fs.FS = (*osAdapter)(nil)
 var _ fs.FileInfo = (*fileinfoAdapter)(nil)
+var _ fs.DirEntry = (*fileinfoAdapter)(nil)
 
 type GlobResult struct {
 	MatchPath  file.Path
@@ -36,7 +38,7 @@ func (f *fileAdapter) Close() error {
 }
 
 func (f *fileAdapter) Read([]byte) (int, error) {
-	return 0, nil
+	panic("not implemented")
 }
 
 func (f *fileAdapter) Stat() (fs.FileInfo, error) {
@@ -85,11 +87,11 @@ func (f *fileAdapter) isInPathResolutionLoop() (bool, error) {
 // children for paths where we have doubled back on ourselves. The FIRST
 // time through should be faithful to the return, but not the SECOND time
 // around.
-func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
+func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 	if f == nil {
 		return nil, os.ErrInvalid
 	}
-	var ret = make([]os.FileInfo, 0)
+	var ret = make([]fs.DirEntry, 0)
 	fn, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
@@ -114,7 +116,8 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		r, err := f.os.Lstat(requestPath)
 		if err == nil {
 			// Lstat by default returns an error when the path cannot be found
-			ret = append(ret, r)
+			// TODO: go 1.17 will have fs.FileInfoToDirEntry helper function to prevent type assertion here
+			ret = append(ret, r.(*fileinfoAdapter))
 		}
 	}
 	return ret, nil
@@ -128,7 +131,7 @@ type osAdapter struct {
 
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
-func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
+func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
 	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		// Lstat by definition requires that basename symlinks are not followed
@@ -186,6 +189,14 @@ func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
 type fileinfoAdapter struct {
 	VirtualPath file.Path
 	Node        filenode.FileNode
+}
+
+func (a *fileinfoAdapter) Type() fs.FileMode {
+	return a.Mode()
+}
+
+func (a *fileinfoAdapter) Info() (fs.FileInfo, error) {
+	return a, nil
 }
 
 // Name base name of the file
