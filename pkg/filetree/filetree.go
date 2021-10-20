@@ -12,7 +12,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/tree"
 	"github.com/anchore/stereoscope/pkg/tree/node"
-	"github.com/bmatcuk/doublestar/v2"
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
@@ -353,7 +353,7 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 		}
 	}
 
-	matches, err := doublestar.GlobOS(&osAdapter{
+	matches, err := doublestar.Glob(&osAdapter{
 		filetree:                     t,
 		doNotFollowDeadBasenameLinks: doNotFollowDeadBasenameLinks,
 	}, query)

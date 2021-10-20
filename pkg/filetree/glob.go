@@ -1,6 +1,7 @@
 package filetree
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -8,13 +9,12 @@ import (
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/bmatcuk/doublestar/v2"
 )
 
 // basic interface assertion
-var _ doublestar.File = (*fileAdapter)(nil)
-var _ doublestar.OS = (*osAdapter)(nil)
-var _ os.FileInfo = (*fileinfoAdapter)(nil)
+var _ fs.File = (*fileAdapter)(nil)
+var _ fs.FS = (*osAdapter)(nil)
+var _ fs.FileInfo = (*fileinfoAdapter)(nil)
 
 type GlobResult struct {
 	MatchPath  file.Path
@@ -33,6 +33,14 @@ type fileAdapter struct {
 // Close implements io.Closer but is a nop
 func (f *fileAdapter) Close() error {
 	return nil
+}
+
+func (f *fileAdapter) Read([]byte) (int, error) {
+	return 0, nil
+}
+
+func (f *fileAdapter) Stat() (fs.FileInfo, error) {
+	return f.os.Stat(f.name)
 }
 
 // isInPathResolutionLoop is meant to detect if the current path doubles back on a node that is an ancestor of the
@@ -141,7 +149,7 @@ func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
 }
 
 // Open the given file path and return a doublestar.File.
-func (a *osAdapter) Open(name string) (doublestar.File, error) {
+func (a *osAdapter) Open(name string) (fs.File, error) {
 	return &fileAdapter{
 		os:       a,
 		filetree: a.filetree,
@@ -155,7 +163,7 @@ func (a *osAdapter) PathSeparator() rune {
 }
 
 // Stat returns a FileInfo describing the named file.
-func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
+func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
 	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks:          true,
 		FollowBasenameLinks:          true,

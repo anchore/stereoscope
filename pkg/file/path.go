@@ -3,7 +3,6 @@ package file
 import (
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 )
 
@@ -22,7 +21,7 @@ func (p Path) Normalize() Path {
 	if trimmed == "/" {
 		return Path(trimmed)
 	}
-	return Path(filepath.Clean(strings.TrimRight(trimmed, DirSeparator)))
+	return Path(path.Clean(strings.TrimRight(trimmed, DirSeparator)))
 }
 
 func (p Path) IsAbsolutePath() bool {
