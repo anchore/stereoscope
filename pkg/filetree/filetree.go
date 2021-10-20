@@ -362,7 +362,12 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 	}
 
 	for _, match := range matches {
-		matchPath := file.Path(path.Join("/", match))
+		// consumers need to understand that these are absolute paths and not relative
+		// ex: directory resolver should stop at the dir input and not traverse up the filetree
+		matchPath := file.Path(match)
+		if !path.IsAbs(match) {
+			matchPath = file.Path(path.Join("/", match))
+		}
 		fn, err := t.node(matchPath, linkResolutionStrategy{
 			FollowAncestorLinks:          true,
 			FollowBasenameLinks:          true,
