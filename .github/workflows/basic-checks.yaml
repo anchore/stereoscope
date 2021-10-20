@@ -44,7 +44,7 @@ jobs:
       matrix:
         # test the lower bounds of support, and the latest available
         # note: bumping the go version should be done for all workflows. Make certain to check conditionals as well.
-        go-version: [1.14.x, 1.x]
+        go-version: [1.16.x, 1.x]
         platform: [ubuntu-latest]
     runs-on: ${{ matrix.platform }}
     steps:
