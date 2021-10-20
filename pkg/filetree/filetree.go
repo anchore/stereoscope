@@ -362,7 +362,7 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 	}
 
 	for _, match := range matches {
-		matchPath := file.Path(match)
+		matchPath := file.Path(path.Join("/", match))
 		fn, err := t.node(matchPath, linkResolutionStrategy{
 			FollowAncestorLinks:          true,
 			FollowBasenameLinks:          true,
