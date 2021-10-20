@@ -5,7 +5,7 @@ go 1.14
 require (
 	github.com/Microsoft/hcsshim v0.8.10 // indirect
 	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
-	github.com/bmatcuk/doublestar/v2 v2.0.4
+	github.com/bmatcuk/doublestar/v4 v4.0.2
 	github.com/containerd/containerd v1.3.4 // indirect
 	github.com/containerd/continuity v0.0.0-20200710164510-efbc4488d8fe // indirect
 	github.com/docker/cli v0.0.0-20191017083524-a8ff7f821017
