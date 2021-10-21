@@ -82,7 +82,7 @@ func TestFileInfoAdapter(t *testing.T) {
 				name:     test.path,
 			}
 
-			fileInfos, err := adapter.Readdir(-1)
+			fileInfos, err := adapter.ReadDir(-1)
 			if err != nil {
 				t.Fatalf("could not read dir: %+v", err)
 			}
@@ -154,7 +154,7 @@ func TestFileInfoAdapter_PreventInfiniteLoop(t *testing.T) {
 				name:     test.path,
 			}
 
-			fileInfos, err := adapter.Readdir(-1)
+			fileInfos, err := adapter.ReadDir(-1)
 			if err != nil {
 				t.Fatalf("could not read dir: %+v", err)
 			}

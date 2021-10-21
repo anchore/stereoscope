@@ -1,20 +1,23 @@
 package filetree
 
 import (
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/bmatcuk/doublestar/v2"
 )
 
 // basic interface assertion
-var _ doublestar.File = (*fileAdapter)(nil)
-var _ doublestar.OS = (*osAdapter)(nil)
-var _ os.FileInfo = (*fileinfoAdapter)(nil)
+var _ fs.File = (*fileAdapter)(nil)
+var _ fs.ReadDirFile = (*fileAdapter)(nil)
+var _ fs.FS = (*osAdapter)(nil)
+var _ fs.FileInfo = (*fileinfoAdapter)(nil)
+var _ fs.DirEntry = (*fileinfoAdapter)(nil)
 
 type GlobResult struct {
 	MatchPath  file.Path
@@ -33,6 +36,14 @@ type fileAdapter struct {
 // Close implements io.Closer but is a nop
 func (f *fileAdapter) Close() error {
 	return nil
+}
+
+func (f *fileAdapter) Read([]byte) (int, error) {
+	panic("not implemented")
+}
+
+func (f *fileAdapter) Stat() (fs.FileInfo, error) {
+	return f.os.Stat(f.name)
 }
 
 // isInPathResolutionLoop is meant to detect if the current path doubles back on a node that is an ancestor of the
@@ -77,11 +88,11 @@ func (f *fileAdapter) isInPathResolutionLoop() (bool, error) {
 // children for paths where we have doubled back on ourselves. The FIRST
 // time through should be faithful to the return, but not the SECOND time
 // around.
-func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
+func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 	if f == nil {
 		return nil, os.ErrInvalid
 	}
-	var ret = make([]os.FileInfo, 0)
+	var ret = make([]fs.DirEntry, 0)
 	fn, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
@@ -102,11 +113,12 @@ func (f *fileAdapter) Readdir(n int) ([]os.FileInfo, error) {
 		if idx == n && n != -1 {
 			break
 		}
-		requestPath := filepath.Join(f.name, filepath.Base(string(child.ID())))
+		requestPath := path.Join(f.name, filepath.Base(string(child.ID())))
 		r, err := f.os.Lstat(requestPath)
 		if err == nil {
 			// Lstat by default returns an error when the path cannot be found
-			ret = append(ret, r)
+			// TODO: go 1.17 will have fs.FileInfoToDirEntry helper function to prevent type assertion here
+			ret = append(ret, r.(*fileinfoAdapter))
 		}
 	}
 	return ret, nil
@@ -120,7 +132,7 @@ type osAdapter struct {
 
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
-func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
+func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
 	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		// Lstat by definition requires that basename symlinks are not followed
@@ -141,7 +153,7 @@ func (a *osAdapter) Lstat(name string) (os.FileInfo, error) {
 }
 
 // Open the given file path and return a doublestar.File.
-func (a *osAdapter) Open(name string) (doublestar.File, error) {
+func (a *osAdapter) Open(name string) (fs.File, error) {
 	return &fileAdapter{
 		os:       a,
 		filetree: a.filetree,
@@ -155,7 +167,7 @@ func (a *osAdapter) PathSeparator() rune {
 }
 
 // Stat returns a FileInfo describing the named file.
-func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
+func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
 	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks:          true,
 		FollowBasenameLinks:          true,
@@ -178,6 +190,14 @@ func (a *osAdapter) Stat(name string) (os.FileInfo, error) {
 type fileinfoAdapter struct {
 	VirtualPath file.Path
 	Node        filenode.FileNode
+}
+
+func (a *fileinfoAdapter) Type() fs.FileMode {
+	return a.Mode()
+}
+
+func (a *fileinfoAdapter) Info() (fs.FileInfo, error) {
+	return a, nil
 }
 
 // Name base name of the file
