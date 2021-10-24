@@ -9,14 +9,9 @@ func TestPath_Normalize(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "Trim Right Whitespace",
-			path:     "/some/path ",
-			expected: "/some/path",
-		},
-		{
-			name:     "Trim Left Whitespace",
-			path:     "   /some/path ",
-			expected: "/some/path",
+			name:     "Preserve trailing whitespace (Not prefixed whitespace)",
+			path:     " /some/path ",
+			expected: "/some/path ",
 		},
 		{
 			name:     "Trim extra slashes",
@@ -24,7 +19,27 @@ func TestPath_Normalize(t *testing.T) {
 			expected: "/some/path",
 		},
 		{
-			name:     "Special case: /",
+			name:     "Dir as space /",
+			path:     "// /",
+			expected: "/ ",
+		},
+		{
+			name:     "Padded /",
+			path:     "///",
+			expected: "/",
+		},
+		{
+			name:     "Rooted space",
+			path:     "/ ",
+			expected: "/ ",
+		},
+		{
+			name:     "space only",
+			path:     " ",
+			expected: " ",
+		},
+		{
+			name:     "Special case for root",
 			path:     "/",
 			expected: "/",
 		},

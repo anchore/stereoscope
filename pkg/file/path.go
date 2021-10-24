@@ -17,11 +17,20 @@ type Path string
 
 // Normalize returns the cleaned file path representation (trimmed of spaces and resolve relative notations)
 func (p Path) Normalize() Path {
-	trimmed := strings.Trim(string(p), " ")
-	if trimmed == "/" {
-		return Path(trimmed)
+	// note: when normalizing we cannot trim trailing whitespace since it is valid for a path to have suffix whitespace
+	var trimmed = string(p)
+	if strings.Count(trimmed, " ") < len(trimmed) {
+		trimmed = strings.TrimLeft(string(p), " ")
 	}
-	return Path(path.Clean(strings.TrimRight(trimmed, DirSeparator)))
+
+	// remove trailing dir separators
+	trimmed = strings.TrimRight(trimmed, DirSeparator)
+
+	// special case for root "/"
+	if trimmed == "" {
+		return DirSeparator
+	}
+	return Path(path.Clean(trimmed))
 }
 
 func (p Path) IsAbsolutePath() bool {
