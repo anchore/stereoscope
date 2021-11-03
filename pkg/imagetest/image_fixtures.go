@@ -188,7 +188,7 @@ func hasImage(imageName string) bool {
 func buildImage(contextDir, name, tag string) error {
 	fullTag := fmt.Sprintf("%s:%s", name, tag)
 	latestTag := fmt.Sprintf("%s:latest", name)
-	cmd := exec.Command("docker", "build", "-t", fullTag, "-t", latestTag, ".")
+	cmd := exec.Command("docker", "buildx", "build", "--progress=plain ", "-t", fullTag, "-t", latestTag, ".")
 	cmd.Env = os.Environ()
 	cmd.Dir = contextDir
 	cmd.Stdout = os.Stdout
