@@ -26,7 +26,15 @@ func GetClient() (*client.Client, error) {
 		host := os.Getenv("DOCKER_HOST")
 
 		if strings.HasPrefix(host, "ssh") {
-			helper, err := connhelper.GetConnectionHelper(host)
+			var helper *connhelper.ConnectionHelper
+			var err error
+
+			if sshKeyPath := os.Getenv("PODMAN_SSH_KEY_PATH"); sshKeyPath != "" {
+				helper, err = connhelper.GetCommandConnectionHelper("ssh", "-i", sshKeyPath, "-l", "core", "-p", "63753", "--", "localhost")
+			} else {
+				helper, err = connhelper.GetConnectionHelper(host)
+			}
+
 			if err != nil {
 				log.Errorf("failed to fetch docker connection helper: %w", err)
 				instanceErr = err
@@ -42,6 +50,7 @@ func GetClient() (*client.Client, error) {
 			})
 			clientOpts = append(clientOpts, client.WithHost(helper.Host))
 			clientOpts = append(clientOpts, client.WithDialContext(helper.Dialer))
+
 		}
 
 		if os.Getenv("DOCKER_TLS_VERIFY") != "" && os.Getenv("DOCKER_CERT_PATH") == "" {
