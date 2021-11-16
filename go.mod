@@ -7,7 +7,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.0.2
 	github.com/containerd/containerd v1.5.7 // indirect
 	github.com/docker/cli v20.10.10+incompatible
-	github.com/docker/docker v17.12.0-ce-rc1.0.20200309214505-aa6a9891b09c+incompatible
+	github.com/docker/docker v20.10.10+incompatible
 	github.com/gabriel-vasile/mimetype v1.3.0
 	github.com/go-test/deep v1.0.7
 	github.com/google/go-containerregistry v0.5.1
@@ -21,6 +21,4 @@ require (
 	github.com/stretchr/testify v1.6.1
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20200621122631-1a2120f0695a
-	google.golang.org/genproto v0.0.0-20200604104852-0b0486081ffb // indirect
-	gotest.tools/v3 v3.0.3 // indirect
 )
