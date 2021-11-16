@@ -114,6 +114,8 @@ jobs:
       - name: Update PR benchmark results comment
         uses: marocchino/sticky-pull-request-comment@v2
         if: matrix.go-version == '1.x'
+        # PRs from forks cannot post comments, so we should ignore this when it fails
+        continue-on-error: true
         with:
           header: benchmark
           message: |
