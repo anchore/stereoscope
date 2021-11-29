@@ -2,9 +2,7 @@ package docker
 
 import (
 	"net/http"
-	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -32,28 +30,7 @@ func GetClient(srcName string) (*client.Client, error) {
 
 		host := os.Getenv("DOCKER_HOST")
 
-		if strings.HasPrefix(host, "ssh") && strings.Contains(host, "podman.sock") {
-			_url, err := url.Parse(host)
-			if err != nil {
-				log.Errorf("error parsing host %s with: %v", host, err)
-				return
-			}
-
-			secure, err := strconv.ParseBool(_url.Query().Get("secure"))
-			if err != nil {
-				secure = false
-			}
-
-			httpClient, err := sshClient(_url, secure, "", "/Users/jonas/.ssh/podman-machine-default")
-			if err != nil {
-				log.Errorf("failed to make ssh client: %v", err)
-				return
-			}
-			clientOpts = append(clientOpts, func(c *client.Client) error {
-				return client.WithHTTPClient(httpClient)(c)
-			})
-			clientOpts = append(clientOpts, client.WithHost("http://d"))
-		} else if strings.HasPrefix(host, "ssh") {
+		if strings.HasPrefix(host, "ssh") {
 			var helper *connhelper.ConnectionHelper
 			var err error
 

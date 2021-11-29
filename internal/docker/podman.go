@@ -1,16 +1,13 @@
 package docker
 
 import (
-	"bufio"
 	"context"
-	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
@@ -20,7 +17,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 var (
@@ -44,14 +40,8 @@ func getPodmanClient() (*client.Client, error) {
 			return
 		}
 
-		secure, err := strconv.ParseBool(_url.Query().Get("secure"))
-		if err != nil {
-			log.Warnf("setting secure flag to flase due to error: %v", err)
-			secure = false
-		}
-
 		podmanSSHKeyPath := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
-		httpClient, err := sshClient(_url, secure, "", podmanSSHKeyPath)
+		httpClient, err := sshClient(_url, "", podmanSSHKeyPath)
 		if err != nil {
 			log.Errorf("failed to make ssh client: %v", err)
 			return
@@ -74,7 +64,7 @@ func getPodmanClient() (*client.Client, error) {
 	return instance, instanceErr
 }
 
-func sshClient(_url *url.URL, secure bool, passPhrase string, identity string) (*http.Client, error) {
+func sshClient(_url *url.URL, passPhrase string, identity string) (*http.Client, error) {
 	var signers []ssh.Signer // order Signers are appended to this list determines which key is presented to server
 
 	if len(identity) > 0 {
@@ -140,17 +130,6 @@ func sshClient(_url *url.URL, secure bool, passPhrase string, identity string) (
 		return nil
 	}
 
-	if secure {
-		host := _url.Hostname()
-		if port != "22" {
-			host = fmt.Sprintf("[%s]:%s", host, port)
-		}
-		key := hostKey(host)
-		if key != nil {
-			callback = ssh.FixedHostKey(key)
-		}
-	}
-
 	bastion, err := ssh.Dial("tcp",
 		net.JoinHostPort(_url.Hostname(), port),
 		&ssh.ClientConfig{
@@ -178,37 +157,6 @@ func sshClient(_url *url.URL, secure bool, passPhrase string, identity string) (
 				return bastion.Dial("unix", _url.Path)
 			},
 		}}, nil
-}
-
-func hostKey(host string) ssh.PublicKey {
-	// parse OpenSSH known_hosts file
-	// ssh or use ssh-keyscan to get initial key
-	knownHosts := filepath.Join(homedir.Get(), ".ssh", "known_hosts")
-	fd, err := os.Open(knownHosts)
-	if err != nil {
-		log.Errorf("openning known_hosts file: %v", err)
-		return nil
-	}
-
-	// support -H parameter for ssh-keyscan
-	hashhost := knownhosts.HashHostname(host)
-
-	scanner := bufio.NewScanner(fd)
-	for scanner.Scan() {
-		_, hosts, key, _, _, err := ssh.ParseKnownHosts(scanner.Bytes())
-		if err != nil {
-			log.Errorf("failed to parse known_hosts: %s", scanner.Text())
-			continue
-		}
-
-		for _, h := range hosts {
-			if h == host || h == hashhost {
-				return key
-			}
-		}
-	}
-
-	return nil
 }
 
 func publicKey(path string, passphrase []byte) (ssh.Signer, error) {
