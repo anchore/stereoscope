@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/docker/docker/pkg/homedir"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/agent"
 )
 
 var (
@@ -75,25 +73,6 @@ func sshClient(_url *url.URL, passPhrase string, identity string) (*http.Client,
 
 		signers = append(signers, s)
 		log.Debugf("SSH Ident Key %q %s %s", identity, ssh.FingerprintSHA256(s.PublicKey()), s.PublicKey().Type())
-	}
-
-	if sock, found := os.LookupEnv("SSH_AUTH_SOCK"); found {
-		log.Debugf("found SSH_AUTH_SOCK %q, ssh-agent signer(s) enabled", sock)
-
-		c, err := net.Dial("unix", sock)
-		if err != nil {
-			return nil, err
-		}
-
-		agentSigners, err := agent.NewClient(c).Signers()
-		if err != nil {
-			return nil, err
-		}
-		signers = append(signers, agentSigners...)
-
-		for _, s := range agentSigners {
-			log.Debugf("SSH Agent Key %s %s", ssh.FingerprintSHA256(s.PublicKey()), s.PublicKey().Type())
-		}
 	}
 
 	var authMethods []ssh.AuthMethod
