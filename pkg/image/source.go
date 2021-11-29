@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anchore/stereoscope/internal/docker"
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mitchellh/go-homedir"
@@ -24,6 +25,7 @@ const (
 	OciDirectorySource
 	OciTarballSource
 	OciRegistrySource
+	PodmanDaemonSource
 )
 
 const SchemeSeparator = ":"
@@ -35,6 +37,7 @@ var sourceStr = [...]string{
 	"OciDirectory",
 	"OciTarball",
 	"OciRegistry",
+	"PodmanDaemon",
 }
 
 var AllSources = []Source{
@@ -43,6 +46,7 @@ var AllSources = []Source{
 	OciDirectorySource,
 	OciTarballSource,
 	OciRegistrySource,
+	PodmanDaemonSource,
 }
 
 // Source is a concrete a selection of valid concrete image providers.
@@ -64,6 +68,8 @@ func ParseSourceScheme(source string) Source {
 		return DockerTarballSource
 	case "docker":
 		return DockerDaemonSource
+	case "podman":
+		return PodmanDaemonSource
 	case "oci-dir":
 		return OciDirectorySource
 	case "oci-archive":

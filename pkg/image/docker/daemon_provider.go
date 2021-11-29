@@ -32,20 +32,22 @@ import (
 
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.
 type DaemonImageProvider struct {
-	imageStr  string
-	tmpDirGen *file.TempDirGenerator
+	imageStr   string
+	tmpDirGen  *file.TempDirGenerator
+	sourceName string
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator) *DaemonImageProvider {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, sourceName string) *DaemonImageProvider {
 	return &DaemonImageProvider{
-		imageStr:  imgStr,
-		tmpDirGen: tmpDirGen,
+		imageStr:   imgStr,
+		tmpDirGen:  tmpDirGen,
+		sourceName: sourceName,
 	}
 }
 
 func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *progress.Writer, *progress.Stage, error) {
-	dockerClient, err := docker.GetClient()
+	dockerClient, err := docker.GetClient(p.sourceName)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to get docker client: %w", err)
 	}
@@ -106,7 +108,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 		Value:  status,
 	})
 
-	dockerClient, err := docker.GetClient()
+	dockerClient, err := docker.GetClient(p.sourceName)
 	if err != nil {
 		return fmt.Errorf("failed to load docker client: %w", err)
 	}
@@ -163,7 +165,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}()
 
 	// obtain a Docker client
-	dockerClient, err := docker.GetClient()
+	dockerClient, err := docker.GetClient(p.sourceName)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create a docker client: %w", err)
 	}

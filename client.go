@@ -25,7 +25,9 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, &tempDirGenerator, nil, nil)
 	case image.DockerDaemonSource:
-		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator)
+		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, image.DockerDaemonSource.String())
+	case image.PodmanDaemonSource:
+		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, image.PodmanDaemonSource.String())
 	case image.OciDirectorySource:
 		provider = oci.NewProviderFromPath(imgStr, &tempDirGenerator)
 	case image.OciTarballSource:
