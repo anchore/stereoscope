@@ -6,7 +6,7 @@ require (
 	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
 	github.com/bmatcuk/doublestar/v4 v4.0.2
 	github.com/docker/cli v20.10.10+incompatible
-	github.com/docker/docker v20.10.10+incompatible
+	github.com/docker/docker v20.10.11+incompatible
 	github.com/gabriel-vasile/mimetype v1.3.0
 	github.com/go-test/deep v1.0.7
 	github.com/google/go-containerregistry v0.7.0
