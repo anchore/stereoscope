@@ -11,13 +11,12 @@ import (
 	"testing"
 
 	"github.com/anchore/stereoscope"
-	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/scylladb/go-set"
-
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/imagetest"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/scylladb/go-set"
 )
 
 var simpleImageTestCases = []testCase{
@@ -35,7 +34,14 @@ var simpleImageTestCases = []testCase{
 		layerMediaType: v1Types.DockerLayer,
 		// name:hash
 		// name:latest
-		tagCount: 2,
+		tagCount: 1,
+	},
+	{
+		name:           "FromPodman",
+		source:         "podman",
+		imageMediaType: v1Types.DockerManifestSchema2,
+		layerMediaType: v1Types.DockerLayer,
+		tagCount:       1,
 	},
 	{
 		name:           "FromOciTarball",

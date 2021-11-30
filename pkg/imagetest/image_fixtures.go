@@ -30,6 +30,8 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 		location = GetFixtureImageTarPath(t, name)
 	case image.DockerDaemonSource:
 		location = LoadFixtureImageIntoDocker(t, name)
+	case image.PodmanDaemonSource:
+		location = LoadFixtureImageIntoDocker(t, name)
 	case image.OciTarballSource:
 		dockerArchivePath := GetFixtureImageTarPath(t, name)
 		ociArchivePath := path.Join(path.Dir(dockerArchivePath), "oci-archive-"+path.Base(dockerArchivePath))
