@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -32,14 +33,29 @@ func getPodmanClient() (*client.Client, error) {
 
 		host := defaultHost
 
+		if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
+			log.Debugf("using $CONTAINER_HOST: %s", v)
+			host = v
+		}
+
+		if v, found := os.LookupEnv("PODMAN_HOST"); found && v != "" {
+			log.Debugf("using $PODMAN_HOST: %s", v)
+			host = v
+		}
+
 		_url, err := url.Parse(host)
 		if err != nil {
 			log.Errorf("error parsing host %s with: %v", host, err)
 			return
 		}
 
-		podmanSSHKeyPath := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
-		httpClient, err := sshClient(_url, "", podmanSSHKeyPath)
+		identity := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
+		if v, found := os.LookupEnv("CONTAINER_SSHKEY"); found && len(identity) == 0 {
+			log.Debugf("using $CONTAINER_SSHKEY: %s", v)
+			identity = v
+		}
+
+		httpClient, err := sshClient(_url, "", identity)
 		if err != nil {
 			log.Errorf("failed to make ssh client: %v", err)
 			return
