@@ -23,7 +23,7 @@ var (
 	defaultHost          = "ssh://core@localhost:63753/run/user/1000/podman/podman.sock?secure=false"
 )
 
-func getPodmanClient() (*client.Client, error) {
+func GetClientForPodman() (*client.Client, error) {
 	makePodmanClientOnce.Do(func() {
 		log.Debug("creating podman client via docker")
 		var clientOpts = []client.Opt{

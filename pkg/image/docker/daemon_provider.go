@@ -13,36 +13,34 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anchore/stereoscope/pkg/file"
-
-	"github.com/docker/cli/cli/config/configfile"
-	"github.com/google/go-containerregistry/pkg/name"
-
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/docker/cli/cli/config"
+	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 )
 
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.
 type DaemonImageProvider struct {
-	imageStr   string
-	tmpDirGen  *file.TempDirGenerator
-	sourceName string
+	imageStr  string
+	tmpDirGen *file.TempDirGenerator
+	client    *client.Client
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, sourceName string) *DaemonImageProvider {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *client.Client) *DaemonImageProvider {
 	return &DaemonImageProvider{
-		imageStr:   imgStr,
-		tmpDirGen:  tmpDirGen,
-		sourceName: sourceName,
+		imageStr:  imgStr,
+		tmpDirGen: tmpDirGen,
+		client:    c,
 	}
 }
 

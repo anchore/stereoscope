@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/anchore/stereoscope/internal/bus"
+	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
@@ -25,9 +26,11 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, &tempDirGenerator, nil, nil)
 	case image.DockerDaemonSource:
-		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, image.DockerDaemonSource.String())
+		c := dockerClient.GetClient()
+		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, c)
 	case image.PodmanDaemonSource:
-		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, image.PodmanDaemonSource.String())
+		c := dockerClient.GetClientForPodman()
+		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, c)
 	case image.OciDirectorySource:
 		provider = oci.NewProviderFromPath(imgStr, &tempDirGenerator)
 	case image.OciTarballSource:
