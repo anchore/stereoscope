@@ -1,12 +1,11 @@
 package docker
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 
-	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/client"
 )
@@ -27,9 +26,7 @@ func GetClient() (*client.Client, error) {
 		helper, err = connhelper.GetConnectionHelper(host)
 
 		if err != nil {
-			log.Errorf("failed to fetch docker connection helper: %w", err)
-			instanceErr = err
-			return
+			return nil, fmt.Errorf("failed to fetch docker connection helper: %w", err)
 		}
 		clientOpts = append(clientOpts, func(c *client.Client) error {
 			httpClient := &http.Client{
@@ -46,17 +43,14 @@ func GetClient() (*client.Client, error) {
 	if os.Getenv("DOCKER_TLS_VERIFY") != "" && os.Getenv("DOCKER_CERT_PATH") == "" {
 		err := os.Setenv("DOCKER_CERT_PATH", "~/.docker")
 		if err != nil {
-			log.Errorf("failed create docker client: %w", err)
-			instanceErr = err
-			return
+			return nil, fmt.Errorf("failed create docker client: %w", err)
 		}
 	}
+
 	dockerClient, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
-		log.Errorf("failed create docker client: %w", err)
-		instanceErr = err
-		return
+		return nil, fmt.Errorf("failed create docker client: %w", err)
 	}
 
-	return dockerClient, instanceErr
+	return dockerClient, nil
 }

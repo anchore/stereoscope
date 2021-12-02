@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -24,58 +25,50 @@ var (
 )
 
 func GetClientForPodman() (*client.Client, error) {
-	makePodmanClientOnce.Do(func() {
-		log.Debug("creating podman client via docker")
-		var clientOpts = []client.Opt{
-			client.FromEnv,
-			client.WithAPIVersionNegotiation(),
-		}
+	log.Debug("creating podman client via docker")
+	var clientOpts = []client.Opt{
+		client.FromEnv,
+		client.WithAPIVersionNegotiation(),
+	}
 
-		host := defaultHost
+	host := defaultHost
 
-		if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
-			log.Debugf("using $CONTAINER_HOST: %s", v)
-			host = v
-		}
+	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
+		log.Debugf("using $CONTAINER_HOST: %s", v)
+		host = v
+	}
 
-		if v, found := os.LookupEnv("PODMAN_HOST"); found && v != "" {
-			log.Debugf("using $PODMAN_HOST: %s", v)
-			host = v
-		}
+	if v, found := os.LookupEnv("PODMAN_HOST"); found && v != "" {
+		log.Debugf("using $PODMAN_HOST: %s", v)
+		host = v
+	}
 
-		_url, err := url.Parse(host)
-		if err != nil {
-			log.Errorf("error parsing host %s with: %v", host, err)
-			return
-		}
+	_url, err := url.Parse(host)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing host %s with: %v", host, err)
+	}
 
-		identity := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
-		if v, found := os.LookupEnv("CONTAINER_SSHKEY"); found && len(identity) == 0 {
-			log.Debugf("using $CONTAINER_SSHKEY: %s", v)
-			identity = v
-		}
+	identity := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
+	if v, found := os.LookupEnv("CONTAINER_SSHKEY"); found && len(identity) == 0 {
+		log.Debugf("using $CONTAINER_SSHKEY: %s", v)
+		identity = v
+	}
 
-		httpClient, err := sshClient(_url, "", identity)
-		if err != nil {
-			log.Errorf("failed to make ssh client: %v", err)
-			return
-		}
-		clientOpts = append(clientOpts, func(c *client.Client) error {
-			return client.WithHTTPClient(httpClient)(c)
-		})
-		clientOpts = append(clientOpts, client.WithHost("http://d"))
-
-		dockerClient, err := client.NewClientWithOpts(clientOpts...)
-		if err != nil {
-			log.Errorf("failed create docker client: %w", err)
-			instanceErr = err
-			return
-		}
-
-		instance = dockerClient
+	httpClient, err := sshClient(_url, "", identity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make ssh client: %v", err)
+	}
+	clientOpts = append(clientOpts, func(c *client.Client) error {
+		return client.WithHTTPClient(httpClient)(c)
 	})
+	clientOpts = append(clientOpts, client.WithHost("http://d"))
 
-	return instance, instanceErr
+	dockerClient, err := client.NewClientWithOpts(clientOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed create docker client: %w", err)
+	}
+
+	return dockerClient, err
 }
 
 func sshClient(_url *url.URL, passPhrase string, identity string) (*http.Client, error) {
