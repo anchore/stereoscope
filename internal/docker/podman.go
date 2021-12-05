@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sync"
+	"runtime"
 	"time"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -20,18 +20,33 @@ import (
 )
 
 var (
-	makePodmanClientOnce sync.Once
-	defaultHost          = "ssh://core@localhost:63753/run/user/1000/podman/podman.sock?secure=false"
+	// Podman supports the following connections
+	// rootless "unix://run/user/$UID/podman/podman.sock" (Default)
+	// rootfull "unix://run/podman/podman.sock (Default)
+	// remote rootless ssh://engineering.lab.company.com/run/user/1000/podman/podman.sock
+	// remote rootfull ssh://root@10.10.1.136:22/run/podman/podman.sock
+
+	localRootlessPath     = "/run/user/1000/podman/podman.sock"
+	defaultRemoteRootless = fmt.Sprintf("ssh://core@localhost:63753%s?secure=false", localRootlessPath)
+	defaultLocalRootless  = fmt.Sprintf("unix:/%s", localRootlessPath)
 )
+
+func configClientPerPlatform() (string, clientMaker) {
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		return defaultRemoteRootless, sshClient
+	default:
+		return defaultLocalRootless, unixClient
+	}
+}
 
 func GetClientForPodman() (*client.Client, error) {
 	log.Debug("creating podman client via docker")
 	var clientOpts = []client.Opt{
-		client.FromEnv,
 		client.WithAPIVersionNegotiation(),
 	}
 
-	host := defaultHost
+	host, makeClient := configClientPerPlatform()
 
 	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
 		log.Debugf("using $CONTAINER_HOST: %s", v)
@@ -43,21 +58,16 @@ func GetClientForPodman() (*client.Client, error) {
 		host = v
 	}
 
-	_url, err := url.Parse(host)
+	hostURL, err := url.Parse(host)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing host %s with: %v", host, err)
+		return nil, fmt.Errorf("error parsing host %s with: %w", host, err)
 	}
 
-	identity := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
-	if v, found := os.LookupEnv("CONTAINER_SSHKEY"); found && len(identity) == 0 {
-		log.Debugf("using $CONTAINER_SSHKEY: %s", v)
-		identity = v
+	httpClient, err := makeClient(hostURL)
+	if err != nil {
+		return nil, fmt.Errorf("making http client: %w", err)
 	}
 
-	httpClient, err := sshClient(_url, "", identity)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make ssh client: %v", err)
-	}
 	clientOpts = append(clientOpts, func(c *client.Client) error {
 		return client.WithHTTPClient(httpClient)(c)
 	})
@@ -71,10 +81,31 @@ func GetClientForPodman() (*client.Client, error) {
 	return dockerClient, err
 }
 
-func sshClient(_url *url.URL, passPhrase string, identity string) (*http.Client, error) {
+type clientMaker func(*url.URL) (*http.Client, error)
+
+func unixClient(hostURL *url.URL) (*http.Client, error) {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "unix", hostURL.Path)
+			},
+			DisableCompression: true,
+		},
+	}, nil
+}
+
+// NOTE: code inspired by Podman's client: https://github.com/containers/podman/blob/main/pkg/bindings/connection.go#L177
+func sshClient(hostURL *url.URL) (*http.Client, error) {
+	identity := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
+	if v, found := os.LookupEnv("CONTAINER_SSHKEY"); found && len(identity) == 0 {
+		log.Debugf("using $CONTAINER_SSHKEY: %s", v)
+		identity = v
+	}
+
 	var signers []ssh.Signer // order Signers are appended to this list determines which key is presented to server
 
 	if len(identity) > 0 {
+		passPhrase, _ := hostURL.User.Password()
 		s, err := publicKey(identity, []byte(passPhrase))
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to parse identity %q", identity)
@@ -105,11 +136,11 @@ func sshClient(_url *url.URL, passPhrase string, identity string) (*http.Client,
 		}))
 	}
 
-	if pw, found := _url.User.Password(); found {
+	if pw, found := hostURL.User.Password(); found {
 		authMethods = append(authMethods, ssh.Password(pw))
 	}
 
-	port := _url.Port()
+	port := hostURL.Port()
 	if port == "" {
 		port = "22"
 	}
@@ -119,30 +150,30 @@ func sshClient(_url *url.URL, passPhrase string, identity string) (*http.Client,
 	}
 
 	bastion, err := ssh.Dial("tcp",
-		net.JoinHostPort(_url.Hostname(), port),
+		net.JoinHostPort(hostURL.Hostname(), port),
 		&ssh.ClientConfig{
-			User:            _url.User.Username(),
+			User:            hostURL.User.Username(),
 			Auth:            authMethods,
 			HostKeyCallback: callback,
 			HostKeyAlgorithms: []string{
-				ssh.KeyAlgoRSA,
 				ssh.KeyAlgoDSA,
 				ssh.KeyAlgoECDSA256,
 				ssh.KeyAlgoECDSA384,
 				ssh.KeyAlgoECDSA521,
 				ssh.KeyAlgoED25519,
+				ssh.KeyAlgoRSA,
 			},
 			Timeout: 5 * time.Second,
 		},
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Connection to bastion host (%s) failed.", _url.String())
+		return nil, errors.Wrapf(err, "Connection to bastion host (%s) failed.", hostURL.String())
 	}
 
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return bastion.Dial("unix", _url.Path)
+				return bastion.Dial("unix", hostURL.Path)
 			},
 		}}, nil
 }

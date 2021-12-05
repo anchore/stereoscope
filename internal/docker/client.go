@@ -20,8 +20,10 @@ func GetClient() (*client.Client, error) {
 	host := os.Getenv("DOCKER_HOST")
 
 	if strings.HasPrefix(host, "ssh") {
-		var helper *connhelper.ConnectionHelper
-		var err error
+		var (
+			helper *connhelper.ConnectionHelper
+			err    error
+		)
 
 		helper, err = connhelper.GetConnectionHelper(host)
 
