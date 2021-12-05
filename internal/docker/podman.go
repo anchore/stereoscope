@@ -94,16 +94,20 @@ func unixClient(hostURL *url.URL) (*http.Client, error) {
 	}, nil
 }
 
-// NOTE: code inspired by Podman's client: https://github.com/containers/podman/blob/main/pkg/bindings/connection.go#L177
-func sshClient(hostURL *url.URL) (*http.Client, error) {
+func getSSHKey() string {
 	identity := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
 	if v, found := os.LookupEnv("CONTAINER_SSHKEY"); found && len(identity) == 0 {
 		log.Debugf("using $CONTAINER_SSHKEY: %s", v)
-		identity = v
+		return v
 	}
 
-	var signers []ssh.Signer // order Signers are appended to this list determines which key is presented to server
+	return identity
+}
 
+// NOTE: code inspired by Podman's client: https://github.com/containers/podman/blob/main/pkg/bindings/connection.go#L177
+func sshClient(hostURL *url.URL) (*http.Client, error) {
+	identity := getSSHKey()
+	var signers []ssh.Signer // order Signers are appended to this list determines which key is presented to server
 	if len(identity) > 0 {
 		passPhrase, _ := hostURL.User.Password()
 		s, err := publicKey(identity, []byte(passPhrase))
