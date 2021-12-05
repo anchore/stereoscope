@@ -28,7 +28,7 @@ var (
 
 	localRootlessPath     = "/run/user/1000/podman/podman.sock"
 	defaultRemoteRootless = fmt.Sprintf("ssh://core@localhost:63753%s?secure=false", localRootlessPath)
-	defaultLocalRootless  = fmt.Sprintf("unix:/%s", localRootlessPath)
+	defaultLocalRootless  = fmt.Sprintf("unix://%s", localRootlessPath)
 )
 
 func configClientPerPlatform() (string, clientMaker) {
