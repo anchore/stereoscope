@@ -23,13 +23,23 @@ var (
 	// Podman supports the following connections
 	// rootless "unix://run/user/$UID/podman/podman.sock" (Default)
 	// rootfull "unix://run/podman/podman.sock (Default)
-	// remote rootless ssh://engineering.lab.company.com/run/user/1000/podman/podman.sock
+	// remote rootless ssh://engineering.lab.company.com/run/user/$UID/podman/podman.sock
 	// remote rootfull ssh://root@10.10.1.136:22/run/podman/podman.sock
 
-	localRootlessPath     = "/run/user/1000/podman/podman.sock"
+	localRootlessPath     = getLocalRootlesPath()
 	defaultRemoteRootless = fmt.Sprintf("ssh://core@localhost:63753%s?secure=false", localRootlessPath)
 	defaultLocalRootless  = fmt.Sprintf("unix://%s", localRootlessPath)
 )
+
+func getLocalRootlesPath() string {
+	path := "/run/user/%s/podman/podman.sock"
+	defaultIUD := "1000"
+	if uid, ok := os.LookupEnv("UID"); ok && uid != "" {
+		return fmt.Sprintf(path, uid)
+	}
+
+	return fmt.Sprintf(path, defaultIUD)
+}
 
 func configClientPerPlatform() (string, clientMaker) {
 	switch runtime.GOOS {
