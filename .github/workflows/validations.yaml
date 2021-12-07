@@ -106,12 +106,12 @@ jobs:
           mkdir -p $HOME/.config/systemd/user
           export XDG_RUNTIME_DIR=/run/user/$UID
 
-          systemctl --user enable --now podman.socket
+          # systemctl --user enable --now podman.socket
           
           sleep 2
 
-          podman system connection add default unix://${XDG_RUNTIME_DIR}/podman/podman.sock
-          podman system connection list
+          # podman system connection add default unix://${XDG_RUNTIME_DIR}/podman/podman.sock
+          # podman system connection list
           
           podman version
           podman info
