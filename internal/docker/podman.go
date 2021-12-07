@@ -32,31 +32,19 @@ var (
 )
 
 func getLocalRootlesPath() string {
-	path := "/run/user/%s/podman/podman.sock"
-	defaultIUD := "1000"
-	if uid, ok := os.LookupEnv("UID"); ok && uid != "" {
-		return fmt.Sprintf(path, uid)
-	}
-
-	return fmt.Sprintf(path, defaultIUD)
+	return fmt.Sprintf("unix:///run/user/%d/podman/podman.sock", os.Getuid())
 }
 
-func configClientPerPlatform() (string, clientMaker) {
-	switch runtime.GOOS {
-	case "windows", "darwin":
-		return defaultRemoteRootless, sshClient
-	default:
-		return defaultLocalRootless, unixClient
-	}
-}
-
-func GetClientForPodman() (*client.Client, error) {
-	log.Debug("creating podman client via docker")
+func podmanOverSSH() (*client.Client, error) {
+	log.Debug("using docker client to connect to podman over ssh")
 	var clientOpts = []client.Opt{
 		client.WithAPIVersionNegotiation(),
+		// TODO: is this needed?
+		client.FromEnv,
 	}
 
-	host, makeClient := configClientPerPlatform()
+	host := defaultRemoteRootless
+	makeClient := sshClient
 
 	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
 		log.Debugf("using $CONTAINER_HOST: %s", v)
@@ -67,6 +55,8 @@ func GetClientForPodman() (*client.Client, error) {
 		log.Debugf("using $PODMAN_HOST: %s", v)
 		host = v
 	}
+
+	log.Debugf("host: %q", host)
 
 	hostURL, err := url.Parse(host)
 	if err != nil {
@@ -85,10 +75,47 @@ func GetClientForPodman() (*client.Client, error) {
 
 	dockerClient, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("failed create docker client: %w", err)
+		return nil, fmt.Errorf("failed create remote client for podman: %w", err)
 	}
 
 	return dockerClient, err
+}
+
+func podmanViaUnixSocket() (*client.Client, error) {
+	log.Debug("using docker client to connect to podman over local unix socket")
+	var clientOpts = []client.Opt{
+		client.WithAPIVersionNegotiation(),
+		// TODO: is this needed?
+		client.FromEnv,
+	}
+
+	// TODO: note this is shared code
+	//if v, found := os.LookupEnv("PODMAN_HOST"); found && v != "" {
+	//	log.Debugf("using $PODMAN_HOST: %s", v)
+	//	host = v
+	//}
+
+	// TODO: if DOCKER_HOST is configued will this take precidence?
+	clientOpts = append(clientOpts, client.WithHost(getLocalRootlesPath()))
+
+	dockerClient, err := client.NewClientWithOpts(clientOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed create local client for podman: %w", err)
+	}
+
+	return dockerClient, err
+}
+
+func GetClientForPodman() (*client.Client, error) {
+	log.Debug("creating podman client")
+
+	// TODO: how should detection work here?
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		return podmanOverSSH()
+	default:
+		return podmanViaUnixSocket()
+	}
 }
 
 type clientMaker func(*url.URL) (*http.Client, error)

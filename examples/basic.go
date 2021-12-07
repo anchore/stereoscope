@@ -2,12 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/anchore/stereoscope"
-	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,58 +26,62 @@ func main() {
 		panic(err)
 	}
 
-	////////////////////////////////////////////////////////////////
-	// Show the filetree for each layer
-	for idx, layer := range image.Layers {
-		fmt.Printf("Walking layer: %d", idx)
-		err = layer.Tree.Walk(func(path file.Path, f filenode.FileNode) error {
-			fmt.Println("   ", path)
-			return nil
-		}, nil)
-		fmt.Println("-----------------------------")
-		if err != nil {
-			panic(err)
-		}
+	for _, layer := range image.Layers {
+		fmt.Printf("layer: %s\n", layer.Metadata.Digest)
 	}
 
-	////////////////////////////////////////////////////////////////
-	// Show the squashed filetree for each layer
-	for idx, layer := range image.Layers {
-		fmt.Printf("Walking squashed layer: %d", idx)
-		err = layer.SquashedTree.Walk(func(path file.Path, f filenode.FileNode) error {
-			fmt.Println("   ", path)
-			return nil
-		}, nil)
-		fmt.Println("-----------------------------")
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	////////////////////////////////////////////////////////////////
-	// Show the final squashed tree
-	fmt.Printf("Walking squashed image (same as the last layer squashed tree)")
-	err = image.SquashedTree().Walk(func(path file.Path, f filenode.FileNode) error {
-		fmt.Println("   ", path)
-		return nil
-	}, nil)
-	if err != nil {
-		panic(err)
-	}
-
-	////////////////////////////////////////////////////////////////
-	// Fetch file contents from the (squashed) image
-	filePath := file.Path("/etc/group")
-	contentReader, err := image.FileContentsFromSquash(filePath)
-	if err != nil {
-		panic(err)
-	}
-
-	content, err := ioutil.ReadAll(contentReader)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("File content for: %+v\n", filePath)
-	fmt.Println(string(content))
+	//////////////////////////////////////////////////////////////////
+	//// Show the filetree for each layer
+	//for idx, layer := range image.Layers {
+	//	fmt.Printf("Walking layer: %d", idx)
+	//	err = layer.Tree.Walk(func(path file.Path, f filenode.FileNode) error {
+	//		fmt.Println("   ", path)
+	//		return nil
+	//	}, nil)
+	//	fmt.Println("-----------------------------")
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//}
+	//
+	//////////////////////////////////////////////////////////////////
+	//// Show the squashed filetree for each layer
+	//for idx, layer := range image.Layers {
+	//	fmt.Printf("Walking squashed layer: %d", idx)
+	//	err = layer.SquashedTree.Walk(func(path file.Path, f filenode.FileNode) error {
+	//		fmt.Println("   ", path)
+	//		return nil
+	//	}, nil)
+	//	fmt.Println("-----------------------------")
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//}
+	//
+	//////////////////////////////////////////////////////////////////
+	//// Show the final squashed tree
+	//fmt.Printf("Walking squashed image (same as the last layer squashed tree)")
+	//err = image.SquashedTree().Walk(func(path file.Path, f filenode.FileNode) error {
+	//	fmt.Println("   ", path)
+	//	return nil
+	//}, nil)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//////////////////////////////////////////////////////////////////
+	//// Fetch file contents from the (squashed) image
+	//filePath := file.Path("/etc/group")
+	//contentReader, err := image.FileContentsFromSquash(filePath)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//content, err := ioutil.ReadAll(contentReader)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//fmt.Printf("File content for: %+v\n", filePath)
+	//fmt.Println(string(content))
 }
