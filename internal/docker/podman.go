@@ -26,21 +26,18 @@ var (
 	// remote rootless ssh://engineering.lab.company.com/run/user/$UID/podman/podman.sock
 	// remote rootfull ssh://root@10.10.1.136:22/run/podman/podman.sock
 
-	localRootlessPath     = getLocalRootlesPath()
+	localRootlessPath     = fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
 	defaultRemoteRootless = fmt.Sprintf("ssh://core@localhost:63753%s?secure=false", localRootlessPath)
 	defaultLocalRootless  = fmt.Sprintf("unix://%s", localRootlessPath)
 )
 
-func getLocalRootlesPath() string {
-	return fmt.Sprintf("unix:///run/user/%d/podman/podman.sock", os.Getuid())
-}
-
+// TODO(jonas): defaultRemoteRootless includes the UID from a remote users,
+// which might be different of the user's UID in the running host.
+// We should resolve the remote UID then add it to path of the container client
 func podmanOverSSH() (*client.Client, error) {
 	log.Debug("using docker client to connect to podman over ssh")
 	var clientOpts = []client.Opt{
 		client.WithAPIVersionNegotiation(),
-		// TODO: is this needed?
-		client.FromEnv,
 	}
 
 	host := defaultRemoteRootless
@@ -48,11 +45,6 @@ func podmanOverSSH() (*client.Client, error) {
 
 	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
 		log.Debugf("using $CONTAINER_HOST: %s", v)
-		host = v
-	}
-
-	if v, found := os.LookupEnv("PODMAN_HOST"); found && v != "" {
-		log.Debugf("using $PODMAN_HOST: %s", v)
 		host = v
 	}
 
@@ -83,20 +75,20 @@ func podmanOverSSH() (*client.Client, error) {
 
 func podmanViaUnixSocket() (*client.Client, error) {
 	log.Debug("using docker client to connect to podman over local unix socket")
+
+	// the last option can overwrite previous options
 	var clientOpts = []client.Opt{
 		client.WithAPIVersionNegotiation(),
-		// TODO: is this needed?
-		client.FromEnv,
 	}
+	// NOTE 0: default unix socket path, least precedence
+	clientOpts = append(clientOpts, client.WithHost(defaultLocalRootless))
 
-	// TODO: note this is shared code
-	//if v, found := os.LookupEnv("PODMAN_HOST"); found && v != "" {
-	//	log.Debugf("using $PODMAN_HOST: %s", v)
-	//	host = v
-	//}
-
-	// TODO: if DOCKER_HOST is configued will this take precidence?
-	clientOpts = append(clientOpts, client.WithHost(getLocalRootlesPath()))
+	// NOTE 1: CONTAINER_HOST can overwrite defaultLocalRootless
+	// var name is a Podman conversion: https://github.com/containers/podman/blob/main/pkg/bindings/connection.go#L72
+	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
+		log.Debugf("using $CONTAINER_HOST: %s", v)
+		clientOpts = append(clientOpts, client.WithHost(v))
+	}
 
 	dockerClient, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
@@ -114,22 +106,21 @@ func GetClientForPodman() (*client.Client, error) {
 	case "windows", "darwin":
 		return podmanOverSSH()
 	default:
-		return podmanViaUnixSocket()
+		c, err := podmanViaUnixSocket()
+		if err != nil {
+			return nil, err
+		}
+		ctx, _ := context.WithTimeout(context.TODO(), time.Second*3)
+		_, err = c.Ping(ctx)
+		if err == nil {
+			return c, nil
+		}
+
+		return podmanOverSSH()
 	}
 }
 
 type clientMaker func(*url.URL) (*http.Client, error)
-
-func unixClient(hostURL *url.URL) (*http.Client, error) {
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, "unix", hostURL.Path)
-			},
-			DisableCompression: true,
-		},
-	}, nil
-}
 
 func getSSHKey() string {
 	identity := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
