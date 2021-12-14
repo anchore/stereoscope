@@ -115,6 +115,16 @@ integration: ## Run integration tests
 	$(call title,Running integration tests)
 	go test -v ./test/integration
 
+.PHONY: archive-cache
+archive-cache: ## Tar up the testing cache currently in use
+	$(call title,Archiving test-fixture cache files)
+	find . -name "*.tar" | grep test-fixtures/ | grep cache | tar -cvf $(TEMPDIR)/cache.tar -T -
+
+.PHONY: unarchive-cache
+unarchive-cache: ## Extract and restore the testing cache
+	$(call title,Archiving test-fixture cache files)
+	tar -xvf $(TEMPDIR)/cache.tar
+
 .PHONY: clear-test-cache
 clear-test-cache: ## Delete all test cache (built docker image tars)
 	find . -type f -wholename "**/test-fixtures/cache/*.tar" -delete
