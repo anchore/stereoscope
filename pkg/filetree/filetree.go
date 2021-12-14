@@ -307,7 +307,7 @@ func (t *FileTree) resolveNodeLinks(n *filenode.FileNode, followDeadBasenameLink
 			var parentDir string
 			parentDir, _ = filepath.Split(string(currentNode.RealPath))
 			// assemble relative link path by normalizing: "/cur/dir/../file1.txt" --> "/cur/file1.txt"
-			nextPath = file.Path(filepath.Clean(path.Join(parentDir, string(currentNode.LinkPath))))
+			nextPath = file.Path(path.Clean(path.Join(parentDir, string(currentNode.LinkPath))))
 		}
 
 		// no more links to follow
