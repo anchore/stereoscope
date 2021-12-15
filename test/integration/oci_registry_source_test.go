@@ -33,9 +33,6 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to get image: %+v", err)
 	}
-	if err := img.Read(); err != nil {
-		t.Fatalf("failed to read image: %+v", err)
-	}
 
 	assert.Len(t, img.Metadata.RepoDigests, 1)
 	assert.Equal(t, "index.docker.io/"+ref, img.Metadata.RepoDigests[0])

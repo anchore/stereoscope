@@ -71,7 +71,7 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
-func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
+func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string, exclude func(string) bool) error {
 	var err error
 	l.Tree = filetree.NewFileTree()
 	l.fileCatalog = catalog
@@ -92,7 +92,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		return err
 	}
 
-	l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor))
+	l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor, exclude))
 	if err != nil {
 		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 	}
@@ -140,7 +140,7 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
+func (l *Layer) indexer(monitor *progress.Manual, exclude func(string) bool) file.TarIndexVisitor {
 	return func(index file.TarIndexEntry) error {
 		var err error
 		var entry = index.ToTarFileEntry()
@@ -152,6 +152,11 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 			}
 		}()
 		metadata := file.NewMetadata(entry.Header, entry.Sequence, contents)
+
+		// exclude entries matching a function we provide
+		if exclude != nil && exclude(metadata.Path) {
+			return nil
+		}
 
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).

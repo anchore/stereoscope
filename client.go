@@ -16,7 +16,7 @@ import (
 var tempDirGenerator = file.NewTempDirGenerator()
 
 // GetImage returns an image from the explicitly provided source.
-func GetImageFromSource(imgStr string, source image.Source, registryOptions *image.RegistryOptions) (*image.Image, error) {
+func GetImageFromSource(imgStr string, source image.Source, registryOptions *image.RegistryOptions, exclude func(string) bool) (*image.Image, error) {
 	var provider image.Provider
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
@@ -41,7 +41,7 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 		return nil, err
 	}
 
-	err = img.Read()
+	err = img.Read(exclude)
 	if err != nil {
 		return nil, fmt.Errorf("could not read image: %+v", err)
 	}
@@ -56,7 +56,7 @@ func GetImage(userStr string, registryOptions *image.RegistryOptions) (*image.Im
 	if err != nil {
 		return nil, err
 	}
-	return GetImageFromSource(imgStr, source, registryOptions)
+	return GetImageFromSource(imgStr, source, registryOptions, nil)
 }
 
 func SetLogger(logger logger.Logger) {
