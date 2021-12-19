@@ -38,7 +38,7 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 
 	img, err := provider.Provide()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to use %s source: %w", source, err)
 	}
 
 	err = img.Read()

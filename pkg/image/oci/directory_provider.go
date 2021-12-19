@@ -26,7 +26,7 @@ func NewProviderFromPath(path string, tmpDirGen *file.TempDirGenerator) *Directo
 func (p *DirectoryImageProvider) Provide() (*image.Image, error) {
 	pathObj, err := layout.FromPath(p.path)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse OCI directory path=%q : %w", p.path, err)
+		return nil, fmt.Errorf("unable to read image from OCI directory path %q: %w", p.path, err)
 	}
 
 	index, err := layout.ImageIndexFromPath(p.path)
