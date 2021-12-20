@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -8,8 +9,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -26,10 +30,46 @@ var (
 	// remote rootless ssh://engineering.lab.company.com/run/user/$UID/podman/podman.sock
 	// remote rootfull ssh://root@10.10.1.136:22/run/podman/podman.sock
 
-	localRootlessPath     = fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
-	defaultRemoteRootless = fmt.Sprintf("ssh://core@localhost:63753%s?secure=false", localRootlessPath)
-	defaultLocalRootless  = fmt.Sprintf("unix://%s", localRootlessPath)
+	localRootlessPathTemplate = "/run/user/%d/podman/podman.sock"
+	defaultRemoteRootless     = "ssh://core@localhost:63753%s?secure=false"
+	defaultLocalRootless      = fmt.Sprintf("unix://%s", getLocalSocketPath())
 )
+
+func getLocalSocketPath() string {
+	return fmt.Sprintf(localRootlessPathTemplate, os.Getuid())
+}
+
+func getRemoteRootlessAddress() (string, error) {
+	uid, err := getRemoteUID()
+	if err != nil {
+		return "", err
+	}
+
+	sock := fmt.Sprintf(localRootlessPathTemplate, uid)
+	return fmt.Sprintf(defaultRemoteRootless, sock), nil
+}
+
+func getRemoteUID() (int, error) {
+	// TODO: expose these ssh params to caller. End user should have settings for them
+	cmd := exec.Command("ssh", "-i", "~/.ssh/podman-machine-default", "-l", "core", "-p", "63753", "--", "localhost", "id -u")
+	out := &bytes.Buffer{}
+	cmd.Stdout = out
+
+	err := cmd.Run()
+	if err != nil {
+		return 0, fmt.Errorf("getting remote user ID: %w", err)
+	}
+	vet := strings.TrimSuffix(out.String(), "\n")
+	vet = strings.TrimSpace(vet)
+
+	uid, err := strconv.Atoi(vet)
+	if err != nil {
+		return 0, fmt.Errorf("converting reponse: %w", err)
+	}
+
+	log.Debugf("remote user ID is: %d", uid)
+	return uid, nil
+}
 
 // TODO(jonas): defaultRemoteRootless includes the UID from a remote users,
 // which might be different of the user's UID in the running host.
@@ -40,7 +80,10 @@ func podmanOverSSH() (*client.Client, error) {
 		client.WithAPIVersionNegotiation(),
 	}
 
-	host := defaultRemoteRootless
+	host, err := getRemoteRootlessAddress()
+	if err != nil {
+		return nil, err
+	}
 	makeClient := sshClient
 
 	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
@@ -110,7 +153,8 @@ func GetClientForPodman() (*client.Client, error) {
 		if err != nil {
 			return nil, err
 		}
-		ctx, _ := context.WithTimeout(context.TODO(), time.Second*3)
+		ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
+		defer cancel()
 		_, err = c.Ping(ctx)
 		if err == nil {
 			return c, nil
