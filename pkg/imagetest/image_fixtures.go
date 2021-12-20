@@ -2,7 +2,6 @@ package imagetest
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"
 	"path"
@@ -13,6 +12,7 @@ import (
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/logrusorgru/aurora"
+	"github.com/stretchr/testify/require"
 )
 
 const (

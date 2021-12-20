@@ -64,7 +64,7 @@ func getRemoteUID() (int, error) {
 
 	uid, err := strconv.Atoi(vet)
 	if err != nil {
-		return 0, fmt.Errorf("converting reponse: %w", err)
+		return 0, fmt.Errorf("converting response: %w", err)
 	}
 
 	log.Debugf("remote user ID is: %d", uid)
@@ -163,8 +163,6 @@ func GetClientForPodman() (*client.Client, error) {
 		return podmanOverSSH()
 	}
 }
-
-type clientMaker func(*url.URL) (*http.Client, error)
 
 func getSSHKey() string {
 	identity := filepath.Join(homedir.Get(), ".ssh", "podman-machine-default")
