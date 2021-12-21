@@ -1,11 +1,13 @@
 package filetree
 
 import (
+	"io/fs"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/go-test/deep"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestFileInfoAdapter(t *testing.T) {
@@ -174,12 +176,7 @@ func TestFileInfoAdapter_PreventInfiniteLoop(t *testing.T) {
 }
 
 func TestOSAdapter_Lstat(t *testing.T) {
-	tr := NewFileTree()
-	tr.AddFile("/home/thing.txt")
-	tr.AddDir("/home/wagoodman")
-	tr.AddSymLink("/home/thing", "./thing.txt")
-	// note: link destination does not exist
-	tr.AddHardLink("/home/place", "/somewhere-else")
+	tr := newHelperTree()
 
 	tests := []struct {
 		name                         string
@@ -267,13 +264,7 @@ func TestOSAdapter_Lstat(t *testing.T) {
 }
 
 func TestOSAdapter_Stat(t *testing.T) {
-	tr := NewFileTree()
-	tr.AddFile("/home/thing.txt")
-	tr.AddDir("/home/wagoodman")
-	tr.AddSymLink("/home/thing", "./thing.txt")
-	// note: link destination does not exist
-	tr.AddHardLink("/home/place", "/somewhere-else")
-
+	tr := newHelperTree()
 	tests := []struct {
 		name                         string
 		doNotFollowDeadBasenameLinks bool
@@ -356,4 +347,15 @@ func TestOSAdapter_Stat(t *testing.T) {
 		})
 	}
 
+}
+
+func newHelperTree() *FileTree {
+	tr := NewFileTree()
+	tr.AddFile("/home/thing.txt")
+	tr.AddDir("/home/wagoodman")
+	tr.AddSymLink("/home/thing", "./thing.txt")
+	// note: link destination does not exist
+	tr.AddHardLink("/home/place", "/somewhere-else")
+
+	return tr
 }

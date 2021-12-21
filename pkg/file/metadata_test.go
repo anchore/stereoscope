@@ -1,11 +1,15 @@
+//go:build linux
+// +build linux
+
 package file
 
 import (
-	"github.com/go-test/deep"
 	"io"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/go-test/deep"
 )
 
 func TestFileMetadataFromTar(t *testing.T) {

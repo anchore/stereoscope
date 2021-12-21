@@ -1,9 +1,10 @@
+//go:build linux
+
 package file
 
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"io"
 	"io/ioutil"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 const (

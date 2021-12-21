@@ -1,7 +1,7 @@
 package filenode
 
 import (
-	"path/filepath"
+	"path"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
@@ -41,7 +41,7 @@ func NewSymLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
 
 func NewHardLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
 	// hard link MUST be interpreted as an absolute path
-	linkPath = file.Path(filepath.Clean(file.DirSeparator + string(linkPath)))
+	linkPath = file.Path(path.Clean(file.DirSeparator + string(linkPath)))
 	return &FileNode{
 		RealPath:  p,
 		FileType:  file.TypeHardLink,

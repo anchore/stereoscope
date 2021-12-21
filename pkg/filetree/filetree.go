@@ -106,7 +106,7 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 			return nil, err
 		}
 
-		listing = append(listing, file.Path(filepath.Join(string(dir), fn.RealPath.Basename())))
+		listing = append(listing, file.Path(path.Join(string(dir), fn.RealPath.Basename())))
 	}
 	return listing, nil
 }
@@ -307,7 +307,7 @@ func (t *FileTree) resolveNodeLinks(n *filenode.FileNode, followDeadBasenameLink
 			var parentDir string
 			parentDir, _ = filepath.Split(string(currentNode.RealPath))
 			// assemble relative link path by normalizing: "/cur/dir/../file1.txt" --> "/cur/file1.txt"
-			nextPath = file.Path(filepath.Clean(path.Join(parentDir, string(currentNode.LinkPath))))
+			nextPath = file.Path(path.Clean(path.Join(parentDir, string(currentNode.LinkPath))))
 		}
 
 		// no more links to follow

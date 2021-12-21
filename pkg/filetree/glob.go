@@ -130,6 +130,32 @@ type osAdapter struct {
 	doNotFollowDeadBasenameLinks bool
 }
 
+func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
+	var ret = make([]fs.DirEntry, 0)
+	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+		FollowAncestorLinks: true,
+		FollowBasenameLinks: true,
+	})
+	if err != nil {
+		return ret, err
+	}
+	if fn == nil {
+		return ret, nil
+	}
+
+	for _, child := range a.filetree.tree.Children(fn) {
+		requestPath := path.Join(name, filepath.Base(string(child.ID())))
+		r, err := a.Lstat(requestPath)
+		if err == nil {
+			// Lstat by default returns an error when the path cannot be found
+			// TODO: go 1.17 will have fs.FileInfoToDirEntry helper function to prevent type assertion here
+			ret = append(ret, r.(*fileinfoAdapter))
+		}
+	}
+
+	return ret, nil
+}
+
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
 func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
@@ -159,11 +185,6 @@ func (a *osAdapter) Open(name string) (fs.File, error) {
 		filetree: a.filetree,
 		name:     name,
 	}, nil
-}
-
-// PathSeparator returns the standard separator between path entries for the underlying filesystem.
-func (a *osAdapter) PathSeparator() rune {
-	return []rune(file.DirSeparator)[0]
 }
 
 // Stat returns a FileInfo describing the named file.
