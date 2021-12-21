@@ -48,11 +48,11 @@ func (f *fileAdapter) Stat() (fs.FileInfo, error) {
 
 // isInPathResolutionLoop is meant to detect if the current path doubles back on a node that is an ancestor of the
 // current path.
-func (f *fileAdapter) isInPathResolutionLoop() (bool, error) {
+func isInPathResolutionLoop(path string, ft *FileTree) (bool, error) {
 	allPathSet := file.NewPathSet()
-	allPaths := file.Path(f.name).AllPaths()
+	allPaths := file.Path(path).AllPaths()
 	for _, p := range allPaths {
-		fn, err := f.filetree.node(p, linkResolutionStrategy{
+		fn, err := ft.node(p, linkResolutionStrategy{
 			FollowAncestorLinks: true,
 			FollowBasenameLinks: true,
 		})
@@ -104,7 +104,7 @@ func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 		return ret, nil
 	}
 
-	isInPathResolutionLoop, err := f.isInPathResolutionLoop()
+	isInPathResolutionLoop, err := isInPathResolutionLoop(f.name, f.filetree)
 	if err != nil || isInPathResolutionLoop {
 		return ret, err
 	}
@@ -130,25 +130,6 @@ type osAdapter struct {
 	doNotFollowDeadBasenameLinks bool
 }
 
-func (a *osAdapter) isInPathResolutionLoop(path string) (bool, error) {
-	allPathSet := file.NewPathSet()
-	allPaths := file.Path(path).AllPaths()
-	for _, p := range allPaths {
-		fn, err := a.filetree.node(p, linkResolutionStrategy{
-			FollowAncestorLinks: true,
-			FollowBasenameLinks: true,
-		})
-		if err != nil {
-			return false, err
-		}
-		allPathSet.Add(file.Path(fn.ID()))
-	}
-	// we want to allow for getting children out of the first iteration of a infinite path, but NOT allowing
-	// beyond the second iteration down an infinite path.
-	diff := len(allPaths) - len(allPathSet)
-	return diff > 1, nil
-}
-
 func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 	var ret = make([]fs.DirEntry, 0)
 	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
@@ -162,7 +143,7 @@ func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 		return ret, nil
 	}
 
-	isInPathResolutionLoop, err := a.isInPathResolutionLoop(name)
+	isInPathResolutionLoop, err := isInPathResolutionLoop(name, a.filetree)
 	if err != nil || isInPathResolutionLoop {
 		return ret, err
 	}
