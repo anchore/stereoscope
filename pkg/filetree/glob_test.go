@@ -181,9 +181,10 @@ func TestOSAdapter_ReadDir(t *testing.T) {
 		doNotFollowDeadBasenameLinks bool
 		path                         string
 		expected                     []fileinfoAdapter
+		shouldErr                    bool
 	}{
 		{
-			name:                         "readDir",
+			name:                         "ReadDir fetches the filesInfos correctly",
 			doNotFollowDeadBasenameLinks: false,
 			path:                         "/home",
 			expected: []fileinfoAdapter{
@@ -205,6 +206,7 @@ func TestOSAdapter_ReadDir(t *testing.T) {
 					Node:        filenode.FileNode{RealPath: "/home/place", FileType: 49, LinkPath: "/somewhere-else"},
 				},
 			},
+			shouldErr: false,
 		},
 	}
 
