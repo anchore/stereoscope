@@ -173,6 +173,69 @@ func TestFileInfoAdapter_PreventInfiniteLoop(t *testing.T) {
 	}
 }
 
+func TestOSAdapter_ReadDir(t *testing.T) {
+	tr := newHelperTree()
+
+	tests := []struct {
+		name                         string
+		doNotFollowDeadBasenameLinks bool
+		path                         string
+		expected                     []fileinfoAdapter
+	}{
+		{
+			name:                         "readDir",
+			doNotFollowDeadBasenameLinks: false,
+			path:                         "/home",
+			expected: []fileinfoAdapter{
+				{
+					VirtualPath: "/home/thing.txt",
+					Node:        filenode.FileNode{RealPath: "/home/thing.txt", FileType: 48},
+				},
+
+				{
+					VirtualPath: "/home/wagoodman",
+					Node:        filenode.FileNode{RealPath: "/home/wagoodman", FileType: 53},
+				},
+				{
+					VirtualPath: "/home/thing",
+					Node:        filenode.FileNode{RealPath: "/home/thing", FileType: 50, LinkPath: "./thing.txt"},
+				},
+				{
+					VirtualPath: "/home/place",
+					Node:        filenode.FileNode{RealPath: "/home/place", FileType: 49, LinkPath: "/somewhere-else"},
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := osAdapter{
+				filetree:                     tr,
+				doNotFollowDeadBasenameLinks: test.doNotFollowDeadBasenameLinks,
+			}
+
+			fileInfos, err := adapter.ReadDir(test.path)
+			if err != nil {
+				t.Fatalf("could not lstat: %+v", err)
+			}
+
+			actual := make([]fileinfoAdapter, 0)
+
+			for _, fileInfo := range fileInfos {
+				fi := fileInfo.(*fileinfoAdapter)
+				fi.Node.Reference = nil
+				actual = append(actual, *fi)
+			}
+
+			for _, d := range deep.Equal(test.expected, actual) {
+				t.Errorf("   diff: %+v", d)
+			}
+		})
+	}
+
+}
+
 func TestOSAdapter_Lstat(t *testing.T) {
 	tr := newHelperTree()
 
