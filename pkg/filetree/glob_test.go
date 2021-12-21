@@ -1,6 +1,7 @@
 package filetree
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -228,6 +229,13 @@ func TestOSAdapter_ReadDir(t *testing.T) {
 				fi := fileInfo.(*fileinfoAdapter)
 				fi.Node.Reference = nil
 				actual = append(actual, *fi)
+			}
+
+			// sort outputs for compare
+			for _, fi := range [][]fileinfoAdapter{actual, test.expected} {
+				sort.Slice(fi, func(i, j int) bool {
+					return fi[i].VirtualPath > fi[j].VirtualPath
+				})
 			}
 
 			for _, d := range deep.Equal(test.expected, actual) {
