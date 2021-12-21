@@ -1,6 +1,7 @@
 package filetree
 
 import (
+	"sort"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -116,6 +117,55 @@ func TestFileInfoAdapter(t *testing.T) {
 	}
 }
 
+func TestOsAdapter_PreventInfiniteLoop(t *testing.T) {
+	tr := NewFileTree()
+	tr.AddFile("/usr/bin/busybox")
+	tr.AddSymLink("/usr/bin/X11", ".")
+
+	tests := []struct {
+		name       string
+		path       string
+		childCount int
+	}{
+		{
+			name:       "children on real path",
+			path:       "/usr/bin",
+			childCount: 2,
+		},
+		{
+			name:       "first link iteration shows children",
+			path:       "/usr/bin/X11",
+			childCount: 2,
+		},
+		{
+			name:       "second link iteration DOES NOT show children",
+			path:       "/usr/bin/X11/X11",
+			childCount: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := &osAdapter{
+				filetree:                     tr,
+				doNotFollowDeadBasenameLinks: false,
+			}
+			fileInfos, err := adapter.ReadDir(test.path)
+			if err != nil {
+				t.Fatalf("could not read dir: %+v", err)
+			}
+
+			if len(fileInfos) != test.childCount {
+				for _, f := range fileInfos {
+					t.Logf("   actual: %+v", f)
+				}
+				t.Errorf("unexpected number of files: %d != %d", len(fileInfos), test.childCount)
+			}
+
+		})
+	}
+}
+
 func TestFileInfoAdapter_PreventInfiniteLoop(t *testing.T) {
 	tr := NewFileTree()
 	tr.AddFile("/usr/bin/busybox")
@@ -173,13 +223,80 @@ func TestFileInfoAdapter_PreventInfiniteLoop(t *testing.T) {
 	}
 }
 
+func TestOSAdapter_ReadDir(t *testing.T) {
+	tr := newHelperTree()
+
+	tests := []struct {
+		name                         string
+		doNotFollowDeadBasenameLinks bool
+		path                         string
+		expected                     []fileinfoAdapter
+		shouldErr                    bool
+	}{
+		{
+			name:                         "ReadDir fetches the filesInfos correctly",
+			doNotFollowDeadBasenameLinks: false,
+			path:                         "/home",
+			expected: []fileinfoAdapter{
+				{
+					VirtualPath: "/home/thing.txt",
+					Node:        filenode.FileNode{RealPath: "/home/thing.txt", FileType: 48},
+				},
+
+				{
+					VirtualPath: "/home/wagoodman",
+					Node:        filenode.FileNode{RealPath: "/home/wagoodman", FileType: 53},
+				},
+				{
+					VirtualPath: "/home/thing",
+					Node:        filenode.FileNode{RealPath: "/home/thing", FileType: 50, LinkPath: "./thing.txt"},
+				},
+				{
+					VirtualPath: "/home/place",
+					Node:        filenode.FileNode{RealPath: "/home/place", FileType: 49, LinkPath: "/somewhere-else"},
+				},
+			},
+			shouldErr: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := osAdapter{
+				filetree:                     tr,
+				doNotFollowDeadBasenameLinks: test.doNotFollowDeadBasenameLinks,
+			}
+
+			fileInfos, err := adapter.ReadDir(test.path)
+			if err != nil {
+				t.Fatalf("could not lstat: %+v", err)
+			}
+
+			actual := make([]fileinfoAdapter, 0)
+
+			for _, fileInfo := range fileInfos {
+				fi := fileInfo.(*fileinfoAdapter)
+				fi.Node.Reference = nil
+				actual = append(actual, *fi)
+			}
+
+			// sort outputs for compare
+			for _, fi := range [][]fileinfoAdapter{actual, test.expected} {
+				sort.Slice(fi, func(i, j int) bool {
+					return fi[i].VirtualPath > fi[j].VirtualPath
+				})
+			}
+
+			for _, d := range deep.Equal(test.expected, actual) {
+				t.Errorf("   diff: %+v", d)
+			}
+		})
+	}
+
+}
+
 func TestOSAdapter_Lstat(t *testing.T) {
-	tr := NewFileTree()
-	tr.AddFile("/home/thing.txt")
-	tr.AddDir("/home/wagoodman")
-	tr.AddSymLink("/home/thing", "./thing.txt")
-	// note: link destination does not exist
-	tr.AddHardLink("/home/place", "/somewhere-else")
+	tr := newHelperTree()
 
 	tests := []struct {
 		name                         string
@@ -267,13 +384,7 @@ func TestOSAdapter_Lstat(t *testing.T) {
 }
 
 func TestOSAdapter_Stat(t *testing.T) {
-	tr := NewFileTree()
-	tr.AddFile("/home/thing.txt")
-	tr.AddDir("/home/wagoodman")
-	tr.AddSymLink("/home/thing", "./thing.txt")
-	// note: link destination does not exist
-	tr.AddHardLink("/home/place", "/somewhere-else")
-
+	tr := newHelperTree()
 	tests := []struct {
 		name                         string
 		doNotFollowDeadBasenameLinks bool
@@ -356,4 +467,15 @@ func TestOSAdapter_Stat(t *testing.T) {
 		})
 	}
 
+}
+
+func newHelperTree() *FileTree {
+	tr := NewFileTree()
+	tr.AddFile("/home/thing.txt")
+	tr.AddDir("/home/wagoodman")
+	tr.AddSymLink("/home/thing", "./thing.txt")
+	// note: link destination does not exist
+	tr.AddHardLink("/home/place", "/somewhere-else")
+
+	return tr
 }

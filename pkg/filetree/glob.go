@@ -48,11 +48,11 @@ func (f *fileAdapter) Stat() (fs.FileInfo, error) {
 
 // isInPathResolutionLoop is meant to detect if the current path doubles back on a node that is an ancestor of the
 // current path.
-func (f *fileAdapter) isInPathResolutionLoop() (bool, error) {
+func isInPathResolutionLoop(path string, ft *FileTree) (bool, error) {
 	allPathSet := file.NewPathSet()
-	allPaths := file.Path(f.name).AllPaths()
+	allPaths := file.Path(path).AllPaths()
 	for _, p := range allPaths {
-		fn, err := f.filetree.node(p, linkResolutionStrategy{
+		fn, err := ft.node(p, linkResolutionStrategy{
 			FollowAncestorLinks: true,
 			FollowBasenameLinks: true,
 		})
@@ -104,7 +104,7 @@ func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 		return ret, nil
 	}
 
-	isInPathResolutionLoop, err := f.isInPathResolutionLoop()
+	isInPathResolutionLoop, err := isInPathResolutionLoop(f.name, f.filetree)
 	if err != nil || isInPathResolutionLoop {
 		return ret, err
 	}
@@ -128,6 +128,37 @@ func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 type osAdapter struct {
 	filetree                     *FileTree
 	doNotFollowDeadBasenameLinks bool
+}
+
+func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
+	var ret = make([]fs.DirEntry, 0)
+	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+		FollowAncestorLinks: true,
+		FollowBasenameLinks: true,
+	})
+	if err != nil {
+		return ret, err
+	}
+	if fn == nil {
+		return ret, nil
+	}
+
+	isInPathResolutionLoop, err := isInPathResolutionLoop(name, a.filetree)
+	if err != nil || isInPathResolutionLoop {
+		return ret, err
+	}
+
+	for _, child := range a.filetree.tree.Children(fn) {
+		requestPath := path.Join(name, filepath.Base(string(child.ID())))
+		r, err := a.Lstat(requestPath)
+		if err == nil {
+			// Lstat by default returns an error when the path cannot be found
+			// TODO: go 1.17 will have fs.FileInfoToDirEntry helper function to prevent type assertion here
+			ret = append(ret, r.(*fileinfoAdapter))
+		}
+	}
+
+	return ret, nil
 }
 
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
@@ -159,11 +190,6 @@ func (a *osAdapter) Open(name string) (fs.File, error) {
 		filetree: a.filetree,
 		name:     name,
 	}, nil
-}
-
-// PathSeparator returns the standard separator between path entries for the underlying filesystem.
-func (a *osAdapter) PathSeparator() rune {
-	return []rune(file.DirSeparator)[0]
 }
 
 // Stat returns a FileInfo describing the named file.

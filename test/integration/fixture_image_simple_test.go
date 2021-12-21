@@ -1,14 +1,18 @@
+//go:build windows
+// +build windows
+
 package integration
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope"
-	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/scylladb/go-set"
 	"io"
 	"io/ioutil"
 	"strings"
 	"testing"
+
+	"github.com/anchore/stereoscope"
+	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/scylladb/go-set"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"

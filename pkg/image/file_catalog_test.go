@@ -1,11 +1,11 @@
+//go:build !windows
+// +build !windows
+
 package image
 
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/go-test/deep"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/types"
 	"io"
 	"io/ioutil"
 	"os"
@@ -13,6 +13,10 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
+
+	"github.com/go-test/deep"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/anchore/stereoscope/pkg/file"
 )
