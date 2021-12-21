@@ -12,7 +12,7 @@ RESET := $(shell tput -T linux sgr0)
 TITLE := $(BOLD)$(PURPLE)
 SUCCESS := $(BOLD)$(GREEN)
 # the quality gate lower threshold for unit test total % coverage (by function statements)
-COVERAGE_THRESHOLD := 45
+COVERAGE_THRESHOLD := 40
 
 ifeq "$(strip $(VERSION))" ""
     override VERSION = $(shell git describe --always --tags --dirty)

@@ -1,13 +1,11 @@
 package filetree
 
 import (
-	"io/fs"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/go-test/deep"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestFileInfoAdapter(t *testing.T) {
