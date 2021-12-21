@@ -130,6 +130,25 @@ type osAdapter struct {
 	doNotFollowDeadBasenameLinks bool
 }
 
+func (a *osAdapter) isInPathResolutionLoop(path string) (bool, error) {
+	allPathSet := file.NewPathSet()
+	allPaths := file.Path(path).AllPaths()
+	for _, p := range allPaths {
+		fn, err := a.filetree.node(p, linkResolutionStrategy{
+			FollowAncestorLinks: true,
+			FollowBasenameLinks: true,
+		})
+		if err != nil {
+			return false, err
+		}
+		allPathSet.Add(file.Path(fn.ID()))
+	}
+	// we want to allow for getting children out of the first iteration of a infinite path, but NOT allowing
+	// beyond the second iteration down an infinite path.
+	diff := len(allPaths) - len(allPathSet)
+	return diff > 1, nil
+}
+
 func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 	var ret = make([]fs.DirEntry, 0)
 	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
@@ -141,6 +160,11 @@ func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	if fn == nil {
 		return ret, nil
+	}
+
+	isInPathResolutionLoop, err := a.isInPathResolutionLoop(name)
+	if err != nil || isInPathResolutionLoop {
+		return ret, err
 	}
 
 	for _, child := range a.filetree.tree.Children(fn) {
