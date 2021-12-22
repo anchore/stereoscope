@@ -113,27 +113,43 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 			return UnknownSource, "", fmt.Errorf("unable to expand potential home dir expression: %w", err)
 		}
 	case UnknownSource:
-		// ignore any source hint since the source is ultimately unknown, see if this could be a docker image
-		if isRegistryReference(userInput) {
-			// verify that the docker daemon is accessible before assuming we can suggest to use it
-			dockerClient, err := docker.GetClient()
-			if err == nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				pong, err := dockerClient.Ping(ctx)
-				if err == nil && pong.APIVersion != "" {
-					// the docker daemon exists and is accessible
-					return DockerDaemonSource, userInput, nil
-				}
-			}
-			// fallback to pulling from the registry directly (the daemon is inaccessible due to error or otherwise)
-			return OciRegistrySource, userInput, nil
+		// Ignore any source hint since the source is still unknown. See if this could be a Docker image.
+		if imagePullSource := DetermineImagePullSource(userInput); imagePullSource != UnknownSource {
+			return imagePullSource, userInput, nil
 		}
-		// invalidate any previous processing if the source is still unknown
+
+		// Invalidate any previous processing if the source is still unknown.
 		location = ""
 	}
 
 	return source, location, nil
+}
+
+// DetermineImagePullSource takes an image reference string as input, and
+// determines a Source to use to pull the image. If the input doesn't specify an
+// image reference (i.e. an image that can be _pulled_), UnknownSource is
+// returned. Otherwise, if the Docker daemon is available, DockerDaemonSource is
+// returned, and if not, OciRegistrySource is returned.
+func DetermineImagePullSource(userInput string) Source {
+	if !isRegistryReference(userInput) {
+		return UnknownSource
+	}
+
+	// verify that the Docker daemon is accessible before assuming we can use it
+	dockerClient, err := docker.GetClient()
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		pong, err := dockerClient.Ping(ctx)
+		if err == nil && pong.APIVersion != "" {
+			// the Docker daemon exists and is accessible
+			return DockerDaemonSource
+		}
+	}
+
+	// fallback to using the registry directly
+	return OciRegistrySource
 }
 
 // DetectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
