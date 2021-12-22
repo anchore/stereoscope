@@ -187,7 +187,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to trace image save progress: %w", err)
 	}
 
-	stage.Current = "requesting image from docker"
+	stage.Current = "requesting image from Docker"
 	readCloser, err := dockerClient.ImageSave(context.Background(), []string{p.imageStr})
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image tar: %w", err)
