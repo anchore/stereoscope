@@ -15,7 +15,7 @@ import (
 
 var tempDirGenerator = file.NewTempDirGenerator()
 
-// GetImage returns an image from the explicitly provided source.
+// GetImageFromSource returns an image from the explicitly provided source.
 func GetImageFromSource(imgStr string, source image.Source, registryOptions *image.RegistryOptions) (*image.Image, error) {
 	var provider image.Provider
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
