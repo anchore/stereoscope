@@ -83,6 +83,21 @@ jobs:
           path: ${{ github.workspace }}/test/integration/test-fixtures/cache
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/test-fixtures/cache.fingerprint') }}
 
+      - name: Enable systemd for podman socket activation
+        run: |
+          set -x
+          loginctl enable-linger $(whoami)
+
+          # we need to make certain that the bus instance is up and ready before systemctl attempts to use it.
+          # if we can figure a non-racey way to do this, that would be nice.
+          sleep 2
+
+          mkdir -p $HOME/.config/systemd/user
+          export XDG_RUNTIME_DIR=/run/user/$UID
+
+          systemctl --user enable --now podman.socket
+
+
       - name: Run integration tests
         run: make integration
 
