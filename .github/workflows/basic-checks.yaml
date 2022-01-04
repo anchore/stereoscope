@@ -104,6 +104,7 @@ jobs:
       - name: Start tmate session if integration tests fail
         if: ${{ failure() }}
         uses: mxschmitt/action-tmate@v3
+        timeout-minutes: 40
 
       - name: Restore base benchmark result
         uses: actions/cache@v2
