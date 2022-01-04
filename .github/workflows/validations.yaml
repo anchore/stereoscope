@@ -1,6 +1,11 @@
 name: "Validations"
 on:
   workflow_dispatch:
+    inputs:
+      run-tmate-on-failure:
+        description: "Start a tmate session if a test fail"
+        required: false
+        default: false
   push:
   pull_request:
 
@@ -145,8 +150,8 @@ jobs:
       - name: Run integration tests
         run: make integration
 
-      - name: Start tmate session if integration tests fail
-        if: ${{ failure() }}
+      - name: Setup tmate session
+        if: ${{ failure() && github.event.inputs.run-tmate-on-failure }}
         uses: mxschmitt/action-tmate@v3
         timeout-minutes: 40
 
