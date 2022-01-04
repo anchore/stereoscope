@@ -53,11 +53,13 @@ func getRemoteUID() (int, error) {
 	// TODO: expose these ssh params to caller. End user should have settings for them
 	cmd := exec.Command("ssh", "-i", "~/.ssh/podman-machine-default", "-l", "core", "-p", "63753", "--", "localhost", "id -u")
 	out := &bytes.Buffer{}
+	stdErr := &bytes.Buffer{}
 	cmd.Stdout = out
+	cmd.Stderr = stdErr
 
 	err := cmd.Run()
 	if err != nil {
-		return 0, fmt.Errorf("getting remote user ID: %w", err)
+		return 0, fmt.Errorf("getting remote user ID: %w and stdErr: %s", err, stdErr)
 	}
 	vet := strings.TrimSuffix(out.String(), "\n")
 	vet = strings.TrimSpace(vet)
@@ -160,6 +162,7 @@ func GetClientForPodman() (*client.Client, error) {
 		if err == nil {
 			return c, nil
 		}
+		log.Errorf("pinging podman unix socket: %v", err)
 
 		return podmanOverSSH()
 	}
