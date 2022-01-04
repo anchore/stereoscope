@@ -2,10 +2,14 @@ name: "Validations"
 on:
   workflow_dispatch:
     inputs:
-      run-tmate-on-failure:
-        description: "Start a tmate session if a test fail"
+      run-tmate:
+        description: "Start a tmate session"
         required: false
-        default: false
+        default: ""
+      tmate-duration:
+        description: "Tmate session duration"
+        required: false
+        default: "5"
   push:
   pull_request:
 
@@ -151,9 +155,11 @@ jobs:
         run: make integration
 
       - name: Setup tmate session
-        if: ${{ failure() && github.event.inputs.run-tmate-on-failure }}
+        if: ${{ github.event.inputs.run-tmate == 'true' }}
         uses: mxschmitt/action-tmate@v3
-        timeout-minutes: 40
+        timeout-minutes: ${{ github.event.inputs.tmate-duration }}
+        with:
+          limit-access-to-actor: true
 
   Benchmark-Test:
     name: "Benchmark tests"
