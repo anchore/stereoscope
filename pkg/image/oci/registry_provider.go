@@ -77,8 +77,14 @@ func prepareReferenceOptions(registryOptions *image.RegistryOptions) []name.Opti
 	return options
 }
 
-func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOptions) []remote.Option {
-	var opts []remote.Option
+func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOptions) (opts []remote.Option) {
+	if registryOptions == nil {
+		// use the Keychain specified from a docker config file.
+		log.Debugf("no registry credentials configured, using the default keychain")
+		opts = append(opts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		return
+	}
+
 	if registryOptions.InsecureSkipTLSVerify {
 		t := &http.Transport{
 			// nolint: gosec
@@ -92,11 +98,7 @@ func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOpt
 	authenticator := registryOptions.Authenticator(ref.Context().RegistryStr())
 	if authenticator != nil {
 		opts = append(opts, remote.WithAuth(authenticator))
-	} else {
-		// use the Keychain specified from a docker config file.
-		log.Debugf("no registry credentials configured, using the default keychain")
-		opts = append(opts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
-	return opts
+	return
 }

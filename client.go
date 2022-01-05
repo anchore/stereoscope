@@ -60,8 +60,8 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 	return img, nil
 }
 
-// GetImage parses the user provided image string and provides an image object; note: the source where the image should
-// be referenced from is automatically inferred.
+// GetImage parses the user provided image string and provides an image object;
+// note: the source where the image should be referenced from is automatically inferred.
 func GetImage(userStr string, registryOptions *image.RegistryOptions) (*image.Image, error) {
 	source, imgStr, err := image.DetectSource(userStr)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anchore/stereoscope/internal/docker"
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mitchellh/go-homedir"
@@ -118,21 +119,9 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 			return UnknownSource, "", fmt.Errorf("unable to expand potential home dir expression: %w", err)
 		}
 	case UnknownSource:
-		// ignore any source hint since the source is ultimately unknown, see if this could be a docker image
-		if isRegistryReference(userInput) {
-			// verify that the docker daemon is accessible before assuming we can suggest to use it
-			dockerClient, err := docker.GetClient()
-			if err == nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				pong, err := dockerClient.Ping(ctx)
-				if err == nil && pong.APIVersion != "" {
-					// the docker daemon exists and is accessible
-					return DockerDaemonSource, userInput, nil
-				}
-			}
-			// fallback to pulling from the registry directly (the daemon is inaccessible due to error or otherwise)
-			return OciRegistrySource, userInput, nil
+		// Ignore any source hint since the source is still unknown. See if this could be a Docker image.
+		if imagePullSource := DetermineImagePullSource(userInput); imagePullSource != UnknownSource {
+			return imagePullSource, userInput, nil
 		}
 
 		// Invalidate any previous processing if the source is still unknown.
@@ -153,17 +142,31 @@ func DetermineImagePullSource(userInput string) Source {
 	}
 
 	// verify that the Docker daemon is accessible before assuming we can use it
-	dockerClient, err := docker.GetClient()
+	c, err := docker.GetClient()
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		pong, err := dockerClient.Ping(ctx)
+		pong, err := c.Ping(ctx)
 		if err == nil && pong.APIVersion != "" {
 			// the Docker daemon exists and is accessible
 			return DockerDaemonSource
 		}
 	}
+	log.Debug("no docker daemon available")
+
+	c, err = docker.GetClientForPodman()
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		pong, err := c.Ping(ctx)
+		if err == nil && pong.APIVersion != "" {
+			// the Docker daemon exists and is accessible
+			return PodmanDaemonSource
+		}
+	}
+	log.Debug("no podman daemon available. Default to OciRegistry")
 
 	// fallback to using the registry directly
 	return OciRegistrySource
