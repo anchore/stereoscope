@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -20,7 +21,9 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/homedir"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 var (
@@ -31,7 +34,7 @@ var (
 	// remote rootfull ssh://root@10.10.1.136:22/run/podman/podman.sock
 
 	localRootlessPathTemplate = "/run/user/%d/podman/podman.sock"
-	defaultRemoteRootless     = "ssh://core@localhost:63753%s?secure=false"
+	defaultRemoteRootless     = "ssh://core@localhost:63753%s?secure=true"
 	defaultLocalRootless      = fmt.Sprintf("unix://%s", getLocalSocketPath())
 )
 
@@ -223,8 +226,21 @@ func sshClient(hostURL *url.URL) (*http.Client, error) {
 		port = "22"
 	}
 
-	callback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		return nil
+	callback := ssh.InsecureIgnoreHostKey()
+	secure, err := strconv.ParseBool(hostURL.Query().Get("secure"))
+	if err != nil {
+		secure = false
+	}
+
+	if secure {
+		host := hostURL.Hostname()
+		if port != "22" {
+			host = fmt.Sprintf("[%s]:%s", host, port)
+		}
+		key := hostKey(host)
+		if key != nil {
+			callback = ssh.FixedHostKey(key)
+		}
 	}
 
 	bastion, err := ssh.Dial("tcp",
@@ -270,4 +286,35 @@ func publicKey(path string, passphrase []byte) (ssh.Signer, error) {
 		return ssh.ParsePrivateKeyWithPassphrase(key, passphrase)
 	}
 	return signer, nil
+}
+
+func hostKey(host string) ssh.PublicKey {
+	// parse OpenSSH known_hosts file
+	// ssh or use ssh-keyscan to get initial key
+	knownHosts := filepath.Join(homedir.Get(), ".ssh", "known_hosts")
+	fd, err := os.Open(knownHosts)
+	if err != nil {
+		log.Errorf("openning known_hosts", err)
+		return nil
+	}
+
+	// support -H parameter for ssh-keyscan
+	hashhost := knownhosts.HashHostname(host)
+
+	scanner := bufio.NewScanner(fd)
+	for scanner.Scan() {
+		_, hosts, key, _, _, err := ssh.ParseKnownHosts(scanner.Bytes())
+		if err != nil {
+			logrus.Errorf("Failed to parse known_hosts: %s", scanner.Text())
+			continue
+		}
+
+		for _, h := range hosts {
+			if h == host || h == hashhost {
+				return key
+			}
+		}
+	}
+
+	return nil
 }
