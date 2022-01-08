@@ -2,7 +2,6 @@ package docker
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -10,16 +9,14 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/homedir"
+	"github.com/pelletier/go-toml"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
@@ -27,14 +24,16 @@ import (
 )
 
 var (
-	// Podman supports the following connections
-	// rootless "unix://run/user/$UID/podman/podman.sock" (Default)
+	// Podman supports connection addresses like these:
+	// rootless "unix://run/user/1000/podman/podman.sock" (Default)
 	// rootfull "unix://run/podman/podman.sock (Default)
-	// remote rootless ssh://engineering.lab.company.com/run/user/$UID/podman/podman.sock
+	// remote rootless ssh://engineering.lab.company.com/run/user/1000/podman/podman.sock
 	// remote rootfull ssh://root@10.10.1.136:22/run/podman/podman.sock
+ // The actual address comes from a (toml formatted) config file, usually located at:
+	// ~/.config/containers/containers.conf
+
 
 	localRootlessPathTemplate = "/run/user/%d/podman/podman.sock"
-	defaultRemoteRootless     = "ssh://core@localhost:63753%s?secure=true"
 	defaultLocalRootless      = fmt.Sprintf("unix://%s", getLocalSocketPath())
 )
 
@@ -42,50 +41,27 @@ func getLocalSocketPath() string {
 	return fmt.Sprintf(localRootlessPathTemplate, os.Getuid())
 }
 
-func getRemoteRootlessAddress() (string, error) {
-	uid, err := getRemoteUID()
+func getAddressFromConfig(containerConfigPath string) (string, error) {
+	configBytes, err := ioutil.ReadFile(containerConfigPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("openning podman config file: %w", err)
 	}
 
-	sock := fmt.Sprintf(localRootlessPathTemplate, uid)
-	return fmt.Sprintf(defaultRemoteRootless, sock), nil
+	config, err := toml.LoadBytes(configBytes)
+	if err != nil {
+		return "", fmt.Errorf("loading podman config: %w", err)
+	}
+
+	return config.Get("engine.service_destinations.podman-machine-default.uri").(string), nil
 }
 
-func getRemoteUID() (int, error) {
-	// TODO: expose these ssh params to caller. End user should have settings for them
-	cmd := exec.Command("ssh", "-i", "~/.ssh/podman-machine-default", "-l", "core", "-p", "63753", "--", "localhost", "id -u")
-	out := &bytes.Buffer{}
-	stdErr := &bytes.Buffer{}
-	cmd.Stdout = out
-	cmd.Stderr = stdErr
-
-	err := cmd.Run()
-	if err != nil {
-		return 0, fmt.Errorf("getting remote user ID: %w and stdErr: %s", err, stdErr)
-	}
-	vet := strings.TrimSuffix(out.String(), "\n")
-	vet = strings.TrimSpace(vet)
-
-	uid, err := strconv.Atoi(vet)
-	if err != nil {
-		return 0, fmt.Errorf("converting response: %w", err)
-	}
-
-	log.Debugf("remote user ID is: %d", uid)
-	return uid, nil
-}
-
-// TODO(jonas): defaultRemoteRootless includes the UID from a remote users,
-// which might be different of the user's UID in the running host.
-// We should resolve the remote UID then add it to path of the container client
 func podmanOverSSH() (*client.Client, error) {
-	log.Debug("using docker client to connect to podman over ssh")
 	var clientOpts = []client.Opt{
 		client.WithAPIVersionNegotiation(),
 	}
 
-	host, err := getRemoteRootlessAddress()
+	configPath := filepath.Join(homedir.Get(), ".config", "containers", "containers.conf")
+	host, err := getAddressFromConfig(configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +71,6 @@ func podmanOverSSH() (*client.Client, error) {
 		log.Debugf("using $CONTAINER_HOST: %s", v)
 		host = v
 	}
-
-	log.Debugf("host: %q", host)
 
 	hostURL, err := url.Parse(host)
 	if err != nil {
@@ -123,8 +97,6 @@ func podmanOverSSH() (*client.Client, error) {
 }
 
 func podmanViaUnixSocket() (*client.Client, error) {
-	log.Debug("using docker client to connect to podman over local unix socket")
-
 	// the last option can overwrite previous options
 	var clientOpts = []client.Opt{
 		client.WithAPIVersionNegotiation(),
@@ -148,27 +120,18 @@ func podmanViaUnixSocket() (*client.Client, error) {
 }
 
 func GetClientForPodman() (*client.Client, error) {
-	log.Debug("creating podman client")
-
-	// TODO: how should detection work here?
-	switch runtime.GOOS {
-	case "windows", "darwin":
-		return podmanOverSSH()
-	default:
-		c, err := podmanViaUnixSocket()
-		if err != nil {
-			return nil, err
-		}
-		ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
-		defer cancel()
-		_, err = c.Ping(ctx)
-		if err == nil {
-			return c, nil
-		}
-		log.Errorf("pinging podman unix socket: %v", err)
-
-		return podmanOverSSH()
+	c, err := podmanViaUnixSocket()
+	if err != nil {
+		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
+	defer cancel()
+	_, err = c.Ping(ctx)
+	if err == nil {
+		return c, nil
+	}
+
+	return podmanOverSSH()
 }
 
 func getSSHKey() string {
@@ -181,10 +144,8 @@ func getSSHKey() string {
 	return identity
 }
 
-// NOTE: code inspired by Podman's client: https://github.com/containers/podman/blob/main/pkg/bindings/connection.go#L177
-func sshClient(hostURL *url.URL) (*http.Client, error) {
+func getSigners(hostURL *url.URL) (signers []ssh.Signer, err error) {
 	identity := getSSHKey()
-	var signers []ssh.Signer // order Signers are appended to this list determines which key is presented to server
 	if len(identity) > 0 {
 		passPhrase, _ := hostURL.User.Password()
 		s, err := publicKey(identity, []byte(passPhrase))
@@ -193,7 +154,16 @@ func sshClient(hostURL *url.URL) (*http.Client, error) {
 		}
 
 		signers = append(signers, s)
-		log.Debugf("SSH Ident Key %q %s %s", identity, ssh.FingerprintSHA256(s.PublicKey()), s.PublicKey().Type())
+	}
+
+	return
+}
+
+// NOTE: code inspired by Podman's client: https://github.com/containers/podman/blob/main/pkg/bindings/connection.go#L177
+func sshClient(hostURL *url.URL) (*http.Client, error) {
+	signers, err := getSigners(hostURL) // order Signers are appended to this list determines which key is presented to server
+	if err != nil {
+		return nil, err
 	}
 
 	var authMethods []ssh.AuthMethod
