@@ -23,24 +23,6 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-var (
-	// Podman supports connection addresses like these:
-	// rootless "unix://run/user/1000/podman/podman.sock" (Default)
-	// rootfull "unix://run/podman/podman.sock (Default)
-	// remote rootless ssh://engineering.lab.company.com/run/user/1000/podman/podman.sock
-	// remote rootfull ssh://root@10.10.1.136:22/run/podman/podman.sock
- // The actual address comes from a (toml formatted) config file, usually located at:
-	// ~/.config/containers/containers.conf
-
-
-	localRootlessPathTemplate = "/run/user/%d/podman/podman.sock"
-	defaultLocalRootless      = fmt.Sprintf("unix://%s", getLocalSocketPath())
-)
-
-func getLocalSocketPath() string {
-	return fmt.Sprintf(localRootlessPathTemplate, os.Getuid())
-}
-
 func getAddressFromConfig(containerConfigPath string) (string, error) {
 	configBytes, err := ioutil.ReadFile(containerConfigPath)
 	if err != nil {
@@ -52,7 +34,13 @@ func getAddressFromConfig(containerConfigPath string) (string, error) {
 		return "", fmt.Errorf("loading podman config: %w", err)
 	}
 
-	return config.Get("engine.service_destinations.podman-machine-default.uri").(string), nil
+	activeService := config.Get("engine.active_service").(string)
+	return config.Get(fmt.Sprintf("engine.service_destinations.%s.uri", activeService)).(string), nil
+}
+
+func getPodmanAddress() (string, error) {
+	configPath := filepath.Join(homedir.Get(), ".config", "containers", "containers.conf")
+	return getAddressFromConfig(configPath)
 }
 
 func podmanOverSSH() (*client.Client, error) {
@@ -60,8 +48,7 @@ func podmanOverSSH() (*client.Client, error) {
 		client.WithAPIVersionNegotiation(),
 	}
 
-	configPath := filepath.Join(homedir.Get(), ".config", "containers", "containers.conf")
-	host, err := getAddressFromConfig(configPath)
+	host, err := getPodmanAddress()
 	if err != nil {
 		return nil, err
 	}
@@ -101,15 +88,13 @@ func podmanViaUnixSocket() (*client.Client, error) {
 	var clientOpts = []client.Opt{
 		client.WithAPIVersionNegotiation(),
 	}
-	// NOTE 0: default unix socket path, least precedence
-	clientOpts = append(clientOpts, client.WithHost(defaultLocalRootless))
 
-	// NOTE 1: CONTAINER_HOST can overwrite defaultLocalRootless
-	// var name is a Podman conversion: https://github.com/containers/podman/blob/main/pkg/bindings/connection.go#L72
-	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
-		log.Debugf("using $CONTAINER_HOST: %s", v)
-		clientOpts = append(clientOpts, client.WithHost(v))
+	addr, err := getPodmanAddress()
+	if err != nil {
+		return nil, fmt.Errorf("getting podman unix socket address: %w", err)
 	}
+
+	clientOpts = append(clientOpts, client.WithHost(addr))
 
 	dockerClient, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
