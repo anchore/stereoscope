@@ -38,6 +38,10 @@ func getAddressFromConfig(containerConfigPath string) (string, error) {
 	return config.Get(fmt.Sprintf("engine.service_destinations.%s.uri", activeService)).(string), nil
 }
 
+// TODO: podman not always has clean configs in all platforms it supports
+// we should fail nicely when errors appear
+// For example: on linux the engine address is jonas@:22/run/user/1000/podman/podman.sock
+// which is not valid AFAIK after testing with go and curl
 func getPodmanAddress() (string, error) {
 	configPath := filepath.Join(homedir.Get(), ".config", "containers", "containers.conf")
 	return getAddressFromConfig(configPath)
@@ -53,11 +57,6 @@ func podmanOverSSH() (*client.Client, error) {
 		return nil, err
 	}
 	makeClient := sshClient
-
-	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
-		log.Debugf("using $CONTAINER_HOST: %s", v)
-		host = v
-	}
 
 	hostURL, err := url.Parse(host)
 	if err != nil {
@@ -96,12 +95,12 @@ func podmanViaUnixSocket() (*client.Client, error) {
 
 	clientOpts = append(clientOpts, client.WithHost(addr))
 
-	dockerClient, err := client.NewClientWithOpts(clientOpts...)
+	c, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed create local client for podman: %w", err)
 	}
 
-	return dockerClient, err
+	return c, err
 }
 
 func GetClientForPodman() (*client.Client, error) {
