@@ -150,16 +150,16 @@ jobs:
         with:
           path: ${{ github.workspace }}/test/integration/test-fixtures/cache
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/test-fixtures/cache.fingerprint') }}
-
-      - name: Run integration tests
-        run: make integration
-
+          
       - name: Setup tmate session
         if: ${{ github.event.inputs.run-tmate == 'true' }}
         uses: mxschmitt/action-tmate@v3
         timeout-minutes: ${{ fromJSON(github.event.inputs.tmate-duration) }}
         with:
           limit-access-to-actor: true
+
+      - name: Run integration tests
+        run: make integration
 
   Benchmark-Test:
     name: "Benchmark tests"
