@@ -159,7 +159,9 @@ jobs:
           limit-access-to-actor: true
 
       - name: Run integration tests
-        run: make integration
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$UID
+          make integration
 
   Benchmark-Test:
     name: "Benchmark tests"
