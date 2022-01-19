@@ -119,7 +119,7 @@ jobs:
           sudo systemctl start podman.socket
 
       - name: Set up QEMU
-          uses: docker/setup-qemu-action@v1         
+        uses: docker/setup-qemu-action@v1         
       
       - name: Setup tmate session
         if: ${{ github.event.inputs.run-tmate == 'true' }}
