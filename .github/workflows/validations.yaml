@@ -105,6 +105,13 @@ jobs:
 
       - uses: actions/checkout@v2
 
+      - name: Setup tmate session
+        if: ${{ github.event.inputs.run-tmate == 'true' }}
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: ${{ fromJSON(github.event.inputs.tmate-duration) }}
+        with:
+          limit-access-to-actor: true
+
       - name: Enable systemd for podman socket activation
         run: |
           set -x
@@ -112,7 +119,7 @@ jobs:
           
           # we need to make certain that the bus instance is up and ready before systemctl attempts to use it.
           # if we can figure a non-racey way to do this, that would be nice.
-          sleep 2
+          sleep 5
           
           mkdir -p $HOME/.config/systemd/user
           systemctl --user enable --now podman.socket
@@ -156,13 +163,6 @@ jobs:
           path: ${{ github.workspace }}/test/integration/test-fixtures/cache
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/test-fixtures/cache.fingerprint') }}
           
-      - name: Setup tmate session
-        if: ${{ github.event.inputs.run-tmate == 'true' }}
-        uses: mxschmitt/action-tmate@v3
-        timeout-minutes: ${{ fromJSON(github.event.inputs.tmate-duration) }}
-        with:
-          limit-access-to-actor: true
-
       - name: Run integration tests
         run: |
           make integration

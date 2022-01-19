@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/anchore/stereoscope/internal/podman"
 	"io"
 	"os"
 	"path"
@@ -12,7 +11,7 @@ import (
 	"time"
 
 	"github.com/anchore/stereoscope/internal/docker"
-	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mitchellh/go-homedir"
@@ -154,7 +153,6 @@ func DetermineImagePullSource(userInput string) Source {
 			return DockerDaemonSource
 		}
 	}
-	log.Debug("no docker daemon available")
 
 	c, err = podman.GetClient()
 	if err == nil {
@@ -167,7 +165,6 @@ func DetermineImagePullSource(userInput string) Source {
 			return PodmanDaemonSource
 		}
 	}
-	log.Debug("no podman daemon available. Default to OciRegistry")
 
 	// fallback to using the registry directly
 	return OciRegistrySource

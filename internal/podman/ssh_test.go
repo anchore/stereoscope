@@ -21,7 +21,7 @@ func TestNewSSHConfig(t *testing.T) {
 	assert.Equal(t, sshAddress, address)
 	assert.Equal(t, sshKeyPath, identity)
 
-	conf, err := NewSSHConf(address, identity, "")
+	conf, err := newSSHConf(address, identity, "")
 	assert.NoError(t, err)
 	assert.True(t, conf.secure)
 	assert.Equal(t, "core", conf.username)

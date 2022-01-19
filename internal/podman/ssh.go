@@ -31,7 +31,7 @@ type sshClientConfig struct {
 	password      string
 }
 
-func NewSSHConf(address, identity, passPhrase string) (*sshClientConfig, error) {
+func newSSHConf(address, identity, passPhrase string) (*sshClientConfig, error) {
 	u, err := url.Parse(address)
 	if err != nil {
 		return nil, fmt.Errorf("parsing ssh address: %w", err)

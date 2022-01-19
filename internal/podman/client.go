@@ -27,7 +27,7 @@ func ClientOverSSH() (*client.Client, error) {
 		passPhrase = v
 	}
 
-	sshConf, err := NewSSHConf(host, identity, passPhrase)
+	sshConf, err := newSSHConf(host, identity, passPhrase)
 	if err != nil {
 		return nil, err
 	}

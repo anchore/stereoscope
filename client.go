@@ -2,6 +2,7 @@ package stereoscope
 
 import (
 	"fmt"
+
 	"github.com/anchore/stereoscope/internal/bus"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
