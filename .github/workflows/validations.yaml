@@ -115,7 +115,6 @@ jobs:
           sleep 2
           
           mkdir -p $HOME/.config/systemd/user
-          export XDG_RUNTIME_DIR=/run/user/$UID
 
           systemctl --user enable --now podman.socket
 
@@ -160,7 +159,7 @@ jobs:
 
       - name: Run integration tests
         run: |
-          export XDG_RUNTIME_DIR=/run/user/$UID
+          export XDG_RUNTIME_DIR=/run/user/$UID # setting it again since it got dropped since step systemd above
           make integration
 
   Benchmark-Test:

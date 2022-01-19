@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/anchore/stereoscope/internal/podman"
 	"io"
 	"os"
 	"path"
@@ -155,7 +156,7 @@ func DetermineImagePullSource(userInput string) Source {
 	}
 	log.Debug("no docker daemon available")
 
-	c, err = docker.GetClientForPodman()
+	c, err = podman.GetClient()
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

@@ -2,10 +2,10 @@ package stereoscope
 
 import (
 	"fmt"
-
 	"github.com/anchore/stereoscope/internal/bus"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
@@ -32,7 +32,7 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 		}
 		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, c)
 	case image.PodmanDaemonSource:
-		c, err := dockerClient.GetClientForPodman()
+		c, err := podman.GetClient()
 		if err != nil {
 			return nil, err
 		}
