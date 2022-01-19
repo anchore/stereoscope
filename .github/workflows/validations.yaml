@@ -118,6 +118,7 @@ jobs:
           systemctl --user enable --now podman.socket
 
       - name: Enable podman VM
+        run: |
           # enable podman VM to test SSH conenction
           podman machine init
           podman machine start
