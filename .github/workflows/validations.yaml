@@ -105,13 +105,6 @@ jobs:
 
       - uses: actions/checkout@v2
 
-      - name: Setup tmate session
-        if: ${{ github.event.inputs.run-tmate == 'true' }}
-        uses: mxschmitt/action-tmate@v3
-        timeout-minutes: ${{ fromJSON(github.event.inputs.tmate-duration) }}
-        with:
-          limit-access-to-actor: true
-
       - name: Enable systemd for podman socket activation
         run: |
           set -x
@@ -120,16 +113,38 @@ jobs:
           # we need to make certain that the bus instance is up and ready before systemctl attempts to use it.
           # if we can figure a non-racey way to do this, that would be nice.
           sleep 5
-          
+          export XDG_RUNTIME_DIR=/run/user/$UID
           mkdir -p $HOME/.config/systemd/user
           systemctl --user enable --now podman.socket
+          sudo systemctl start podman.socket
 
+      - name: Set up QEMU
+          uses: docker/setup-qemu-action@v1         
+      
+      - name: Setup tmate session
+        if: ${{ github.event.inputs.run-tmate == 'true' }}
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: ${{ fromJSON(github.event.inputs.tmate-duration) }}
+        with:
+          limit-access-to-actor: true
+
+      # NOTE: disabling it since github actions doesn't support 
+      # KVM for nested virtualization -- a necessary step to run
+      # podman over QEMU, how it works on macOS & Windows
+      # More info on: https://github.com/actions/virtual-environments/issues/183
       - name: Enable podman VM
-        run: |
-          # enable podman VM to test SSH conenction
-          podman machine init
-          podman machine start
-          podman system connection list
+          run: |
+            # sudo apt-get install qemu-system-x86
+            git clone https://github.com/containers/gvisor-tap-vsock.git ~/gvisor
+            cd ~/gvisor
+            make
+            sudo cp bin/gvproxy /usr/libexec/podman
+            sudo cp bin/qemu-wrapper /usr/libexec/podman
+            sudo cp bin/vm /usr/libexec/podman
+            # enable podman VM to test SSH conenction
+            podman machine init
+            podman machine start
+            podman system connection list
 
       - name: Restore tool cache
         id: tool-cache
