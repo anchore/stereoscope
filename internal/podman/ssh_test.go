@@ -31,16 +31,3 @@ func TestNewSSHConfig(t *testing.T) {
 	assert.Equal(t, "localhost:45983", conf.host)
 	assert.Equal(t, "/run/user/1000/podman/podman.sock", conf.path)
 }
-
-//func TestGetSigners(t *testing.T) {
-//	// key generated with: 'ssh-keygen -N "12345" -t ed25519
-//	err := os.Setenv("CONTAINER_SSHKEY", "./test-fixtures/key-file.pub")
-//	assert.NoError(t, err)
-//
-//	host, err := url.Parse("http://:bla@server.com/")
-//	assert.NoError(t, err)
-//
-//	signers, err := getSigners(host)
-//	assert.NoError(t, err)
-//	assert.NotEmpty(t, signers)
-//}

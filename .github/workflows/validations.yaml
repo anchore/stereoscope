@@ -132,19 +132,19 @@ jobs:
       # KVM for nested virtualization -- a necessary step to run
       # podman over QEMU, how it works on macOS & Windows
       # More info on: https://github.com/actions/virtual-environments/issues/183
-      - name: Enable podman VM
-        run: |
-          # sudo apt-get install qemu-system-x86
-          git clone https://github.com/containers/gvisor-tap-vsock.git ~/gvisor
-          cd ~/gvisor
-          make
-          sudo cp bin/gvproxy /usr/libexec/podman
-          sudo cp bin/qemu-wrapper /usr/libexec/podman
-          sudo cp bin/vm /usr/libexec/podman
-          # enable podman VM to test SSH conenction
-          podman machine init
-          podman machine start
-          podman system connection list
+      #      - name: Enable podman VM
+      #        run: |
+      #          # sudo apt-get install qemu-system-x86
+      #          git clone https://github.com/containers/gvisor-tap-vsock.git ~/gvisor
+      #          cd ~/gvisor
+      #          make
+      #          sudo cp bin/gvproxy /usr/libexec/podman
+      #          sudo cp bin/qemu-wrapper /usr/libexec/podman
+      #          sudo cp bin/vm /usr/libexec/podman
+      #          # enable podman VM to test SSH conenction
+      #          podman machine init
+      #          podman machine start
+      #          podman system connection list
 
       - name: Restore tool cache
         id: tool-cache
