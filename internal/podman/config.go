@@ -149,7 +149,7 @@ var (
 )
 
 func getUnixSocketAddress(paths []string) (address string) {
-	for _, p := range configPaths {
+	for _, p := range paths {
 		a := findUnixAddressFromFile(p)
 		if a != "" {
 			address = a

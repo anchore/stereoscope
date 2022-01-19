@@ -115,8 +115,13 @@ jobs:
           sleep 2
           
           mkdir -p $HOME/.config/systemd/user
-
           systemctl --user enable --now podman.socket
+
+      - name: Enable podman VM
+          # enable podman VM to test SSH conenction
+          podman machine init
+          podman machine start
+          podman system connection list
 
       - name: Restore tool cache
         id: tool-cache
@@ -159,7 +164,6 @@ jobs:
 
       - name: Run integration tests
         run: |
-          export XDG_RUNTIME_DIR=/run/user/$UID # setting it again since it got dropped since step systemd above
           make integration
 
   Benchmark-Test:

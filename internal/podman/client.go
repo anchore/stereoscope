@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	NoSocketAddressErr = errors.New("no socket address")
+	ErrNoSocketAddress = errors.New("no socket address")
 )
 
 func ClientOverSSH() (*client.Client, error) {
@@ -60,7 +60,7 @@ func ClientOverUnixSocket() (*client.Client, error) {
 
 	addr := getUnixSocketAddress(configPaths)
 	if addr == "" {
-		return nil, NoSocketAddressErr
+		return nil, ErrNoSocketAddress
 	}
 
 	clientOpts = append(clientOpts, client.WithHost(addr))
@@ -75,7 +75,7 @@ func ClientOverUnixSocket() (*client.Client, error) {
 
 func GetClient() (*client.Client, error) {
 	c, err := ClientOverUnixSocket()
-	if errors.Is(err, NoSocketAddressErr) {
+	if errors.Is(err, ErrNoSocketAddress) {
 		return ClientOverSSH()
 	}
 
