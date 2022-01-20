@@ -16,7 +16,6 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/docker/pkg/homedir"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -32,6 +31,10 @@ type sshClientConfig struct {
 }
 
 func newSSHConf(address, identity, passPhrase string) (*sshClientConfig, error) {
+	if address == "" {
+		return nil, ErrNoHostAddress
+	}
+
 	u, err := url.Parse(address)
 	if err != nil {
 		return nil, fmt.Errorf("parsing ssh address: %w", err)
@@ -60,15 +63,21 @@ func newSSHConf(address, identity, passPhrase string) (*sshClientConfig, error) 
 }
 
 func getSigners(keyPath, passphrase string) (signers []ssh.Signer, err error) {
-	if keyPath != "" {
-		s, err := publicKey(keyPath, []byte(passphrase))
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse identity %q", keyPath)
-		}
-
-		signers = append(signers, s)
+	if keyPath == "" {
+		return
 	}
 
+	key, err := ioutil.ReadFile(keyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := parsePublicKey(key, []byte(passphrase))
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse identity %q", keyPath)
+	}
+
+	signers = append(signers, s)
 	return
 }
 
@@ -113,7 +122,8 @@ func getSSHCallback(params *sshClientConfig) ssh.HostKeyCallback {
 		return cb
 	}
 
-	key := hostKey(params.host)
+	knownHosts := filepath.Join(homedir.Get(), ".ssh", "known_hosts")
+	key := hostKey(params.host, knownHosts)
 	if key != nil {
 		cb = ssh.FixedHostKey(key)
 	}
@@ -161,27 +171,22 @@ func httpClientOverSSH(params *sshClientConfig) (*http.Client, error) {
 		}}, nil
 }
 
-func publicKey(path string, passphrase []byte) (ssh.Signer, error) {
-	key, err := ioutil.ReadFile(path)
-	if err != nil {
+func parsePublicKey(key, passphrase []byte) (ssh.Signer, error) {
+	signer, err := ssh.ParsePrivateKey(key)
+	if err == nil {
+		return signer, nil
+	}
+
+	if _, ok := err.(*ssh.PassphraseMissingError); !ok {
 		return nil, err
 	}
-
-	signer, err := ssh.ParsePrivateKey(key)
-	if err != nil {
-		if _, ok := err.(*ssh.PassphraseMissingError); !ok {
-			return nil, err
-		}
-		return ssh.ParsePrivateKeyWithPassphrase(key, passphrase)
-	}
-	return signer, nil
+	return ssh.ParsePrivateKeyWithPassphrase(key, passphrase)
 }
 
-func hostKey(host string) ssh.PublicKey {
+func hostKey(host, knownHostsPath string) ssh.PublicKey {
 	// parse OpenSSH known_hosts file
 	// ssh or use ssh-keyscan to get initial key
-	knownHosts := filepath.Join(homedir.Get(), ".ssh", "known_hosts")
-	fd, err := os.Open(knownHosts)
+	fd, err := os.Open(knownHostsPath)
 	if err != nil {
 		log.Errorf("openning known_hosts", err)
 		return nil
@@ -194,7 +199,7 @@ func hostKey(host string) ssh.PublicKey {
 	for scanner.Scan() {
 		_, hosts, key, _, _, err := ssh.ParseKnownHosts(scanner.Bytes())
 		if err != nil {
-			logrus.Errorf("Failed to parse known_hosts: %s", scanner.Text())
+			log.Errorf("Failed to parse known_hosts: %s", scanner.Text())
 			continue
 		}
 

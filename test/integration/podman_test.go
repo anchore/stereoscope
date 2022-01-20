@@ -2,10 +2,10 @@ package integration
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/anchore/stereoscope/internal/podman"
+	"github.com/docker/docker/client"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -24,22 +24,34 @@ import (
 // config and start:
 // 	$ podman machine init
 //  $ podman machine start
-func TestPodmanOverSSH(t *testing.T) {
-	//	if runtime.GOOS != "darwin" {
-	//		t.Skip("test meant for darwin, since github actions doesn't support KVM")
-	//	}
+func TestPodmanConnections(t *testing.T) {
+	tests := []struct {
+		name        string
+		constructor func() (*client.Client, error)
+	}{
+		{
+			name:        "ssh connection",
+			constructor: podman.ClientOverSSH,
+		},
+		{
+			name:        "unix socket connection",
+			constructor: podman.ClientOverUnixSocket,
+		},
+	}
 
-	client, err := podman.ClientOverSSH()
-	assert.NoError(t, err)
-	t.Logf("client version: %s", client.ClientVersion())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := tt.constructor()
+			assert.NoError(t, err)
+			assert.NotEmpty(t, client.ClientVersion())
 
-	p, err := client.Ping(context.Background())
-	assert.NoError(t, err)
-	assert.NotNil(t, p)
-	t.Logf("ping: %+v", p)
+			p, err := client.Ping(context.Background())
+			assert.NoError(t, err)
+			assert.NotNil(t, p)
 
-	version, err := client.ServerVersion(context.Background())
-	assert.NoError(t, err)
-	assert.True(t, strings.HasPrefix(version.Platform.Name, "linux/amd64/fedora"))
-	t.Logf("%+v", version)
+			version, err := client.ServerVersion(context.Background())
+			assert.NoError(t, err)
+			assert.NotEmpty(t, version)
+		})
+	}
 }

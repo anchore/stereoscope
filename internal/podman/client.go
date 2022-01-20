@@ -13,6 +13,7 @@ import (
 
 var (
 	ErrNoSocketAddress = errors.New("no socket address")
+	ErrNoHostAddress   = errors.New("no host address")
 )
 
 func ClientOverSSH() (*client.Client, error) {
