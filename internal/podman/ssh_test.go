@@ -2,6 +2,8 @@ package podman
 
 import (
 	"crypto/x509"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -177,6 +179,54 @@ func TestHostKey(t *testing.T) {
 			} else {
 				assert.Nil(t, pk)
 			}
+		})
+	}
+}
+
+func Test_newSSHConf(t *testing.T) {
+	pass := func(t assert.TestingT, err error, i ...interface{}) bool {
+		return true
+	}
+
+	type args struct {
+		address    string
+		identity   string
+		passPhrase string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *sshClientConfig
+		wantErr assert.ErrorAssertionFunc
+	}{
+		{
+			name: "empty address",
+			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+				return errors.Is(err, ErrNoHostAddress)
+			},
+		},
+		{
+			name: "invalid secure flag",
+			args: args{
+				address: "ssh://core@localhost:123/file/path/podman.sock?secure=not-a-bool-value",
+			},
+			want: &sshClientConfig{
+				host:     "localhost:123",
+				path:     "/file/path/podman.sock",
+				secure:   true,
+				username: "core",
+			},
+			wantErr: pass,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := newSSHConf(tt.args.address, tt.args.identity, tt.args.passPhrase)
+			if !tt.wantErr(t, err, fmt.Sprintf("newSSHConf(%v, %v, %v)", tt.args.address, tt.args.identity, tt.args.passPhrase)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "newSSHConf(%v, %v, %v)", tt.args.address, tt.args.identity, tt.args.passPhrase)
 		})
 	}
 }

@@ -23,6 +23,14 @@ func ClientOverSSH() (*client.Client, error) {
 
 	host, identity := getSSHAddress(configPaths)
 
+	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
+		host = v
+	}
+
+	if v, found := os.LookupEnv("CONTAINER_SSHKEY"); found && v != "" {
+		identity = v
+	}
+
 	passPhrase := ""
 	if v, found := os.LookupEnv("CONTAINER_PASSPHRASE"); found {
 		passPhrase = v

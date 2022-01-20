@@ -127,10 +127,6 @@ func parseContainerConfig(path string) (*containersConfig, error) {
 	return &cc, nil
 }
 
-// func defaultUnixAddress(xdgRuntime string) string {
-// 	return fmt.Sprintf("unix://%s/podman/podman.sock", xdgRuntime)
-// }
-
 var (
 	// _configPath is the path to the containers/containers.conf
 	// inside a given config directory.
@@ -162,6 +158,8 @@ func getUnixSocketAddress(paths []string) (address string) {
 func getSSHAddress(paths []string) (address, identity string) {
 	for _, p := range paths {
 		a, id := findSSHConnectionInfoFromFile(p)
+		// overwriting here is intentional, as a way to
+		// prioritize different config files
 		if a != "" && id != "" {
 			address = a
 			identity = id
