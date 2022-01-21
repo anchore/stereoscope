@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -69,14 +70,19 @@ func TestPodmanConnections(t *testing.T) {
 func setupSSHKeys(t *testing.T) {
 	require.Equalf(t, "linux", runtime.GOOS, "setup meant for CI -- it can modify your ssh authorized keys")
 
-	addr := fmt.Sprintf("ssh://localhost/run/user/%d/podman/podman.sock", os.Getuid())
-	err := os.Setenv("CONTAINER_HOST", addr)
+	usr, err := user.Current()
+	require.NoError(t, err)
+
+	addr := fmt.Sprintf("ssh://%s@localhost/run/user/%d/podman/podman.sock", usr.Username,
+		os.Getuid())
+	err = os.Setenv("CONTAINER_HOST", addr)
 	assert.NoError(t, err)
 	// ssh-keygen -t rsa -f test-rsa -N "passphrase"
 	keyFile := filepath.Join(os.TempDir(), "integration-test-key")
 
 	err = os.Setenv("CONTAINER_SSHKEY", keyFile)
 	assert.NoError(t, err)
+	t.Logf("set CONTAINER_SSHKEY=%s", keyFile)
 
 	// 0: making key
 	out, err := exec.Command("ssh-keygen", "-t", "rsa", "-f", keyFile, "-N", "").Output()
