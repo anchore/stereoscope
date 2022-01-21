@@ -59,6 +59,10 @@ func ClientOverSSH() (*client.Client, error) {
 		return nil, fmt.Errorf("failed create remote client for podman: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
+	defer cancel()
+	_, err = c.Ping(ctx)
+
 	return c, err
 }
 
@@ -68,8 +72,22 @@ func ClientOverUnixSocket() (*client.Client, error) {
 	}
 
 	addr := getUnixSocketAddress(configPaths)
-	if addr == "" {
-		return nil, ErrNoSocketAddress
+	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
+		addr = v
+	}
+
+	if addr == "" { // in some cases there might not be any config file
+		// we can try guessing; podman CLI does that
+		//return nil, ErrNoSocketAddress
+		log.Warnf("no socket address was found. Trying default address")
+		socketPath := fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
+		_, err := os.Stat(socketPath)
+		if err != nil {
+			log.Debugf("looking for socket file: %v", err)
+			return nil, ErrNoSocketAddress
+		}
+
+		addr = fmt.Sprintf("unix://%s", socketPath)
 	}
 
 	clientOpts = append(clientOpts, client.WithHost(addr))
@@ -79,20 +97,18 @@ func ClientOverUnixSocket() (*client.Client, error) {
 		return nil, fmt.Errorf("creating local client for podman: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
+	defer cancel()
+	_, err = c.Ping(ctx)
+
 	return c, err
 }
 
 func GetClient() (*client.Client, error) {
 	c, err := ClientOverUnixSocket()
-	if errors.Is(err, ErrNoSocketAddress) {
-		return ClientOverSSH()
+	if err == nil {
+		return c, nil
 	}
 
-	if err != nil {
-		return nil, err
-	}
-	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
-	defer cancel()
-	_, err = c.Ping(ctx)
-	return c, err
+	return ClientOverSSH()
 }
