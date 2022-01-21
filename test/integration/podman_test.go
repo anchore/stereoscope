@@ -88,7 +88,11 @@ func setupSSHKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	// If the file doesn't exist, create it, or append to the file
-	f, err := os.OpenFile("~/.ssh/authorized_keys", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	homeDir, err := os.UserHomeDir()
+	require.NoError(t, err)
+	authKeys := filepath.Join(homeDir, ".ssh", "authorized_keys")
+
+	f, err := os.OpenFile(authKeys, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	require.NoError(t, err)
 	size, err := f.Write(b)
 	require.NoError(t, err)
