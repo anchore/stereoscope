@@ -73,7 +73,7 @@ func setupSSHKeys(t *testing.T) {
 	usr, err := user.Current()
 	require.NoError(t, err)
 
-	addr := fmt.Sprintf("ssh://%s@localhost/run/user/%d/podman/podman.sock", usr.Username,
+	addr := fmt.Sprintf("ssh://%s@localhost:22/run/user/%d/podman/podman.sock", usr.Username,
 		os.Getuid())
 	err = os.Setenv("CONTAINER_HOST", addr)
 	assert.NoError(t, err)
@@ -86,8 +86,8 @@ func setupSSHKeys(t *testing.T) {
 
 	// 0: making key
 	out, err := exec.Command("ssh-keygen", "-t", "rsa", "-f", keyFile, "-N", "").Output()
-	require.NoError(t, err)
 	t.Logf("output: %s", out)
+	require.NoError(t, err)
 
 	// 1: append to authorized_keys
 	b, err := ioutil.ReadFile(keyFile + ".pub")
