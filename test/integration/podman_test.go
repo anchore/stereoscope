@@ -36,21 +36,29 @@ func TestPodmanConnections(t *testing.T) {
 		name        string
 		constructor func() (*client.Client, error)
 		setup       func(*testing.T)
+		cleanup     func()
 	}{
 		{
 			name:        "ssh connection",
 			constructor: podman.ClientOverSSH,
 			setup:       setupSSHKeys,
+			cleanup: func() {
+				os.Unsetenv("CONTAINER_HOST")
+				os.Unsetenv("CONTAINER_SSHKEY")
+			},
 		},
 		{
 			name:        "unix socket connection",
 			constructor: podman.ClientOverUnixSocket,
 			setup:       func(t *testing.T) {},
+			cleanup:     func() {},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Cleanup(tt.cleanup)
+
 			tt.setup(t)
 			c, err := tt.constructor()
 			assert.NoError(t, err)
