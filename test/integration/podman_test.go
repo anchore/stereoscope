@@ -96,6 +96,13 @@ func setupSSHKeys(t *testing.T) {
 	// If the file doesn't exist, create it, or append to the file
 	homeDir, err := os.UserHomeDir()
 	require.NoError(t, err)
+
+	sshDir := filepath.Join(homeDir, ".ssh")
+	if _, err := os.Stat(sshDir); os.IsNotExist(err) {
+		err = os.MkdirAll(sshDir, 0755)
+		require.NoError(t, err)
+	}
+
 	authKeys := filepath.Join(homeDir, ".ssh", "authorized_keys")
 
 	f, err := os.OpenFile(authKeys, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
