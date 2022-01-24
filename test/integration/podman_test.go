@@ -1,15 +1,14 @@
 package integration
 
 import (
+	"bufio"
 	"context"
-	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
-	"runtime"
 	"testing"
+	"time"
 
 	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/docker/docker/client"
@@ -41,10 +40,51 @@ func TestPodmanConnections(t *testing.T) {
 		{
 			name:        "ssh connection",
 			constructor: podman.ClientOverSSH,
-			setup:       setupSSHKeys,
+			setup: func(t *testing.T) {
+				cwd, err := os.Getwd()
+				require.NoErrorf(t, err, "unable to get cwd: %+v", err)
+
+				fixturesPath := filepath.Join(cwd, "test-fixtures", "podman")
+				makeTask := filepath.Join(fixturesPath, "Makefile")
+				t.Logf("Generating Fixture from 'make %s'", makeTask)
+
+				cmd := exec.Command("make")
+				cmd.Dir = fixturesPath
+
+				stderr, err := cmd.StderrPipe()
+				require.NoErrorf(t, err, "could not get stderr: +v", err)
+
+				stdout, err := cmd.StdoutPipe()
+				require.NoErrorf(t, err, "could not get stdout: +v", err)
+
+				err = cmd.Start()
+				require.NoErrorf(t, err, "failed to start cmd: %+v", err)
+
+				show := func(label string, reader io.ReadCloser) {
+					scanner := bufio.NewScanner(reader)
+					scanner.Split(bufio.ScanLines)
+					for scanner.Scan() {
+						t.Logf("%s: %s", label, scanner.Text())
+					}
+				}
+				show("out", stdout)
+				show("err", stderr)
+
+				err = os.Setenv("CONTAINER_HOST", "ssh://root@localhost:2222/run/podman/podman.sock?secure=false")
+				assert.NoError(t, err)
+
+				keyPath := filepath.Join(fixturesPath, "ssh", "id_rsa")
+				err = os.Setenv("CONTAINER_SSHKEY", keyPath)
+				assert.NoError(t, err)
+				t.Logf("ssh key %s", keyPath)
+
+				time.Sleep(time.Second) // TODO: sync so test starts when docker is ready
+			},
 			cleanup: func() {
-				os.Unsetenv("CONTAINER_HOST")
-				os.Unsetenv("CONTAINER_SSHKEY")
+				err := os.Unsetenv("CONTAINER_HOST")
+				assert.NoError(t, err)
+				err = os.Unsetenv("CONTAINER_SSHKEY")
+				assert.NoError(t, err)
 			},
 		},
 		{
@@ -73,49 +113,4 @@ func TestPodmanConnections(t *testing.T) {
 			assert.NotEmpty(t, version)
 		})
 	}
-}
-
-func setupSSHKeys(t *testing.T) {
-	require.Equalf(t, "linux", runtime.GOOS, "setup meant for CI -- it can modify your ssh authorized keys")
-
-	usr, err := user.Current()
-	require.NoError(t, err)
-
-	addr := fmt.Sprintf("ssh://%s@localhost:22/run/user/%d/podman/podman.sock", usr.Username,
-		os.Getuid())
-	err = os.Setenv("CONTAINER_HOST", addr)
-	assert.NoError(t, err)
-	// ssh-keygen -t rsa -f test-rsa -N "passphrase"
-	keyFile := filepath.Join(os.TempDir(), "integration-test-key")
-
-	err = os.Setenv("CONTAINER_SSHKEY", keyFile)
-	assert.NoError(t, err)
-	t.Logf("set CONTAINER_SSHKEY=%s", keyFile)
-
-	// 0: making key
-	out, err := exec.Command("ssh-keygen", "-t", "rsa", "-f", keyFile, "-N", "").Output()
-	t.Logf("output: %s", out)
-	require.NoError(t, err)
-
-	// 1: append to authorized_keys
-	b, err := ioutil.ReadFile(keyFile + ".pub")
-	require.NoError(t, err)
-
-	// If the file doesn't exist, create it, or append to the file
-	homeDir, err := os.UserHomeDir()
-	require.NoError(t, err)
-
-	sshDir := filepath.Join(homeDir, ".ssh")
-	if _, err := os.Stat(sshDir); os.IsNotExist(err) {
-		err = os.MkdirAll(sshDir, 0755)
-		require.NoError(t, err)
-	}
-
-	authKeys := filepath.Join(homeDir, ".ssh", "authorized_keys")
-
-	f, err := os.OpenFile(authKeys, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	require.NoError(t, err)
-	size, err := f.Write(b)
-	require.NoError(t, err)
-	assert.NotZero(t, size)
 }

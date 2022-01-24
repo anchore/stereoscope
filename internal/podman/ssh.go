@@ -67,6 +67,7 @@ func getSigners(keyPath, passphrase string) (signers []ssh.Signer, err error) {
 		return
 	}
 
+	log.Debugf("reading key path: %s", keyPath)
 	key, err := ioutil.ReadFile(keyPath)
 	if err != nil {
 		return nil, err
@@ -101,6 +102,7 @@ func getAuthMethods(params *sshClientConfig) ([]ssh.AuthMethod, error) {
 
 		var uniq []ssh.Signer
 		for _, s := range dedup {
+			log.Debugf("signer: %+v", s.PublicKey())
 			uniq = append(uniq, s)
 		}
 		methods = append(methods, ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
@@ -128,6 +130,7 @@ func getSSHCallback(params *sshClientConfig) ssh.HostKeyCallback {
 		cb = ssh.FixedHostKey(key)
 	}
 
+	log.Debug("ssh callback will check known hosts")
 	return cb
 }
 
@@ -149,14 +152,16 @@ func httpClientOverSSH(params *sshClientConfig) (*http.Client, error) {
 			Auth:            authMethods,
 			HostKeyCallback: getSSHCallback(params),
 			HostKeyAlgorithms: []string{
+				ssh.KeyAlgoRSA,
 				ssh.KeyAlgoDSA,
 				ssh.KeyAlgoECDSA256,
+				ssh.KeyAlgoSKECDSA256,
 				ssh.KeyAlgoECDSA384,
 				ssh.KeyAlgoECDSA521,
 				ssh.KeyAlgoED25519,
-				ssh.KeyAlgoRSA,
+				ssh.KeyAlgoSKED25519,
 			},
-			Timeout: 5 * time.Second,
+			Timeout: 30 * time.Second,
 		},
 	)
 	if err != nil {
@@ -172,8 +177,10 @@ func httpClientOverSSH(params *sshClientConfig) (*http.Client, error) {
 }
 
 func parsePublicKey(key, passphrase []byte) (ssh.Signer, error) {
+	log.Debug("parsing public key")
 	signer, err := ssh.ParsePrivateKey(key)
 	if err == nil {
+		log.Debug("no password")
 		return signer, nil
 	}
 
@@ -184,6 +191,7 @@ func parsePublicKey(key, passphrase []byte) (ssh.Signer, error) {
 }
 
 func hostKey(host, knownHostsPath string) ssh.PublicKey {
+	log.Debugf("host key func")
 	// parse OpenSSH known_hosts file
 	// ssh or use ssh-keyscan to get initial key
 	fd, err := os.Open(knownHostsPath)

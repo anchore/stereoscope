@@ -20,10 +20,8 @@ exec:
 start:
 	docker run --rm \
 				-d \
-				--name podman \
 				-it \
 				--privileged \
 				-p 2222:22 \
 				-v $(shell pwd)/ssh:/root/.ssh/ \
 					podman-ssh:latest
-	docker logs -f podman
