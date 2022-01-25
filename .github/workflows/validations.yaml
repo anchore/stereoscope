@@ -158,8 +158,7 @@ jobs:
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/test-fixtures/cache.fingerprint') }}
           
       - name: Run integration tests
-        run: |
-          make integration
+        run: make integration
 
   Benchmark-Test:
     name: "Benchmark tests"

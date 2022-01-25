@@ -94,6 +94,7 @@ func getAuthMethods(params *sshClientConfig) ([]ssh.AuthMethod, error) {
 		for _, s := range signers {
 			fp := ssh.FingerprintSHA256(s.PublicKey())
 			if _, found := dedup[fp]; found {
+				log.Debugf("dedup SSH Key %s %s", ssh.FingerprintSHA256(s.PublicKey()), s.PublicKey().Type())
 			}
 			dedup[fp] = s
 		}
