@@ -7,5 +7,7 @@ test -f /root/.ssh/id_ed25519.pub || (/usr/bin/echo -e 'y\n' | ssh-keygen -y -t 
 test -f /root/.ssh/authorized_keys || (/usr/bin/echo -e 'y\n' | /usr/bin/cp /root/.ssh/id_ed25519.pub /root/.ssh/authorized_keys)
 
 chown -R root:root /root/.ssh
+chmod 777 /root/.ssh/id_ed25519
+chmod 777 /root/.ssh/id_ed25519.pub
 
 /usr/bin/echo "ssh material setup!"
