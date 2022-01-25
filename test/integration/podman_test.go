@@ -16,6 +16,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func runAndShow(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+
+	stderr, err := cmd.StderrPipe()
+	require.NoErrorf(t, err, "could not get stderr: +v", err)
+
+	stdout, err := cmd.StdoutPipe()
+	require.NoErrorf(t, err, "could not get stdout: +v", err)
+
+	err = cmd.Start()
+	require.NoErrorf(t, err, "failed to start cmd: %+v", err)
+
+	show := func(label string, reader io.ReadCloser) {
+		scanner := bufio.NewScanner(reader)
+		scanner.Split(bufio.ScanLines)
+		for scanner.Scan() {
+			t.Logf("%s: %s", label, scanner.Text())
+		}
+	}
+
+	show("out", stdout)
+	show("err", stderr)
+}
+
 // test conditions:
 // - assume that podman has already been setup (podman-machine)
 
@@ -50,25 +74,7 @@ func TestPodmanConnections(t *testing.T) {
 
 				cmd := exec.Command("make")
 				cmd.Dir = fixturesPath
-
-				stderr, err := cmd.StderrPipe()
-				require.NoErrorf(t, err, "could not get stderr: +v", err)
-
-				stdout, err := cmd.StdoutPipe()
-				require.NoErrorf(t, err, "could not get stdout: +v", err)
-
-				err = cmd.Start()
-				require.NoErrorf(t, err, "failed to start cmd: %+v", err)
-
-				show := func(label string, reader io.ReadCloser) {
-					scanner := bufio.NewScanner(reader)
-					scanner.Split(bufio.ScanLines)
-					for scanner.Scan() {
-						t.Logf("%s: %s", label, scanner.Text())
-					}
-				}
-				show("out", stdout)
-				show("err", stderr)
+				runAndShow(t, cmd)
 
 				err = os.Setenv("CONTAINER_HOST", "ssh://root@localhost:2222/run/podman/podman.sock")
 				assert.NoError(t, err)
@@ -81,10 +87,22 @@ func TestPodmanConnections(t *testing.T) {
 				time.Sleep(time.Second) // TODO: sync so test starts when docker is ready
 			},
 			cleanup: func() {
-				err := os.Unsetenv("CONTAINER_HOST")
+				cwd, err := os.Getwd()
+				assert.NoErrorf(t, err, "unable to get cwd: %+v", err)
+				err = os.Unsetenv("CONTAINER_HOST")
 				assert.NoError(t, err)
 				err = os.Unsetenv("CONTAINER_SSHKEY")
 				assert.NoError(t, err)
+
+				// TODO stop podman-ssh
+				fixturesPath := filepath.Join(cwd, "test-fixtures", "podman")
+				makeTask := filepath.Join(fixturesPath, "Makefile")
+				t.Logf("Generating Fixture from 'make %s'", makeTask)
+
+				cmd := exec.Command("make", "stop")
+				cmd.Dir = fixturesPath
+
+				runAndShow(t, cmd)
 			},
 		},
 		{

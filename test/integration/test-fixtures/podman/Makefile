@@ -20,6 +20,7 @@ exec:
 start:
 	docker run --rm \
 				-d \
+				--name podman \
 				-it \
 				--privileged \
 				-p 2222:22 \
