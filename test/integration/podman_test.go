@@ -70,10 +70,10 @@ func TestPodmanConnections(t *testing.T) {
 				show("out", stdout)
 				show("err", stderr)
 
-				err = os.Setenv("CONTAINER_HOST", "ssh://root@localhost:2222/run/podman/podman.sock?secure=false")
+				err = os.Setenv("CONTAINER_HOST", "ssh://root@localhost:2222/run/podman/podman.sock")
 				assert.NoError(t, err)
 
-				keyPath := filepath.Join(fixturesPath, "ssh", "id_rsa")
+				keyPath := filepath.Join(fixturesPath, "ssh", "id_ed25519")
 				err = os.Setenv("CONTAINER_SSHKEY", keyPath)
 				assert.NoError(t, err)
 				t.Logf("ssh key %s", keyPath)

@@ -6,7 +6,7 @@ build:
 
 .PHONY: ssh
 ssh:
-	ssh -o 'StrictHostKeyChecking no' -i ./ssh/id_rsa -p 2222 root@localhost
+	ssh -o 'StrictHostKeyChecking no' -i ./ssh/id_ed25519 -p 2222 root@localhost
 
 .PHONY: stop
 stop:

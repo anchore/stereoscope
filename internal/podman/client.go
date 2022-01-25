@@ -41,8 +41,6 @@ func ClientOverSSH() (*client.Client, error) {
 		return nil, err
 	}
 
-	log.Debugf("ssh client params: %+v", sshConf)
-
 	httpClient, err := httpClientOverSSH(sshConf)
 	if err != nil {
 		return nil, fmt.Errorf("making http client: %w", err)
@@ -83,7 +81,7 @@ func ClientOverUnixSocket() (*client.Client, error) {
 		socketPath := fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
 		_, err := os.Stat(socketPath)
 		if err != nil {
-			log.Debugf("looking for socket file: %v", err)
+			log.Warnf("looking for socket file: %v", err)
 			return nil, ErrNoSocketAddress
 		}
 
