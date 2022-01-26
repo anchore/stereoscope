@@ -8,9 +8,6 @@
 *.DS_Store
 coverage.txt
 **/test-fixtures/cache/
-**/test-fixtures/podman/ssh/id_ed25519
-**/test-fixtures/podman/ssh/id_ed25519.pub
-**/test-fixtures/podman/ssh/authorized_keys
 
 # Binaries for programs and plugins
 *.exe
