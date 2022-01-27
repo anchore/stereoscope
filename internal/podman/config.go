@@ -10,13 +10,6 @@ import (
 	"github.com/pelletier/go-toml"
 )
 
-// env vars
-// XDG_CONFIG_HOME
-// XDG_RUNTIME_DIR
-// CONTAINER_SSHKEY
-
-// {env vars} -> {config path} -> address
-
 type containersConfig struct {
 	Engine engine `toml:"engine"`
 }
@@ -128,26 +121,26 @@ func parseContainerConfig(path string) (*containersConfig, error) {
 }
 
 var (
-	// _configPath is the path to the containers/containers.conf
-	// inside a given config directory.
-	_configPath = "containers/containers.conf"
-	// paths holds a list of config files, they are sorted from
-	// the least to the most relevant, i.e. a config file in
-	// the home directory has precedence over all other configs
+	// configFile is the default dir + container config used by podman.
+	configFile = filepath.Join("containers", "containers.conf")
+
+	// configPaths holds a list of config files, they are sorted from
+	// the least to the most relevant during reading.
 	configPaths = []string{
 		// holds the default containers config path
-		"/usr/share/" + _configPath,
+		filepath.Join("usr", "share", configFile),
 		// holds the default config path overridden by the root user
-		"/etc/" + _configPath,
-		// holds the containers config path overridden by the rootless user
-		filepath.Join(homedir.Get(), "/.config/", _configPath),
+		filepath.Join("etc", configFile),
+		// holds the container config path overridden by the rootless user
+		filepath.Join(homedir.Get(), ".config", configFile),
 	}
 )
 
 func getUnixSocketAddress(paths []string) (address string) {
 	for _, p := range paths {
-		a := findUnixAddressFromFile(p)
-		if a != "" {
+		if a := findUnixAddressFromFile(p); a != "" {
+			// overwriting here is intentional, as a way to
+			// prioritize different config files
 			address = a
 		}
 	}
@@ -163,6 +156,7 @@ func getSSHAddress(paths []string) (address, identity string) {
 		if a != "" && id != "" {
 			address = a
 			identity = id
+			break
 		}
 	}
 

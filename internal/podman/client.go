@@ -76,12 +76,11 @@ func ClientOverUnixSocket() (*client.Client, error) {
 
 	if addr == "" { // in some cases there might not be any config file
 		// we can try guessing; podman CLI does that
-		//return nil, ErrNoSocketAddress
-		log.Warnf("no socket address was found. Trying default address")
 		socketPath := fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
+		log.Debugf("no socket address was found. Trying default address: %s", socketPath)
 		_, err := os.Stat(socketPath)
 		if err != nil {
-			log.Warnf("looking for socket file: %v", err)
+			log.Debugf("looking for socket file: %v", err)
 			return nil, ErrNoSocketAddress
 		}
 

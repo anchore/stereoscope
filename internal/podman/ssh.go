@@ -72,7 +72,7 @@ func getSigners(keyPath, passphrase string) (signers []ssh.Signer, err error) {
 		return nil, err
 	}
 
-	s, err := parsePublicKey(key, []byte(passphrase))
+	s, err := getSignerFromPrivateKey(key, []byte(passphrase))
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to parse identity %q", keyPath)
 	}
@@ -175,7 +175,7 @@ func httpClientOverSSH(params *sshClientConfig) (*http.Client, error) {
 		}}, nil
 }
 
-func parsePublicKey(key, passphrase []byte) (ssh.Signer, error) {
+func getSignerFromPrivateKey(key, passphrase []byte) (ssh.Signer, error) {
 	signer, err := ssh.ParsePrivateKey(key)
 	if err == nil {
 		return signer, nil

@@ -30,15 +30,17 @@ func TestNewSSHConfig(t *testing.T) {
 	assert.Equal(t, sshAddress, address)
 	assert.Equal(t, sshKeyPath, identity)
 
+	expected := &sshClientConfig{
+		secure:   true,
+		username: "core",
+		keyPath:  sshKeyPath,
+		host:     "localhost:45983",
+		path:     "/run/user/1000/podman/podman.sock",
+	}
+
 	conf, err := newSSHConf(address, identity, "")
 	assert.NoError(t, err)
-	assert.True(t, conf.secure)
-	assert.Equal(t, "core", conf.username)
-	assert.Empty(t, conf.password)
-	assert.Equal(t, sshKeyPath, conf.keyPath)
-	assert.Empty(t, conf.keyPassphrase)
-	assert.Equal(t, "localhost:45983", conf.host)
-	assert.Equal(t, "/run/user/1000/podman/podman.sock", conf.path)
+	assert.Equal(t, expected, conf)
 }
 
 func TestEmptySSHConfig(t *testing.T) {
@@ -86,17 +88,17 @@ func TestGetSigners(t *testing.T) {
 func TestParsePublicKey(t *testing.T) {
 	for _, tt := range testdata.PEMEncryptedKeys {
 		t.Run(tt.Name, func(t *testing.T) {
-			_, err := parsePublicKey(tt.PEMBytes, []byte("incorrect"))
+			_, err := getSignerFromPrivateKey(tt.PEMBytes, []byte("incorrect"))
 			assert.ErrorIs(t, x509.IncorrectPasswordError, err)
 
-			_, err = parsePublicKey(tt.PEMBytes, []byte(tt.EncryptionKey))
+			_, err = getSignerFromPrivateKey(tt.PEMBytes, []byte(tt.EncryptionKey))
 			assert.NoError(t, err)
 		})
 	}
 
 	t.Run("unencrypted keys", func(t *testing.T) {
 		for _, k := range testdata.PEMBytes {
-			_, err := parsePublicKey(k, []byte{})
+			_, err := getSignerFromPrivateKey(k, []byte{})
 			assert.NoError(t, err)
 		}
 	})
