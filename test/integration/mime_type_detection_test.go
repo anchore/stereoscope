@@ -15,7 +15,7 @@ func TestContentMIMETypeDetection(t *testing.T) {
 	t.Cleanup(stereoscope.Cleanup)
 
 	pathsByMIMEType := map[string]*strset.Set{
-		"text/plain": strset.New("/somefile-1.txt", "/somefile-2.txt", "/really/nested/file-3.txt"),
+		"text/plain": strset.New("/somefile-1.txt", "/somefile-2.txt", "/really", "/really/nested", "/really/nested/file-3.txt"),
 	}
 
 	for mimeType, paths := range pathsByMIMEType {

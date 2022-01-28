@@ -2,13 +2,14 @@ package image
 
 import (
 	"archive/tar"
-	"github.com/mitchellh/go-homedir"
-	"github.com/spf13/afero"
 	"io"
 	"os"
 	"path"
 	"strings"
 	"testing"
+
+	"github.com/mitchellh/go-homedir"
+	"github.com/spf13/afero"
 )
 
 func TestDetectSource(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/logrusorgru/aurora"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -30,6 +31,8 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 		location = GetFixtureImageTarPath(t, name)
 	case image.DockerDaemonSource:
 		location = LoadFixtureImageIntoDocker(t, name)
+	case image.PodmanDaemonSource:
+		location = LoadFixtureImageIntoPodman(t, name)
 	case image.OciTarballSource:
 		dockerArchivePath := GetFixtureImageTarPath(t, name)
 		ociArchivePath := path.Join(path.Dir(dockerArchivePath), "oci-archive-"+path.Base(dockerArchivePath))
@@ -120,15 +123,21 @@ func getFixtureImageInfo(t testing.TB, name string) (string, string) {
 }
 
 func LoadFixtureImageIntoDocker(t testing.TB, name string) string {
+	return loadFixtureInContainerEngine(t, name, isImageInDocker, buildDockerImage)
+}
+
+func LoadFixtureImageIntoPodman(t testing.TB, name string) string {
+	return loadFixtureInContainerEngine(t, name, isImageInPodman, buildPodmanImage)
+}
+
+func loadFixtureInContainerEngine(t testing.TB, name string,
+	hasImage func(string) bool, build func(testing.TB, string, string, string)) string {
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
 
 	if !hasImage(fullImageName) {
 		contextPath := path.Join(testutils.TestFixturesDir, name)
-		err := buildImage(contextPath, imageName, imageVersion)
-		if err != nil {
-			t.Fatal("could not build fixture image:", err)
-		}
+		build(t, contextPath, imageName, imageVersion)
 	}
 
 	return fullImageName
@@ -149,12 +158,9 @@ func getFixtureImageTarPath(t testing.TB, fixtureName, tarStoreDir, tarFileName 
 
 	// if the image tar does not exist, make it
 	if !fileOrDirExists(t, tarPath) {
-		if !hasImage(fullImageName) {
+		if !isImageInDocker(fullImageName) {
 			contextPath := path.Join(testutils.TestFixturesDir, fixtureName)
-			err := buildImage(contextPath, imageName, imageVersion)
-			if err != nil {
-				t.Fatal("could not build fixture image:", err)
-			}
+			buildDockerImage(t, contextPath, imageName, imageVersion)
 		}
 
 		err := saveImage(t, fullImageName, tarPath)
@@ -178,14 +184,22 @@ func fixtureVersion(t testing.TB, name string) string {
 	return dockerfileHash
 }
 
-func hasImage(imageName string) bool {
+func isImageInDocker(imageName string) bool {
 	cmd := exec.Command("docker", "image", "inspect", imageName)
 	cmd.Env = os.Environ()
 	err := cmd.Run()
 	return err == nil
 }
 
-func buildImage(contextDir, name, tag string) error {
+func isImageInPodman(imageName string) bool {
+	cmd := exec.Command("podman", "image", "inspect", imageName)
+	cmd.Env = os.Environ()
+	err := cmd.Run()
+	return err == nil
+}
+
+func buildDockerImage(t testing.TB, contextDir, name, tag string) {
+	t.Logf("Build docker image: name=%q tag=%q", name, tag)
 	fullTag := fmt.Sprintf("%s:%s", name, tag)
 	latestTag := fmt.Sprintf("%s:latest", name)
 	cmd := exec.Command("docker", "build", "-t", fullTag, "-t", latestTag, ".")
@@ -194,7 +208,21 @@ func buildImage(contextDir, name, tag string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	return cmd.Run()
+	require.NoError(t, cmd.Run(), "could not build docker image (shell out)")
+}
+
+func buildPodmanImage(t testing.TB, contextDir, name, tag string) {
+	t.Logf("Build podman image: name=%q tag=%q", name, tag)
+
+	fullTag := fmt.Sprintf("%s:%s", name, tag)
+	latestTag := fmt.Sprintf("%s:latest", name)
+	cmd := exec.Command("podman", "build", "-t", fullTag, "-t", latestTag, ".")
+	cmd.Env = os.Environ()
+	cmd.Dir = contextDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	require.NoError(t, cmd.Run(), "could not build podman image (shell out)")
 }
 
 func saveImage(t testing.TB, image, path string) error {

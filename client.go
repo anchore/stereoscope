@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	"github.com/anchore/stereoscope/internal/bus"
+	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
@@ -25,7 +27,17 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, &tempDirGenerator, nil, nil)
 	case image.DockerDaemonSource:
-		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator)
+		c, err := dockerClient.GetClient()
+		if err != nil {
+			return nil, err
+		}
+		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, c)
+	case image.PodmanDaemonSource:
+		c, err := podman.GetClient()
+		if err != nil {
+			return nil, err
+		}
+		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, c)
 	case image.OciDirectorySource:
 		provider = oci.NewProviderFromPath(imgStr, &tempDirGenerator)
 	case image.OciTarballSource:
@@ -49,8 +61,8 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 	return img, nil
 }
 
-// GetImage parses the user provided image string and provides an image object; note: the source where the image should
-// be referenced from is automatically inferred.
+// GetImage parses the user provided image string and provides an image object;
+// note: the source where the image should be referenced from is automatically inferred.
 func GetImage(userStr string, registryOptions *image.RegistryOptions) (*image.Image, error) {
 	source, imgStr, err := image.DetectSource(userStr)
 	if err != nil {

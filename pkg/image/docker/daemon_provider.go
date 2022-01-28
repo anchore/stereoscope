@@ -13,19 +13,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anchore/stereoscope/pkg/file"
-
-	"github.com/docker/cli/cli/config/configfile"
-	"github.com/google/go-containerregistry/pkg/name"
-
 	"github.com/anchore/stereoscope/internal/bus"
-	"github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/docker/cli/cli/config"
+	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 )
@@ -34,24 +31,21 @@ import (
 type DaemonImageProvider struct {
 	imageStr  string
 	tmpDirGen *file.TempDirGenerator
+	client    *client.Client
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator) *DaemonImageProvider {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *client.Client) *DaemonImageProvider {
 	return &DaemonImageProvider{
 		imageStr:  imgStr,
 		tmpDirGen: tmpDirGen,
+		client:    c,
 	}
 }
 
 func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *progress.Writer, *progress.Stage, error) {
-	dockerClient, err := docker.GetClient()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("unable to get docker client: %w", err)
-	}
-
 	// fetch the expected image size to estimate and measure progress
-	inspect, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.imageStr)
+	inspect, _, err := p.client.ImageInspectWithRaw(context.Background(), p.imageStr)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("unable to inspect image: %w", err)
 	}
@@ -106,17 +100,12 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 		Value:  status,
 	})
 
-	dockerClient, err := docker.GetClient()
-	if err != nil {
-		return fmt.Errorf("failed to load docker client: %w", err)
-	}
-
 	options, err := newPullOptions(p.imageStr, cfg)
 	if err != nil {
 		return err
 	}
 
-	resp, err := dockerClient.ImagePull(ctx, p.imageStr, options)
+	resp, err := p.client.ImagePull(ctx, p.imageStr, options)
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
@@ -162,14 +151,8 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		}
 	}()
 
-	// obtain a Docker client
-	dockerClient, err := docker.GetClient()
-	if err != nil {
-		return nil, fmt.Errorf("unable to create a docker client: %w", err)
-	}
-
 	// check if the image exists locally
-	inspectResult, _, err := dockerClient.ImageInspectWithRaw(context.Background(), p.imageStr)
+	inspectResult, _, err := p.client.ImageInspectWithRaw(context.Background(), p.imageStr)
 
 	if err != nil {
 		if client.IsErrNotFound(err) {
@@ -187,8 +170,8 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to trace image save progress: %w", err)
 	}
 
-	stage.Current = "requesting image from Docker"
-	readCloser, err := dockerClient.ImageSave(context.Background(), []string{p.imageStr})
+	stage.Current = "requesting image from docker"
+	readCloser, err := p.client.ImageSave(context.Background(), []string{p.imageStr})
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image tar: %w", err)
 	}

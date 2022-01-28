@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anchore/stereoscope/internal/docker"
+	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mitchellh/go-homedir"
@@ -24,6 +25,7 @@ const (
 	OciDirectorySource
 	OciTarballSource
 	OciRegistrySource
+	PodmanDaemonSource
 )
 
 const SchemeSeparator = ":"
@@ -35,6 +37,7 @@ var sourceStr = [...]string{
 	"OciDirectory",
 	"OciTarball",
 	"OciRegistry",
+	"PodmanDaemon",
 }
 
 var AllSources = []Source{
@@ -43,6 +46,7 @@ var AllSources = []Source{
 	OciDirectorySource,
 	OciTarballSource,
 	OciRegistrySource,
+	PodmanDaemonSource,
 }
 
 // Source is a concrete a selection of valid concrete image providers.
@@ -64,6 +68,8 @@ func ParseSourceScheme(source string) Source {
 		return DockerTarballSource
 	case "docker":
 		return DockerDaemonSource
+	case "podman":
+		return PodmanDaemonSource
 	case "oci-dir":
 		return OciDirectorySource
 	case "oci-archive":
@@ -136,15 +142,27 @@ func DetermineImagePullSource(userInput string) Source {
 	}
 
 	// verify that the Docker daemon is accessible before assuming we can use it
-	dockerClient, err := docker.GetClient()
+	c, err := docker.GetClient()
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		pong, err := dockerClient.Ping(ctx)
+		pong, err := c.Ping(ctx)
 		if err == nil && pong.APIVersion != "" {
 			// the Docker daemon exists and is accessible
 			return DockerDaemonSource
+		}
+	}
+
+	c, err = podman.GetClient()
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		pong, err := c.Ping(ctx)
+		if err == nil && pong.APIVersion != "" {
+			// the Docker daemon exists and is accessible
+			return PodmanDaemonSource
 		}
 	}
 

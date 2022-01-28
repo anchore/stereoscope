@@ -11,13 +11,12 @@ import (
 	"testing"
 
 	"github.com/anchore/stereoscope"
-	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/scylladb/go-set"
-
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/imagetest"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/scylladb/go-set"
 )
 
 var simpleImageTestCases = []testCase{
@@ -36,6 +35,13 @@ var simpleImageTestCases = []testCase{
 		// name:hash
 		// name:latest
 		tagCount: 2,
+	},
+	{
+		name:           "FromPodman",
+		source:         "podman",
+		imageMediaType: v1Types.DockerManifestSchema2,
+		layerMediaType: v1Types.DockerLayer,
+		tagCount:       2,
 	},
 	{
 		name:           "FromOciTarball",
@@ -143,7 +149,7 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 	if len(i.Metadata.Tags) != expectedValues.tagCount {
 		t.Errorf("unexpected number of tags: %d != %d : %+v", len(i.Metadata.Tags), expectedValues.tagCount, i.Metadata.Tags)
 	} else if expectedValues.tagCount > 0 {
-		if !strings.HasPrefix(i.Metadata.Tags[0].String(), fmt.Sprintf("%s-image-simple:", imagetest.ImagePrefix)) {
+		if !strings.Contains(i.Metadata.Tags[0].String(), fmt.Sprintf("%s-image-simple:", imagetest.ImagePrefix)) {
 			t.Errorf("unexpected image tag: %+v", i.Metadata.Tags)
 		}
 	}

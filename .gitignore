@@ -5,9 +5,9 @@
 *.log
 .images
 .tmp/
+*.DS_Store
 coverage.txt
 **/test-fixtures/cache/
-
 
 # Binaries for programs and plugins
 *.exe
