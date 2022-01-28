@@ -40,20 +40,6 @@ func runAndShow(t *testing.T, cmd *exec.Cmd) {
 	show("err", stderr)
 }
 
-// test conditions:
-// - assume that podman has already been setup (podman-machine)
-
-// test cases: all test cases will use client.Ping()
-
-// unit:
-// - getPodmanAddress
-
-// To run it locally make sure you have podman up and running:
-// install:
-//	$ brew install podman
-// config and start:
-// 	$ podman machine init
-//  $ podman machine start
 func TestPodmanConnections(t *testing.T) {
 	tests := []struct {
 		name        string
