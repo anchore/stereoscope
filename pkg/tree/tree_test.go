@@ -2,8 +2,10 @@ package tree
 
 import (
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/tree/node"
 	"testing"
+
+	"github.com/anchore/stereoscope/pkg/tree/node"
+	"github.com/stretchr/testify/assert"
 )
 
 type testNode struct {
@@ -292,5 +294,59 @@ func TestTree_Replace(t *testing.T) {
 
 	if tr.Parent(five).ID() != zero.ID() {
 		t.Fatalf("unexpected parent (node:5) %+v", tr.Parent(five).ID())
+	}
+}
+
+func TestTree(t *testing.T) {
+	zero, one, two, three, four := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3), newTestNode(4)
+
+	tests := []struct {
+		name     string
+		fields   *Tree
+		roots    node.Nodes
+		id       node.ID
+		notThere node.ID
+	}{
+		{
+			name:   "empty",
+			fields: NewTree(),
+			roots:  make([]node.Node, 0),
+		},
+		{
+			name: "has nodes-children-parent",
+			fields: &Tree{
+				nodes: map[node.ID]node.Node{
+					zero.ID(): zero,
+					one.ID():  one,
+				},
+				children: map[node.ID]map[node.ID]node.Node{
+					one.ID(): {
+						two.ID():   two,
+						three.ID(): nil,
+					},
+				},
+				parent: map[node.ID]node.Node{
+					four.ID(): nil,
+					one.ID():  one,
+				},
+			},
+			roots:    node.Nodes{zero},
+			id:       zero.ID(),
+			notThere: node.ID("bla"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.fields, tt.fields.Copy())
+			assert.Equal(t, tt.roots, tt.fields.Roots())
+
+			if tt.id != "" {
+				assert.True(t, tt.fields.HasNode(tt.id))
+			}
+
+			if tt.notThere != "" {
+				assert.False(t, tt.fields.HasNode(tt.notThere))
+			}
+		})
 	}
 }
