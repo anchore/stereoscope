@@ -22,6 +22,12 @@ func TestDetectSource(t *testing.T) {
 		tarPaths         []string
 	}{
 		{
+			name:             "podman-engine",
+			input:            "podman:something:latest",
+			source:           PodmanDaemonSource,
+			expectedLocation: "something:latest",
+		},
+		{
 			name:             "docker-archive",
 			input:            "docker-archive:a/place.tar",
 			source:           DockerTarballSource,
