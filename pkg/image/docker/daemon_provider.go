@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -25,6 +26,10 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
+)
+
+var (
+	ErrEmptyImage = errors.New("cannot provide an empty image")
 )
 
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.
@@ -52,6 +57,10 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 	// docker image save clocks in at ~125MB/sec on my laptop... mileage may vary, of course :shrug:
 	mb := math.Pow(2, 20)
+	//"virtual size" is the total amount of disk-space used for the read-only image
+	//data used by the container and the writable layer.
+	//"size" (also provider by the inspect result) shows the amount of data (on disk)
+	//that is used for the writable layer of each container.
 	sec := float64(inspect.VirtualSize) / (mb * 125)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
 
@@ -169,6 +178,11 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to trace image save progress: %w", err)
 	}
+	defer func() {
+		// TODO: explain why this is important
+		estimateSaveProgress.SetCompleted()
+		copyProgress.SetComplete()
+	}()
 
 	stage.Current = "requesting image from docker"
 	readCloser, err := p.client.ImageSave(context.Background(), []string{p.imageStr})
@@ -182,9 +196,6 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		}
 	}()
 
-	// cancel indeterminate progress
-	estimateSaveProgress.SetCompleted()
-
 	// save the image contents to the temp file
 	// note: this is the same image that will be used to querying image content during analysis
 	stage.Current = "saving image to disk"
@@ -193,7 +204,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to save image to tar: %w", err)
 	}
 	if nBytes == 0 {
-		return nil, fmt.Errorf("cannot provide an empty image")
+		return nil, ErrEmptyImage
 	}
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
