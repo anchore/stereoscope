@@ -2,6 +2,7 @@ package stereoscope
 
 import (
 	"fmt"
+	"github.com/anchore/go-logger"
 
 	"github.com/anchore/stereoscope/internal/bus"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
@@ -11,7 +12,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
-	"github.com/anchore/stereoscope/pkg/logger"
 	"github.com/wagoodman/go-partybus"
 )
 

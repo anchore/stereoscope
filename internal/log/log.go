@@ -1,6 +1,6 @@
 package log
 
-import "github.com/anchore/stereoscope/pkg/logger"
+import "github.com/anchore/go-logger"
 
 var Log logger.Logger = &nopLogger{}
 

@@ -3,6 +3,7 @@ module github.com/anchore/stereoscope
 go 1.16
 
 require (
+	github.com/anchore/go-logger v0.0.0
 	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
 	github.com/bmatcuk/doublestar/v4 v4.0.2
 	github.com/docker/cli v20.10.12+incompatible
@@ -17,10 +18,11 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/scylladb/go-set v1.0.2
 	github.com/sergi/go-diff v1.1.0
-	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.0
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20200621122631-1a2120f0695a
-	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
+	golang.org/x/crypto v0.0.0-20220131195533-30dcbda58838
 )
+
+replace github.com/anchore/go-logger => ../go-logger

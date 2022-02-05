@@ -8,16 +8,11 @@ import (
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	// note: we are writing out temp files which should be cleaned up after you're done with the image object
 	defer stereoscope.Cleanup()
-
-	lctx := logrus.New()
-	lctx.Level = logrus.DebugLevel
-	stereoscope.SetLogger(lctx)
 
 	/////////////////////////////////////////////////////////////////
 	// pass a path to an Docker save tar, docker image, or OCI directory/archive as an argument:

@@ -1,6 +1,8 @@
 package log
 
-import "github.com/anchore/stereoscope/pkg/logger"
+import (
+	"github.com/anchore/go-logger"
+)
 
 type nopLogger struct{}
 
@@ -13,3 +15,4 @@ func (l *nopLogger) Info(args ...interface{})                              {}
 func (l *nopLogger) Debugf(format string, args ...interface{})             {}
 func (l *nopLogger) Debug(args ...interface{})                             {}
 func (l *nopLogger) WithFields(fields ...interface{}) logger.MessageLogger { return l }
+func (l *nopLogger) Nested(fields ...interface{}) logger.Logger            { return l }
