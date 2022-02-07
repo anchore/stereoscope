@@ -179,7 +179,8 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to trace image save progress: %w", err)
 	}
 	defer func() {
-		// TODO: explain why this is important
+		// NOTE: progress trackers should complete at the end of this function
+		// whether the function errors or succeeds.
 		estimateSaveProgress.SetCompleted()
 		copyProgress.SetComplete()
 	}()
