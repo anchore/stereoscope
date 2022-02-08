@@ -9,8 +9,10 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/containerd/containerd/platforms"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	containerregistryV1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
@@ -44,7 +46,12 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	descriptor, err := remote.Get(ref, prepareRemoteOptions(ctx, ref, p.registryOptions)...)
+	remoteOptions, err := prepareRemoteOptions(ctx, ref, p.registryOptions)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get registry options: %+v", err)
+	}
+
+	descriptor, err := remote.Get(ref, remoteOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
 	}
@@ -81,26 +88,45 @@ func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Optio
 	return options
 }
 
-func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions) (opts []remote.Option) {
+func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions) ([]remote.Option, error) {
+	var options []remote.Option
+
 	if registryOptions.InsecureSkipTLSVerify {
 		t := &http.Transport{
 			// nolint: gosec
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
-		opts = append(opts, remote.WithTransport(t))
+		options = append(options, remote.WithTransport(t))
 	}
-	opts = append(opts, remote.WithContext(ctx))
+
+	if registryOptions.Platform != "" {
+		// registry library doesn't support parsing this, so containerd implemetation is used
+		// wich in turns requires struct remapping
+		p, err := platforms.Parse(registryOptions.Platform)
+		if err != nil {
+			err = fmt.Errorf("failed to parse platform %q: %w", registryOptions.Platform, err)
+			return nil, err
+		}
+		options = append(options, remote.WithPlatform(containerregistryV1.Platform{
+			Architecture: p.Architecture,
+			OS:           p.OS,
+			OSVersion:    p.OSVersion,
+			OSFeatures:   p.OSFeatures,
+			Variant:      p.Variant,
+		}))
+	}
+	options = append(options, remote.WithContext(ctx))
 
 	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
 	// If no explicit authenticator can be found, then fallback to the keychain.
 	authenticator := registryOptions.Authenticator(ref.Context().RegistryStr())
 	if authenticator != nil {
-		opts = append(opts, remote.WithAuth(authenticator))
+		options = append(options, remote.WithAuth(authenticator))
 	} else {
 		// use the Keychain specified from a docker config file.
 		log.Debugf("no registry credentials configured, using the default keychain")
-		opts = append(opts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
-	return
+	return options, nil
 }

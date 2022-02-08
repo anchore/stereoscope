@@ -10,6 +10,7 @@ type RegistryOptions struct {
 	InsecureSkipTLSVerify bool
 	InsecureUseHTTP       bool
 	Credentials           []RegistryCredentials
+	Platform              string
 }
 
 // Authenticator returns an object capable of authenticating against the given registry. If no credentials match the
