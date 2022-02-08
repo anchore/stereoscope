@@ -14,15 +14,15 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
-// RegistryImageProvider is a image.Provider capable of fetching and representing a container image fetched from a remote registry (described by the OCI distribution spec).
+// RegistryImageProvider is an image.Provider capable of fetching and representing a container image fetched from a remote registry (described by the OCI distribution spec).
 type RegistryImageProvider struct {
 	imageStr        string
 	tmpDirGen       *file.TempDirGenerator
-	registryOptions *image.RegistryOptions
+	registryOptions image.RegistryOptions
 }
 
 // NewProviderFromRegistry creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions *image.RegistryOptions) *RegistryImageProvider {
+func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions) *RegistryImageProvider {
 	return &RegistryImageProvider{
 		imageStr:        imgStr,
 		tmpDirGen:       tmpDirGen,
@@ -31,7 +31,7 @@ func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, re
 }
 
 // Provide an image object that represents the cached docker image tar fetched a registry.
-func (p *RegistryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
 
 	imageTempDir, err := p.tmpDirGen.NewDirectory("oci-registry-image")
@@ -59,7 +59,7 @@ func (p *RegistryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 	repoDigest := fmt.Sprintf("%s/%s@%s", ref.Context().RegistryStr(), ref.Context().RepositoryStr(), descriptor.Digest.String())
 
 	metadata := []image.AdditionalMetadata{
-		image.WithRepoDigests([]string{repoDigest}),
+		image.WithRepoDigests(repoDigest),
 	}
 
 	// make a best effort to get the manifest, should not block getting an image though if it fails
@@ -67,18 +67,21 @@ func (p *RegistryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		metadata = append(metadata, image.WithManifest(manifestBytes))
 	}
 
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, userMetadata...)
+
 	return image.NewImage(img, imageTempDir, metadata...), nil
 }
 
-func prepareReferenceOptions(registryOptions *image.RegistryOptions) []name.Option {
+func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
 	var options []name.Option
-	if registryOptions != nil && registryOptions.InsecureUseHTTP {
+	if registryOptions.InsecureUseHTTP {
 		options = append(options, name.Insecure)
 	}
 	return options
 }
 
-func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions *image.RegistryOptions) (opts []remote.Option) {
+func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions) (opts []remote.Option) {
 	if registryOptions.InsecureSkipTLSVerify {
 		t := &http.Transport{
 			// nolint: gosec

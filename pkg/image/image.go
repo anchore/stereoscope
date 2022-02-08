@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/scylladb/go-set/strset"
+
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -37,16 +39,21 @@ type AdditionalMetadata func(*Image) error
 
 func WithTags(tags ...string) AdditionalMetadata {
 	return func(image *Image) error {
-		var err error
-		image.Metadata.Tags = make([]name.Tag, len(tags))
-		for i, t := range tags {
-			image.Metadata.Tags[i], err = name.NewTag(t)
+		existingTags := strset.New()
+		for _, t := range image.Metadata.Tags {
+			existingTags.Add(t.String())
+		}
+		for _, t := range tags {
+			tagObj, err := name.NewTag(t)
 			if err != nil {
-				image.Metadata.Tags = nil
-				break
+				log.Warnf("unable to parse additional image tag to add %q: %+v", t, err)
+				continue
+			}
+			if !existingTags.Has(tagObj.String()) {
+				image.Metadata.Tags = append(image.Metadata.Tags, tagObj)
 			}
 		}
-		return err
+		return nil
 	}
 }
 
@@ -73,13 +80,9 @@ func WithConfig(config []byte) AdditionalMetadata {
 	}
 }
 
-func WithRepoDigests(digests []string) AdditionalMetadata {
+func WithRepoDigests(digests ...string) AdditionalMetadata {
 	return func(image *Image) error {
-		if digests != nil {
-			image.Metadata.RepoDigests = digests
-		} else {
-			image.Metadata.RepoDigests = []string{}
-		}
+		image.Metadata.RepoDigests = append(image.Metadata.RepoDigests, digests...)
 		return nil
 	}
 }

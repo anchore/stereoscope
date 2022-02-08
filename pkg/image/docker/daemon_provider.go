@@ -138,7 +138,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 }
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
-func (p *DaemonImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	imageTempDir, err := p.tmpDirGen.NewDirectory("docker-daemon-image")
 	if err != nil {
 		return nil, err
@@ -211,8 +211,21 @@ func (p *DaemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 		return nil, errors.New("cannot provide an empty image")
 	}
 
+	var metadata []image.AdditionalMetadata
+
+	if len(inspectResult.RepoTags) > 0 {
+		metadata = append(metadata, image.WithTags(inspectResult.RepoTags...))
+	}
+
+	if len(inspectResult.RepoDigests) > 0 {
+		metadata = append(metadata, image.WithRepoDigests(inspectResult.RepoDigests...))
+	}
+
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, userMetadata...)
+
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen, inspectResult.RepoTags, inspectResult.RepoDigests).Provide(ctx)
+	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen).Provide(ctx, metadata...)
 }
 
 func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {

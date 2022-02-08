@@ -31,7 +31,7 @@ func Test_prepareReferenceOptions(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			out := prepareReferenceOptions(&test.input)
+			out := prepareReferenceOptions(test.input)
 			assert.Equal(t, len(test.expected), len(out))
 			if test.expected == nil {
 				assert.Equal(t, test.expected, out)

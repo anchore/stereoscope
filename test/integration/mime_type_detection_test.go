@@ -11,7 +11,9 @@ import (
 
 func TestContentMIMETypeDetection(t *testing.T) {
 	request := imagetest.PrepareFixtureImage(t, "docker-archive", "image-simple")
-	img, err := stereoscope.GetImage(context.TODO(), request, nil)
+
+	img, err := stereoscope.GetImage(context.TODO(), request)
+
 	assert.NoError(t, err)
 	t.Cleanup(stereoscope.Cleanup)
 

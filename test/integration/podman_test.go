@@ -105,15 +105,15 @@ func TestPodmanConnections(t *testing.T) {
 
 			tt.setup(t)
 			c, err := tt.constructor()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.NotEmpty(t, c.ClientVersion())
 
 			p, err := c.Ping(context.Background())
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.NotNil(t, p)
 
 			version, err := c.ServerVersion(context.Background())
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.NotEmpty(t, version)
 		})
 	}
