@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -23,7 +24,7 @@ func NewProviderFromTarball(path string, tmpDirGen *file.TempDirGenerator) *Tarb
 }
 
 // Provide an image object that represents the OCI image from a tarball.
-func (p *TarballImageProvider) Provide() (*image.Image, error) {
+func (p *TarballImageProvider) Provide(ctx context.Context) (*image.Image, error) {
 	// note: we are untaring the image and using the existing directory provider, we could probably enhance the google
 	// container registry lib to do this without needing to untar to a temp dir (https://github.com/google/go-containerregistry/issues/726)
 	f, err := os.Open(p.path)
@@ -40,5 +41,5 @@ func (p *TarballImageProvider) Provide() (*image.Image, error) {
 		return nil, err
 	}
 
-	return NewProviderFromPath(tempDir, p.tmpDirGen).Provide()
+	return NewProviderFromPath(tempDir, p.tmpDirGen).Provide(ctx)
 }

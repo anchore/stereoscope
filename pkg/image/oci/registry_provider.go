@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net/http"
@@ -30,7 +31,7 @@ func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, re
 }
 
 // Provide an image object that represents the cached docker image tar fetched a registry.
-func (p *RegistryImageProvider) Provide() (*image.Image, error) {
+func (p *RegistryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
 	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
 
 	imageTempDir, err := p.tmpDirGen.NewTempDir()
@@ -43,7 +44,7 @@ func (p *RegistryImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	descriptor, err := remote.Get(ref, prepareRemoteOptions(ref, p.registryOptions)...)
+	descriptor, err := remote.Get(ref, prepareRemoteOptions(ctx, ref, p.registryOptions)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
 	}
@@ -77,7 +78,7 @@ func prepareReferenceOptions(registryOptions *image.RegistryOptions) []name.Opti
 	return options
 }
 
-func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOptions) (opts []remote.Option) {
+func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions *image.RegistryOptions) (opts []remote.Option) {
 	if registryOptions.InsecureSkipTLSVerify {
 		t := &http.Transport{
 			// nolint: gosec
@@ -85,6 +86,7 @@ func prepareRemoteOptions(ref name.Reference, registryOptions *image.RegistryOpt
 		}
 		opts = append(opts, remote.WithTransport(t))
 	}
+	opts = append(opts, remote.WithContext(ctx))
 
 	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
 	// If no explicit authenticator can be found, then fallback to the keychain.

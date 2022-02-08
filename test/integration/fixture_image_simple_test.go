@@ -4,6 +4,7 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -102,7 +103,7 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 		b.Cleanup(stereoscope.Cleanup)
 		b.Run(c.name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, err = stereoscope.GetImage(request, nil)
+				_, err = stereoscope.GetImage(context.TODO(), request, nil)
 				if err != nil {
 					b.Fatal("could not get fixture image:", err)
 				}

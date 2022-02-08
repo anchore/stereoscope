@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -33,7 +34,7 @@ func NewProviderFromTarball(path string, tmpDirGen *file.TempDirGenerator, tags 
 }
 
 // Provide an image object that represents the docker image tar at the configured location on disk.
-func (p *TarballImageProvider) Provide() (*image.Image, error) {
+func (p *TarballImageProvider) Provide(context.Context) (*image.Image, error) {
 	img, err := tarball.ImageFromPath(p.path, nil)
 	if err != nil {
 		// raise a more controlled error for when there are multiple images within the given tar (from https://github.com/anchore/grype/issues/215)

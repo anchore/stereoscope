@@ -13,12 +13,13 @@ import (
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/logger"
 	"github.com/wagoodman/go-partybus"
+	"context"
 )
 
 var tempDirGenerator = file.NewTempDirGenerator()
 
 // GetImageFromSource returns an image from the explicitly provided source.
-func GetImageFromSource(imgStr string, source image.Source, registryOptions *image.RegistryOptions) (*image.Image, error) {
+func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, registryOptions *image.RegistryOptions) (*image.Image, error) {
 	var provider image.Provider
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
@@ -48,7 +49,7 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 		return nil, fmt.Errorf("unable determine image source")
 	}
 
-	img, err := provider.Provide()
+	img, err := provider.Provide(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to use %s source: %w", source, err)
 	}
@@ -63,12 +64,12 @@ func GetImageFromSource(imgStr string, source image.Source, registryOptions *ima
 
 // GetImage parses the user provided image string and provides an image object;
 // note: the source where the image should be referenced from is automatically inferred.
-func GetImage(userStr string, registryOptions *image.RegistryOptions) (*image.Image, error) {
+func GetImage(ctx context.Context, userStr string, registryOptions *image.RegistryOptions) (*image.Image, error) {
 	source, imgStr, err := image.DetectSource(userStr)
 	if err != nil {
 		return nil, err
 	}
-	return GetImageFromSource(imgStr, source, registryOptions)
+	return GetImageFromSource(ctx, imgStr, source, registryOptions)
 }
 
 func SetLogger(logger logger.Logger) {
