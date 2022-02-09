@@ -181,14 +181,10 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		copyProgress.SetComplete()
 	}()
 
-	// NOTE: The image save progress is only a guess
-	// (a timer counting up to a particular time where
-	// the overall progress would be considered at 50%).
-	// It's logical to adjust the first image save timer
-	// to complete when the image save operation returns.
-	// The defer statement is a fallback in case the numbers
-	// from the docker daemon don't line up
-	// (as we saw when metadata and actual size don't match)
+	// NOTE: The image save progress is only a guess (a timer counting up to a particular time where
+	// the overall progress would be considered at 50%). It's logical to adjust the first image save timer
+	// to complete when the image save operation returns. The defer statement is a fallback in case the numbers
+	// from the docker daemon don't line up (as we saw when metadata and actual size differ)
 	// or there is a problem that causes us to return early with an error.
 	estimateSaveProgress.SetCompleted()
 
