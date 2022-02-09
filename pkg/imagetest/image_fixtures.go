@@ -59,11 +59,10 @@ func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 	request := PrepareFixtureImage(t, source, name)
 
 	i, err := stereoscope.GetImage(context.TODO(), request, nil)
-	if err != nil {
-		t.Fatal("could not get tar image:", err)
-	}
-	t.Cleanup(stereoscope.Cleanup)
-
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, i.Cleanup())
+	})
 	return i
 }
 
@@ -110,9 +109,13 @@ func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
 	request := fmt.Sprintf("docker-archive:%s", tarPath)
 
 	i, err := stereoscope.GetImage(context.TODO(), request, nil)
-	if err != nil {
-		t.Fatal("could not get tar image:", err)
-	}
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		if err := i.Cleanup(); err != nil {
+			t.Errorf("could not cleanup tarPath=%q: %w", tarPath, err)
+		}
+	})
 
 	return i
 }

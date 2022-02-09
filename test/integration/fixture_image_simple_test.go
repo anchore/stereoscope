@@ -1,5 +1,5 @@
-//go:build windows
-// +build windows
+//go:build !windows
+// +build !windows
 
 package integration
 
@@ -18,6 +18,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/imagetest"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/scylladb/go-set"
+	"github.com/stretchr/testify/require"
 )
 
 var simpleImageTestCases = []testCase{
@@ -100,10 +101,14 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 			continue
 		}
 		request := imagetest.PrepareFixtureImage(b, c.source, "image-simple")
-		b.Cleanup(stereoscope.Cleanup)
+
 		b.Run(c.name, func(b *testing.B) {
+			var bi *image.Image
 			for i := 0; i < b.N; i++ {
-				_, err = stereoscope.GetImage(context.TODO(), request, nil)
+				bi, err = stereoscope.GetImage(context.TODO(), request, nil)
+				b.Cleanup(func() {
+					require.NoError(b, bi.Cleanup())
+				})
 				if err != nil {
 					b.Fatal("could not get fixture image:", err)
 				}

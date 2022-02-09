@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
@@ -251,10 +252,20 @@ func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options 
 	return resolvedRef, err
 }
 
-// ResolveLinkByLayerSquash resolves a symlink or hardlink for the given file reference relative to the result from the image squash.
+// ResolveLinkByImageSquash resolves a symlink or hardlink for the given file reference relative to the result from the image squash.
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree.LinkResolutionOption) (*file.Reference, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, allOptions...)
 	return resolvedRef, err
+}
+
+// Cleanup removes all temporary files created from parsing the image. Future calls to image will not function correctly after this call.
+func (i *Image) Cleanup() error {
+	if i.contentCacheDir != "" {
+		if err := os.RemoveAll(i.contentCacheDir); err != nil {
+			return err
+		}
+	}
+	return nil
 }

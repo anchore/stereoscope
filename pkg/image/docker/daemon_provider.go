@@ -139,7 +139,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
 func (p *DaemonImageProvider) Provide(ctx context.Context) (*image.Image, error) {
-	imageTempDir, err := p.tmpDirGen.NewTempDir()
+	imageTempDir, err := p.tmpDirGen.NewDirectory("docker-daemon-image")
 	if err != nil {
 		return nil, err
 	}

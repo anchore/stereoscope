@@ -61,7 +61,7 @@ func (p *DirectoryImageProvider) Provide(context.Context) (*image.Image, error) 
 		metadata = append(metadata, image.WithManifest(rawManifest))
 	}
 
-	contentTempDir, err := p.tmpDirGen.NewTempDir()
+	contentTempDir, err := p.tmpDirGen.NewDirectory("oci-dir-image")
 	if err != nil {
 		return nil, err
 	}

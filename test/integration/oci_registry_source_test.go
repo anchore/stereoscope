@@ -3,10 +3,12 @@ package integration
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/stretchr/testify/assert"
-	"testing"
+	"github.com/stretchr/testify/require"
 )
 
 func TestOciRegistrySourceMetadata(t *testing.T) {
@@ -31,9 +33,11 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 	ref := fmt.Sprintf("%s@%s", imgStr, digest)
 
 	img, err := stereoscope.GetImage(context.TODO(), "registry:"+ref, &image.RegistryOptions{})
-	if err != nil {
-		t.Fatalf("unable to get image: %+v", err)
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
+	})
+
 	if err := img.Read(); err != nil {
 		t.Fatalf("failed to read image: %+v", err)
 	}
