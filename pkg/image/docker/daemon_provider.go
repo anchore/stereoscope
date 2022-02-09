@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -52,6 +53,10 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 	// docker image save clocks in at ~125MB/sec on my laptop... mileage may vary, of course :shrug:
 	mb := math.Pow(2, 20)
+	//"virtual size" is the total amount of disk-space used for the read-only image
+	//data used by the container and the writable layer.
+	//"size" (also provider by the inspect result) shows the amount of data (on disk)
+	//that is used for the writable layer of each container.
 	sec := float64(inspect.VirtualSize) / (mb * 125)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
 
@@ -169,6 +174,19 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to trace image save progress: %w", err)
 	}
+	defer func() {
+		// NOTE: progress trackers should complete at the end of this function
+		// whether the function errors or succeeds.
+		estimateSaveProgress.SetCompleted()
+		copyProgress.SetComplete()
+	}()
+
+	// NOTE: The image save progress is only a guess (a timer counting up to a particular time where
+	// the overall progress would be considered at 50%). It's logical to adjust the first image save timer
+	// to complete when the image save operation returns. The defer statement is a fallback in case the numbers
+	// from the docker daemon don't line up (as we saw when metadata and actual size differ)
+	// or there is a problem that causes us to return early with an error.
+	estimateSaveProgress.SetCompleted()
 
 	stage.Current = "requesting image from docker"
 	readCloser, err := p.client.ImageSave(context.Background(), []string{p.imageStr})
@@ -182,9 +200,6 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		}
 	}()
 
-	// cancel indeterminate progress
-	estimateSaveProgress.SetCompleted()
-
 	// save the image contents to the temp file
 	// note: this is the same image that will be used to querying image content during analysis
 	stage.Current = "saving image to disk"
@@ -193,7 +208,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 		return nil, fmt.Errorf("unable to save image to tar: %w", err)
 	}
 	if nBytes == 0 {
-		return nil, fmt.Errorf("cannot provide an empty image")
+		return nil, errors.New("cannot provide an empty image")
 	}
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
