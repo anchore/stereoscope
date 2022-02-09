@@ -16,35 +16,37 @@ import (
 	"github.com/wagoodman/go-partybus"
 )
 
-var tempDirGenerator = file.NewTempDirGenerator()
+var rootTempDirGenerator = file.NewTempDirGenerator("stereoscope")
 
 // GetImageFromSource returns an image from the explicitly provided source.
 func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, registryOptions *image.RegistryOptions) (*image.Image, error) {
 	var provider image.Provider
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
+	tempDirGenerator := rootTempDirGenerator.NewGenerator()
+
 	switch source {
 	case image.DockerTarballSource:
 		// note: the imgStr is the path on disk to the tar file
-		provider = docker.NewProviderFromTarball(imgStr, &tempDirGenerator, nil, nil)
+		provider = docker.NewProviderFromTarball(imgStr, tempDirGenerator, nil, nil)
 	case image.DockerDaemonSource:
 		c, err := dockerClient.GetClient()
 		if err != nil {
 			return nil, err
 		}
-		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, c)
+		provider = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c)
 	case image.PodmanDaemonSource:
 		c, err := podman.GetClient()
 		if err != nil {
 			return nil, err
 		}
-		provider = docker.NewProviderFromDaemon(imgStr, &tempDirGenerator, c)
+		provider = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c)
 	case image.OciDirectorySource:
-		provider = oci.NewProviderFromPath(imgStr, &tempDirGenerator)
+		provider = oci.NewProviderFromPath(imgStr, tempDirGenerator)
 	case image.OciTarballSource:
-		provider = oci.NewProviderFromTarball(imgStr, &tempDirGenerator)
+		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
-		provider = oci.NewProviderFromRegistry(imgStr, &tempDirGenerator, registryOptions)
+		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, registryOptions)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}
@@ -80,8 +82,10 @@ func SetBus(b *partybus.Bus) {
 	bus.SetPublisher(b)
 }
 
+// Cleanup deletes all directories created by stereoscope calls. Note: please use image.Image.Cleanup() over this
+// function when possible.
 func Cleanup() {
-	if err := tempDirGenerator.Cleanup(); err != nil {
-		log.Errorf("failed to cleanup: %w", err)
+	if err := rootTempDirGenerator.Cleanup(); err != nil {
+		log.Errorf("failed to cleanup tempdir root: %w", err)
 	}
 }

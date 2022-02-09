@@ -34,7 +34,7 @@ func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, re
 func (p *RegistryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
 	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
 
-	imageTempDir, err := p.tmpDirGen.NewTempDir()
+	imageTempDir, err := p.tmpDirGen.NewDirectory("oci-registry-image")
 	if err != nil {
 		return nil, err
 	}

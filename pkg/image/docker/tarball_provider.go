@@ -93,7 +93,7 @@ func (p *TarballImageProvider) Provide(context.Context) (*image.Image, error) {
 
 	metadata = append(metadata, image.WithRepoDigests(p.repoDigests))
 
-	contentTempDir, err := p.tmpDirGen.NewTempDir()
+	contentTempDir, err := p.tmpDirGen.NewDirectory("docker-tarball-image")
 	if err != nil {
 		return nil, err
 	}

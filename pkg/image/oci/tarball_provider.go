@@ -32,7 +32,7 @@ func (p *TarballImageProvider) Provide(ctx context.Context) (*image.Image, error
 		return nil, fmt.Errorf("unable to open OCI tarball: %w", err)
 	}
 
-	tempDir, err := p.tmpDirGen.NewTempDir()
+	tempDir, err := p.tmpDirGen.NewDirectory("oci-tarball-image")
 	if err != nil {
 		return nil, err
 	}

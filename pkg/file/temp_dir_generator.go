@@ -1,50 +1,65 @@
 package file
 
 import (
-	"fmt"
-	"io/ioutil"
 	"os"
-	"sync"
+	"strings"
 
 	"github.com/hashicorp/go-multierror"
 )
 
 type TempDirGenerator struct {
-	tempDir []string
-	lock    *sync.Mutex
+	rootPrefix   string
+	rootLocation string
+	generators   []*TempDirGenerator
 }
 
-func NewTempDirGenerator() TempDirGenerator {
-	return TempDirGenerator{
-		tempDir: make([]string, 0),
-		lock:    &sync.Mutex{},
+func NewTempDirGenerator(name string) *TempDirGenerator {
+	return &TempDirGenerator{
+		rootPrefix: name,
 	}
 }
 
-// NewTempDir creates an empty dir in the platform temp dir
-func (t *TempDirGenerator) NewTempDir() (string, error) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	dir, err := ioutil.TempDir("", "stereoscope-cache")
-	if err != nil {
-		return "", fmt.Errorf("could not create temp dir: %w", err)
-	}
-
-	t.tempDir = append(t.tempDir, dir)
-	return dir, nil
-}
-
-func (t *TempDirGenerator) Cleanup() error {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	var allErrors error
-	for _, dir := range t.tempDir {
-		err := os.RemoveAll(dir)
+func (t *TempDirGenerator) getOrCreateRootLocation() (string, error) {
+	if t.rootLocation == "" {
+		location, err := os.MkdirTemp("", t.rootPrefix+"-")
 		if err != nil {
-			allErrors = multierror.Append(allErrors, err)
+			return "", err
+		}
+
+		t.rootLocation = location
+	}
+	return t.rootLocation, nil
+}
+
+// NewGenerator creates a child generator capable of making sibling temp directories.
+func (t *TempDirGenerator) NewGenerator() *TempDirGenerator {
+	gen := NewTempDirGenerator(t.rootPrefix)
+	t.generators = append(t.generators, gen)
+	return gen
+}
+
+// NewDirectory creates a new temp dir within the generators prefix temp dir.
+func (t *TempDirGenerator) NewDirectory(name ...string) (string, error) {
+	location, err := t.getOrCreateRootLocation()
+	if err != nil {
+		return "", err
+	}
+
+	return os.MkdirTemp(location, strings.Join(name, "-")+"-")
+}
+
+// Cleanup deletes all temp dirs created by this generator and any child generator.
+func (t *TempDirGenerator) Cleanup() error {
+	var allErrs error
+	for _, gen := range t.generators {
+		if err := gen.Cleanup(); err != nil {
+			allErrs = multierror.Append(allErrs, err)
 		}
 	}
-	return allErrors
+	if t.rootLocation != "" {
+		if err := os.RemoveAll(t.rootLocation); err != nil {
+			allErrs = multierror.Append(allErrs, err)
+		}
+	}
+	return allErrs
 }

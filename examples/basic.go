@@ -13,8 +13,6 @@ import (
 )
 
 func main() {
-	// note: we are writing out temp files which should be cleaned up after you're done with the image object
-	defer stereoscope.Cleanup()
 
 	// context for network requests
 	ctx, cancel := context.WithCancel(context.Background())
@@ -34,12 +32,15 @@ func main() {
 		panic(err)
 	}
 
+	// note: we are writing out temp files which should be cleaned up after you're done with the image object
+	defer image.Cleanup()
+
 	for _, layer := range image.Layers {
 		fmt.Printf("layer: %s\n", layer.Metadata.Digest)
 	}
 
-	//////////////////////////////////////////////////////////////////
-	//// Show the filetree for each layer
+	////////////////////////////////////////////////////////////////
+	// Show the filetree for each layer
 	for idx, layer := range image.Layers {
 		fmt.Printf("Walking layer: %d", idx)
 		err = layer.Tree.Walk(func(path file.Path, f filenode.FileNode) error {
@@ -53,7 +54,7 @@ func main() {
 	}
 
 	//////////////////////////////////////////////////////////////////
-	//// Show the squashed filetree for each layer
+	// Show the squashed filetree for each layer
 	for idx, layer := range image.Layers {
 		fmt.Printf("Walking squashed layer: %d", idx)
 		err = layer.SquashedTree.Walk(func(path file.Path, f filenode.FileNode) error {
@@ -67,7 +68,7 @@ func main() {
 	}
 
 	//////////////////////////////////////////////////////////////////
-	//// Show the final squashed tree
+	// Show the final squashed tree
 	fmt.Printf("Walking squashed image (same as the last layer squashed tree)")
 	err = image.SquashedTree().Walk(func(path file.Path, f filenode.FileNode) error {
 		fmt.Println("   ", path)
@@ -78,7 +79,7 @@ func main() {
 	}
 
 	//////////////////////////////////////////////////////////////////
-	//// Fetch file contents from the (squashed) image
+	// Fetch file contents from the (squashed) image
 	filePath := file.Path("/etc/group")
 	contentReader, err := image.FileContentsFromSquash(filePath)
 	if err != nil {
