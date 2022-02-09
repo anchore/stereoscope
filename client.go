@@ -1,6 +1,7 @@
 package stereoscope
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/anchore/stereoscope/internal/bus"
@@ -13,7 +14,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/logger"
 	"github.com/wagoodman/go-partybus"
-	"context"
 )
 
 var tempDirGenerator = file.NewTempDirGenerator()
