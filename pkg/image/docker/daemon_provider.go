@@ -138,7 +138,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 }
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
-func (p *DaemonImageProvider) Provide() (*image.Image, error) {
+func (p *DaemonImageProvider) Provide(ctx context.Context) (*image.Image, error) {
 	imageTempDir, err := p.tmpDirGen.NewTempDir()
 	if err != nil {
 		return nil, err
@@ -157,11 +157,11 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}()
 
 	// check if the image exists locally
-	inspectResult, _, err := p.client.ImageInspectWithRaw(context.Background(), p.imageStr)
+	inspectResult, _, err := p.client.ImageInspectWithRaw(ctx, p.imageStr)
 
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			if err = p.pull(context.Background()); err != nil {
+			if err = p.pull(ctx); err != nil {
 				return nil, err
 			}
 		} else {
@@ -189,7 +189,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	estimateSaveProgress.SetCompleted()
 
 	stage.Current = "requesting image from docker"
-	readCloser, err := p.client.ImageSave(context.Background(), []string{p.imageStr})
+	readCloser, err := p.client.ImageSave(ctx, []string{p.imageStr})
 	if err != nil {
 		return nil, fmt.Errorf("unable to save image tar: %w", err)
 	}
@@ -212,7 +212,7 @@ func (p *DaemonImageProvider) Provide() (*image.Image, error) {
 	}
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen, inspectResult.RepoTags, inspectResult.RepoDigests).Provide()
+	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen, inspectResult.RepoTags, inspectResult.RepoDigests).Provide(ctx)
 }
 
 func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {

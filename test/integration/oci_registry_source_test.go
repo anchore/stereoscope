@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"fmt"
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
@@ -29,7 +30,7 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 	imgStr := "anchore/test_images"
 	ref := fmt.Sprintf("%s@%s", imgStr, digest)
 
-	img, err := stereoscope.GetImage("registry:"+ref, &image.RegistryOptions{})
+	img, err := stereoscope.GetImage(context.TODO(), "registry:"+ref, &image.RegistryOptions{})
 	if err != nil {
 		t.Fatalf("unable to get image: %+v", err)
 	}

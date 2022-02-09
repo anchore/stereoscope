@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -15,6 +16,10 @@ func main() {
 	// note: we are writing out temp files which should be cleaned up after you're done with the image object
 	defer stereoscope.Cleanup()
 
+	// context for network requests
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	lctx := logrus.New()
 	lctx.Level = logrus.DebugLevel
 	stereoscope.SetLogger(lctx)
@@ -24,7 +29,7 @@ func main() {
 	//    ./path/to.tar
 	//
 	// This will catalog the file metadata and resolve all squash trees
-	image, err := stereoscope.GetImage(os.Args[1], nil)
+	image, err := stereoscope.GetImage(ctx, os.Args[1], nil)
 	if err != nil {
 		panic(err)
 	}
