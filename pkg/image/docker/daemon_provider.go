@@ -53,10 +53,10 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 	// docker image save clocks in at ~125MB/sec on my laptop... mileage may vary, of course :shrug:
 	mb := math.Pow(2, 20)
-	//"virtual size" is the total amount of disk-space used for the read-only image
-	//data used by the container and the writable layer.
-	//"size" (also provider by the inspect result) shows the amount of data (on disk)
-	//that is used for the writable layer of each container.
+	// "virtual size" is the total amount of disk-space used for the read-only image
+	// data used by the container and the writable layer.
+	// "size" (also provider by the inspect result) shows the amount of data (on disk)
+	// that is used for the writable layer of each container.
 	sec := float64(inspect.VirtualSize) / (mb * 125)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
 
@@ -211,8 +211,11 @@ func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image
 		return nil, errors.New("cannot provide an empty image")
 	}
 
-	var metadata []image.AdditionalMetadata
+	// use the existing tarball provider to process what was pulled from the docker daemon
+	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen).Provide(ctx, withInspectMetadata(inspectResult, userMetadata)...)
+}
 
+func withInspectMetadata(inspectResult types.ImageInspect, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
 	if len(inspectResult.RepoTags) > 0 {
 		metadata = append(metadata, image.WithTags(inspectResult.RepoTags...))
 	}
@@ -223,9 +226,7 @@ func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image
 
 	// apply user-supplied metadata last to override any default behavior
 	metadata = append(metadata, userMetadata...)
-
-	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen).Provide(ctx, metadata...)
+	return metadata
 }
 
 func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {

@@ -57,7 +57,7 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 
 func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 	request := PrepareFixtureImage(t, source, name)
-	
+
 	i, err := stereoscope.GetImage(context.TODO(), request)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -113,7 +113,7 @@ func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
 
 	t.Cleanup(func() {
 		if err := i.Cleanup(); err != nil {
-			t.Errorf("could not cleanup tarPath=%q: %w", tarPath, err)
+			t.Errorf("could not cleanup tarPath=%q: %+v", tarPath, err)
 		}
 	})
 
