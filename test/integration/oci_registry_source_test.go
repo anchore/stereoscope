@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"testing"
 
 	"github.com/anchore/stereoscope"
@@ -31,13 +32,12 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 	ref := fmt.Sprintf("%s@%s", imgStr, digest)
 
 	img, err := stereoscope.GetImage(context.TODO(), "registry:"+ref)
-	if err != nil {
-		t.Fatalf("unable to get image: %+v", err)
-	}
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
+	})
 
-	if err := img.Read(); err != nil {
-		t.Fatalf("failed to read image: %+v", err)
-	}
+	require.NoError(t, img.Read())
 
 	assert.Len(t, img.Metadata.RepoDigests, 1)
 	assert.Equal(t, "index.docker.io/"+ref, img.Metadata.RepoDigests[0])
