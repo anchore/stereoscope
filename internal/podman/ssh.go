@@ -164,7 +164,7 @@ func httpClientOverSSH(params *sshClientConfig) (*http.Client, error) {
 		},
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "connection to bastion host (%s) failed.", params.host)
+		return nil, fmt.Errorf("connection to bastion host=%q failed: %w", params.host, err)
 	}
 
 	return &http.Client{

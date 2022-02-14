@@ -53,10 +53,10 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 
 	// docker image save clocks in at ~125MB/sec on my laptop... mileage may vary, of course :shrug:
 	mb := math.Pow(2, 20)
-	//"virtual size" is the total amount of disk-space used for the read-only image
-	//data used by the container and the writable layer.
-	//"size" (also provider by the inspect result) shows the amount of data (on disk)
-	//that is used for the writable layer of each container.
+	// "virtual size" is the total amount of disk-space used for the read-only image
+	// data used by the container and the writable layer.
+	// "size" (also provider by the inspect result) shows the amount of data (on disk)
+	// that is used for the writable layer of each container.
 	sec := float64(inspect.VirtualSize) / (mb * 125)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
 
@@ -138,7 +138,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 }
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
-func (p *DaemonImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	imageTempDir, err := p.tmpDirGen.NewDirectory("docker-daemon-image")
 	if err != nil {
 		return nil, err
@@ -212,7 +212,21 @@ func (p *DaemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	}
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen, inspectResult.RepoTags, inspectResult.RepoDigests).Provide(ctx)
+	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen).Provide(ctx, withInspectMetadata(inspectResult, userMetadata)...)
+}
+
+func withInspectMetadata(inspectResult types.ImageInspect, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
+	if len(inspectResult.RepoTags) > 0 {
+		metadata = append(metadata, image.WithTags(inspectResult.RepoTags...))
+	}
+
+	if len(inspectResult.RepoDigests) > 0 {
+		metadata = append(metadata, image.WithRepoDigests(inspectResult.RepoDigests...))
+	}
+
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, userMetadata...)
+	return metadata
 }
 
 func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {

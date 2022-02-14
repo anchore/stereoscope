@@ -105,10 +105,12 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 		b.Run(c.name, func(b *testing.B) {
 			var bi *image.Image
 			for i := 0; i < b.N; i++ {
-				bi, err = stereoscope.GetImage(context.TODO(), request, nil)
+
+				bi, err = stereoscope.GetImage(context.TODO(), request)
 				b.Cleanup(func() {
 					require.NoError(b, bi.Cleanup())
 				})
+
 				if err != nil {
 					b.Fatal("could not get fixture image:", err)
 				}

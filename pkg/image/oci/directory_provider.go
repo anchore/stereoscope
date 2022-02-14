@@ -24,7 +24,7 @@ func NewProviderFromPath(path string, tmpDirGen *file.TempDirGenerator) *Directo
 }
 
 // Provide an image object that represents the OCI image as a directory.
-func (p *DirectoryImageProvider) Provide(context.Context) (*image.Image, error) {
+func (p *DirectoryImageProvider) Provide(_ context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	pathObj, err := layout.FromPath(p.path)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read image from OCI directory path %q: %w", p.path, err)
@@ -60,6 +60,9 @@ func (p *DirectoryImageProvider) Provide(context.Context) (*image.Image, error) 
 	if err == nil {
 		metadata = append(metadata, image.WithManifest(rawManifest))
 	}
+
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, userMetadata...)
 
 	contentTempDir, err := p.tmpDirGen.NewDirectory("oci-dir-image")
 	if err != nil {

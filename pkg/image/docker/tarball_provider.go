@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
@@ -17,24 +16,20 @@ var ErrMultipleManifests = fmt.Errorf("cannot process multiple docker manifests"
 
 // TarballImageProvider is a image.Provider for a docker image (V2) for an existing tar on disk (the output from a "docker image save ..." command).
 type TarballImageProvider struct {
-	path        string
-	extraTags   []string
-	repoDigests []string
-	tmpDirGen   *file.TempDirGenerator
+	path      string
+	tmpDirGen *file.TempDirGenerator
 }
 
 // NewProviderFromTarball creates a new provider instance for the specific image already at the given path.
-func NewProviderFromTarball(path string, tmpDirGen *file.TempDirGenerator, tags []string, repoDigests []string) *TarballImageProvider {
+func NewProviderFromTarball(path string, tmpDirGen *file.TempDirGenerator) *TarballImageProvider {
 	return &TarballImageProvider{
-		path:        path,
-		extraTags:   tags,
-		repoDigests: repoDigests,
-		tmpDirGen:   tmpDirGen,
+		path:      path,
+		tmpDirGen: tmpDirGen,
 	}
 }
 
 // Provide an image object that represents the docker image tar at the configured location on disk.
-func (p *TarballImageProvider) Provide(context.Context) (*image.Image, error) {
+func (p *TarballImageProvider) Provide(_ context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	img, err := tarball.ImageFromPath(p.path, nil)
 	if err != nil {
 		// raise a more controlled error for when there are multiple images within the given tar (from https://github.com/anchore/grype/issues/215)
@@ -55,17 +50,9 @@ func (p *TarballImageProvider) Provide(context.Context) (*image.Image, error) {
 		log.Warnf("could not extract manifest: %+v", err)
 	}
 
-	var tags = internal.NewStringSet()
-	for _, t := range p.extraTags {
-		tags.Add(t)
-	}
-
 	if theManifest != nil {
 		// given that we have a manifest, continue processing to get the tags and OCI manifest
-
-		for _, t := range theManifest.allTags() {
-			tags.Add(t)
-		}
+		metadata = append(metadata, image.WithTags(theManifest.allTags()...))
 
 		ociManifest, rawConfig, err = generateOCIManifest(p.path, theManifest)
 		if err != nil {
@@ -87,11 +74,8 @@ func (p *TarballImageProvider) Provide(context.Context) (*image.Image, error) {
 		}
 	}
 
-	if len(tags) > 0 {
-		metadata = append(metadata, image.WithTags(tags.ToSlice()...))
-	}
-
-	metadata = append(metadata, image.WithRepoDigests(p.repoDigests))
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, userMetadata...)
 
 	contentTempDir, err := p.tmpDirGen.NewDirectory("docker-tarball-image")
 	if err != nil {
