@@ -155,6 +155,7 @@ func isKnownOS(os string) bool {
 // The arch value should be normalized before being passed to this function.
 func isKnownArch(arch string) bool {
 	switch arch {
+	//nolint:goconst
 	case "386", "amd64", "amd64p32", "arm", "armbe", "arm64", "arm64be", "ppc64", "ppc64le", "mips", "mipsle", "mips64", "mips64le", "mips64p32", "mips64p32le", "ppc", "riscv", "riscv64", "s390", "s390x", "sparc", "sparc64", "wasm":
 		return true
 	}
@@ -167,9 +168,7 @@ func normalizeOS(os string) string {
 		return runtime.GOOS
 	}
 	os = strings.ToLower(os)
-
-	switch os {
-	case "macos":
+	if os == "macos" {
 		os = "darwin"
 	}
 	return os

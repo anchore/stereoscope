@@ -3,6 +3,7 @@ package stereoscope
 import (
 	"context"
 	"fmt"
+
 	"github.com/anchore/stereoscope/internal/bus"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
@@ -65,10 +66,7 @@ func WithPlatform(platform string) Option {
 
 // GetImageFromSource returns an image from the explicitly provided source.
 func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
-	var provider image.Provider
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
-
-	tempDirGenerator := rootTempDirGenerator.NewGenerator()
 
 	var cfg config
 	for _, option := range options {
@@ -80,6 +78,27 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		}
 	}
 
+	provider, err := selectImageProvider(imgStr, source, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	img, err := provider.Provide(ctx, cfg.AdditionalMetadata...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to use %s source: %w", source, err)
+	}
+
+	err = img.Read()
+	if err != nil {
+		return nil, fmt.Errorf("could not read image: %+v", err)
+	}
+
+	return img, nil
+}
+
+func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, error) {
+	var provider image.Provider
+	tempDirGenerator := rootTempDirGenerator.NewGenerator()
 	platformSelectionUnsupported := fmt.Errorf("specified platform=%q however image source=%q does not support selecting platform", cfg.Platform.String(), source.String())
 
 	switch source {
@@ -116,18 +135,7 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}
-
-	img, err := provider.Provide(ctx, cfg.AdditionalMetadata...)
-	if err != nil {
-		return nil, fmt.Errorf("unable to use %s source: %w", source, err)
-	}
-
-	err = img.Read()
-	if err != nil {
-		return nil, fmt.Errorf("could not read image: %+v", err)
-	}
-
-	return img, nil
+	return provider, nil
 }
 
 // GetImage parses the user provided image string and provides an image object;
