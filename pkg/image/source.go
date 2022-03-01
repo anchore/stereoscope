@@ -109,7 +109,6 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 		source = ParseSourceScheme(sourceHint)
 	default:
 		source = UnknownSource
-
 	}
 
 	switch source {
