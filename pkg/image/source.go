@@ -109,7 +109,7 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 		source = ParseSourceScheme(sourceHint)
 	default:
 		source = UnknownSource
-		location = ""
+
 	}
 
 	switch source {
@@ -119,6 +119,8 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 		if err != nil {
 			return UnknownSource, "", fmt.Errorf("unable to expand potential home dir expression: %w", err)
 		}
+	case UnknownSource:
+		location = ""
 	}
 
 	return source, location, nil

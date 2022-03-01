@@ -36,8 +36,8 @@ func TestDetectSource(t *testing.T) {
 		{
 			name:             "docker-engine-by-possible-id",
 			input:            "a5e",
-			source:           DockerDaemonSource,
-			expectedLocation: "a5e",
+			source:           UnknownSource,
+			expectedLocation: "",
 		},
 		{
 			name: "docker-engine-impossible-id",
@@ -75,8 +75,8 @@ func TestDetectSource(t *testing.T) {
 		{
 			name:             "infer-docker-engine",
 			input:            "something/something:latest",
-			source:           DockerDaemonSource,
-			expectedLocation: "something/something:latest",
+			source:           UnknownSource,
+			expectedLocation: "",
 		},
 		{
 			name:             "bad-hint",
@@ -113,8 +113,8 @@ func TestDetectSource(t *testing.T) {
 		{
 			name:             "unparsable-existing-path",
 			input:            "a-potential/path",
-			source:           DockerDaemonSource,
-			expectedLocation: "a-potential/path",
+			source:           UnknownSource,
+			expectedLocation: "",
 			tarPath:          "a-potential/path",
 			tarPaths:         []string{},
 		},
