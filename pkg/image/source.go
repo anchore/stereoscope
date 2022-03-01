@@ -119,24 +119,18 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 			return UnknownSource, "", fmt.Errorf("unable to expand potential home dir expression: %w", err)
 		}
 	case UnknownSource:
-		// Ignore any source hint since the source is still unknown. See if this could be a Docker image.
-		if imagePullSource := DetermineImagePullSource(userInput); imagePullSource != UnknownSource {
-			return imagePullSource, userInput, nil
-		}
-
-		// Invalidate any previous processing if the source is still unknown.
 		location = ""
 	}
 
 	return source, location, nil
 }
 
-// DetermineImagePullSource takes an image reference string as input, and
+// DetermineDefaultImagePullSource takes an image reference string as input, and
 // determines a Source to use to pull the image. If the input doesn't specify an
 // image reference (i.e. an image that can be _pulled_), UnknownSource is
 // returned. Otherwise, if the Docker daemon is available, DockerDaemonSource is
 // returned, and if not, OciRegistrySource is returned.
-func DetermineImagePullSource(userInput string) Source {
+func DetermineDefaultImagePullSource(userInput string) Source {
 	if !isRegistryReference(userInput) {
 		return UnknownSource
 	}
