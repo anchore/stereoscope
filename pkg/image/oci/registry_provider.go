@@ -9,7 +9,6 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/containerd/containerd/platforms"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	containerregistryV1 "github.com/google/go-containerregistry/pkg/v1"
@@ -21,14 +20,16 @@ type RegistryImageProvider struct {
 	imageStr        string
 	tmpDirGen       *file.TempDirGenerator
 	registryOptions image.RegistryOptions
+	platform        *image.Platform
 }
 
 // NewProviderFromRegistry creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions) *RegistryImageProvider {
+func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, platform *image.Platform) *RegistryImageProvider {
 	return &RegistryImageProvider{
 		imageStr:        imgStr,
 		tmpDirGen:       tmpDirGen,
 		registryOptions: registryOptions,
+		platform:        platform,
 	}
 }
 
@@ -46,12 +47,7 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	remoteOptions, err := prepareRemoteOptions(ctx, ref, p.registryOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get registry options: %+v", err)
-	}
-
-	descriptor, err := remote.Get(ref, remoteOptions...)
+	descriptor, err := remote.Get(ref, prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
 	}
@@ -74,6 +70,13 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		metadata = append(metadata, image.WithManifest(manifestBytes))
 	}
 
+	if p.platform != nil {
+		metadata = append(metadata,
+			image.WithArchitecture(p.platform.Architecture, p.platform.Variant),
+			image.WithOS(p.platform.OS),
+		)
+	}
+
 	// apply user-supplied metadata last to override any default behavior
 	metadata = append(metadata, userMetadata...)
 
@@ -88,8 +91,8 @@ func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Optio
 	return options
 }
 
-func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions) ([]remote.Option, error) {
-	var options []remote.Option
+func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform) (options []remote.Option) {
+	options = append(options, remote.WithContext(ctx))
 
 	if registryOptions.InsecureSkipTLSVerify {
 		t := &http.Transport{
@@ -99,23 +102,13 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		options = append(options, remote.WithTransport(t))
 	}
 
-	if registryOptions.Platform != "" {
-		// registry library doesn't support parsing this, so containerd implemetation is used
-		// wich in turns requires struct remapping
-		p, err := platforms.Parse(registryOptions.Platform)
-		if err != nil {
-			err = fmt.Errorf("failed to parse platform %q: %w", registryOptions.Platform, err)
-			return nil, err
-		}
+	if p != nil {
 		options = append(options, remote.WithPlatform(containerregistryV1.Platform{
 			Architecture: p.Architecture,
 			OS:           p.OS,
-			OSVersion:    p.OSVersion,
-			OSFeatures:   p.OSFeatures,
 			Variant:      p.Variant,
 		}))
 	}
-	options = append(options, remote.WithContext(ctx))
 
 	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
 	// If no explicit authenticator can be found, then fallback to the keychain.
@@ -128,5 +121,5 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
-	return options, nil
+	return options
 }

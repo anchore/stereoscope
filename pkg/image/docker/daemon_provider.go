@@ -20,7 +20,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/docker/cli/cli/config"
-	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -33,14 +32,16 @@ type DaemonImageProvider struct {
 	imageStr  string
 	tmpDirGen *file.TempDirGenerator
 	client    *client.Client
+	platform  *image.Platform
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *client.Client) *DaemonImageProvider {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *client.Client, platform *image.Platform) *DaemonImageProvider {
 	return &DaemonImageProvider{
 		imageStr:  imgStr,
 		tmpDirGen: tmpDirGen,
 		client:    c,
+		platform:  platform,
 	}
 }
 
@@ -86,13 +87,6 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 func (p *DaemonImageProvider) pull(ctx context.Context) error {
 	log.Debugf("pulling docker image=%q", p.imageStr)
 
-	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
-	cfg, err := config.Load("")
-	if err != nil {
-		return fmt.Errorf("failed to load docker config: %w", err)
-	}
-	log.Debugf("using docker config=%q", cfg.Filename)
-
 	var status = newPullStatus()
 	defer func() {
 		status.complete = true
@@ -105,7 +99,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 		Value:  status,
 	})
 
-	options, err := newPullOptions(p.imageStr, cfg)
+	options, err := p.pullOptions()
 	if err != nil {
 		return err
 	}
@@ -137,6 +131,42 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 	return nil
 }
 
+func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
+	var options = types.ImagePullOptions{
+		Platform: p.platform.String(),
+	}
+
+	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
+	cfg, err := config.Load("")
+	if err != nil {
+		return options, fmt.Errorf("failed to load docker config: %w", err)
+	}
+	log.Debugf("using docker config=%q", cfg.Filename)
+
+	ref, err := name.ParseReference(p.imageStr)
+	if err != nil {
+		return options, err
+	}
+
+	hostname := ref.Context().RegistryStr()
+
+	creds, err := cfg.GetAuthConfig(hostname)
+	if err != nil {
+		return options, fmt.Errorf("failed to fetch registry auth (hostname=%s): %w", hostname, err)
+	}
+
+	if creds.Username != "" {
+		log.Debugf("using docker credentials for %q", hostname)
+
+		options.RegistryAuth, err = encodeCredentials(creds.Username, creds.Password)
+		if err != nil {
+			return options, err
+		}
+	}
+
+	return options, nil
+}
+
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
 func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	imageTempDir, err := p.tmpDirGen.NewDirectory("docker-daemon-image")
@@ -158,7 +188,6 @@ func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image
 
 	// check if the image exists locally
 	inspectResult, _, err := p.client.ImageInspectWithRaw(ctx, p.imageStr)
-
 	if err != nil {
 		if client.IsErrNotFound(err) {
 			if err = p.pull(ctx); err != nil {
@@ -166,6 +195,14 @@ func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image
 			}
 		} else {
 			return nil, fmt.Errorf("unable to inspect existing image: %w", err)
+		}
+	} else {
+		// looks like the image exists, but if the platform doesn't match what the user specified, we may need to
+		// pull again.
+		if err := p.validatePlatform(inspectResult); err != nil {
+			if err = p.pull(ctx); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -187,6 +224,17 @@ func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image
 	// from the docker daemon don't line up (as we saw when metadata and actual size differ)
 	// or there is a problem that causes us to return early with an error.
 	estimateSaveProgress.SetCompleted()
+
+	// inspect the image that might have been pulled
+	inspectResult, _, err = p.client.ImageInspectWithRaw(ctx, p.imageStr)
+	if err != nil {
+		return nil, fmt.Errorf("unable to inspect existing image: %w", err)
+	}
+
+	// by this point the platform info should match based off of user input, so we should error out if this is not the case
+	if err := p.validatePlatform(inspectResult); err != nil {
+		return nil, err
+	}
 
 	stage.Current = "requesting image from docker"
 	readCloser, err := p.client.ImageSave(ctx, []string{p.imageStr})
@@ -215,45 +263,36 @@ func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image
 	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen).Provide(ctx, withInspectMetadata(inspectResult, userMetadata)...)
 }
 
-func withInspectMetadata(inspectResult types.ImageInspect, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
-	if len(inspectResult.RepoTags) > 0 {
-		metadata = append(metadata, image.WithTags(inspectResult.RepoTags...))
+func (p *DaemonImageProvider) validatePlatform(i types.ImageInspect) error {
+	if p.platform == nil {
+		// the user did not specify a platform
+		return nil
 	}
 
-	if len(inspectResult.RepoDigests) > 0 {
-		metadata = append(metadata, image.WithRepoDigests(inspectResult.RepoDigests...))
+	if i.Os != p.platform.OS {
+		return fmt.Errorf("image has unexpected OS %q, which differs from the user specified PS %q", i.Os, p.platform.OS)
 	}
+
+	if i.Architecture != p.platform.Architecture {
+		return fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", i.Architecture, p.platform.Architecture)
+	}
+
+	// note: there is no architecture variant captured in inspect responses
+
+	return nil
+}
+
+func withInspectMetadata(i types.ImageInspect, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
+	metadata = append(metadata,
+		image.WithTags(i.RepoTags...),
+		image.WithRepoDigests(i.RepoDigests...),
+		image.WithArchitecture(i.Architecture, ""), // since we don't have variant info from the image directly, we don't report it
+		image.WithOS(i.Os),
+	)
 
 	// apply user-supplied metadata last to override any default behavior
 	metadata = append(metadata, userMetadata...)
 	return metadata
-}
-
-func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {
-	var options types.ImagePullOptions
-
-	ref, err := name.ParseReference(image)
-	if err != nil {
-		return options, err
-	}
-
-	hostname := ref.Context().RegistryStr()
-
-	creds, err := cfg.GetAuthConfig(hostname)
-	if err != nil {
-		return options, fmt.Errorf("failed to fetch registry auth (hostname=%s): %w", hostname, err)
-	}
-
-	if creds.Username != "" {
-		log.Debugf("using docker credentials for %q", hostname)
-
-		options.RegistryAuth, err = encodeCredentials(creds.Username, creds.Password)
-		if err != nil {
-			return options, err
-		}
-	}
-
-	return options, nil
 }
 
 func encodeCredentials(username, password string) (string, error) {

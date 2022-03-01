@@ -3,7 +3,6 @@ package stereoscope
 import (
 	"context"
 	"fmt"
-
 	"github.com/anchore/stereoscope/internal/bus"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
@@ -53,6 +52,17 @@ func WithAdditionalMetadata(metadata ...image.AdditionalMetadata) Option {
 	}
 }
 
+func WithPlatform(platform string) Option {
+	return func(c *config) error {
+		p, err := image.NewPlatform(platform)
+		if err != nil {
+			return err
+		}
+		c.Platform = p
+		return nil
+	}
+}
+
 // GetImageFromSource returns an image from the explicitly provided source.
 func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
 	var provider image.Provider
@@ -70,8 +80,13 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		}
 	}
 
+	platformSelectionUnsupported := fmt.Errorf("specified platform=%q however image source=%q does not support selecting platform", cfg.Platform.String(), source.String())
+
 	switch source {
 	case image.DockerTarballSource:
+		if cfg.Platform != nil {
+			return nil, platformSelectionUnsupported
+		}
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.DockerDaemonSource:
@@ -79,19 +94,25 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		if err != nil {
 			return nil, err
 		}
-		provider = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c)
+		provider = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
 	case image.PodmanDaemonSource:
 		c, err := podman.GetClient()
 		if err != nil {
 			return nil, err
 		}
-		provider = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c)
+		provider = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
 	case image.OciDirectorySource:
+		if cfg.Platform != nil {
+			return nil, platformSelectionUnsupported
+		}
 		provider = oci.NewProviderFromPath(imgStr, tempDirGenerator)
 	case image.OciTarballSource:
+		if cfg.Platform != nil {
+			return nil, platformSelectionUnsupported
+		}
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
-		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry)
+		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}
