@@ -87,6 +87,46 @@ func WithRepoDigests(digests ...string) AdditionalMetadata {
 	}
 }
 
+func WithPlatform(platform string) AdditionalMetadata {
+	return func(image *Image) error {
+		p, err := NewPlatform(platform)
+		if err != nil {
+			return err
+		}
+		image.Metadata.Architecture = p.Architecture
+		image.Metadata.Variant = p.Variant
+		image.Metadata.OS = p.OS
+		return nil
+	}
+}
+
+func WithArchitecture(architecture, variant string) AdditionalMetadata {
+	return func(image *Image) error {
+		if architecture == "" {
+			return nil
+		}
+		if !isKnownArch(architecture) {
+			return fmt.Errorf("unknown architecture: %s", architecture)
+		}
+		image.Metadata.Architecture = architecture
+		image.Metadata.Variant = variant
+		return nil
+	}
+}
+
+func WithOS(o string) AdditionalMetadata {
+	return func(image *Image) error {
+		if o == "" {
+			return nil
+		}
+		if !isKnownOS(o) {
+			return fmt.Errorf("unknown OS: %s", o)
+		}
+		image.Metadata.OS = o
+		return nil
+	}
+}
+
 // NewImage provides a new, unread image object.
 func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{

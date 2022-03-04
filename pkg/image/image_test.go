@@ -73,6 +73,19 @@ func TestImageAdditionalMetadata(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "with platform",
+			options: []AdditionalMetadata{
+				WithPlatform("windows/arm64/v9"),
+			},
+			image: Image{
+				Metadata: Metadata{
+					OS:           "windows",
+					Architecture: "arm64",
+					Variant:      "v9",
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {

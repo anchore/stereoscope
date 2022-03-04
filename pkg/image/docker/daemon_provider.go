@@ -20,7 +20,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/docker/cli/cli/config"
-	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -33,22 +32,30 @@ type DaemonImageProvider struct {
 	imageStr  string
 	tmpDirGen *file.TempDirGenerator
 	client    *client.Client
+	platform  *image.Platform
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *client.Client) *DaemonImageProvider {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *client.Client, platform *image.Platform) *DaemonImageProvider {
 	return &DaemonImageProvider{
 		imageStr:  imgStr,
 		tmpDirGen: tmpDirGen,
 		client:    c,
+		platform:  platform,
 	}
 }
 
-func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *progress.Writer, *progress.Stage, error) {
+type daemonProvideProgress struct {
+	SaveProgress *progress.TimedProgress
+	CopyProgress *progress.Writer
+	Stage        *progress.Stage
+}
+
+func (p *DaemonImageProvider) trackSaveProgress() (*daemonProvideProgress, error) {
 	// fetch the expected image size to estimate and measure progress
 	inspect, _, err := p.client.ImageInspectWithRaw(context.Background(), p.imageStr)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("unable to inspect image: %w", err)
+		return nil, fmt.Errorf("unable to inspect image: %w", err)
 	}
 
 	// docker image save clocks in at ~125MB/sec on my laptop... mileage may vary, of course :shrug:
@@ -79,19 +86,16 @@ func (p *DaemonImageProvider) trackSaveProgress() (*progress.TimedProgress, *pro
 		}),
 	})
 
-	return estimateSaveProgress, copyProgress, stage, nil
+	return &daemonProvideProgress{
+		SaveProgress: estimateSaveProgress,
+		CopyProgress: copyProgress,
+		Stage:        stage,
+	}, nil
 }
 
 // pull a docker image
 func (p *DaemonImageProvider) pull(ctx context.Context) error {
 	log.Debugf("pulling docker image=%q", p.imageStr)
-
-	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
-	cfg, err := config.Load("")
-	if err != nil {
-		return fmt.Errorf("failed to load docker config: %w", err)
-	}
-	log.Debugf("using docker config=%q", cfg.Filename)
 
 	var status = newPullStatus()
 	defer func() {
@@ -105,7 +109,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 		Value:  status,
 	})
 
-	options, err := newPullOptions(p.imageStr, cfg)
+	options, err := p.pullOptions()
 	if err != nil {
 		return err
 	}
@@ -137,102 +141,19 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 	return nil
 }
 
-// Provide an image object that represents the cached docker image tar fetched from a docker daemon.
-func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
-	imageTempDir, err := p.tmpDirGen.NewDirectory("docker-daemon-image")
+func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
+	var options = types.ImagePullOptions{
+		Platform: p.platform.String(),
+	}
+
+	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
+	cfg, err := config.Load("")
 	if err != nil {
-		return nil, err
+		return options, fmt.Errorf("failed to load docker config: %w", err)
 	}
+	log.Debugf("using docker config=%q", cfg.Filename)
 
-	// create a file within the temp dir
-	tempTarFile, err := os.Create(path.Join(imageTempDir, "image.tar"))
-	if err != nil {
-		return nil, fmt.Errorf("unable to create temp file for image: %w", err)
-	}
-	defer func() {
-		err := tempTarFile.Close()
-		if err != nil {
-			log.Errorf("unable to close temp file (%s): %w", tempTarFile.Name(), err)
-		}
-	}()
-
-	// check if the image exists locally
-	inspectResult, _, err := p.client.ImageInspectWithRaw(ctx, p.imageStr)
-
-	if err != nil {
-		if client.IsErrNotFound(err) {
-			if err = p.pull(ctx); err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, fmt.Errorf("unable to inspect existing image: %w", err)
-		}
-	}
-
-	// save the image from the docker daemon to a tar file
-	estimateSaveProgress, copyProgress, stage, err := p.trackSaveProgress()
-	if err != nil {
-		return nil, fmt.Errorf("unable to trace image save progress: %w", err)
-	}
-	defer func() {
-		// NOTE: progress trackers should complete at the end of this function
-		// whether the function errors or succeeds.
-		estimateSaveProgress.SetCompleted()
-		copyProgress.SetComplete()
-	}()
-
-	// NOTE: The image save progress is only a guess (a timer counting up to a particular time where
-	// the overall progress would be considered at 50%). It's logical to adjust the first image save timer
-	// to complete when the image save operation returns. The defer statement is a fallback in case the numbers
-	// from the docker daemon don't line up (as we saw when metadata and actual size differ)
-	// or there is a problem that causes us to return early with an error.
-	estimateSaveProgress.SetCompleted()
-
-	stage.Current = "requesting image from docker"
-	readCloser, err := p.client.ImageSave(ctx, []string{p.imageStr})
-	if err != nil {
-		return nil, fmt.Errorf("unable to save image tar: %w", err)
-	}
-	defer func() {
-		err := readCloser.Close()
-		if err != nil {
-			log.Errorf("unable to close temp file (%s): %w", tempTarFile.Name(), err)
-		}
-	}()
-
-	// save the image contents to the temp file
-	// note: this is the same image that will be used to querying image content during analysis
-	stage.Current = "saving image to disk"
-	nBytes, err := io.Copy(io.MultiWriter(tempTarFile, copyProgress), readCloser)
-	if err != nil {
-		return nil, fmt.Errorf("unable to save image to tar: %w", err)
-	}
-	if nBytes == 0 {
-		return nil, errors.New("cannot provide an empty image")
-	}
-
-	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewProviderFromTarball(tempTarFile.Name(), p.tmpDirGen).Provide(ctx, withInspectMetadata(inspectResult, userMetadata)...)
-}
-
-func withInspectMetadata(inspectResult types.ImageInspect, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
-	if len(inspectResult.RepoTags) > 0 {
-		metadata = append(metadata, image.WithTags(inspectResult.RepoTags...))
-	}
-
-	if len(inspectResult.RepoDigests) > 0 {
-		metadata = append(metadata, image.WithRepoDigests(inspectResult.RepoDigests...))
-	}
-
-	// apply user-supplied metadata last to override any default behavior
-	metadata = append(metadata, userMetadata...)
-	return metadata
-}
-
-func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOptions, error) {
-	var options types.ImagePullOptions
-
-	ref, err := name.ParseReference(image)
+	ref, err := name.ParseReference(p.imageStr)
 	if err != nil {
 		return options, err
 	}
@@ -254,6 +175,149 @@ func newPullOptions(image string, cfg *configfile.ConfigFile) (types.ImagePullOp
 	}
 
 	return options, nil
+}
+
+// Provide an image object that represents the cached docker image tar fetched from a docker daemon.
+func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
+	if err := p.pullImageIfMissing(ctx); err != nil {
+		return nil, err
+	}
+
+	// inspect the image that might have been pulled
+	inspectResult, _, err := p.client.ImageInspectWithRaw(ctx, p.imageStr)
+	if err != nil {
+		return nil, fmt.Errorf("unable to inspect existing image: %w", err)
+	}
+
+	// by this point the platform info should match based off of user input, so we should error out if this is not the case
+	if err := p.validatePlatform(inspectResult); err != nil {
+		return nil, err
+	}
+
+	tarFileName, err := p.saveImage(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// use the existing tarball provider to process what was pulled from the docker daemon
+	return NewProviderFromTarball(tarFileName, p.tmpDirGen).Provide(ctx, withInspectMetadata(inspectResult, userMetadata)...)
+}
+
+func (p *DaemonImageProvider) saveImage(ctx context.Context) (string, error) {
+	// save the image from the docker daemon to a tar file
+	providerProgress, err := p.trackSaveProgress()
+	if err != nil {
+		return "", fmt.Errorf("unable to trace image save progress: %w", err)
+	}
+	defer func() {
+		// NOTE: progress trackers should complete at the end of this function
+		// whether the function errors or succeeds.
+		providerProgress.SaveProgress.SetCompleted()
+		providerProgress.CopyProgress.SetComplete()
+	}()
+
+	imageTempDir, err := p.tmpDirGen.NewDirectory("docker-daemon-image")
+	if err != nil {
+		return "", err
+	}
+
+	// create a file within the temp dir
+	tempTarFile, err := os.Create(path.Join(imageTempDir, "image.tar"))
+	if err != nil {
+		return "", fmt.Errorf("unable to create temp file for image: %w", err)
+	}
+	defer func() {
+		err := tempTarFile.Close()
+		if err != nil {
+			log.Errorf("unable to close temp file (%s): %w", tempTarFile.Name(), err)
+		}
+	}()
+
+	providerProgress.Stage.Current = "requesting image from docker"
+	readCloser, err := p.client.ImageSave(ctx, []string{p.imageStr})
+	if err != nil {
+		return "", fmt.Errorf("unable to save image tar: %w", err)
+	}
+	defer func() {
+		err := readCloser.Close()
+		if err != nil {
+			log.Errorf("unable to close temp file (%s): %w", tempTarFile.Name(), err)
+		}
+	}()
+
+	// NOTE: The image save progress is only a guess (a timer counting up to a particular time where
+	// the overall progress would be considered at 50%). It's logical to adjust the first image save timer
+	// to complete when the image save operation returns. The defer statement is a fallback in case the numbers
+	// from the docker daemon don't line up (as we saw when metadata and actual size differ)
+	// or there is a problem that causes us to return early with an error.
+	providerProgress.SaveProgress.SetCompleted()
+
+	// save the image contents to the temp file
+	// note: this is the same image that will be used to querying image content during analysis
+	providerProgress.Stage.Current = "saving image to disk"
+	nBytes, err := io.Copy(io.MultiWriter(tempTarFile, providerProgress.CopyProgress), readCloser)
+	if err != nil {
+		return "", fmt.Errorf("unable to save image to tar: %w", err)
+	}
+	if nBytes == 0 {
+		return "", errors.New("cannot provide an empty image")
+	}
+	return tempTarFile.Name(), nil
+}
+
+func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) error {
+	// check if the image exists locally
+	inspectResult, _, err := p.client.ImageInspectWithRaw(ctx, p.imageStr)
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			if err = p.pull(ctx); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("unable to inspect existing image: %w", err)
+		}
+	} else {
+		// looks like the image exists, but if the platform doesn't match what the user specified, we may need to
+		// pull the image again with the correct platofmr specifier, which will override the local tag.
+		if err := p.validatePlatform(inspectResult); err != nil {
+			if err = p.pull(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (p *DaemonImageProvider) validatePlatform(i types.ImageInspect) error {
+	if p.platform == nil {
+		// the user did not specify a platform
+		return nil
+	}
+
+	if i.Os != p.platform.OS {
+		return fmt.Errorf("image has unexpected OS %q, which differs from the user specified PS %q", i.Os, p.platform.OS)
+	}
+
+	if i.Architecture != p.platform.Architecture {
+		return fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", i.Architecture, p.platform.Architecture)
+	}
+
+	// note: there is no architecture variant captured in inspect responses
+
+	return nil
+}
+
+func withInspectMetadata(i types.ImageInspect, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
+	metadata = append(metadata,
+		image.WithTags(i.RepoTags...),
+		image.WithRepoDigests(i.RepoDigests...),
+		image.WithArchitecture(i.Architecture, ""), // since we don't have variant info from the image directly, we don't report it
+		image.WithOS(i.Os),
+	)
+
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, userMetadata...)
+	return metadata
 }
 
 func encodeCredentials(username, password string) (string, error) {

@@ -11,6 +11,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	containerregistryV1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
@@ -19,14 +20,16 @@ type RegistryImageProvider struct {
 	imageStr        string
 	tmpDirGen       *file.TempDirGenerator
 	registryOptions image.RegistryOptions
+	platform        *image.Platform
 }
 
 // NewProviderFromRegistry creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions) *RegistryImageProvider {
+func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, platform *image.Platform) *RegistryImageProvider {
 	return &RegistryImageProvider{
 		imageStr:        imgStr,
 		tmpDirGen:       tmpDirGen,
 		registryOptions: registryOptions,
+		platform:        platform,
 	}
 }
 
@@ -44,7 +47,7 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	descriptor, err := remote.Get(ref, prepareRemoteOptions(ctx, ref, p.registryOptions)...)
+	descriptor, err := remote.Get(ref, prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
 	}
@@ -67,6 +70,13 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		metadata = append(metadata, image.WithManifest(manifestBytes))
 	}
 
+	if p.platform != nil {
+		metadata = append(metadata,
+			image.WithArchitecture(p.platform.Architecture, p.platform.Variant),
+			image.WithOS(p.platform.OS),
+		)
+	}
+
 	// apply user-supplied metadata last to override any default behavior
 	metadata = append(metadata, userMetadata...)
 
@@ -81,26 +91,35 @@ func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Optio
 	return options
 }
 
-func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions) (opts []remote.Option) {
+func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform) (options []remote.Option) {
+	options = append(options, remote.WithContext(ctx))
+
 	if registryOptions.InsecureSkipTLSVerify {
 		t := &http.Transport{
 			// nolint: gosec
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
-		opts = append(opts, remote.WithTransport(t))
+		options = append(options, remote.WithTransport(t))
 	}
-	opts = append(opts, remote.WithContext(ctx))
+
+	if p != nil {
+		options = append(options, remote.WithPlatform(containerregistryV1.Platform{
+			Architecture: p.Architecture,
+			OS:           p.OS,
+			Variant:      p.Variant,
+		}))
+	}
 
 	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
 	// If no explicit authenticator can be found, then fallback to the keychain.
 	authenticator := registryOptions.Authenticator(ref.Context().RegistryStr())
 	if authenticator != nil {
-		opts = append(opts, remote.WithAuth(authenticator))
+		options = append(options, remote.WithAuth(authenticator))
 	} else {
 		// use the Keychain specified from a docker config file.
 		log.Debugf("no registry credentials configured, using the default keychain")
-		opts = append(opts, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
-	return
+	return options
 }
