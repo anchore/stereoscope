@@ -10,7 +10,10 @@ on:
         description: "Tmate session duration"
         required: false
         default: 5
+
   push:
+    branches:
+      - main
   pull_request:
 
 env:
