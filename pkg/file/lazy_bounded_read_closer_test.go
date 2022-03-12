@@ -2,9 +2,13 @@ package file
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDeferredPartialReadCloser(t *testing.T) {
@@ -69,4 +73,42 @@ func TestDeferredPartialReadCloser_PartialRead(t *testing.T) {
 		t.Fatalf("unexpected contents: %s", string(actualContents))
 	}
 
+}
+
+func Test_lazyBoundedReadCloser_Read(t *testing.T) {
+	type fields struct {
+		path   string
+		file   *os.File
+		reader *io.SectionReader
+		start  int64
+		size   int64
+	}
+	type args struct {
+		b []byte
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    int
+		wantErr assert.ErrorAssertionFunc
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &lazyBoundedReadCloser{
+				path:   tt.fields.path,
+				file:   tt.fields.file,
+				reader: tt.fields.reader,
+				start:  tt.fields.start,
+				size:   tt.fields.size,
+			}
+			got, err := d.Read(tt.args.b)
+			if !tt.wantErr(t, err, fmt.Sprintf("Read(%v)", tt.args.b)) {
+				return
+			}
+			assert.Equalf(t, tt.want, got, "Read(%v)", tt.args.b)
+		})
+	}
 }
