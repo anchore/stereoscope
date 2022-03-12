@@ -35,13 +35,6 @@ func NewLazyReadCloser(path string) *LazyReadCloser {
 
 // Read implements the io.Reader interface for the previously loaded path, opening the file upon the first invocation.
 func (d *LazyReadCloser) Read(b []byte) (n int, err error) {
-	//if d.file == nil {
-	//	var err error
-	//	d.file, err = os.Open(d.path)
-	//	if err != nil {
-	//		return 0, err
-	//	}
-	//}
 	if err := d.isFileOpen(); err != nil {
 		return 0, err
 	}
