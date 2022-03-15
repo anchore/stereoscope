@@ -1,6 +1,7 @@
 package file
 
 import (
+	"io"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -9,8 +10,7 @@ import (
 )
 
 func getFixture(t *testing.T, filepath string) []byte {
-	p := "test-fixtures/a-file.txt"
-	fh, err := os.Open(p)
+	fh, err := os.Open(filepath)
 	require.NoError(t, err)
 	expectedContents, err := ioutil.ReadAll(fh)
 	require.NoError(t, err)
@@ -29,6 +29,27 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, contents, actualContents)
+	require.NotNil(t, dReader.file)
+
+	require.NoError(t, dReader.Close())
+	require.Nil(t, dReader.file, "should not have a file, but we do somehow")
+}
+
+func TestDeferredPartialReadCloser_Seek(t *testing.T) {
+	p := "test-fixtures/a-file.txt"
+	content := getFixture(t, p)
+
+	dReader := newLazyBoundedReadCloser(p, 0, int64(len(content)))
+	require.Nil(t, dReader.file)
+
+	var off int64 = 5
+	seek, err := dReader.Seek(off, io.SeekStart)
+	require.Equal(t, off, seek)
+	require.NoError(t, err)
+	actualContent, err := ioutil.ReadAll(dReader)
+	require.NoError(t, err)
+
+	require.Equal(t, content[int(off):], actualContent)
 	require.NotNil(t, dReader.file)
 
 	require.NoError(t, dReader.Close())

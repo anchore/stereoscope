@@ -7,16 +7,8 @@ import (
 )
 
 var _ io.ReadCloser = (*LazyReadCloser)(nil)
-var _ LazyReader = (*LazyReadCloser)(nil)
-
-// LazyReader is a single interface with all reading functions we want to use
-// across clients. The transition from io.ReadCloser should happen gradually.
-type LazyReader interface {
-	io.Reader
-	io.ReaderAt
-	io.Seeker
-	io.Closer
-}
+var _ io.Seeker = (*LazyReadCloser)(nil)
+var _ io.ReaderAt = (*LazyReadCloser)(nil)
 
 // LazyReadCloser is a "lazy" read closer, allocating a file descriptor for the given path only upon the first Read() call.
 type LazyReadCloser struct {

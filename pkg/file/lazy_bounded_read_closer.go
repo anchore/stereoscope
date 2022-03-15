@@ -8,7 +8,7 @@ import (
 
 var _ io.ReadCloser = (*lazyBoundedReadCloser)(nil)
 var _ io.ReaderAt = (*lazyBoundedReadCloser)(nil)
-var _ LazyReader = (*lazyBoundedReadCloser)(nil)
+var _ io.Seeker = (*lazyBoundedReadCloser)(nil)
 
 // lazyBoundedReadCloser is a "lazy" read closer, allocating a file descriptor for the given path only upon the first Read() call.
 // Only part of the file is allowed to be read, starting at a given position.
