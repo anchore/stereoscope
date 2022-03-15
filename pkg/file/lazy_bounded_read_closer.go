@@ -34,7 +34,7 @@ func newLazyBoundedReadCloser(path string, start, size int64) *lazyBoundedReadCl
 
 // Read implements the io.Reader interface for the previously loaded path, opening the file upon the first invocation.
 func (d *lazyBoundedReadCloser) Read(b []byte) (int, error) {
-	if err := d.isFileOpen(); err != nil {
+	if err := d.openFile(); err != nil {
 		return 0, err
 	}
 
@@ -66,7 +66,7 @@ func (d *lazyBoundedReadCloser) Close() error {
 }
 
 func (d *lazyBoundedReadCloser) Seek(offset int64, whence int) (int64, error) {
-	if err := d.isFileOpen(); err != nil {
+	if err := d.openFile(); err != nil {
 		return 0, err
 	}
 
@@ -74,7 +74,7 @@ func (d *lazyBoundedReadCloser) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (d *lazyBoundedReadCloser) ReadAt(b []byte, off int64) (n int, err error) {
-	if err := d.isFileOpen(); err != nil {
+	if err := d.openFile(); err != nil {
 		return 0, err
 	}
 
@@ -89,7 +89,7 @@ func (d *lazyBoundedReadCloser) ReadAt(b []byte, off int64) (n int, err error) {
 	return n, err
 }
 
-func (d *lazyBoundedReadCloser) isFileOpen() error {
+func (d *lazyBoundedReadCloser) openFile() error {
 	if d.reader != nil {
 		return nil
 	}
