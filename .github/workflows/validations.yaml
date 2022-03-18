@@ -22,7 +22,7 @@ env:
 jobs:
   # TODO: please delete me once once we move to 1.18 and golangci-lint works with it.
   Static-Analysis-Golangci-lint:
-    name: "Static analysis"
+    name: "Static analysis against go1.17"
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/setup-go@v2
