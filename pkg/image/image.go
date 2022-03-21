@@ -305,6 +305,9 @@ func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree
 
 // Cleanup removes all temporary files created from parsing the image. Future calls to image will not function correctly after this call.
 func (i *Image) Cleanup() error {
+	if i == nil {
+		return nil
+	}
 	if i.contentCacheDir != "" {
 		if err := os.RemoveAll(i.contentCacheDir); err != nil {
 			return err
