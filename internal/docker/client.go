@@ -2,6 +2,9 @@ package docker
 
 import (
 	"fmt"
+	"io"
+	"os"
+
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/config"
 	"github.com/docker/cli/cli/config/configfile"
@@ -10,8 +13,6 @@ import (
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
-	"io"
-	"os"
 )
 
 // much of this logic is copied from:
