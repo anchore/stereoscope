@@ -31,12 +31,12 @@ import (
 type DaemonImageProvider struct {
 	imageStr  string
 	tmpDirGen *file.TempDirGenerator
-	client    *client.Client
+	client    client.APIClient
 	platform  *image.Platform
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *client.Client, platform *image.Platform) *DaemonImageProvider {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c client.APIClient, platform *image.Platform) *DaemonImageProvider {
 	return &DaemonImageProvider{
 		imageStr:  imgStr,
 		tmpDirGen: tmpDirGen,
