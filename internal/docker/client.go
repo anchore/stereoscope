@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/config"
@@ -12,6 +13,7 @@ import (
 	"github.com/docker/cli/cli/context/store"
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/tlsconfig"
 	"github.com/pkg/errors"
 )
 
@@ -19,8 +21,25 @@ import (
 // - https://github.com/docker/cli/blob/6745f62a0b8c5c2a00306723da5fb835a7087ebd/cli/command/cli.go#L193-L237
 // - https://github.com/docker/cli/blob/3304c49771ee27c87791e65064111b106551401b/cli/flags/common.go
 
-func GetClient() (*client.Client, error) {
-	common := flags.NewCommonOptions()
+func GetClient() (client.APIClient, error) {
+	dockerTLSVerify := os.Getenv("DOCKER_TLS_VERIFY") != ""
+	common := &flags.CommonOptions{
+		TLS:       os.Getenv("DOCKER_TLS") != "",
+		TLSVerify: dockerTLSVerify,
+	}
+
+	if dockerTLSVerify {
+		dockerCertPath := os.Getenv("DOCKER_CERT_PATH")
+		if dockerCertPath == "" {
+			dockerCertPath = "~/.docker"
+		}
+		common.TLSOptions = &tlsconfig.Options{
+			CAFile:   filepath.Join(dockerCertPath, flags.DefaultCaFile),
+			CertFile: filepath.Join(dockerCertPath, flags.DefaultCertFile),
+			KeyFile:  filepath.Join(dockerCertPath, flags.DefaultKeyFile),
+		}
+	}
+
 	configFile := config.LoadDefaultConfigFile(io.Discard)
 	contextStoreConfig := command.DefaultContextStoreConfig()
 	baseContextStore := store.New(config.ContextStoreDir(), contextStoreConfig)
@@ -39,15 +58,10 @@ func GetClient() (*client.Client, error) {
 		return nil, errors.Wrap(err, "unable to resolve docker endpoint")
 	}
 
-	clientOpts, err := dockerEndpoint.ClientOpts()
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to create client options for docker endpoint")
-	}
-
-	clientOpts = append(clientOpts, client.FromEnv)
-
-	dockerClient, err := client.NewClientWithOpts(clientOpts...)
-	if err != nil {
+	dockerClient, err := newAPIClientFromEndpoint(dockerEndpoint, configFile)
+	if tlsconfig.IsErrEncryptedKey(err) {
+		return nil, errors.New("docker client with TLS passphrase is unsupported")
+	} else if err != nil {
 		return nil, fmt.Errorf("failed create docker client: %w", err)
 	}
 
@@ -90,4 +104,18 @@ func resolveDockerEndpoint(s store.Reader, contextName string) (docker.Endpoint,
 		return docker.Endpoint{}, err
 	}
 	return docker.WithTLSData(s, contextName, epMeta)
+}
+
+func newAPIClientFromEndpoint(ep docker.Endpoint, configFile *configfile.ConfigFile) (client.APIClient, error) {
+	clientOpts, err := ep.ClientOpts()
+	if err != nil {
+		return nil, err
+	}
+	customHeaders := make(map[string]string, len(configFile.HTTPHeaders))
+	for k, v := range configFile.HTTPHeaders {
+		customHeaders[k] = v
+	}
+	customHeaders["User-Agent"] = command.UserAgent()
+	clientOpts = append(clientOpts, client.WithHTTPHeaders(customHeaders))
+	return client.NewClientWithOpts(clientOpts...)
 }
