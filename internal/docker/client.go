@@ -9,11 +9,9 @@ import (
 	"github.com/docker/cli/cli/context/store"
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/tlsconfig"
 	"github.com/pkg/errors"
 	"io"
 	"os"
-	"path/filepath"
 )
 
 // much of this logic is copied from:
@@ -21,29 +19,17 @@ import (
 // - https://github.com/docker/cli/blob/3304c49771ee27c87791e65064111b106551401b/cli/flags/common.go
 
 func GetClient() (*client.Client, error) {
-	dockerCertPath := os.Getenv("DOCKER_CERT_PATH")
-	dockerTLSVerify := os.Getenv("DOCKER_TLS_VERIFY") != ""
-	dockerTLS := os.Getenv("DOCKER_TLS") != ""
-	common := flags.CommonOptions{
-		TLS:       dockerTLS,
-		TLSVerify: dockerTLSVerify,
-		TLSOptions: &tlsconfig.Options{
-			CAFile:   filepath.Join(dockerCertPath, flags.DefaultCaFile),
-			CertFile: filepath.Join(dockerCertPath, flags.DefaultCertFile),
-			KeyFile:  filepath.Join(dockerCertPath, flags.DefaultKeyFile),
-		},
-	}
-
+	common := flags.NewCommonOptions()
 	configFile := config.LoadDefaultConfigFile(io.Discard)
 	contextStoreConfig := command.DefaultContextStoreConfig()
 	baseContextStore := store.New(config.ContextStoreDir(), contextStoreConfig)
 	contextStore := &command.ContextStoreWithDefault{
 		Store: baseContextStore,
 		Resolver: func() (*command.DefaultContext, error) {
-			return command.ResolveDefaultContext(&common, configFile, contextStoreConfig, io.Discard)
+			return command.ResolveDefaultContext(common, configFile, contextStoreConfig, io.Discard)
 		},
 	}
-	currentContext, err := resolveContextName(&common, configFile, contextStore)
+	currentContext, err := resolveContextName(common, configFile, contextStore)
 	if err != nil {
 		return nil, fmt.Errorf("unable to resolve docker context: %w", err)
 	}
