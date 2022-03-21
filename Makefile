@@ -63,7 +63,7 @@ bootstrap: $(RESULTSDIR) ## Download and install all project dependencies (+ pre
 	[ -f "$(TEMPDIR)/bouncer" ] || curl -sSfL https://raw.githubusercontent.com/wagoodman/go-bouncer/master/bouncer.sh | sh -s -- -b $(TEMPDIR)/ v0.2.0
 
 .PHONY: static-analysis
-static-analysis: check-licenses
+static-analysis: check-licenses lint
 
 .PHONY: lint
 lint: ## Run gofmt + golangci lint checks
