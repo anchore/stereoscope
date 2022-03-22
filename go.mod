@@ -10,6 +10,7 @@ require (
 	// docker/distribution for https://github.com/advisories/GHSA-qq97-vm5h-rrhg
 	github.com/docker/distribution v2.8.0+incompatible // indirect
 	github.com/docker/docker v20.10.12+incompatible
+	github.com/docker/go-connections v0.4.0
 	github.com/fvbommel/sortorder v1.0.2 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/go-test/deep v1.0.8
