@@ -21,7 +21,8 @@ require (
 	github.com/moby/sys/mount v0.3.1 // indirect
 	github.com/pelletier/go-toml v1.9.3
 	github.com/pkg/errors v0.9.1
-	github.com/scylladb/go-set v1.0.2
+	// pinned to pull in 386 arch fix: https://github.com/scylladb/go-set/commit/cc7b2070d91ebf40d233207b633e28f5bd8f03a5
+	github.com/scylladb/go-set v1.0.3-0.20200225121959-cc7b2070d91e
 	github.com/sergi/go-diff v1.1.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/afero v1.6.0
