@@ -20,6 +20,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/docker/cli/cli/config"
+	configTypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -160,18 +161,17 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 
 	hostname := ref.Context().RegistryStr()
 
-	creds, err := cfg.GetAuthConfig(hostname)
+	authConfig, err := cfg.GetAuthConfig(hostname)
 	if err != nil {
-		return options, fmt.Errorf("failed to fetch registry auth (hostname=%s): %w", hostname, err)
+		log.Warnf("failed to fetch registry auth (hostname=%s): %+v", hostname, err)
+		return options, nil
 	}
 
-	if creds.Username != "" {
-		log.Debugf("using docker credentials for %q", hostname)
+	log.Debugf("using docker credentials for %q", hostname)
 
-		options.RegistryAuth, err = encodeCredentials(creds.Username, creds.Password)
-		if err != nil {
-			return options, err
-		}
+	options.RegistryAuth, err = encodeCredentials(authConfig)
+	if err != nil {
+		log.Warnf("failed to encode registry auth (hostname=%s): %+v", hostname, err)
 	}
 
 	return options, nil
@@ -320,18 +320,15 @@ func withInspectMetadata(i types.ImageInspect, userMetadata []image.AdditionalMe
 	return metadata
 }
 
-func encodeCredentials(username, password string) (string, error) {
+func encodeCredentials(authConfig configTypes.AuthConfig) (string, error) {
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
 	// note: the contents may contain characters that should not be escaped (such as password contents)
 	encoder.SetEscapeHTML(false)
 
-	if err := encoder.Encode(map[string]string{
-		"username": username,
-		"password": password,
-	}); err != nil {
+	if err := encoder.Encode(authConfig); err != nil {
 		return "", err
 	}
 
-	return base64.StdEncoding.EncodeToString(buffer.Bytes()), nil
+	return base64.URLEncoding.EncodeToString(buffer.Bytes()), nil
 }

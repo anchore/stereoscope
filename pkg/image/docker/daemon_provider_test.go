@@ -1,8 +1,13 @@
 package docker
 
 import (
-	"github.com/stretchr/testify/assert"
+	"encoding/base64"
+	"encoding/json"
+	"github.com/stretchr/testify/require"
 	"testing"
+
+	configTypes "github.com/docker/cli/cli/config/types"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestEncodeCredentials(t *testing.T) {
@@ -12,11 +17,21 @@ func TestEncodeCredentials(t *testing.T) {
 	user, pass := "dockerusertest", "WL[cC-<sN#K(zk~NVspmw.PL)3K?v"
 	// encoded string: expected := base64encode(`{"password":"WL[cC-<sN#K(zk~NVspmw.PL)3K?v","username":"dockerusertest"}\n`)
 	// where the problem character is the "<" within the password, which should NOT be encoded to \u003c
-	expected := "eyJwYXNzd29yZCI6IldMW2NDLTxzTiNLKHprfk5Wc3Btdy5QTCkzSz92IiwidXNlcm5hbWUiOiJkb2NrZXJ1c2VydGVzdCJ9Cg=="
-	actual, err := encodeCredentials(user, pass)
+
+	cfg := configTypes.AuthConfig{
+		Username: user,
+		Password: pass,
+	}
+
+	actual, err := encodeCredentials(cfg)
 	if err != nil {
 		t.Fatalf("unable to encode credentials: %+v", err)
 	}
+	actualCfgBytes, err := base64.URLEncoding.DecodeString(actual)
+	require.NoError(t, err)
 
-	assert.Equal(t, expected, actual, "unexpected output")
+	var actualCfg configTypes.AuthConfig
+	require.NoError(t, json.Unmarshal(actualCfgBytes, &actualCfg))
+	assert.Equal(t, user, actualCfg.Username)
+	assert.Equal(t, pass, actualCfg.Password)
 }
