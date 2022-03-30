@@ -160,6 +160,12 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 	}
 
 	hostname := ref.Context().RegistryStr()
+	if hostname == "index.docker.io" {
+		// why do this? There is an upstream issue here: https://github.com/docker/docker-credential-helpers/blob/e595cd69465c6b0f7af2d49582b82fdeddecbf75/wincred/wincred_windows.go#L113-L127
+		// where the hostname used for the auth config lookup requires this or else even pulling public images
+		// will fail with auth related problems (bad username/password, bad personal access token, etc).
+		hostname += "/v1/"
+	}
 
 	authConfig, err := cfg.GetAuthConfig(hostname)
 	if err != nil {
