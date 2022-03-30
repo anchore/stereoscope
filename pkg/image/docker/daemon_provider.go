@@ -20,6 +20,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/docker/cli/cli/config"
+	configTypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -153,28 +154,42 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 	}
 	log.Debugf("using docker config=%q", cfg.Filename)
 
-	ref, err := name.ParseReference(p.imageStr)
+	url, err := authURL(p.imageStr)
 	if err != nil {
-		return options, err
+		log.Warnf("failed to determine auth url from image=%q: %+v", p.imageStr, err)
+		return options, nil
 	}
 
-	hostname := ref.Context().RegistryStr()
-
-	creds, err := cfg.GetAuthConfig(hostname)
+	authConfig, err := cfg.GetAuthConfig(url)
 	if err != nil {
-		return options, fmt.Errorf("failed to fetch registry auth (hostname=%s): %w", hostname, err)
+		log.Warnf("failed to fetch registry auth (url=%s): %+v", url, err)
+		return options, nil
 	}
 
-	if creds.Username != "" {
-		log.Debugf("using docker credentials for %q", hostname)
+	log.Debugf("using docker credentials for %q", url)
 
-		options.RegistryAuth, err = encodeCredentials(creds.Username, creds.Password)
-		if err != nil {
-			return options, err
-		}
+	options.RegistryAuth, err = encodeCredentials(authConfig)
+	if err != nil {
+		log.Warnf("failed to encode registry auth (url=%s): %+v", url, err)
 	}
 
 	return options, nil
+}
+
+func authURL(imageStr string) (string, error) {
+	ref, err := name.ParseReference(imageStr)
+	if err != nil {
+		return "", err
+	}
+
+	url := ref.Context().RegistryStr()
+	if url == "index.docker.io" {
+		// why do this? There is an upstream issue here: https://github.com/docker/docker-credential-helpers/blob/e595cd69465c6b0f7af2d49582b82fdeddecbf75/wincred/wincred_windows.go#L113-L127
+		// where the hostname used for the auth config lookup requires this or else even pulling public images
+		// will fail with auth related problems (bad username/password, bad personal access token, etc).
+		url += "/v1/"
+	}
+	return url, nil
 }
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
@@ -320,18 +335,15 @@ func withInspectMetadata(i types.ImageInspect, userMetadata []image.AdditionalMe
 	return metadata
 }
 
-func encodeCredentials(username, password string) (string, error) {
+func encodeCredentials(authConfig configTypes.AuthConfig) (string, error) {
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
 	// note: the contents may contain characters that should not be escaped (such as password contents)
 	encoder.SetEscapeHTML(false)
 
-	if err := encoder.Encode(map[string]string{
-		"username": username,
-		"password": password,
-	}); err != nil {
+	if err := encoder.Encode(authConfig); err != nil {
 		return "", err
 	}
 
-	return base64.StdEncoding.EncodeToString(buffer.Bytes()), nil
+	return base64.URLEncoding.EncodeToString(buffer.Bytes()), nil
 }
