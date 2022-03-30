@@ -35,3 +35,38 @@ func TestEncodeCredentials(t *testing.T) {
 	assert.Equal(t, user, actualCfg.Username)
 	assert.Equal(t, pass, actualCfg.Password)
 }
+
+func Test_authURL(t *testing.T) {
+	tests := []struct {
+		imageStr string
+		want     string
+		wantErr  require.ErrorAssertionFunc
+	}{
+		{
+			imageStr: "alpine:latest",
+			want:     "index.docker.io/v1/",
+		},
+		{
+			imageStr: "myhost.io/alpine:latest",
+			want:     "myhost.io",
+		},
+		{
+			imageStr: "someone/something:latest",
+			want:     "index.docker.io/v1/",
+		},
+		{
+			imageStr: "somewhere.io/someone/something:latest",
+			want:     "somewhere.io",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.imageStr, func(t *testing.T) {
+			if tt.wantErr == nil {
+				tt.wantErr = require.NoError
+			}
+			got, err := authURL(tt.imageStr)
+			tt.wantErr(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

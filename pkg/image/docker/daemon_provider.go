@@ -154,33 +154,41 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 	}
 	log.Debugf("using docker config=%q", cfg.Filename)
 
-	ref, err := name.ParseReference(p.imageStr)
+	url, err := authURL(p.imageStr)
 	if err != nil {
-		return options, err
+		return options, fmt.Errorf("unable to determine auth hostname: %w", err)
 	}
 
-	hostname := ref.Context().RegistryStr()
-	if hostname == "index.docker.io" {
-		// why do this? There is an upstream issue here: https://github.com/docker/docker-credential-helpers/blob/e595cd69465c6b0f7af2d49582b82fdeddecbf75/wincred/wincred_windows.go#L113-L127
-		// where the hostname used for the auth config lookup requires this or else even pulling public images
-		// will fail with auth related problems (bad username/password, bad personal access token, etc).
-		hostname += "/v1/"
-	}
-
-	authConfig, err := cfg.GetAuthConfig(hostname)
+	authConfig, err := cfg.GetAuthConfig(url)
 	if err != nil {
-		log.Warnf("failed to fetch registry auth (hostname=%s): %+v", hostname, err)
+		log.Warnf("failed to fetch registry auth (hostname=%s): %+v", url, err)
 		return options, nil
 	}
 
-	log.Debugf("using docker credentials for %q", hostname)
+	log.Debugf("using docker credentials for %q", url)
 
 	options.RegistryAuth, err = encodeCredentials(authConfig)
 	if err != nil {
-		log.Warnf("failed to encode registry auth (hostname=%s): %+v", hostname, err)
+		log.Warnf("failed to encode registry auth (hostname=%s): %+v", url, err)
 	}
 
 	return options, nil
+}
+
+func authURL(imageStr string) (string, error) {
+	ref, err := name.ParseReference(imageStr)
+	if err != nil {
+		return "", err
+	}
+
+	url := ref.Context().RegistryStr()
+	if url == "index.docker.io" {
+		// why do this? There is an upstream issue here: https://github.com/docker/docker-credential-helpers/blob/e595cd69465c6b0f7af2d49582b82fdeddecbf75/wincred/wincred_windows.go#L113-L127
+		// where the hostname used for the auth config lookup requires this or else even pulling public images
+		// will fail with auth related problems (bad username/password, bad personal access token, etc).
+		url += "/v1/"
+	}
+	return url, nil
 }
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
