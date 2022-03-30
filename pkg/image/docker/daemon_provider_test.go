@@ -58,6 +58,10 @@ func Test_authURL(t *testing.T) {
 			imageStr: "somewhere.io/someone/something:latest",
 			want:     "somewhere.io",
 		},
+		{
+			imageStr: "host.io:5000/image:latest",
+			want:     "host.io:5000",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.imageStr, func(t *testing.T) {

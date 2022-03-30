@@ -156,12 +156,13 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 
 	url, err := authURL(p.imageStr)
 	if err != nil {
-		return options, fmt.Errorf("unable to determine auth hostname: %w", err)
+		log.Warnf("failed to determine auth url from image=%q: %+v", p.imageStr, err)
+		return options, nil
 	}
 
 	authConfig, err := cfg.GetAuthConfig(url)
 	if err != nil {
-		log.Warnf("failed to fetch registry auth (hostname=%s): %+v", url, err)
+		log.Warnf("failed to fetch registry auth (url=%s): %+v", url, err)
 		return options, nil
 	}
 
@@ -169,7 +170,7 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 
 	options.RegistryAuth, err = encodeCredentials(authConfig)
 	if err != nil {
-		log.Warnf("failed to encode registry auth (hostname=%s): %+v", url, err)
+		log.Warnf("failed to encode registry auth (url=%s): %+v", url, err)
 	}
 
 	return options, nil
