@@ -135,6 +135,12 @@ func TestDetectSource(t *testing.T) {
 			tarPath:          "~/a-potential/path",
 			tarPaths:         []string{"oci-layout"},
 		},
+		{
+			name:             "sif-file-path",
+			input:            "sif-file:~/path/to/file.sif",
+			source:           SifFileSource,
+			expectedLocation: "~/path/to/file.sif",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

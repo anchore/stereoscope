@@ -26,6 +26,7 @@ const (
 	OciTarballSource
 	OciRegistrySource
 	PodmanDaemonSource
+	SifFileSource
 )
 
 const SchemeSeparator = ":"
@@ -38,6 +39,7 @@ var sourceStr = [...]string{
 	"OciTarball",
 	"OciRegistry",
 	"PodmanDaemon",
+	"SifFile",
 }
 
 var AllSources = []Source{
@@ -47,6 +49,7 @@ var AllSources = []Source{
 	OciTarballSource,
 	OciRegistrySource,
 	PodmanDaemonSource,
+	SifFileSource,
 }
 
 // Source is a concrete a selection of valid concrete image providers.
@@ -76,6 +79,8 @@ func ParseSourceScheme(source string) Source {
 		return OciTarballSource
 	case "oci-registry", "registry":
 		return OciRegistrySource
+	case "sif-file":
+		return SifFileSource
 	}
 	return UnknownSource
 }
@@ -112,7 +117,7 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 	}
 
 	switch source {
-	case OciDirectorySource, OciTarballSource, DockerTarballSource:
+	case OciDirectorySource, OciTarballSource, DockerTarballSource, SifFileSource:
 		// since the scheme was explicitly given, that means that home dir tilde expansion would not have been done by the shell (so we have to)
 		location, err = homedir.Expand(location)
 		if err != nil {
