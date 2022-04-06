@@ -12,6 +12,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
+	"github.com/anchore/stereoscope/pkg/image/sif"
 	"github.com/anchore/stereoscope/pkg/logger"
 	"github.com/wagoodman/go-partybus"
 )
@@ -146,6 +147,46 @@ func GetImage(ctx context.Context, userStr string, options ...Option) (*image.Im
 		return nil, err
 	}
 	return GetImageFromSource(ctx, imgStr, source, options...)
+}
+
+// GetSifImageFromSource returns an image from the explicitly provided sif source.
+func GetSifImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*sif.Image, error) {
+	log.Debugf("image: source=%+v location=%+v", source, imgStr)
+
+	var cfg config
+	for _, option := range options {
+		if option == nil {
+			continue
+		}
+		if err := option(&cfg); err != nil {
+			return nil, fmt.Errorf("unable to parse option: %w", err)
+		}
+	}
+
+	provider, err := selectSifImageProvider(imgStr, source, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	img, err := provider.Provide(ctx, cfg.AdditionalMetadata...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to use %s source: %w", source, err)
+	}
+
+	return img, nil
+}
+
+func selectSifImageProvider(imgStr string, source image.Source, cfg config) (sif.Provider, error) {
+	var provider sif.Provider
+	tempDirGenerator := rootTempDirGenerator.NewGenerator()
+
+	switch source {
+	case image.SifFileSource:
+		provider = sif.NewProviderFromFile(imgStr, tempDirGenerator)
+	default:
+		return nil, fmt.Errorf("unable determine sif image source")
+	}
+	return provider, nil
 }
 
 func SetLogger(logger logger.Logger) {
