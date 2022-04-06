@@ -154,7 +154,8 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 	}
 	log.Debugf("using docker config=%q", cfg.Filename)
 
-	url, err := authURL(p.imageStr)
+	// get a URL that works with docker credential helpers
+	url, err := authURL(p.imageStr, true)
 	if err != nil {
 		log.Warnf("failed to determine auth url from image=%q: %+v", p.imageStr, err)
 		return options, nil
@@ -164,6 +165,25 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 	if err != nil {
 		log.Warnf("failed to fetch registry auth (url=%s): %+v", url, err)
 		return options, nil
+	}
+
+	empty := configTypes.AuthConfig{}
+	if authConfig == empty {
+		// we didn't find any entries in any auth sources. This might be because the workaround needed for the
+		// docker credential helper was unnecessary (since the user isn't using a credential helper). For this reason
+		// lets try this auth config lookup again, but this time for a url that doesn't consider the dockerhub
+		// workaround for the credential helper.
+		url, err = authURL(p.imageStr, false)
+		if err != nil {
+			log.Warnf("failed to determine auth url from image=%q: %+v", p.imageStr, err)
+			return options, nil
+		}
+
+		authConfig, err = cfg.GetAuthConfig(url)
+		if err != nil {
+			log.Warnf("failed to fetch registry auth (url=%s): %+v", url, err)
+			return options, nil
+		}
 	}
 
 	log.Debugf("using docker credentials for %q", url)
@@ -176,17 +196,19 @@ func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
 	return options, nil
 }
 
-func authURL(imageStr string) (string, error) {
+func authURL(imageStr string, dockerhubWorkaround bool) (string, error) {
 	ref, err := name.ParseReference(imageStr)
 	if err != nil {
 		return "", err
 	}
 
 	url := ref.Context().RegistryStr()
-	if url == "index.docker.io" {
+	if dockerhubWorkaround && url == "index.docker.io" {
 		// why do this? There is an upstream issue here: https://github.com/docker/docker-credential-helpers/blob/e595cd69465c6b0f7af2d49582b82fdeddecbf75/wincred/wincred_windows.go#L113-L127
 		// where the hostname used for the auth config lookup requires this or else even pulling public images
 		// will fail with auth related problems (bad username/password, bad personal access token, etc).
+		// The above note only applies to the credential helper, not to auth entries directly written to the docker config.
+		// For this reason callers need to try getting the authconfig for both v1 and non-v1 routes.
 		url += "/v1/"
 	}
 	return url, nil
