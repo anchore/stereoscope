@@ -38,29 +38,40 @@ func TestEncodeCredentials(t *testing.T) {
 
 func Test_authURL(t *testing.T) {
 	tests := []struct {
-		imageStr string
-		want     string
-		wantErr  require.ErrorAssertionFunc
+		imageStr   string
+		workaround bool
+		want       string
+		wantErr    require.ErrorAssertionFunc
 	}{
 		{
-			imageStr: "alpine:latest",
-			want:     "index.docker.io/v1/",
+			imageStr:   "alpine:latest",
+			workaround: true,
+			want:       "index.docker.io/v1/",
 		},
 		{
-			imageStr: "myhost.io/alpine:latest",
-			want:     "myhost.io",
+			imageStr:   "alpine:latest",
+			workaround: false,
+			want:       "index.docker.io",
 		},
 		{
-			imageStr: "someone/something:latest",
-			want:     "index.docker.io/v1/",
+			imageStr:   "myhost.io/alpine:latest",
+			workaround: true,
+			want:       "myhost.io",
 		},
 		{
-			imageStr: "somewhere.io/someone/something:latest",
-			want:     "somewhere.io",
+			imageStr:   "someone/something:latest",
+			workaround: true,
+			want:       "index.docker.io/v1/",
 		},
 		{
-			imageStr: "host.io:5000/image:latest",
-			want:     "host.io:5000",
+			imageStr:   "somewhere.io/someone/something:latest",
+			workaround: true,
+			want:       "somewhere.io",
+		},
+		{
+			imageStr:   "host.io:5000/image:latest",
+			workaround: true,
+			want:       "host.io:5000",
 		},
 	}
 	for _, tt := range tests {
@@ -68,7 +79,7 @@ func Test_authURL(t *testing.T) {
 			if tt.wantErr == nil {
 				tt.wantErr = require.NoError
 			}
-			got, err := authURL(tt.imageStr)
+			got, err := authURL(tt.imageStr, tt.workaround)
 			tt.wantErr(t, err)
 			assert.Equal(t, tt.want, got)
 		})
