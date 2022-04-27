@@ -5,6 +5,9 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
+
+	"github.com/CalebQ42/squashfs"
 )
 
 // Metadata represents all file metadata of interest (used today for in-tar file resolution).
@@ -42,4 +45,26 @@ func NewMetadata(header tar.Header, sequence int64, content io.Reader) Metadata 
 		IsDir:         header.FileInfo().IsDir(),
 		MIMEType:      MIMEType(content),
 	}
+}
+
+// NewMetadataFromSquashFSFile populates Metadata for the entry at path, with details from f.
+func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error) {
+	fi, err := f.Stat()
+	if err != nil {
+		return Metadata{}, err
+	}
+
+	md := Metadata{
+		Path:     filepath.Clean(filepath.Join("/", path)),
+		Linkname: f.SymlinkPath(),
+		Size:     fi.Size(),
+		IsDir:    f.IsDir(),
+		Mode:     fi.Mode(),
+	}
+
+	if f.IsRegular() {
+		md.MIMEType = MIMEType(f)
+	}
+
+	return md, nil
 }

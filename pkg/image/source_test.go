@@ -144,9 +144,9 @@ func TestDetectSource(t *testing.T) {
 			tarPaths:         []string{"oci-layout"},
 		},
 		{
-			name:             "sif-file-path",
-			input:            "sif-file:~/path/to/file.sif",
-			source:           SifFileSource,
+			name:             "singularity-image-path",
+			input:            "singularity-image:~/path/to/file.sif",
+			source:           SingularityImageSource,
 			expectedLocation: "~/path/to/file.sif",
 		},
 	}

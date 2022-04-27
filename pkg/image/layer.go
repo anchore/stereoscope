@@ -2,20 +2,26 @@ package image
 
 import (
 	"archive/tar"
+	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 
+	"github.com/CalebQ42/squashfs"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 )
+
+const SingularitySquashFSLayer = "application/vnd.sylabs.sif.layer.v1.squashfs"
 
 // Layer represents a single layer within a container image.
 type Layer struct {
@@ -87,14 +93,44 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 	monitor := trackReadProgress(l.Metadata)
 
-	tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
-	if err != nil {
-		return err
-	}
+	switch l.Metadata.MediaType {
+	case types.OCILayer,
+		types.OCIUncompressedLayer,
+		types.OCIRestrictedLayer,
+		types.OCIUncompressedRestrictedLayer,
+		types.DockerLayer,
+		types.DockerForeignLayer,
+		types.DockerUncompressedLayer:
 
-	l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor))
-	if err != nil {
-		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
+		tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
+		if err != nil {
+			return err
+		}
+
+		l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor))
+		if err != nil {
+			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
+		}
+
+	case SingularitySquashFSLayer:
+		r, err := l.layer.Uncompressed()
+		if err != nil {
+			return fmt.Errorf("failed to read layer=%q: %w", l.Metadata.Digest, err)
+		}
+		// defer r.Close() // TODO: if we close this here, we can't read file contents after we return.
+
+		// Walk the more efficient walk if we're blessed with an io.ReaderAt.
+		if ra, ok := r.(io.ReaderAt); ok {
+			err = file.WalkSquashFS(ra, l.squashfsVisitor(monitor))
+		} else {
+			err = file.WalkSquashFSFromReader(r, l.squashfsVisitor(monitor))
+		}
+		if err != nil {
+			return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
+		}
+
+	default:
+		return fmt.Errorf("unknown layer media type: %+v", l.Metadata.MediaType)
 	}
 
 	monitor.SetCompleted()
@@ -192,6 +228,60 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 
 		l.Metadata.Size += metadata.Size
 		l.fileCatalog.Add(*fileReference, metadata, l, index.Open)
+
+		monitor.N++
+		return nil
+	}
+}
+
+func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
+	return func(fsys *squashfs.FS, path string, d fs.DirEntry) error {
+		f, err := fsys.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		metadata, err := file.NewMetadataFromSquashFSFile(path, f.(*squashfs.File))
+		if err != nil {
+			return err
+		}
+
+		var fileReference *file.Reference
+
+		switch f := f.(*squashfs.File); {
+		case f.IsSymlink():
+			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			if err != nil {
+				return err
+			}
+		case f.IsDir():
+			fileReference, err = l.Tree.AddDir(file.Path(metadata.Path))
+			if err != nil {
+				return err
+			}
+		case f.IsRegular():
+			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
+			if err != nil {
+				return err
+			}
+		}
+
+		if fileReference == nil {
+			return fmt.Errorf("could not add path=%q link=%q during squashfs iteration", metadata.Path, metadata.Linkname)
+		}
+
+		l.Metadata.Size += metadata.Size
+		l.fileCatalog.Add(*fileReference, metadata, l, func() io.ReadCloser {
+			r, err := fsys.Open(path)
+			if err != nil {
+				// The file.Opener interface doesn't give us a way to return an error, and callers
+				// don't seem to handle a nil return. So, return a zero-byte reader.
+				log.Debug(err)
+				return io.NopCloser(bytes.NewReader(nil)) // TODO
+			}
+			return r
+		})
 
 		monitor.N++
 		return nil

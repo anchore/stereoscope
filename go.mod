@@ -3,6 +3,7 @@ module github.com/anchore/stereoscope
 go 1.16
 
 require (
+	github.com/CalebQ42/squashfs v0.5.4
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
 	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220517224237-e6f29200ae04
@@ -26,7 +27,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.0
-	github.com/sylabs/sif/v2 v2.4.3-0.20220401211304-d7a38b58471c
+	github.com/sylabs/sif/v2 v2.7.0
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20200621122631-1a2120f0695a
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
