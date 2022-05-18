@@ -135,6 +135,14 @@ func TestDetectSource(t *testing.T) {
 			tarPath:          "~/a-potential/path",
 			tarPaths:         []string{"oci-layout"},
 		},
+		{
+			name:             "oci-tar-path-with-scheme-separator",
+			input:            "a-potential/path:version",
+			source:           OciTarballSource,
+			expectedLocation: "a-potential/path:version",
+			tarPath:          "a-potential/path:version",
+			tarPaths:         []string{"oci-layout"},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

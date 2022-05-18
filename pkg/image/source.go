@@ -91,24 +91,24 @@ func DetectSource(userInput string) (Source, string, error) {
 func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 	candidates := strings.SplitN(userInput, SchemeSeparator, 2)
 
-	var source Source
+	var source = UnknownSource
 	var location = userInput
 	var sourceHint string
 	var err error
-	switch len(candidates) {
-	case 1:
-		// no source hint has been provided, detect one
+	if len(candidates) == 2 {
+		// the user may have provided a source hint (or this is a split from a path or docker image reference, we aren't certain yet)
+		sourceHint = candidates[0]
+		source = ParseSourceScheme(sourceHint)
+	}
+	if source != UnknownSource {
+		// if we found source from hint, than remove the hint from the location
+		location = strings.TrimPrefix(userInput, sourceHint+SchemeSeparator)
+	} else {
+		// a valid source hint wasnt provided/detected, try detect one
 		source, err = detectSourceFromPath(fs, location)
 		if err != nil {
 			return UnknownSource, "", err
 		}
-	case 2:
-		// the user may have provided a source hint (or this is a split from a docker image reference, we aren't certain yet)
-		sourceHint = candidates[0]
-		location = strings.TrimPrefix(userInput, sourceHint+SchemeSeparator)
-		source = ParseSourceScheme(sourceHint)
-	default:
-		source = UnknownSource
 	}
 
 	switch source {
