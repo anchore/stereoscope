@@ -32,3 +32,6 @@ require (
 	github.com/wagoodman/go-progress v0.0.0-20200621122631-1a2120f0695a
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 )
+
+// Forked to remove https://github.com/rasky/go-lzo dependency, which is GPLv2 licensed.
+replace github.com/CalebQ42/squashfs => github.com/sylabs/squashfs v0.5.5-0.20220526223455-67e0f4cd95c5
