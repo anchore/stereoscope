@@ -133,7 +133,7 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
-	case image.SingularityImageSource:
+	case image.SingularitySource:
 		if cfg.Platform != nil {
 			return nil, platformSelectionUnsupported
 		}
