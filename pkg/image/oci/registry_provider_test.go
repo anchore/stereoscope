@@ -50,7 +50,7 @@ func Test_Registry_Provide_FailsUnauthorized(t *testing.T) {
 
 	//THEN
 	assert.Nil(t, result)
-	assert.NoError(t, err)
+	assert.Error(t, err)
 }
 
 func Test_Registry_Provide_FailsImageMissingPlatform(t *testing.T) {
