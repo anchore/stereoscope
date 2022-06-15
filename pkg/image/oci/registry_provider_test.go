@@ -1,13 +1,98 @@
 package oci
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/stretchr/testify/assert"
 )
+
+func Test_NewProviderFromRegistry(t *testing.T) {
+	//GIVEN
+	imageStr := "image"
+	generator := file.TempDirGenerator{}
+	options := image.RegistryOptions{}
+	platform := &image.Platform{}
+
+	//WHEN
+	provider := NewProviderFromRegistry(imageStr, &generator, options, platform)
+
+	//THEN
+	assert.NotNil(t, provider.imageStr)
+	assert.NotNil(t, provider.tmpDirGen)
+	assert.NotNil(t, provider.registryOptions)
+	assert.NotNil(t, provider.platform)
+}
+
+func Test_Registry_Provide_FailsUnauthorized(t *testing.T) {
+	//GIVEN
+	imageStr := "image"
+	generator := file.TempDirGenerator{}
+	options := image.RegistryOptions{
+		InsecureSkipTLSVerify: true,
+		Credentials: []image.RegistryCredentials{
+			{
+				Authority: "index.docker.io",
+				Token:     "token",
+			},
+		},
+	}
+	platform := &image.Platform{}
+	provider := NewProviderFromRegistry(imageStr, &generator, options, platform)
+	ctx := context.Background()
+
+	//WHEN
+	result, err := provider.Provide(ctx)
+
+	//THEN
+	assert.Nil(t, result)
+	assert.NoError(t, err)
+}
+
+func Test_Registry_Provide_FailsImageMissingPlatform(t *testing.T) {
+	//GIVEN
+	imageStr := "docker.io/golang:1.18"
+	generator := file.TempDirGenerator{}
+	options := image.RegistryOptions{
+		InsecureSkipTLSVerify: true,
+	}
+	platform := &image.Platform{}
+	provider := NewProviderFromRegistry(imageStr, &generator, options, platform)
+	ctx := context.Background()
+
+	//WHEN
+	result, err := provider.Provide(ctx)
+
+	//THEN
+	assert.Nil(t, result)
+	assert.Error(t, err)
+}
+
+func Test_Registry_Provide(t *testing.T) {
+	//GIVEN
+	imageStr := "golang:1.18"
+	generator := file.TempDirGenerator{}
+	options := image.RegistryOptions{
+		InsecureSkipTLSVerify: true,
+	}
+	platform := &image.Platform{
+		OS:           "linux",
+		Architecture: "amd64",
+	}
+	provider := NewProviderFromRegistry(imageStr, &generator, options, platform)
+	ctx := context.Background()
+
+	//WHEN
+	result, err := provider.Provide(ctx)
+
+	//THEN
+	assert.NotNil(t, result)
+	assert.NoError(t, err)
+}
 
 func Test_prepareReferenceOptions(t *testing.T) {
 	tests := []struct {
