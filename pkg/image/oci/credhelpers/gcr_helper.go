@@ -20,11 +20,11 @@ var getDefaultGCRCredStore = store.DefaultGCRCredStore
 func NewGCRHelper(authority string) (*GCRHelper, error) {
 	userConfig, err := loadConfig()
 	if err != nil {
-		return nil, fmt.Errorf("Unable to load user config: %w", err)
+		return nil, fmt.Errorf("unable to load user config: %w", err)
 	}
 	credStore, err := getDefaultGCRCredStore()
 	if err != nil {
-		return nil, fmt.Errorf("Unable to read load default cred store: %w", err)
+		return nil, fmt.Errorf("unable to read load default cred store: %w", err)
 	}
 	helper := credhelper.NewGCRCredentialHelper(credStore, userConfig)
 
@@ -37,7 +37,7 @@ func NewGCRHelper(authority string) (*GCRHelper, error) {
 func (g *GCRHelper) GetRegistryCredentials() (*image.RegistryCredentials, error) {
 	username, token, err := g.helper.Get(g.authority)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to load credentials: %w", err)
+		return nil, fmt.Errorf("unable to load credentials: %w", err)
 	}
 
 	return &image.RegistryCredentials{
