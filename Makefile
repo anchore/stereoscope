@@ -44,6 +44,7 @@ help:
 .PHONY: ci-bootstrap
 ci-bootstrap: bootstrap
 	sudo apt install -y bc
+	curl -sLO https://github.com/sylabs/singularity/releases/download/v3.10.0/singularity-ce_3.10.0-focal_amd64.deb && sudo dpkg -i singularity-ce_3.10.0-focal_amd64.deb
 
 $(RESULTSDIR):
 	mkdir -p $(RESULTSDIR)

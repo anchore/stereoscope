@@ -50,6 +50,10 @@ func TestImageSymlinks(t *testing.T) {
 			name:   "FromOciDirectory",
 			source: "oci-dir",
 		},
+		{
+			name:   "FromSingularity",
+			source: "singularity",
+		},
 	}
 
 	expectedSet := set.NewIntSet()
@@ -61,6 +65,12 @@ func TestImageSymlinks(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			i := imagetest.GetFixtureImage(t, c.source, "image-symlinks")
+
+			if c.source == "singularity" {
+				assertSquashedSymlinkLinkResolution(t, i)
+				return
+			}
+
 			assertImageSymlinkLinkResolution(t, i)
 		})
 	}
@@ -215,6 +225,63 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 			resolveLayer:     6,
 			expectedPath:     "/link-indirect",
 			perspectiveLayer: 8,
+			linkOptions:      []filetree.LinkResolutionOption{filetree.DoNotFollowDeadBasenameLinks},
+		},
+	}
+
+	for _, cfg := range tests {
+		name := fmt.Sprintf("[%d:%s]-->[%d:%s]@%d", cfg.linkLayer, cfg.linkPath, cfg.resolveLayer, cfg.expectedPath, cfg.perspectiveLayer)
+		t.Run(name, func(t *testing.T) {
+			expectedResolve, actualResolve := fetchRefs(t, i, cfg)
+			assertMatch(t, i, cfg, expectedResolve, actualResolve)
+
+			if cfg.contents == "" {
+				return
+			}
+
+			actualContents := fetchContents(t, i, cfg)
+			if actualContents != cfg.contents {
+				t.Errorf("mismatched contents: '%+v'!='%+v'", cfg.contents, actualContents)
+			}
+		})
+	}
+}
+
+// Check symlinks in image after it has been squashed to a single layer (Singularity)
+func assertSquashedSymlinkLinkResolution(t *testing.T, i *image.Image) {
+	tests := []linkFetchConfig{
+		// # link with previous data
+		// LAYER 1 > ADD file-1.txt .
+		// LAYER 2 > RUN ln -s ./file-1.txt link-1
+		{
+			linkLayer:        0,
+			linkPath:         "/link-1",
+			resolveLayer:     0,
+			expectedPath:     "/file-1.txt",
+			perspectiveLayer: 0,
+			contents:         "file 1!",
+		},
+
+		// # link with current data
+		// LAYER 5 > RUN echo "file 3" > file-3.txt && ln -s ./file-3.txt link-within
+		{
+			linkLayer:        0,
+			linkPath:         "/link-within",
+			resolveLayer:     0,
+			expectedPath:     "/file-3.txt",
+			perspectiveLayer: 0,
+			// since echo was used a newline character will be present
+			contents: "file 3\n",
+		},
+
+		// # dead link (link-indirect > [non-existant file])
+		// LAYER 8 > RUN unlink link-2
+		{
+			linkLayer:        0,
+			linkPath:         "/link-indirect",
+			resolveLayer:     0,
+			expectedPath:     "/link-indirect",
+			perspectiveLayer: 0,
 			linkOptions:      []filetree.LinkResolutionOption{filetree.DoNotFollowDeadBasenameLinks},
 		},
 	}

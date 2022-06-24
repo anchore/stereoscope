@@ -48,6 +48,8 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 			skopeoCopyDockerArchiveToPath(t, dockerArchivePath, fmt.Sprintf("oci:%s", ociDirPath))
 		}
 		location = ociDirPath
+	case image.SingularitySource:
+		location = GetFixtureImageSIFPath(t, name)
 	default:
 		t.Fatalf("could not determine source: %+v", source)
 	}
@@ -244,6 +246,67 @@ func saveImage(t testing.TB, image, path string) error {
 	// note: we are not using -o since some CI providers need root access for the docker client, however,
 	// we don't want the resulting tar to be owned by root, thus we write the file piped from stdout.
 	cmd := exec.Command("docker", "image", "save", image)
+	cmd.Env = os.Environ()
+
+	cmd.Stdout = outfile
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	return cmd.Run()
+}
+
+func GetFixtureImageSIFPath(t testing.TB, name string) string {
+	imageName, imageVersion := getFixtureImageInfo(t, name)
+	sifFileName := fmt.Sprintf("%s-%s.sif", imageName, imageVersion)
+	return getFixtureImageSIFPath(t, name, CacheDir, sifFileName)
+}
+
+func getFixtureImageSIFPath(t testing.TB, fixtureName, sifStoreDir, sifFileName string) string {
+	imageName, imageVersion := getFixtureImageInfo(t, fixtureName)
+	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
+	sifPath := path.Join(sifStoreDir, sifFileName)
+
+	// create the cache dir if it does not already exist...
+	if !fileOrDirExists(t, CacheDir) {
+		err := os.Mkdir(CacheDir, 0o755)
+		if err != nil {
+			t.Fatalf("could not create sif cache dir (%s): %+v", CacheDir, err)
+		}
+	}
+
+	// if the image sif does not exist, make it
+	if !fileOrDirExists(t, sifPath) {
+		if !isImageInDocker(fullImageName) {
+			contextPath := path.Join(testutils.TestFixturesDir, fixtureName)
+			buildDockerImage(t, contextPath, imageName, imageVersion)
+		}
+		err := buildSIFFromDocker(t, fullImageName, sifPath)
+		if err != nil {
+			t.Fatal("could not save fixture image:", err)
+		}
+	}
+
+	return sifPath
+}
+
+func buildSIFFromDocker(t testing.TB, image, path string) error {
+	singularity, err := exec.LookPath("singularity")
+	if err != nil {
+		t.Skipf("singularity not found: %v", err)
+	}
+
+	outfile, err := os.Create(path)
+	if err != nil {
+		t.Fatal("unable to create file for SIF image:", err)
+	}
+	defer func() {
+		err := outfile.Close()
+		if err != nil {
+			t.Fatalf("unable to close file path=%q : %+v", path, err)
+		}
+	}()
+
+	cmdArgs := []string{"build", "--disable-cache", "--force", path, "docker-daemon:" + image}
+	cmd := exec.Command(singularity, cmdArgs...)
 	cmd.Env = os.Environ()
 
 	cmd.Stdout = outfile

@@ -14,6 +14,8 @@ import (
 	"github.com/sylabs/sif/v2/pkg/sif"
 )
 
+const SingularityMediaType = "application/vnd.sylabs.sif.layer.v1.sif"
+
 // fileSectionReader implements an io.ReadCloser that reads from r and closes c.
 type fileSectionReader struct {
 	*io.SectionReader
@@ -135,7 +137,7 @@ func (im *sifImage) RawConfigFile() ([]byte, error) {
 
 // MediaType of this image's manifest.
 func (im *sifImage) MediaType() (types.MediaType, error) {
-	return "application/vnd.sylabs.sif.layer.v1.sif", nil
+	return SingularityMediaType, nil
 }
 
 // LayerByDiffID is a variation on the v1.Image method, which returns an UncompressedLayer instead.
