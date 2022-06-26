@@ -315,7 +315,7 @@ func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) error {
 		}
 	} else {
 		// looks like the image exists, but if the platform doesn't match what the user specified, we may need to
-		// pull the image again with the correct platofmr specifier, which will override the local tag.
+		// pull the image again with the correct platform specifier, which will override the local tag.
 		if err := p.validatePlatform(inspectResult); err != nil {
 			if err = p.pull(ctx); err != nil {
 				return err
