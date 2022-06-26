@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
 	github.com/bmatcuk/doublestar/v4 v4.0.2
-	github.com/containerd/containerd v1.6.6
+	github.com/containerd/containerd v1.5.13
 	github.com/docker/cli v20.10.12+incompatible
 	// docker/distribution for https://github.com/advisories/GHSA-qq97-vm5h-rrhg
 	github.com/docker/distribution v2.8.0+incompatible // indirect
@@ -16,6 +16,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/logrusorgru/aurora v0.0.0-20200102142835-e9ef32dff381
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/opencontainers/image-spec v1.0.2
 	github.com/pelletier/go-toml v1.9.3
 	github.com/pkg/errors v0.9.1
 	// pinned to pull in 386 arch fix: https://github.com/scylladb/go-set/commit/cc7b2070d91ebf40d233207b633e28f5bd8f03a5
