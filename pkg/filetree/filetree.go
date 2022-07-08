@@ -333,7 +333,7 @@ func (t *FileTree) resolveNodeLinks(n *filenode.FileNode, followDeadBasenameLink
 	return currentNode, nil
 }
 
-// File fetches zero to many file.References for the given glob pattern (considers symlinks).
+// FilesByGlob fetches zero to many file.References for the given glob pattern (considers symlinks).
 func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([]GlobResult, error) {
 	results := make([]GlobResult, 0)
 
