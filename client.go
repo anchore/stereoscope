@@ -12,6 +12,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
+	"github.com/anchore/stereoscope/pkg/image/sif"
 	"github.com/anchore/stereoscope/pkg/logger"
 	"github.com/wagoodman/go-partybus"
 )
@@ -132,6 +133,11 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
+	case image.SingularitySource:
+		if cfg.Platform != nil {
+			return nil, platformSelectionUnsupported
+		}
+		provider = sif.NewProviderFromPath(imgStr, tempDirGenerator)
 	default:
 		return nil, fmt.Errorf("unable determine image source")
 	}

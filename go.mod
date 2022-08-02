@@ -3,6 +3,7 @@ module github.com/anchore/stereoscope
 go 1.16
 
 require (
+	github.com/CalebQ42/squashfs v0.5.4
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
 	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220517224237-e6f29200ae04
@@ -22,11 +23,15 @@ require (
 	github.com/pkg/errors v0.9.1
 	// pinned to pull in 386 arch fix: https://github.com/scylladb/go-set/commit/cc7b2070d91ebf40d233207b633e28f5bd8f03a5
 	github.com/scylladb/go-set v1.0.3-0.20200225121959-cc7b2070d91e
-	github.com/sergi/go-diff v1.1.0
+	github.com/sergi/go-diff v1.2.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.0
+	github.com/sylabs/sif/v2 v2.7.0
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20200621122631-1a2120f0695a
-	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 )
+
+// Forked to remove https://github.com/rasky/go-lzo dependency, which is GPLv2 licensed.
+replace github.com/CalebQ42/squashfs => github.com/sylabs/squashfs v0.5.5-0.20220526223455-67e0f4cd95c5

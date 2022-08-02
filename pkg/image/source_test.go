@@ -143,6 +143,12 @@ func TestDetectSource(t *testing.T) {
 			tarPath:          "a-potential/path:version",
 			tarPaths:         []string{"oci-layout"},
 		},
+		{
+			name:             "singularity-path",
+			input:            "singularity:~/path/to/file.sif",
+			source:           SingularitySource,
+			expectedLocation: "~/path/to/file.sif",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

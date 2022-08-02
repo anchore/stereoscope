@@ -44,6 +44,7 @@ help:
 .PHONY: ci-bootstrap
 ci-bootstrap: bootstrap
 	sudo apt install -y bc
+	curl -sLO https://github.com/sylabs/singularity/releases/download/v3.10.0/singularity-ce_3.10.0-focal_amd64.deb && sudo apt-get install -y -f ./singularity-ce_3.10.0-focal_amd64.deb
 
 $(RESULTSDIR):
 	mkdir -p $(RESULTSDIR)
@@ -110,8 +111,24 @@ show-benchstat:
 integration-fingerprint:
 	find test/integration/test-fixtures/image-* -type f -exec md5sum {} + | awk '{print $1}' | sort | md5sum | tee test/integration/test-fixtures/cache.fingerprint
 
+.PHONY: integration-tools-fingerprint
+integration-tools-fingerprint:
+	@cd test/integration/tools && make fingerprint
+
+.PHONY: integration-tools
+integration-tools:
+	@cd test/integration/tools && make
+
+.PHONY: integration-tools
+integration-tools-load:
+	@cd test/integration/tools && make load-cache
+
+.PHONY: integration-tools
+integration-tools-save:
+	@cd test/integration/tools && make save-cache
+
 .PHONY: integration
-integration: ## Run integration tests
+integration: integration-tools ## Run integration tests
 	$(call title,Running integration tests)
 	go test -v ./test/integration
 

@@ -21,7 +21,10 @@ Note: To run tests you will need `skopeo` installed.
 ## Overview
 
 This library provides the means to:
-- parse and read images from multiple sources (currently docker V2 schema images read from the docker daemon and from an archive on disk)
+- parse and read images from multiple sources, supporting:
+  - docker V2 schema images from the docker daemon, podman, or archive
+  - OCI images from disk, directory, or registry
+  - singularity formatted image files
 - build a file tree representing each layer blob
 - create a squashed file tree representation for each layer
 - search one or more file trees for selected paths

@@ -15,58 +15,99 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/image/sif"
 	"github.com/anchore/stereoscope/pkg/imagetest"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/scylladb/go-set"
 	"github.com/stretchr/testify/require"
 )
 
+// Common layer metadata for OCI / Docker / Podman. MediaType will be filled in during test.
+var simpleImageLayers = []image.LayerMetadata{
+	{
+		Index: 0,
+		Size:  22,
+	},
+	{
+		Index: 1,
+		Size:  16,
+	},
+	{
+		Index: 2,
+		Size:  27,
+	},
+}
+
+// Singularity images are squashed to a single layer.
+var simpleImageSingularityLayer = []image.LayerMetadata{
+	{
+		Index: 0,
+		// Disable size check. Size can vary - image build embeds variable length timestamps etc.
+		Size: -1,
+	},
+}
+
 var simpleImageTestCases = []testCase{
 	{
-		name:           "FromTarball",
 		source:         "docker-archive",
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
+		layers:         simpleImageLayers,
 		tagCount:       1,
+		size:           65,
 	},
 	{
-		name:           "FromDocker",
 		source:         "docker",
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
+		layers:         simpleImageLayers,
 		// name:hash
 		// name:latest
 		tagCount: 2,
+		size:     65,
 	},
 	{
-		name:           "FromPodman",
 		source:         "podman",
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
+		layers:         simpleImageLayers,
 		tagCount:       2,
+		size:           65,
 	},
 	{
-		name:           "FromOciTarball",
 		source:         "oci-archive",
 		imageMediaType: v1Types.OCIManifestSchema1,
 		layerMediaType: v1Types.OCILayer,
+		layers:         simpleImageLayers,
 		tagCount:       0,
+		size:           65,
 	},
 	{
-		name:           "FromOciDirectory",
 		source:         "oci-dir",
 		imageMediaType: v1Types.OCIManifestSchema1,
 		layerMediaType: v1Types.OCILayer,
+		layers:         simpleImageLayers,
 		tagCount:       0,
+		size:           65,
+	},
+	{
+		source:         "singularity",
+		imageMediaType: sif.SingularityMediaType,
+		layerMediaType: image.SingularitySquashFSLayer,
+		layers:         simpleImageSingularityLayer,
+		tagCount:       0,
+		// Disable size check. Size can vary - image build embeds timestamps etc.
+		size: -1,
 	},
 }
 
 type testCase struct {
-	name           string
 	source         string
 	imageMediaType v1Types.MediaType
 	layerMediaType v1Types.MediaType
+	layers         []image.LayerMetadata
 	tagCount       int
+	size           int
 }
 
 func TestSimpleImage(t *testing.T) {
@@ -77,12 +118,15 @@ func TestSimpleImage(t *testing.T) {
 	expectedSet.Remove(int(image.OciRegistrySource))
 
 	for _, c := range simpleImageTestCases {
-		t.Run(c.name, func(t *testing.T) {
+		t.Run(c.source, func(t *testing.T) {
 			i := imagetest.GetFixtureImage(t, c.source, "image-simple")
 
 			assertImageSimpleMetadata(t, i, c)
-			assertImageSimpleTrees(t, i)
-			assertImageSimpleSquashedTrees(t, i)
+			// Singularity images are a single layer. Don't verify content per layer.
+			if c.source != "singularity" {
+				assertImageSimpleTrees(t, i)
+				assertImageSimpleSquashedTrees(t, i)
+			}
 			assertImageSimpleContents(t, i)
 		})
 	}
@@ -102,7 +146,7 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 		}
 		request := imagetest.PrepareFixtureImage(b, c.source, "image-simple")
 
-		b.Run(c.name, func(b *testing.B) {
+		b.Run(c.source, func(b *testing.B) {
 			var bi *image.Image
 			for i := 0; i < b.N; i++ {
 
@@ -131,7 +175,7 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 		if len(paths) == 0 {
 			b.Fatalf("expected paths but found none")
 		}
-		b.Run(c.name, func(b *testing.B) {
+		b.Run(c.source, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for _, ref := range paths {
 					f, err := img.FileCatalog.Get(ref)
@@ -148,9 +192,6 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues testCase) {
 	t.Helper()
 	t.Log("Asserting metadata...")
-	if i.Metadata.Size != 65 {
-		t.Errorf("unexpected image size: %d", i.Metadata.Size)
-	}
 	if i.Metadata.MediaType != expectedValues.imageMediaType {
 		t.Errorf("unexpected image media type: %+v", i.Metadata.MediaType)
 	}
@@ -162,36 +203,24 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 		}
 	}
 
-	expected := []image.LayerMetadata{
-		{
-			Index:     0,
-			Size:      22,
-			MediaType: expectedValues.layerMediaType,
-		},
-		{
-			Index:     1,
-			Size:      16,
-			MediaType: expectedValues.layerMediaType,
-		},
-		{
-			Index:     2,
-			Size:      27,
-			MediaType: expectedValues.layerMediaType,
-		},
+	if expectedValues.size >= 0 && i.Metadata.Size != int64(expectedValues.size) {
+		t.Errorf("unexpected image size: %d", i.Metadata.Size)
 	}
 
-	if len(expected) != len(i.Layers) {
+	if len(expectedValues.layers) != len(i.Layers) {
 		t.Fatal("unexpected number of layers:", len(i.Layers))
 	}
 
 	for idx, l := range i.Layers {
-		if expected[idx].Size != l.Metadata.Size {
+		expected := expectedValues.layers[idx]
+		expected.MediaType = expectedValues.layerMediaType
+		if expected.Size >= 0 && expected.Size != l.Metadata.Size {
 			t.Errorf("mismatched layer 'Size' (layer %d): %+v", idx, l.Metadata.Size)
 		}
-		if expected[idx].MediaType != l.Metadata.MediaType {
+		if expected.MediaType != l.Metadata.MediaType {
 			t.Errorf("mismatched layer 'MediaType' (layer %d): %+v", idx, l.Metadata.MediaType)
 		}
-		if expected[idx].Index != l.Metadata.Index {
+		if expected.Index != l.Metadata.Index {
 			t.Errorf("mismatched layer 'Index' (layer %d): %+v", idx, l.Metadata.Index)
 		}
 	}
