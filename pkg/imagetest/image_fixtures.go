@@ -289,27 +289,25 @@ func getFixtureImageSIFPath(t testing.TB, fixtureName, sifStoreDir, sifFileName 
 }
 
 func buildSIFFromDocker(t testing.TB, image, path string) error {
-	singularity, err := exec.LookPath("singularity")
-	if err != nil {
-		t.Skipf("singularity not found: %v", err)
-	}
+	absHostDir, err := filepath.Abs(filepath.Dir(path))
+	require.NoError(t, err)
 
-	outfile, err := os.Create(path)
-	if err != nil {
-		t.Fatal("unable to create file for SIF image:", err)
-	}
-	defer func() {
-		err := outfile.Close()
-		if err != nil {
-			t.Fatalf("unable to close file path=%q : %+v", path, err)
-		}
-	}()
+	singularityArgs := []string{"build", "--disable-cache", "--force", "image/" + filepath.Base(path), "docker-daemon:" + image}
 
-	cmdArgs := []string{"build", "--disable-cache", "--force", path, "docker-daemon:" + image}
-	cmd := exec.Command(singularity, cmdArgs...)
-	cmd.Env = os.Environ()
+	allArgs := append([]string{
+		"run",
+		"-t",
+		"--rm",
+		"-v",
+		"/var/run/docker.sock:/var/run/docker.sock",
+		"-v",
+		absHostDir + ":/image",
+		"localhost/singularity:dev", // from integration tools (make integration-tools)
+		"singularity",
+	}, singularityArgs...)
 
-	cmd.Stdout = outfile
+	cmd := exec.Command("docker", allArgs...)
+	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	return cmd.Run()

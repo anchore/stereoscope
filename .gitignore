@@ -8,6 +8,7 @@
 *.DS_Store
 coverage.txt
 **/test-fixtures/cache/
+**/*.fingerprint
 
 # Binaries for programs and plugins
 *.exe

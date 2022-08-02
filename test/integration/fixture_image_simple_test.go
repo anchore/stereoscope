@@ -49,7 +49,6 @@ var simpleImageSingularityLayer = []image.LayerMetadata{
 
 var simpleImageTestCases = []testCase{
 	{
-		name:           "FromTarball",
 		source:         "docker-archive",
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
@@ -58,7 +57,6 @@ var simpleImageTestCases = []testCase{
 		size:           65,
 	},
 	{
-		name:           "FromDocker",
 		source:         "docker",
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
@@ -69,7 +67,6 @@ var simpleImageTestCases = []testCase{
 		size:     65,
 	},
 	{
-		name:           "FromPodman",
 		source:         "podman",
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
@@ -78,7 +75,6 @@ var simpleImageTestCases = []testCase{
 		size:           65,
 	},
 	{
-		name:           "FromOciTarball",
 		source:         "oci-archive",
 		imageMediaType: v1Types.OCIManifestSchema1,
 		layerMediaType: v1Types.OCILayer,
@@ -87,7 +83,6 @@ var simpleImageTestCases = []testCase{
 		size:           65,
 	},
 	{
-		name:           "FromOciDirectory",
 		source:         "oci-dir",
 		imageMediaType: v1Types.OCIManifestSchema1,
 		layerMediaType: v1Types.OCILayer,
@@ -96,7 +91,6 @@ var simpleImageTestCases = []testCase{
 		size:           65,
 	},
 	{
-		name:           "FromSingularity",
 		source:         "singularity",
 		imageMediaType: sif.SingularityMediaType,
 		layerMediaType: image.SingularitySquashFSLayer,
@@ -108,7 +102,6 @@ var simpleImageTestCases = []testCase{
 }
 
 type testCase struct {
-	name           string
 	source         string
 	imageMediaType v1Types.MediaType
 	layerMediaType v1Types.MediaType
@@ -125,7 +118,7 @@ func TestSimpleImage(t *testing.T) {
 	expectedSet.Remove(int(image.OciRegistrySource))
 
 	for _, c := range simpleImageTestCases {
-		t.Run(c.name, func(t *testing.T) {
+		t.Run(c.source, func(t *testing.T) {
 			i := imagetest.GetFixtureImage(t, c.source, "image-simple")
 
 			assertImageSimpleMetadata(t, i, c)
@@ -153,7 +146,7 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 		}
 		request := imagetest.PrepareFixtureImage(b, c.source, "image-simple")
 
-		b.Run(c.name, func(b *testing.B) {
+		b.Run(c.source, func(b *testing.B) {
 			var bi *image.Image
 			for i := 0; i < b.N; i++ {
 
@@ -182,7 +175,7 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 		if len(paths) == 0 {
 			b.Fatalf("expected paths but found none")
 		}
-		b.Run(c.name, func(b *testing.B) {
+		b.Run(c.source, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for _, ref := range paths {
 					f, err := img.FileCatalog.Get(ref)
