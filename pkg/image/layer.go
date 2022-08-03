@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 
-	"github.com/CalebQ42/squashfs"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -17,6 +16,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/filetree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/sylabs/squashfs"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 )
