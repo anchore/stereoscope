@@ -4,7 +4,7 @@ import (
 	"io"
 	"io/fs"
 
-	"github.com/CalebQ42/squashfs"
+	"github.com/sylabs/squashfs"
 )
 
 // SquashFSVisitor is the type of the function called by WalkSquashFS to visit each file or
