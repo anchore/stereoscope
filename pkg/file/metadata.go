@@ -7,7 +7,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/CalebQ42/squashfs"
+	"github.com/sylabs/squashfs"
 )
 
 // Metadata represents all file metadata of interest (used today for in-tar file resolution).

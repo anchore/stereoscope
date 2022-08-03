@@ -777,8 +777,8 @@ github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
 github.com/sylabs/sif/v2 v2.7.0 h1:VFzN8alnJ/3n1JA0K9DyUtfSzezWgWrzLDcYGhgBskk=
 github.com/sylabs/sif/v2 v2.7.0/go.mod h1:TiyBWsgWeh5yBeQFNuQnvROwswqK7YJT8JA1L53bsXQ=
-github.com/sylabs/squashfs v0.5.5-0.20220526223455-67e0f4cd95c5 h1:cFtGHruT2MgOXuJXoUsVa3YnMjWRLyfWQimYqgHfEYQ=
-github.com/sylabs/squashfs v0.5.5-0.20220526223455-67e0f4cd95c5/go.mod h1:KcAcFI40g5WprgOdtjLeKjZ4cpNCwdRJPdP2jM92Slc=
+github.com/sylabs/squashfs v0.5.5-0.20220803145443-2636f95ece7f h1:hbXbCqSp1TqH90JdO7mfzduykxuGzCRy4/C/YnxfnmU=
+github.com/sylabs/squashfs v0.5.5-0.20220803145443-2636f95ece7f/go.mod h1:cGTBoGT3UOspgoDKFmf/XG25EUytbVhDt0zCulc+vIQ=
 github.com/syndtr/gocapability v0.0.0-20170704070218-db04d3cc01c8/go.mod h1:hkRG7XYTFWNJGYcbNJQlaLq0fg1yr4J4t/NcTQtrfww=
 github.com/syndtr/gocapability v0.0.0-20180916011248-d98352740cb2/go.mod h1:hkRG7XYTFWNJGYcbNJQlaLq0fg1yr4J4t/NcTQtrfww=
 github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635/go.mod h1:hkRG7XYTFWNJGYcbNJQlaLq0fg1yr4J4t/NcTQtrfww=

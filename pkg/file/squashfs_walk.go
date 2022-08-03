@@ -4,7 +4,7 @@ import (
 	"io"
 	"io/fs"
 
-	"github.com/CalebQ42/squashfs"
+	"github.com/sylabs/squashfs"
 )
 
 // SquashFSVisitor is the type of the function called by WalkSquashFS to visit each file or
@@ -21,7 +21,7 @@ type SquashFSVisitor func(fsys *squashfs.FS, path string, d fs.DirEntry) error
 // WalkSquashFS walks the file tree within the SquashFS filesystem read from r, calling fn for each
 // file or directory in the tree, including root.
 func WalkSquashFS(r io.ReaderAt, fn SquashFSVisitor) error {
-	fsys, err := squashfs.NewSquashfsReader(r)
+	fsys, err := squashfs.NewReader(r)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func WalkSquashFS(r io.ReaderAt, fn SquashFSVisitor) error {
 // fn for each file or directory in the tree, including root. Callers should use WalkSquashFS
 // where possible, as this function is considerably less efficient.
 func WalkSquashFSFromReader(r io.Reader, fn SquashFSVisitor) error {
-	fsys, err := squashfs.NewSquashfsReaderFromReader(r)
+	fsys, err := squashfs.NewReaderFromReader(r)
 	if err != nil {
 		return err
 	}
@@ -48,6 +48,6 @@ func walkDir(fsys fs.FS, fn SquashFSVisitor) fs.WalkDirFunc {
 			return err
 		}
 
-		return fn(&fsys.(*squashfs.Reader).FS, path, d)
+		return fn(fsys.(*squashfs.Reader).FS, path, d)
 	}
 }
