@@ -114,13 +114,19 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		if err != nil {
 			return nil, err
 		}
-		provider = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
+		provider, err = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
+		if err != nil {
+			return nil, err
+		}
 	case image.PodmanDaemonSource:
 		c, err := podman.GetClient()
 		if err != nil {
 			return nil, err
 		}
-		provider = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
+		provider, err = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
+		if err != nil {
+			return nil, err
+		}
 	case image.OciDirectorySource:
 		if cfg.Platform != nil {
 			return nil, platformSelectionUnsupported
