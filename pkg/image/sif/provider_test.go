@@ -27,6 +27,10 @@ func TestSingularityImageProvider_Provide(t *testing.T) {
 			name: "OK",
 			path: filepath.Join("test-fixtures", "one-group.sif"),
 		},
+		{
+			name: "FIFO",
+			path: filepath.Join("test-fixtures", "fifo.sif"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

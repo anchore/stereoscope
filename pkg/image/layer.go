@@ -266,7 +266,7 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 			if err != nil {
 				return err
 			}
-		case f.IsRegular():
+		default:
 			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
 			if err != nil {
 				return err
