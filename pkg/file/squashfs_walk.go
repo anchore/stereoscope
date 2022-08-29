@@ -16,12 +16,12 @@ import (
 // returns the special value fs.SkipDir, WalkSquashFS skips the current directory (path if
 // d.IsDir() is true, otherwise path's parent directory). Otherwise, if the function returns a non-
 // nil error, WalkSquashFS stops entirely and returns that error.
-type SquashFSVisitor func(fsys *squashfs.FS, path string, d fs.DirEntry) error
+type SquashFSVisitor func(fsys fs.FS, path string, d fs.DirEntry) error
 
 // WalkSquashFS walks the file tree within the SquashFS filesystem read from r, calling fn for each
 // file or directory in the tree, including root.
 func WalkSquashFS(r io.ReaderAt, fn SquashFSVisitor) error {
-	fsys, err := squashfs.NewSquashfsReader(r)
+	fsys, err := squashfs.NewReader(r)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func WalkSquashFS(r io.ReaderAt, fn SquashFSVisitor) error {
 // fn for each file or directory in the tree, including root. Callers should use WalkSquashFS
 // where possible, as this function is considerably less efficient.
 func WalkSquashFSFromReader(r io.Reader, fn SquashFSVisitor) error {
-	fsys, err := squashfs.NewSquashfsReaderFromReader(r)
+	fsys, err := squashfs.NewReaderFromReader(r)
 	if err != nil {
 		return err
 	}
@@ -48,6 +48,6 @@ func walkDir(fsys fs.FS, fn SquashFSVisitor) fs.WalkDirFunc {
 			return err
 		}
 
-		return fn(&fsys.(*squashfs.Reader).FS, path, d)
+		return fn(fsys, path, d)
 	}
 }

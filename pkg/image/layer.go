@@ -3,6 +3,7 @@ package image
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -235,21 +236,26 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 }
 
 func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
-	return func(fsys *squashfs.FS, path string, d fs.DirEntry) error {
-		f, err := fsys.Open(path)
+	return func(fsys fs.FS, path string, d fs.DirEntry) error {
+		ff, err := fsys.Open(path)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
+		defer ff.Close()
 
-		metadata, err := file.NewMetadataFromSquashFSFile(path, f.(*squashfs.File))
+		f, ok := ff.(*squashfs.File)
+		if !ok {
+			return errors.New("unexpected file type")
+		}
+
+		metadata, err := file.NewMetadataFromSquashFSFile(path, f)
 		if err != nil {
 			return err
 		}
 
 		var fileReference *file.Reference
 
-		switch f := f.(*squashfs.File); {
+		switch {
 		case f.IsSymlink():
 			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
