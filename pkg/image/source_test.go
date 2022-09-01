@@ -10,6 +10,7 @@ import (
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/afero"
+	"github.com/sylabs/sif/v2/pkg/sif"
 )
 
 func TestDetectSource(t *testing.T) {
@@ -152,7 +153,21 @@ func TestDetectSource(t *testing.T) {
 		},
 		{
 			name:             "singularity-path",
-			getFS:            getDummyEmpty(),
+			getFS:            getDummySIF("~/a-potential/path.sif"),
+			input:            "singularity:~/a-potential/path.sif",
+			source:           SingularitySource,
+			expectedLocation: "~/a-potential/path.sif",
+		},
+		{
+			name:             "singularity-path-tilde",
+			getFS:            getDummySIF("~/a-potential/path.sif"),
+			input:            "~/a-potential/path.sif",
+			source:           SingularitySource,
+			expectedLocation: "~/a-potential/path.sif",
+		},
+		{
+			name:             "singularity-path-explicit",
+			getFS:            getDummySIF("~/a-potential/path.sif"),
 			input:            "singularity:~/a-potential/path.sif",
 			source:           SingularitySource,
 			expectedLocation: "~/a-potential/path.sif",
@@ -347,6 +362,12 @@ func TestDetectSourceFromPath(t *testing.T) {
 			expectedSource: UnknownSource,
 			expectedErr:    false,
 		},
+		{
+			name:           "singularity-path",
+			path:           "image.sif",
+			getFS:          getDummySIF("image.sif"),
+			expectedSource: SingularitySource,
+		},
 	}
 
 	for _, test := range tests {
@@ -446,6 +467,34 @@ func getDummyDir(dirPath string, paths ...string) func(t *testing.T) afero.Fs {
 				t.Fatalf("unable to close file")
 			}
 		}
+
+		return fs
+	}
+}
+
+// getDummySIF returns an in-memory filesystem containing a SIF at path.
+func getDummySIF(path string, opts ...sif.CreateOpt) func(t *testing.T) afero.Fs {
+	return func(t *testing.T) afero.Fs {
+		t.Helper()
+
+		fs := afero.NewMemMapFs()
+
+		path, err := homedir.Expand(path)
+		if err != nil {
+			t.Fatalf("unable to expand home dir=%q: %+v", path, err)
+		}
+
+		f, err := fs.Create(path)
+		if err != nil {
+			t.Fatalf("failed to create file: %+v", err)
+		}
+		defer f.Close()
+
+		fi, err := sif.CreateContainer(f, opts...)
+		if err != nil {
+			t.Fatalf("failed to create container: %+v", err)
+		}
+		defer fi.UnloadContainer()
 
 		return fs
 	}

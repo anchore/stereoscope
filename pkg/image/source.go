@@ -16,6 +16,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/afero"
+	"github.com/sylabs/sif/v2/pkg/sif"
 )
 
 const (
@@ -198,12 +199,19 @@ func detectSourceFromPath(fs afero.Fs, imgPath string) (Source, error) {
 		return UnknownSource, nil
 	}
 
-	// assume this is an archive...
-	archive, err := fs.Open(imgPath)
+	f, err := fs.Open(imgPath)
 	if err != nil {
-		return UnknownSource, fmt.Errorf("unable to open archive=%s: %w", imgPath, err)
+		return UnknownSource, fmt.Errorf("unable to open file=%s: %w", imgPath, err)
+	}
+	defer f.Close()
+
+	// Check for Singularity container.
+	fi, err := sif.LoadContainer(f, sif.OptLoadWithCloseOnUnload(false))
+	if err == nil {
+		return SingularitySource, fi.UnloadContainer()
 	}
 
+	// assume this is an archive...
 	for _, pair := range []struct {
 		path   string
 		source Source
@@ -217,12 +225,12 @@ func detectSourceFromPath(fs afero.Fs, imgPath string) (Source, error) {
 			OciTarballSource,
 		},
 	} {
-		if _, err = archive.Seek(0, io.SeekStart); err != nil {
+		if _, err = f.Seek(0, io.SeekStart); err != nil {
 			return UnknownSource, fmt.Errorf("unable to seek archive=%s: %w", imgPath, err)
 		}
 
 		var fileErr *file.ErrFileNotFound
-		_, err = file.ReaderFromTar(archive, pair.path)
+		_, err = file.ReaderFromTar(f, pair.path)
 		if err == nil {
 			return pair.source, nil
 		} else if !errors.As(err, &fileErr) {
