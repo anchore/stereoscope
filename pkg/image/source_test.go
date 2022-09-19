@@ -16,35 +16,31 @@ import (
 func TestDetectSource(t *testing.T) {
 	cases := []struct {
 		name             string
-		getFS            func(*testing.T) afero.Fs
+		getFS            func(*testing.T, afero.Fs)
 		input            string
 		source           Source
 		expectedLocation string
 	}{
 		{
 			name:             "podman-engine",
-			getFS:            getDummyEmpty(),
 			input:            "podman:something:latest",
 			source:           PodmanDaemonSource,
 			expectedLocation: "something:latest",
 		},
 		{
 			name:             "docker-archive",
-			getFS:            getDummyEmpty(),
 			input:            "docker-archive:a/place.tar",
 			source:           DockerTarballSource,
 			expectedLocation: "a/place.tar",
 		},
 		{
 			name:             "docker-engine-by-possible-id",
-			getFS:            getDummyEmpty(),
 			input:            "a5e",
 			source:           UnknownSource,
 			expectedLocation: "",
 		},
 		{
-			name:  "docker-engine-impossible-id",
-			getFS: getDummyEmpty(),
+			name: "docker-engine-impossible-id",
 			// not a valid ID
 			input:            "a5E",
 			source:           UnknownSource,
@@ -52,14 +48,12 @@ func TestDetectSource(t *testing.T) {
 		},
 		{
 			name:             "docker-engine",
-			getFS:            getDummyEmpty(),
 			input:            "docker:something/something:latest",
 			source:           DockerDaemonSource,
 			expectedLocation: "something/something:latest",
 		},
 		{
 			name:   "docker-engine-edge-case",
-			getFS:  getDummyEmpty(),
 			input:  "docker:latest",
 			source: DockerDaemonSource,
 			// we want to be able to handle this case better, however, I don't see a way to do this
@@ -68,49 +62,42 @@ func TestDetectSource(t *testing.T) {
 		},
 		{
 			name:             "docker-engine-edge-case-explicit",
-			getFS:            getDummyEmpty(),
 			input:            "docker:docker:latest",
 			source:           DockerDaemonSource,
 			expectedLocation: "docker:latest",
 		},
 		{
 			name:             "docker-caps",
-			getFS:            getDummyEmpty(),
 			input:            "DoCKEr:something/something:latest",
 			source:           DockerDaemonSource,
 			expectedLocation: "something/something:latest",
 		},
 		{
 			name:             "infer-docker-engine",
-			getFS:            getDummyEmpty(),
 			input:            "something/something:latest",
 			source:           UnknownSource,
 			expectedLocation: "",
 		},
 		{
 			name:             "bad-hint",
-			getFS:            getDummyEmpty(),
 			input:            "blerg:something/something:latest",
 			source:           UnknownSource,
 			expectedLocation: "",
 		},
 		{
 			name:             "relative-path-1",
-			getFS:            getDummyEmpty(),
 			input:            ".",
 			source:           UnknownSource,
 			expectedLocation: "",
 		},
 		{
 			name:             "relative-path-2",
-			getFS:            getDummyEmpty(),
 			input:            "./",
 			source:           UnknownSource,
 			expectedLocation: "",
 		},
 		{
 			name:             "relative-parent-path",
-			getFS:            getDummyEmpty(),
 			input:            "../",
 			source:           UnknownSource,
 			expectedLocation: "",
@@ -175,7 +162,10 @@ func TestDetectSource(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fs := c.getFS(t)
+			fs := afero.NewMemMapFs()
+			if c.getFS != nil {
+				c.getFS(t, fs)
+			}
 
 			source, location, err := detectSource(fs, c.input)
 			if err != nil {
@@ -303,7 +293,7 @@ func TestDetectSourceFromPath(t *testing.T) {
 	tests := []struct {
 		name           string
 		path           string
-		getFS          func(*testing.T) afero.Fs
+		getFS          func(*testing.T, afero.Fs)
 		expectedSource Source
 		expectedErr    bool
 	}{
@@ -358,7 +348,6 @@ func TestDetectSourceFromPath(t *testing.T) {
 		{
 			name:           "no path given",
 			path:           "/does-not-exist",
-			getFS:          getDummyEmpty(),
 			expectedSource: UnknownSource,
 			expectedErr:    false,
 		},
@@ -372,7 +361,10 @@ func TestDetectSourceFromPath(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fs := test.getFS(t)
+			fs := afero.NewMemMapFs()
+			if test.getFS != nil {
+				test.getFS(t, fs)
+			}
 
 			actual, err := detectSourceFromPath(fs, test.path)
 			if err != nil && !test.expectedErr {
@@ -387,21 +379,10 @@ func TestDetectSourceFromPath(t *testing.T) {
 	}
 }
 
-// getDummyEmpty returns an empty in-memory filesystem.
-func getDummyEmpty() func(t *testing.T) afero.Fs {
-	return func(t *testing.T) afero.Fs {
+// getDummyTar returns a function that adds a TAR archive at archivePath populated with paths to fs.
+func getDummyTar(archivePath string, paths ...string) func(*testing.T, afero.Fs) {
+	return func(t *testing.T, fs afero.Fs) {
 		t.Helper()
-
-		return afero.NewMemMapFs()
-	}
-}
-
-// getDummyTar returns an in-memory filesystem containing a TAR archive at archivePath populated with paths.
-func getDummyTar(archivePath string, paths ...string) func(t *testing.T) afero.Fs {
-	return func(t *testing.T) afero.Fs {
-		t.Helper()
-
-		fs := afero.NewMemMapFs()
 
 		archivePath, err := homedir.Expand(archivePath)
 		if err != nil {
@@ -432,17 +413,13 @@ func getDummyTar(archivePath string, paths ...string) func(t *testing.T) afero.F
 				t.Fatalf("could not write dummy file: %+v", err)
 			}
 		}
-
-		return fs
 	}
 }
 
-// getDummyDir returns an in-memory filesystem containing directory dirPath populated with paths.
-func getDummyDir(dirPath string, paths ...string) func(t *testing.T) afero.Fs {
-	return func(t *testing.T) afero.Fs {
+// getDummyDir returns a function that adds a directory dirPath populated with paths to fs.
+func getDummyDir(dirPath string, paths ...string) func(*testing.T, afero.Fs) {
+	return func(t *testing.T, fs afero.Fs) {
 		t.Helper()
-
-		fs := afero.NewMemMapFs()
 
 		dirPath, err := homedir.Expand(dirPath)
 		if err != nil {
@@ -467,17 +444,13 @@ func getDummyDir(dirPath string, paths ...string) func(t *testing.T) afero.Fs {
 				t.Fatalf("unable to close file")
 			}
 		}
-
-		return fs
 	}
 }
 
-// getDummySIF returns an in-memory filesystem containing a SIF at path.
-func getDummySIF(path string, opts ...sif.CreateOpt) func(t *testing.T) afero.Fs {
-	return func(t *testing.T) afero.Fs {
+// getDummySIF returns a function that adds a SIF at path to fs.
+func getDummySIF(path string, opts ...sif.CreateOpt) func(*testing.T, afero.Fs) {
+	return func(t *testing.T, fs afero.Fs) {
 		t.Helper()
-
-		fs := afero.NewMemMapFs()
 
 		path, err := homedir.Expand(path)
 		if err != nil {
@@ -495,7 +468,5 @@ func getDummySIF(path string, opts ...sif.CreateOpt) func(t *testing.T) afero.Fs
 			t.Fatalf("failed to create container: %+v", err)
 		}
 		defer fi.UnloadContainer()
-
-		return fs
 	}
 }
