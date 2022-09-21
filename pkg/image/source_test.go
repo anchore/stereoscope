@@ -10,16 +10,16 @@ import (
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/afero"
+	"github.com/sylabs/sif/v2/pkg/sif"
 )
 
 func TestDetectSource(t *testing.T) {
 	cases := []struct {
 		name             string
+		fs               afero.Fs
 		input            string
 		source           Source
 		expectedLocation string
-		tarPath          string
-		tarPaths         []string
 	}{
 		{
 			name:             "podman-engine",
@@ -104,57 +104,67 @@ func TestDetectSource(t *testing.T) {
 		},
 		{
 			name:             "oci-tar-path",
+			fs:               getDummyTar(t, "a-potential/path", "oci-layout"),
 			input:            "a-potential/path",
 			source:           OciTarballSource,
 			expectedLocation: "a-potential/path",
-			tarPath:          "a-potential/path",
-			tarPaths:         []string{"oci-layout"},
 		},
 		{
 			name:             "unparsable-existing-path",
+			fs:               getDummyTar(t, "a-potential/path"),
 			input:            "a-potential/path",
 			source:           UnknownSource,
 			expectedLocation: "",
-			tarPath:          "a-potential/path",
-			tarPaths:         []string{},
 		},
 		// honor tilde expansion
 		{
 			name:             "oci-tar-path",
+			fs:               getDummyTar(t, "~/a-potential/path", "oci-layout"),
 			input:            "~/a-potential/path",
 			source:           OciTarballSource,
 			expectedLocation: "~/a-potential/path",
-			tarPath:          "~/a-potential/path",
-			tarPaths:         []string{"oci-layout"},
 		},
 		{
 			name:             "oci-tar-path-explicit",
+			fs:               getDummyTar(t, "~/a-potential/path", "oci-layout"),
 			input:            "oci-archive:~/a-potential/path",
 			source:           OciTarballSource,
 			expectedLocation: "~/a-potential/path",
-			tarPath:          "~/a-potential/path",
-			tarPaths:         []string{"oci-layout"},
 		},
 		{
 			name:             "oci-tar-path-with-scheme-separator",
+			fs:               getDummyTar(t, "a-potential/path:version", "oci-layout"),
 			input:            "a-potential/path:version",
 			source:           OciTarballSource,
 			expectedLocation: "a-potential/path:version",
-			tarPath:          "a-potential/path:version",
-			tarPaths:         []string{"oci-layout"},
 		},
 		{
 			name:             "singularity-path",
-			input:            "singularity:~/path/to/file.sif",
+			fs:               getDummySIF(t, "~/a-potential/path.sif"),
+			input:            "singularity:~/a-potential/path.sif",
 			source:           SingularitySource,
-			expectedLocation: "~/path/to/file.sif",
+			expectedLocation: "~/a-potential/path.sif",
+		},
+		{
+			name:             "singularity-path-tilde",
+			fs:               getDummySIF(t, "~/a-potential/path.sif"),
+			input:            "~/a-potential/path.sif",
+			source:           SingularitySource,
+			expectedLocation: "~/a-potential/path.sif",
+		},
+		{
+			name:             "singularity-path-explicit",
+			fs:               getDummySIF(t, "~/a-potential/path.sif"),
+			input:            "singularity:~/a-potential/path.sif",
+			source:           SingularitySource,
+			expectedLocation: "~/a-potential/path.sif",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			if c.tarPath != "" {
-				getDummyTar(t, fs.(*afero.MemMapFs), c.tarPath, c.tarPaths...)
+			fs := c.fs
+			if c.fs == nil {
+				fs = afero.NewMemMapFs()
 			}
 
 			source, location, err := detectSource(fs, c.input)
@@ -282,82 +292,81 @@ func TestParseScheme(t *testing.T) {
 func TestDetectSourceFromPath(t *testing.T) {
 	tests := []struct {
 		name           string
-		paths          []string
+		path           string
+		fs             afero.Fs
 		expectedSource Source
-		sourceType     string
 		expectedErr    bool
 	}{
 		{
 			name:           "no tar paths",
-			paths:          []string{},
-			sourceType:     "tar",
+			path:           "image.tar",
+			fs:             getDummyTar(t, "image.tar"),
 			expectedSource: UnknownSource,
 		},
 		{
 			name:           "dummy tar paths",
-			paths:          []string{"manifest", "index", "oci_layout"},
-			sourceType:     "tar",
+			path:           "image.tar",
+			fs:             getDummyTar(t, "image.tar", "manifest", "index", "oci_layout"),
 			expectedSource: UnknownSource,
 		},
 		{
 			name:           "oci-layout tar path",
-			paths:          []string{"oci-layout"},
-			sourceType:     "tar",
+			path:           "image.tar",
+			fs:             getDummyTar(t, "image.tar", "oci-layout"),
 			expectedSource: OciTarballSource,
 		},
 		{
 			name:           "index.json tar path",
-			paths:          []string{"index.json"}, // this is an optional OCI file...
-			sourceType:     "tar",
-			expectedSource: UnknownSource, // ...which we should not respond to as primary evidence
+			path:           "image.tar",
+			fs:             getDummyTar(t, "image.tar", "index.json"), // this is an optional OCI file...
+			expectedSource: UnknownSource,                             // ...which we should not respond to as primary evidence
 		},
 		{
 			name:           "docker tar path",
-			paths:          []string{"manifest.json"},
-			sourceType:     "tar",
+			path:           "image.tar",
+			fs:             getDummyTar(t, "image.tar", "manifest.json"),
 			expectedSource: DockerTarballSource,
 		},
 		{
 			name:           "no dir paths",
-			paths:          []string{},
-			sourceType:     "dir",
+			path:           "image",
+			fs:             getDummyDir(t, "image"),
 			expectedSource: UnknownSource,
 		},
 		{
 			name:           "oci-layout path",
-			paths:          []string{"oci-layout"},
-			sourceType:     "dir",
+			path:           "image",
+			fs:             getDummyDir(t, "image", "oci-layout"),
 			expectedSource: OciDirectorySource,
 		},
 		{
 			name:           "dummy dir paths",
-			paths:          []string{"manifest", "index", "oci_layout"},
-			sourceType:     "dir",
+			path:           "image",
+			fs:             getDummyDir(t, "image", "manifest", "index", "oci_layout"),
 			expectedSource: UnknownSource,
 		},
 		{
 			name:           "no path given",
-			sourceType:     "none",
+			path:           "/does-not-exist",
 			expectedSource: UnknownSource,
 			expectedErr:    false,
+		},
+		{
+			name:           "singularity path",
+			path:           "image.sif",
+			fs:             getDummySIF(t, "image.sif"),
+			expectedSource: SingularitySource,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			var testPath string
-			switch test.sourceType {
-			case "tar":
-				testPath = getDummyTar(t, fs.(*afero.MemMapFs), "image.tar", test.paths...)
-			case "dir":
-				testPath = getDummyPath(t, fs.(*afero.MemMapFs), "image", test.paths...)
-			case "none":
-				testPath = "/does-not-exist"
-			default:
-				t.Fatalf("unknown source type: %+v", test.sourceType)
+			fs := test.fs
+			if fs == nil {
+				fs = afero.NewMemMapFs()
 			}
-			actual, err := detectSourceFromPath(fs, testPath)
+
+			actual, err := detectSourceFromPath(fs, test.path)
 			if err != nil && !test.expectedErr {
 				t.Fatalf("unexpected error: %+v", err)
 			} else if err == nil && test.expectedErr {
@@ -370,14 +379,16 @@ func TestDetectSourceFromPath(t *testing.T) {
 	}
 }
 
-// note: we do not pass the afero.Fs interface since we are writing out to the root of the filesystem, something we never want to do with an OS filesystem. This type is more explicit.
-func getDummyTar(t *testing.T, fs *afero.MemMapFs, archivePath string, paths ...string) string {
+// getDummyTar returns a filesystem that contains a TAR archive at archivePath populated with paths.
+func getDummyTar(t *testing.T, archivePath string, paths ...string) afero.Fs {
 	t.Helper()
 
 	archivePath, err := homedir.Expand(archivePath)
 	if err != nil {
 		t.Fatalf("unable to expand home path=%q: %+v", archivePath, err)
 	}
+
+	fs := afero.NewMemMapFs()
 
 	testFile, err := fs.Create(archivePath)
 	if err != nil {
@@ -404,17 +415,19 @@ func getDummyTar(t *testing.T, fs *afero.MemMapFs, archivePath string, paths ...
 		}
 	}
 
-	return archivePath
+	return fs
 }
 
-// note: we do not pass the afero.Fs interface since we are writing out to the root of the filesystem, something we never want to do with an OS filesystem. This type is more explicit.
-func getDummyPath(t *testing.T, fs *afero.MemMapFs, dirPath string, paths ...string) string {
+// getDummyDir returns a filesystem that contains directory dirPath populated with paths.
+func getDummyDir(t *testing.T, dirPath string, paths ...string) afero.Fs {
 	t.Helper()
 
 	dirPath, err := homedir.Expand(dirPath)
 	if err != nil {
 		t.Fatalf("unable to expand home dir=%q: %+v", dirPath, err)
 	}
+
+	fs := afero.NewMemMapFs()
 
 	if err = fs.Mkdir(dirPath, os.ModePerm); err != nil {
 		t.Fatalf("failed to create dummy tar: %+v", err)
@@ -435,5 +448,31 @@ func getDummyPath(t *testing.T, fs *afero.MemMapFs, dirPath string, paths ...str
 		}
 	}
 
-	return dirPath
+	return fs
+}
+
+// getDummySIF returns a filesystem that contains a SIF at path.
+func getDummySIF(t *testing.T, path string, opts ...sif.CreateOpt) afero.Fs {
+	t.Helper()
+
+	path, err := homedir.Expand(path)
+	if err != nil {
+		t.Fatalf("unable to expand home dir=%q: %+v", path, err)
+	}
+
+	fs := afero.NewMemMapFs()
+
+	f, err := fs.Create(path)
+	if err != nil {
+		t.Fatalf("failed to create file: %+v", err)
+	}
+	defer f.Close()
+
+	fi, err := sif.CreateContainer(f, opts...)
+	if err != nil {
+		t.Fatalf("failed to create container: %+v", err)
+	}
+	defer fi.UnloadContainer()
+
+	return fs
 }
