@@ -26,7 +26,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.0
-	github.com/sylabs/sif/v2 v2.7.2
+	github.com/sylabs/sif/v2 v2.8.1
 	github.com/sylabs/squashfs v0.6.1
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20200621122631-1a2120f0695a
