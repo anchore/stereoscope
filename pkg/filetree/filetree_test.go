@@ -3,6 +3,7 @@ package filetree
 import (
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"testing"
 
 	"github.com/anchore/stereoscope/internal"
@@ -777,6 +778,23 @@ func TestFileTree_File_CycleDetection(t *testing.T) {
 
 	// the test.... do we stop when a cycle is detected?
 	exists, _, err := tr.File("/home/wagoodman", FollowBasenameLinks)
+	if err != ErrLinkCycleDetected {
+		t.Fatalf("should have gotten an error on resolving a file")
+	}
+
+	if exists {
+		t.Errorf("resolution should not exist in cycle")
+	}
+
+}
+
+func TestFileTree_File_DeadCycleDetection(t *testing.T) {
+	tr := NewFileTree()
+	_, err := tr.AddSymLink("/somewhere/acorn", "noobaa-core/../acorn/bin/acorn")
+	require.NoError(t, err)
+
+	// the test.... do we stop when a cycle is detected?
+	exists, _, err := tr.File("/somewhere/acorn", FollowBasenameLinks)
 	if err != ErrLinkCycleDetected {
 		t.Fatalf("should have gotten an error on resolving a file")
 	}

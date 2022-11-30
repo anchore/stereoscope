@@ -168,7 +168,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*filenode
 	var currentNode *filenode.FileNode
 	var err error
 	if strategy.FollowAncestorLinks {
-		currentNode, err = t.resolveAncestorLinks(normalizedPath)
+		currentNode, err = t.resolveAncestorLinks(normalizedPath, nil)
 		if err != nil {
 			return currentNode, err
 		}
@@ -185,14 +185,14 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*filenode
 	}
 
 	if strategy.FollowBasenameLinks {
-		currentNode, err = t.resolveNodeLinks(currentNode, !strategy.DoNotFollowDeadBasenameLinks)
+		currentNode, err = t.resolveNodeLinks(currentNode, !strategy.DoNotFollowDeadBasenameLinks, nil)
 	}
 	return currentNode, err
 }
 
 // return FileNode of the basename in the given path (no resolution is done at or past the basename). Note: it is
 // assumed that the given path has already been normalized.
-func (t *FileTree) resolveAncestorLinks(path file.Path) (*filenode.FileNode, error) {
+func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths internal.Set) (*filenode.FileNode, error) {
 	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
 	// use it, otherwise, continue with ancestor resolution
 	currentNode, err := t.node(path, linkResolutionStrategy{})
@@ -248,7 +248,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path) (*filenode.FileNode, err
 		// links until the next Node is resolved (or not).
 		isLastPart := idx == len(pathParts)-1
 		if !isLastPart && currentNode.IsLink() {
-			currentNode, err = t.resolveNodeLinks(currentNode, true)
+			currentNode, err = t.resolveNodeLinks(currentNode, true, attemptedPaths)
 			if err != nil {
 				// only expected to happen on cycles
 				return currentNode, err
@@ -266,9 +266,14 @@ func (t *FileTree) resolveAncestorLinks(path file.Path) (*filenode.FileNode, err
 
 // followNode takes the given FileNode and resolves all links at the base of the real path for the node (this implies
 // that NO ancestors are considered).
-func (t *FileTree) resolveNodeLinks(n *filenode.FileNode, followDeadBasenameLinks bool) (*filenode.FileNode, error) {
+func (t *FileTree) resolveNodeLinks(n *filenode.FileNode, followDeadBasenameLinks bool, attemptedPaths internal.Set) (*filenode.FileNode, error) {
 	if n == nil {
 		return nil, fmt.Errorf("cannot resolve links with nil Node given")
+	}
+
+	// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing nodes that do not exist
+	if attemptedPaths == nil {
+		attemptedPaths = internal.NewStringSet()
 	}
 
 	// note: this assumes that callers are passing paths in which the constituent parts are NOT symlinks
@@ -318,8 +323,14 @@ func (t *FileTree) resolveNodeLinks(n *filenode.FileNode, followDeadBasenameLink
 		// preserve the current Node for the next loop (in case we shouldn't follow a potentially dead link)
 		lastNode = currentNode
 
+		// break any cycles with non-existent paths (before attempting to look the path up again)
+		if attemptedPaths.Contains(string(nextPath)) {
+			return nil, ErrLinkCycleDetected
+		}
+
 		// get the next Node (based on the next path)
-		currentNode, err = t.resolveAncestorLinks(nextPath)
+		attemptedPaths.Add(string(nextPath))
+		currentNode, err = t.resolveAncestorLinks(nextPath, attemptedPaths)
 		if err != nil {
 			// only expected to occur upon cycle detection
 			return currentNode, err
