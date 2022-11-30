@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/anchore/go-logger"
+
 	"github.com/anchore/stereoscope/internal/bus"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
@@ -13,7 +15,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/image/sif"
-	"github.com/anchore/stereoscope/pkg/logger"
 	"github.com/wagoodman/go-partybus"
 )
 
