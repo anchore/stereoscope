@@ -3,13 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/anchore/go-logger"
+	"github.com/anchore/go-logger/adapter/logrus"
+
 	"io/ioutil"
 	"os"
 
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -18,8 +20,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	lctx := logrus.New()
-	lctx.Level = logrus.DebugLevel
+	lctx, err := logrus.New(logrus.Config{
+		EnableConsole: true,
+		Level:         logger.DebugLevel,
+	})
+	if err != nil {
+		panic(err)
+	}
 	stereoscope.SetLogger(lctx)
 
 	/////////////////////////////////////////////////////////////////
