@@ -15,6 +15,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/bmatcuk/doublestar/v4"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sylabs/squashfs"
@@ -23,6 +24,69 @@ import (
 )
 
 const SingularitySquashFSLayer = "application/vnd.sylabs.sif.layer.v1.squashfs"
+
+var (
+	binarySearchPaths = []string{
+		"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin",
+		"/usr/lib64", "/usr/lib", "/usr/share", "/usr/local/lib64", "/usr/local/lib",
+	}
+	catalogerGlobPatterns = map[string][]string{
+		"alpmdb-cataloger":        {"**/var/lib/pacman/local/**/desc"},
+		"apkdb-cataloger":         {"**/lib/apk/db/installed"},
+		"conan-cataloger":         {"**/conanfile.txt", "**/conan.lock"},
+		"dartlang-lock-cataloger": {"**/pubspec.lock"},
+		"dpkgdb-cataloger":        {"**/var/lib/dpkg/{status,status.d/**}"},
+		"dotnet-deps-cataloger":   {"**/*.deps.json"},
+		"go-mod-file-cataloger":   {"**/go.mod"},
+		"haskell-cataloger":       {"**/stack.yaml", "**/stack.yaml.lock", "**/cabal.project.freeze"},
+		"java-cataloger": {
+			// java archive
+			"**/*.jar", "**/*.war", "**/*.ear", "**/*.par",
+			"**/*.sar", "**/*.jpi", "**/*.hpi", "**/*.lpkg",
+			// zip java archive
+			"**/*.zip",
+			// tar java archive
+			"**/*.tar", "**/*.tar.gz", "**/*.tgz", "**/*.tar.bz", "**/*.tar.bz2",
+			"**/*.tbz", "**/*.tbz2", "**/*.tar.br", "**/*.tbr", "**/*.tar.lz4", "**/*.tlz4",
+			"**/*.tar.sz", "**/*.tsz", "**/*.tar.xz", "**/*.txz", "**/*.tar.zst",
+		},
+		"java-pom-cataloger":               {"**/pom.xml"},
+		"javascript-package-cataloger":     {"**/package.json"},
+		"javascript-lock-cataloger":        {"**/package-lock.json", "**/yarn.lock", "**/pnpm-lock.yaml"},
+		"php-composer-installed-cataloger": {"**/installed.json"},
+		"php-composer-lock-cataloger":      {"**/composer.lock"},
+		"portage-cataloger":                {"**/var/db/pkg/*/*/CONTENTS"},
+		"rpm-db-cataloger":                 {"**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}", "**/var/lib/rpmmanifest/container-manifest-2"},
+		"rpm-file-cataloger":               {"**/*.rpm"},
+		"ruby-gemfile-cataloger":           {"**/Gemfile.lock"},
+		"ruby-gemspec-cataloger":           {"**/specifications/**/*.gemspec"},
+		"rust-cargo-lock-cataloger":        {"**/Cargo.lock"},
+		"cocoapods-cataloger":              {"**/Podfile.lock"},
+
+		"sbom-cataloger": {
+			"**/*.syft.json", "**/*.bom.*", "**/*.bom",
+			"**/bom", "**/*.sbom.*", "**/*.sbom", "**/sbom",
+			"**/*.cdx.*", "**/*.cdx", "**/*.spdx.*", "**/*.spdx",
+		},
+
+		"python-index-cataloger": {"**/*requirements*.txt", "**/poetry.lock", "**/Pipfile.lock", "**/setup.py"},
+		"python-package-cataloger": {"**/*egg-info/PKG-INFO", "**/*.egg-info", "**/*dist-info/METADATA",
+			"**/*.egg", "**/*.whl", // python egg and whl files
+		},
+
+		// TODO: binary cataloger needs different handling
+		"binary-cataloger":                 binarySearchPaths,
+		"go-module-binary-cataloger":       binarySearchPaths,
+		"cargo-auditable-binary-cataloger": binarySearchPaths,
+	}
+	allPatterns = func() *[]string {
+		patterns := []string{}
+		for _, p := range catalogerGlobPatterns {
+			patterns = append(patterns, p...)
+		}
+		return &patterns
+	}
+)
 
 // Layer represents a single layer within a container image.
 type Layer struct {
@@ -190,6 +254,10 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 		}()
 		metadata := file.NewMetadata(entry.Header, entry.Sequence, contents)
 
+		if !AnyGlobMatches(allPatterns(), metadata.Path) {
+			return nil
+		}
+
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
 		// This is ok, and the FileTree will account for this by automatically adding directories for non-existing
@@ -237,6 +305,11 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 
 func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 	return func(fsys fs.FS, path string, d fs.DirEntry) error {
+
+		if !AnyGlobMatches(allPatterns(), path) {
+			return nil
+		}
+
 		ff, err := fsys.Open(path)
 		if err != nil {
 			return err
@@ -304,4 +377,16 @@ func trackReadProgress(metadata LayerMetadata) *progress.Manual {
 	})
 
 	return p
+}
+
+func AnyGlobMatches(patterns *[]string, path string) bool {
+	for _, p := range *patterns {
+		match, err := doublestar.PathMatch(p, path)
+		if err != nil {
+			continue
+		} else if match {
+			return true
+		}
+	}
+	return false
 }
