@@ -17,6 +17,7 @@ import (
 
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
+var memoNormalizedPath map[string]file.Path
 
 // FileTree represents a file/directory Tree
 type FileTree struct {
@@ -29,6 +30,8 @@ func NewFileTree() *FileTree {
 
 	// Initialize FileTree with a root "/" Node
 	_ = t.AddRoot(filenode.NewDir("/", nil))
+
+	memoNormalizedPath = make(map[string]file.Path)
 
 	return &FileTree{
 		tree: t,
@@ -155,7 +158,13 @@ func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, 
 }
 
 func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*filenode.FileNode, error) {
-	normalizedPath := p.Normalize()
+	pathStr := string(p)
+	normalizedPath, ok := memoNormalizedPath[pathStr]
+	if !ok {
+		normalizedPath = p.Normalize()
+		memoNormalizedPath[pathStr] = normalizedPath
+	}
+
 	nodeID := filenode.IDByPath(normalizedPath)
 	if !strategy.FollowLinks() {
 		n := t.tree.Node(nodeID)
