@@ -36,6 +36,8 @@ func TestSingularityImageProvider_Provide(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewProviderFromPath(tt.path, file.NewTempDirGenerator(""))
 
+			filter := func(path string) bool { return true }
+
 			i, err := p.Provide(context.Background(), tt.userMetadata...)
 			t.Cleanup(func() { _ = i.Cleanup() })
 
@@ -44,7 +46,7 @@ func TestSingularityImageProvider_Provide(t *testing.T) {
 			}
 
 			if err == nil {
-				if err := i.Read(); err != nil {
+				if err := i.Read(filter); err != nil {
 					t.Fatal(err)
 				}
 			}

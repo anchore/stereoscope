@@ -15,7 +15,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/bmatcuk/doublestar/v4"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sylabs/squashfs"
@@ -25,69 +24,8 @@ import (
 
 const SingularitySquashFSLayer = "application/vnd.sylabs.sif.layer.v1.squashfs"
 
-var (
-	binarySearchPaths = []string{
-		"/usr/lib/jvm/**", "/usr/share/java/**",
-		"/usr/local/sbin/*", "/usr/local/bin/*", "/usr/sbin/*", "/usr/bin/*", "/sbin/*", "/bin/*",
-		"/usr/lib64/*", "/usr/lib/*", "/usr/share/*", "/usr/local/lib64/*", "/usr/local/lib/*",
-	}
-	catalogerGlobPatterns = map[string][]string{
-		"alpmdb-cataloger":        {"**/var/lib/pacman/local/**/desc"},
-		"apkdb-cataloger":         {"**/lib/apk/db/installed"},
-		"conan-cataloger":         {"**/conanfile.txt", "**/conan.lock"},
-		"dartlang-lock-cataloger": {"**/pubspec.lock"},
-		"dpkgdb-cataloger":        {"**/var/lib/dpkg/{status,status.d/**}"},
-		"dotnet-deps-cataloger":   {"**/*.deps.json"},
-		"go-mod-file-cataloger":   {"**/go.mod"},
-		"haskell-cataloger":       {"**/stack.yaml", "**/stack.yaml.lock", "**/cabal.project.freeze"},
-		"java-cataloger": {
-			// java archive
-			"**/*.jar", "**/*.war", "**/*.ear", "**/*.par",
-			"**/*.sar", "**/*.jpi", "**/*.hpi", "**/*.lpkg",
-			// zip java archive
-			"**/*.zip",
-			// tar java archive
-			"**/*.tar", "**/*.tar.gz", "**/*.tgz", "**/*.tar.bz", "**/*.tar.bz2",
-			"**/*.tbz", "**/*.tbz2", "**/*.tar.br", "**/*.tbr", "**/*.tar.lz4", "**/*.tlz4",
-			"**/*.tar.sz", "**/*.tsz", "**/*.tar.xz", "**/*.txz", "**/*.tar.zst",
-		},
-		"java-pom-cataloger":               {"**/pom.xml"},
-		"javascript-package-cataloger":     {"**/package.json"},
-		"javascript-lock-cataloger":        {"**/package-lock.json", "**/yarn.lock", "**/pnpm-lock.yaml"},
-		"php-composer-installed-cataloger": {"**/installed.json"},
-		"php-composer-lock-cataloger":      {"**/composer.lock"},
-		"portage-cataloger":                {"**/var/db/pkg/*/*/CONTENTS"},
-		"rpm-db-cataloger":                 {"**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}", "**/var/lib/rpmmanifest/container-manifest-2"},
-		"rpm-file-cataloger":               {"**/*.rpm"},
-		"ruby-gemfile-cataloger":           {"**/Gemfile.lock"},
-		"ruby-gemspec-cataloger":           {"**/specifications/**/*.gemspec"},
-		"rust-cargo-lock-cataloger":        {"**/Cargo.lock"},
-		"cocoapods-cataloger":              {"**/Podfile.lock"},
-
-		"sbom-cataloger": {
-			"**/*.syft.json", "**/*.bom.*", "**/*.bom",
-			"**/bom", "**/*.sbom.*", "**/*.sbom", "**/sbom",
-			"**/*.cdx.*", "**/*.cdx", "**/*.spdx.*", "**/*.spdx",
-		},
-
-		"python-index-cataloger": {"**/*requirements*.txt", "**/poetry.lock", "**/Pipfile.lock", "**/setup.py"},
-		"python-package-cataloger": {"**/*egg-info/PKG-INFO", "**/*.egg-info", "**/*dist-info/METADATA",
-			"**/*.egg", "**/*.whl", // python egg and whl files
-		},
-
-		// TODO: binary cataloger needs different handling
-		"binary-cataloger":                 binarySearchPaths,
-		"go-module-binary-cataloger":       binarySearchPaths,
-		"cargo-auditable-binary-cataloger": binarySearchPaths,
-	}
-	allPatterns = func() *[]string {
-		patterns := []string{}
-		for _, p := range catalogerGlobPatterns {
-			patterns = append(patterns, p...)
-		}
-		return &patterns
-	}
-)
+// PathFilter decides if a path has to be included in the index
+type PathFilter = func(path string) bool
 
 // Layer represents a single layer within a container image.
 type Layer struct {
@@ -143,7 +81,7 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
-func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
+func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string, filter PathFilter) error {
 	var err error
 	l.Tree = filetree.NewFileTree()
 	l.fileCatalog = catalog
@@ -173,7 +111,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 			return err
 		}
 
-		l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor))
+		l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor, filter))
 		if err != nil {
 			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 		}
@@ -187,9 +125,9 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 		// Walk the more efficient walk if we're blessed with an io.ReaderAt.
 		if ra, ok := r.(io.ReaderAt); ok {
-			err = file.WalkSquashFS(ra, l.squashfsVisitor(monitor))
+			err = file.WalkSquashFS(ra, l.squashfsVisitor(monitor, filter))
 		} else {
-			err = file.WalkSquashFSFromReader(r, l.squashfsVisitor(monitor))
+			err = file.WalkSquashFSFromReader(r, l.squashfsVisitor(monitor, filter))
 		}
 		if err != nil {
 			return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
@@ -242,7 +180,7 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
+func (l *Layer) indexer(monitor *progress.Manual, filter PathFilter) file.TarIndexVisitor {
 	return func(index file.TarIndexEntry) error {
 		var err error
 		var entry = index.ToTarFileEntry()
@@ -255,7 +193,7 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 		}()
 		metadata := file.NewMetadata(entry.Header, entry.Sequence, contents)
 
-		if !AnyGlobMatches(allPatterns(), metadata.Path) {
+		if !filter(metadata.Path) {
 			return nil
 		}
 
@@ -304,10 +242,10 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 	}
 }
 
-func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
+func (l *Layer) squashfsVisitor(monitor *progress.Manual, filter PathFilter) file.SquashFSVisitor {
 	return func(fsys fs.FS, path string, d fs.DirEntry) error {
 
-		if !AnyGlobMatches(allPatterns(), path) {
+		if !filter(path) {
 			return nil
 		}
 
@@ -378,16 +316,4 @@ func trackReadProgress(metadata LayerMetadata) *progress.Manual {
 	})
 
 	return p
-}
-
-func AnyGlobMatches(patterns *[]string, path string) bool {
-	for _, p := range *patterns {
-		match, err := doublestar.PathMatch(p, path)
-		if err != nil {
-			continue
-		} else if match {
-			return true
-		}
-	}
-	return false
 }

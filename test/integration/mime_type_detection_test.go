@@ -2,17 +2,19 @@ package integration
 
 import (
 	"context"
+	"testing"
+
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/imagetest"
 	"github.com/scylladb/go-set/strset"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestContentMIMETypeDetection(t *testing.T) {
 	request := imagetest.PrepareFixtureImage(t, "docker-archive", "image-simple")
+	filter := func(path string) bool { return true }
 
-	img, err := stereoscope.GetImage(context.TODO(), request)
+	img, err := stereoscope.GetImage(context.TODO(), request, filter)
 
 	assert.NoError(t, err)
 	t.Cleanup(stereoscope.Cleanup)

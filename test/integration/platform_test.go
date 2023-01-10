@@ -3,12 +3,13 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
+	"testing"
+
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"strings"
-	"testing"
 )
 
 func TestPlatformSelection(t *testing.T) {
@@ -65,7 +66,8 @@ func TestPlatformSelection(t *testing.T) {
 				tt.expectedErr = require.NoError
 			}
 			platformOpt := stereoscope.WithPlatform(platform)
-			img, err := stereoscope.GetImageFromSource(context.TODO(), imageName, tt.source, platformOpt)
+			filter := func(path string) bool { return true }
+			img, err := stereoscope.GetImageFromSource(context.TODO(), imageName, tt.source, filter, platformOpt)
 			tt.expectedErr(t, err)
 			require.NotNil(t, img)
 
