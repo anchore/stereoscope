@@ -244,7 +244,6 @@ func (l *Layer) indexer(monitor *progress.Manual, filter PathFilter) file.TarInd
 
 func (l *Layer) squashfsVisitor(monitor *progress.Manual, filter PathFilter) file.SquashFSVisitor {
 	return func(fsys fs.FS, path string, d fs.DirEntry) error {
-
 		if !filter(path) {
 			return nil
 		}
