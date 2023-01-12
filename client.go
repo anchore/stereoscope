@@ -3,6 +3,7 @@ package stereoscope
 import (
 	"context"
 	"fmt"
+	"runtime"
 
 	"github.com/anchore/go-logger"
 
@@ -98,10 +99,19 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	return img, nil
 }
 
+// nolint: funlen
 func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, error) {
 	var provider image.Provider
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
 	platformSelectionUnsupported := fmt.Errorf("specified platform=%q however image source=%q does not support selecting platform", cfg.Platform.String(), source.String())
+
+	// we should override the platform based on the host architecture if the user did not specify a platform
+	// see https://github.com/anchore/stereoscope/issues/149 for more details
+	defaultPlatform, err := image.NewPlatform(runtime.GOARCH)
+	if err != nil {
+		log.WithFields("error", err).Warnf("unable to set default platform to %q", runtime.GOARCH)
+		defaultPlatform = nil
+	}
 
 	switch source {
 	case image.DockerTarballSource:
@@ -111,6 +121,9 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.DockerDaemonSource:
+		if cfg.Platform == nil {
+			cfg.Platform = defaultPlatform
+		}
 		c, err := dockerClient.GetClient()
 		if err != nil {
 			return nil, err
@@ -120,6 +133,9 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 			return nil, err
 		}
 	case image.PodmanDaemonSource:
+		if cfg.Platform == nil {
+			cfg.Platform = defaultPlatform
+		}
 		c, err := podman.GetClient()
 		if err != nil {
 			return nil, err
@@ -139,6 +155,9 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		}
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
+		if cfg.Platform == nil {
+			cfg.Platform = defaultPlatform
+		}
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
 	case image.SingularitySource:
 		if cfg.Platform != nil {
