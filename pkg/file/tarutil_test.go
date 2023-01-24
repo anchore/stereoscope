@@ -96,7 +96,7 @@ func TestMetadataFromTar(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f := getTarFixture(t, "fixture-1")
+			f := getTarFixture(t, test.fixture)
 			metadata, err := MetadataFromTar(f, test.name)
 			assert.NoError(t, err)
 			assert.Equal(t, test.expected, metadata)

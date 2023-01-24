@@ -280,7 +280,22 @@ func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-// FileContentsByRef fetches file contents for a single file reference, irregardless of the source layer.
+// FilesByExtensionFromSquash returns file references for files that have the given extension relative to the squash tree.
+func (i *Image) FilesByExtensionFromSquash(extension string) ([]file.Reference, error) {
+	return fetchFilesByExtension(i.SquashedTree(), &i.FileCatalog, extension)
+}
+
+// FilesByBasenameFromSquash returns file references for files with the given basename relative to the squash tree.
+func (i *Image) FilesByBasenameFromSquash(basename string) ([]file.Reference, error) {
+	return fetchFilesByBasename(i.SquashedTree(), &i.FileCatalog, basename)
+}
+
+// FilesByBasenameGlobFromSquash returns file references for files with the given basename glob pattern relative to the squash tree.
+func (i *Image) FilesByBasenameGlobFromSquash(glob string) ([]file.Reference, error) {
+	return fetchFilesByBasenameGlob(i.SquashedTree(), &i.FileCatalog, glob)
+}
+
+// FileContentsByRef fetches file contents for a single file reference, regardless of the source layer.
 // If the path does not exist an error is returned.
 func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 	return i.FileCatalog.FileContents(ref)

@@ -108,7 +108,10 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 			return err
 		}
 
-		l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor))
+		l.indexedContent, err = file.NewTarIndex(
+			tarFilePath,
+			layerTarIndexer(l.Tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
+		)
 		if err != nil {
 			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 		}
@@ -139,7 +142,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	return nil
 }
 
-// FetchContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
+// FileContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
 func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
@@ -177,7 +180,37 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
+// FilesByExtension returns file references for files that have the given extension.
+func (l *Layer) FilesByExtension(extension string) ([]file.Reference, error) {
+	return fetchFilesByExtension(l.Tree, l.fileCatalog, extension)
+}
+
+// FilesByExtensionFromSquash returns file references for files have the given extension relative to the squash tree.
+func (l *Layer) FilesByExtensionFromSquash(extension string) ([]file.Reference, error) {
+	return fetchFilesByExtension(l.SquashedTree, l.fileCatalog, extension)
+}
+
+// FilesByBasename returns file references for files that have the following basename.
+func (l *Layer) FilesByBasename(basename string) ([]file.Reference, error) {
+	return fetchFilesByBasename(l.Tree, l.fileCatalog, basename)
+}
+
+// FilesByBasenameFromSquash returns file references for files by name relative to the squash tree.
+func (l *Layer) FilesByBasenameFromSquash(extension string) ([]file.Reference, error) {
+	return fetchFilesByBasename(l.SquashedTree, l.fileCatalog, extension)
+}
+
+// FilesByBasenameGlob returns file references for files that have the following basename glob.
+func (l *Layer) FilesByBasenameGlob(glob string) ([]file.Reference, error) {
+	return fetchFilesByBasenameGlob(l.Tree, l.fileCatalog, glob)
+}
+
+// FilesByBasenameGlobFromSquash returns file references for files by basename glob pattern relative to the squash tree.
+func (l *Layer) FilesByBasenameGlobFromSquash(glob string) ([]file.Reference, error) {
+	return fetchFilesByBasenameGlob(l.SquashedTree, l.fileCatalog, glob)
+}
+
+func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
 	return func(index file.TarIndexEntry) error {
 		var err error
 		var entry = index.ToTarFileEntry()
@@ -203,22 +236,22 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 		var fileReference *file.Reference
 		switch metadata.TypeFlag {
 		case tar.TypeSymlink:
-			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			fileReference, err = ft.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
 				return err
 			}
 		case tar.TypeLink:
-			fileReference, err = l.Tree.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			fileReference, err = ft.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
 			if err != nil {
 				return err
 			}
 		case tar.TypeDir:
-			fileReference, err = l.Tree.AddDir(file.Path(metadata.Path))
+			fileReference, err = ft.AddDir(file.Path(metadata.Path))
 			if err != nil {
 				return err
 			}
 		default:
-			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
+			fileReference, err = ft.AddFile(file.Path(metadata.Path))
 			if err != nil {
 				return err
 			}
@@ -227,10 +260,14 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.Linkname)
 		}
 
-		l.Metadata.Size += metadata.Size
-		l.fileCatalog.Add(*fileReference, metadata, l, index.Open)
+		if size != nil {
+			*(size) += metadata.Size
+		}
+		fileCatalog.Add(*fileReference, metadata, layerRef, index.Open)
 
-		monitor.N++
+		if monitor != nil {
+			monitor.N++
+		}
 		return nil
 	}
 }
