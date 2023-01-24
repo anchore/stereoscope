@@ -7,12 +7,14 @@ require (
 	github.com/anchore/go-logger v0.0.0-20220728155337-03b66a5207d8
 	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.0.0-20220517224237-e6f29200ae04
+	github.com/becheran/wildmatch-go v1.0.0
 	github.com/bmatcuk/doublestar/v4 v4.0.2
 	github.com/containerd/containerd v1.6.12
 	github.com/docker/cli v20.10.12+incompatible
 	github.com/docker/docker v20.10.12+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/go-test/deep v1.0.8
+	github.com/google/go-cmp v0.5.6
 	github.com/google/go-containerregistry v0.7.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/logrusorgru/aurora v0.0.0-20200102142835-e9ef32dff381
@@ -82,3 +84,5 @@ require (
 	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+require golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
