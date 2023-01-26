@@ -14,36 +14,29 @@ import (
 type Metadata struct {
 	// Path is the absolute path representation to the file
 	Path string
-	// TarHeaderName is the exact entry name as found within a tar header
-	TarHeaderName string
-	// TarSequence is the nth header in the tar file this entry was found
-	TarSequence int64
-	// Linkname is populated only for hardlinks / symlinks, can be an absolute or relative
-	Linkname string
+	// LinkDestination is populated only for hardlinks / symlinks, can be an absolute or relative
+	LinkDestination string
 	// Size of the file in bytes
-	Size    int64
-	UserID  int
-	GroupID int
-	// TypeFlag is the tar.TypeFlag entry for the file
-	TypeFlag byte
+	Size     int64
+	UserID   int
+	GroupID  int
+	Type     Type
 	IsDir    bool
 	Mode     os.FileMode
 	MIMEType string
 }
 
-func NewMetadata(header tar.Header, sequence int64, content io.Reader) Metadata {
+func NewMetadata(header tar.Header, content io.Reader) Metadata {
 	return Metadata{
-		Path:          path.Clean(DirSeparator + header.Name),
-		TarHeaderName: header.Name,
-		TarSequence:   sequence,
-		TypeFlag:      header.Typeflag,
-		Linkname:      header.Linkname,
-		Size:          header.FileInfo().Size(),
-		Mode:          header.FileInfo().Mode(),
-		UserID:        header.Uid,
-		GroupID:       header.Gid,
-		IsDir:         header.FileInfo().IsDir(),
-		MIMEType:      MIMEType(content),
+		Path:            path.Clean(DirSeparator + header.Name),
+		Type:            TypeFromTarType(header.Typeflag),
+		LinkDestination: header.Linkname,
+		Size:            header.FileInfo().Size(),
+		Mode:            header.FileInfo().Mode(),
+		UserID:          header.Uid,
+		GroupID:         header.Gid,
+		IsDir:           header.FileInfo().IsDir(),
+		MIMEType:        MIMEType(content),
 	}
 }
 
@@ -54,12 +47,37 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 		return Metadata{}, err
 	}
 
+	var ty Type
+	switch {
+	case fi.IsDir():
+		ty = TypeDir
+	case f.IsRegular():
+		ty = TypeReg
+	case f.IsSymlink():
+		ty = TypeSymlink
+	default:
+		switch fi.Mode() & os.ModeType {
+		case os.ModeNamedPipe:
+			ty = TypeFifo
+		case os.ModeSocket:
+			ty = TypeSocket
+		case os.ModeDevice:
+			ty = TypeBlockDevice
+		case os.ModeCharDevice:
+			ty = TypeCharacterDevice
+		case os.ModeIrregular:
+			ty = TypeIrregular
+		}
+		// note: cannot determine hardlink from squashfs.File (but case us not possible)
+	}
+
 	md := Metadata{
-		Path:     filepath.Clean(filepath.Join("/", path)),
-		Linkname: f.SymlinkPath(),
-		Size:     fi.Size(),
-		IsDir:    f.IsDir(),
-		Mode:     fi.Mode(),
+		Path:            filepath.Clean(filepath.Join("/", path)),
+		Size:            fi.Size(),
+		IsDir:           f.IsDir(),
+		Mode:            fi.Mode(),
+		LinkDestination: f.SymlinkPath(),
+		Type:            ty,
 	}
 
 	if f.IsRegular() {

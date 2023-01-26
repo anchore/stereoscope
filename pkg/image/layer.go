@@ -1,10 +1,10 @@
 package image
 
 import (
-	"archive/tar"
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/query"
 	"io"
 	"io/fs"
 	"os"
@@ -145,20 +145,20 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 // FileContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
 func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
+	return query.FileContentsByPath(l.Tree, l.fileCatalog.Index, path)
 }
 
 // FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
 func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
+	return query.FileContentsByPath(l.SquashedTree, l.fileCatalog.Index, path)
 }
 
 // FilesByMIMEType returns file references for files that match at least one of the given MIME types relative to each layer tree.
 func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
 	for _, ty := range mimeTypes {
-		refsForType, err := fetchFilesByMIMEType(l.Tree, l.fileCatalog, ty)
+		refsForType, err := query.FilesByMIMEType(l.Tree, l.fileCatalog.Index, ty)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
 func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
 	for _, ty := range mimeTypes {
-		refsForType, err := fetchFilesByMIMEType(l.SquashedTree, l.fileCatalog, ty)
+		refsForType, err := query.FilesByMIMEType(l.SquashedTree, l.fileCatalog.Index, ty)
 		if err != nil {
 			return nil, err
 		}
@@ -182,35 +182,35 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 
 // FilesByExtension returns file references for files that have the given extension.
 func (l *Layer) FilesByExtension(extension string) ([]file.Reference, error) {
-	return fetchFilesByExtension(l.Tree, l.fileCatalog, extension)
+	return query.FilesByExtension(l.Tree, l.fileCatalog.Index, extension)
 }
 
 // FilesByExtensionFromSquash returns file references for files have the given extension relative to the squash tree.
 func (l *Layer) FilesByExtensionFromSquash(extension string) ([]file.Reference, error) {
-	return fetchFilesByExtension(l.SquashedTree, l.fileCatalog, extension)
+	return query.FilesByExtension(l.SquashedTree, l.fileCatalog.Index, extension)
 }
 
 // FilesByBasename returns file references for files that have the following basename.
 func (l *Layer) FilesByBasename(basename string) ([]file.Reference, error) {
-	return fetchFilesByBasename(l.Tree, l.fileCatalog, basename)
+	return query.FilesByBasename(l.Tree, l.fileCatalog.Index, basename)
 }
 
 // FilesByBasenameFromSquash returns file references for files by name relative to the squash tree.
 func (l *Layer) FilesByBasenameFromSquash(extension string) ([]file.Reference, error) {
-	return fetchFilesByBasename(l.SquashedTree, l.fileCatalog, extension)
+	return query.FilesByBasename(l.SquashedTree, l.fileCatalog.Index, extension)
 }
 
 // FilesByBasenameGlob returns file references for files that have the following basename glob.
 func (l *Layer) FilesByBasenameGlob(glob string) ([]file.Reference, error) {
-	return fetchFilesByBasenameGlob(l.Tree, l.fileCatalog, glob)
+	return query.FilesByBasenameGlob(l.Tree, l.fileCatalog.Index, glob)
 }
 
 // FilesByBasenameGlobFromSquash returns file references for files by basename glob pattern relative to the squash tree.
 func (l *Layer) FilesByBasenameGlobFromSquash(glob string) ([]file.Reference, error) {
-	return fetchFilesByBasenameGlob(l.SquashedTree, l.fileCatalog, glob)
+	return query.FilesByBasenameGlob(l.SquashedTree, l.fileCatalog.Index, glob)
 }
 
-func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
+func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int64, l *Layer, monitor *progress.Manual) file.TarIndexVisitor {
 	return func(index file.TarIndexEntry) error {
 		var err error
 		var entry = index.ToTarFileEntry()
@@ -221,7 +221,7 @@ func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int6
 				log.Warnf("unable to close file while indexing layer: %+v", err)
 			}
 		}()
-		metadata := file.NewMetadata(entry.Header, entry.Sequence, contents)
+		metadata := file.NewMetadata(entry.Header, contents)
 
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
@@ -234,18 +234,18 @@ func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int6
 		// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
 		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
 		var fileReference *file.Reference
-		switch metadata.TypeFlag {
-		case tar.TypeSymlink:
-			fileReference, err = ft.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+		switch metadata.Type {
+		case file.TypeSymlink:
+			fileReference, err = ft.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
 			if err != nil {
 				return err
 			}
-		case tar.TypeLink:
-			fileReference, err = ft.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+		case file.TypeHardLink:
+			fileReference, err = ft.AddHardLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
 			if err != nil {
 				return err
 			}
-		case tar.TypeDir:
+		case file.TypeDir:
 			fileReference, err = ft.AddDir(file.Path(metadata.Path))
 			if err != nil {
 				return err
@@ -257,13 +257,13 @@ func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int6
 			}
 		}
 		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.Linkname)
+			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.LinkDestination)
 		}
 
 		if size != nil {
 			*(size) += metadata.Size
 		}
-		fileCatalog.Add(*fileReference, metadata, layerRef, index.Open)
+		fileCatalog.Add(*fileReference, metadata, l, index.Open)
 
 		if monitor != nil {
 			monitor.N++
@@ -294,7 +294,7 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 
 		switch {
 		case f.IsSymlink():
-			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
 			if err != nil {
 				return err
 			}
@@ -311,7 +311,7 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 		}
 
 		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during squashfs iteration", metadata.Path, metadata.Linkname)
+			return fmt.Errorf("could not add path=%q link=%q during squashfs iteration", metadata.Path, metadata.LinkDestination)
 		}
 
 		l.Metadata.Size += metadata.Size

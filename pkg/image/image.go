@@ -3,6 +3,7 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/anchore/stereoscope/pkg/query"
 	"io"
 	"os"
 
@@ -30,7 +31,7 @@ type Image struct {
 	// Layers contains the rich layer objects in build order
 	Layers []*Layer
 	// FileCatalog contains all file metadata for all files in all layers
-	FileCatalog FileCatalog
+	FileCatalog *FileCatalog
 
 	overrideMetadata []AdditionalMetadata
 }
@@ -201,7 +202,7 @@ func (i *Image) Read() error {
 
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
-		err := layer.Read(&i.FileCatalog, i.Metadata, idx, i.contentCacheDir)
+		err := layer.Read(i.FileCatalog, i.Metadata, idx, i.contentCacheDir)
 		if err != nil {
 			return err
 		}
@@ -264,14 +265,14 @@ func (i *Image) SquashedTree() *filetree.FileTree {
 // FileContentsFromSquash fetches file contents for a single path, relative to the image squash tree.
 // If the path does not exist an error is returned.
 func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(i.SquashedTree(), &i.FileCatalog, path)
+	return query.FileContentsByPath(i.SquashedTree(), i.FileCatalog.Index, path)
 }
 
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types.
 func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
 	for _, ty := range mimeTypes {
-		refsForType, err := fetchFilesByMIMEType(i.SquashedTree(), &i.FileCatalog, ty)
+		refsForType, err := query.FilesByMIMEType(i.SquashedTree(), i.FileCatalog.Index, ty)
 		if err != nil {
 			return nil, err
 		}
@@ -282,17 +283,17 @@ func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 
 // FilesByExtensionFromSquash returns file references for files that have the given extension relative to the squash tree.
 func (i *Image) FilesByExtensionFromSquash(extension string) ([]file.Reference, error) {
-	return fetchFilesByExtension(i.SquashedTree(), &i.FileCatalog, extension)
+	return query.FilesByExtension(i.SquashedTree(), i.FileCatalog.Index, extension)
 }
 
 // FilesByBasenameFromSquash returns file references for files with the given basename relative to the squash tree.
 func (i *Image) FilesByBasenameFromSquash(basename string) ([]file.Reference, error) {
-	return fetchFilesByBasename(i.SquashedTree(), &i.FileCatalog, basename)
+	return query.FilesByBasename(i.SquashedTree(), i.FileCatalog.Index, basename)
 }
 
 // FilesByBasenameGlobFromSquash returns file references for files with the given basename glob pattern relative to the squash tree.
 func (i *Image) FilesByBasenameGlobFromSquash(glob string) ([]file.Reference, error) {
-	return fetchFilesByBasenameGlob(i.SquashedTree(), &i.FileCatalog, glob)
+	return query.FilesByBasenameGlob(i.SquashedTree(), i.FileCatalog.Index, glob)
 }
 
 // FileContentsByRef fetches file contents for a single file reference, regardless of the source layer.

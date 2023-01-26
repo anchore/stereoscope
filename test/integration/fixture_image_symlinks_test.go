@@ -107,7 +107,7 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 			acType = aM.Metadata.TypeFlag
 		}
 
-		t.Fatalf("mismatched link resolution link=%+v: '%+v (layer=%d type=%+v)'!='%+v (layer=%d type=%+v linkName=%s)'", cfg.linkPath, expectedResolve, exLayer, exType, actualResolve, acLayer, acType, aM.Metadata.Linkname)
+		t.Fatalf("mismatched link resolution link=%+v: '%+v (layer=%d type=%+v)'!='%+v (layer=%d type=%+v linkName=%s)'", cfg.linkPath, expectedResolve, exLayer, exType, actualResolve, acLayer, acType, aM.Metadata.LinkDestination)
 	}
 }
 
