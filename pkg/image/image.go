@@ -268,8 +268,8 @@ func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 }
 
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types.
-func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
-	var refs []file.Reference
+func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.ReferenceVia, error) {
+	var refs []file.ReferenceVia
 	for _, ty := range mimeTypes {
 		refsForType, err := fetchFilesByMIMEType(i.SquashedTree(), &i.FileCatalog, ty)
 		if err != nil {
@@ -281,18 +281,18 @@ func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 }
 
 // FilesByExtensionFromSquash returns file references for files that have the given extension relative to the squash tree.
-func (i *Image) FilesByExtensionFromSquash(extension string) ([]file.Reference, error) {
+func (i *Image) FilesByExtensionFromSquash(extension string) ([]file.ReferenceVia, error) {
 	return fetchFilesByExtension(i.SquashedTree(), &i.FileCatalog, extension)
 }
 
 // FilesByBasenameFromSquash returns file references for files with the given basename relative to the squash tree.
-func (i *Image) FilesByBasenameFromSquash(basename string) ([]file.Reference, error) {
+func (i *Image) FilesByBasenameFromSquash(basename string) ([]file.ReferenceVia, error) {
 	return fetchFilesByBasename(i.SquashedTree(), &i.FileCatalog, basename)
 }
 
 // FilesByBasenameGlobFromSquash returns file references for files with the given basename glob pattern relative to the squash tree.
-func (i *Image) FilesByBasenameGlobFromSquash(glob string) ([]file.Reference, error) {
-	return fetchFilesByBasenameGlob(i.SquashedTree(), &i.FileCatalog, glob)
+func (i *Image) FilesByBasenameGlobFromSquash(globs ...string) ([]file.ReferenceVia, error) {
+	return fetchFilesByBasenameGlob(i.SquashedTree(), &i.FileCatalog, globs...)
 }
 
 // FileContentsByRef fetches file contents for a single file reference, regardless of the source layer.
@@ -304,7 +304,7 @@ func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 // ResolveLinkByLayerSquash resolves a symlink or hardlink for the given file reference relative to the result from
 // the layer squash of the given layer index argument.
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
-func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.Reference, error) {
+func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.ReferenceVia, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)
 	return resolvedRef, err
@@ -312,7 +312,7 @@ func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options 
 
 // ResolveLinkByImageSquash resolves a symlink or hardlink for the given file reference relative to the result from the image squash.
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
-func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree.LinkResolutionOption) (*file.Reference, error) {
+func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree.LinkResolutionOption) (*file.ReferenceVia, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, allOptions...)
 	return resolvedRef, err

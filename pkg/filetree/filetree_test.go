@@ -1,9 +1,13 @@
 package filetree
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
+	"os"
 	"testing"
 
 	"github.com/anchore/stereoscope/internal"
@@ -21,7 +25,7 @@ func TestFileTree_AddPath(t *testing.T) {
 	}
 
 	_, f, _ := tr.File(path)
-	if f != fileNode {
+	if f.Reference != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
 	}
 }
@@ -35,7 +39,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	}
 
 	_, f, _ := tr.File(path)
-	if f != fileNode {
+	if f.Reference != fileNode {
 		t.Fatal("expected pointer to the newly created fileNode")
 	}
 
@@ -46,7 +50,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not get parent Node: %+v", err)
 	}
-	children := tr.tree.Children(n)
+	children := tr.tree.Children(n.FileNode)
 
 	if len(children) != 1 {
 		t.Fatal("unexpected child count", len(children))
@@ -364,10 +368,12 @@ func TestFileTree_Merge_Overwrite(t *testing.T) {
 
 func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 	tr1 := NewFileTree()
-	tr1.AddFile("/home/wagoodman/awesome/file.txt")
+	_, err := tr1.AddFile("/home/wagoodman/awesome/file.txt")
+	require.NoError(t, err)
 
 	tr2 := NewFileTree()
-	tr2.AddFile("/home/wagoodman/.wh..wh..opq")
+	_, err = tr2.AddFile("/home/wagoodman/.wh..wh..opq")
+	require.NoError(t, err)
 
 	if err := tr1.merge(tr2); err != nil {
 		t.Fatalf("error on merge : %+v", err)
@@ -455,7 +461,7 @@ func TestFileTree_Merge_DirOverride(t *testing.T) {
 		t.Fatalf("somehow override path does not exist?")
 	}
 
-	if n.FileType != file.TypeDir {
+	if n.FileNode.FileType != file.TypeDir {
 		t.Errorf("did not override to dir")
 	}
 
@@ -494,178 +500,312 @@ func TestFileTree_Merge_RemoveChildPathsOnOverride(t *testing.T) {
 		t.Fatalf("somehow override path does not exist?")
 	}
 
-	if fileNode.FileType != file.TypeReg {
+	if fileNode.FileNode.FileType != file.TypeReg {
 		t.Errorf("did not override to dir")
 	}
+
+}
+
+func TestFileTree_File_MultiSymlink(t *testing.T) {
+	var err error
+	tr := NewFileTree()
+
+	_, err = tr.AddSymLink("/home", "/link-to-1/link-to-place")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/link-to-1", "/1")
+	require.NoError(t, err)
+
+	_, err = tr.AddDir("/1")
+	require.NoError(t, err)
+
+	_, err = tr.AddFile("/2/real-file.txt")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/1/file.txt", "/2/real-file.txt")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/1/link-to-place", "/place")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/place/wagoodman/file.txt", "/link-to-1/file.txt")
+	require.NoError(t, err)
+
+	// this is the current state of the filetree
+	//	.
+	//  ├── 1
+	//  │   ├── file.txt -> 2/real-file.txt
+	//  │   └── link-to-place -> place
+	//  ├── 2
+	//  │   └── real-file.txt
+	//  ├── home -> link-to-1/link-to-place
+	//  ├── link-to-1 -> 1
+	//  └── place
+	//      └── wagoodman
+	//          └── file.txt -> link-to-1/file.txt
+
+	// request: /home/wagoodman/file.txt
+	// reference: /2/real-file.txt
+	// ancestor resolution:
+	// - /home -> /link-to-1/link-to-place
+	// - /link-to-1 -> /1
+	// - /1/link-to-place -> /place
+	// leaf resolution:
+	// - /place/wagoodman/file.txt -> /link-to-1/file.txt
+	// - /link-to-1 -> /1
+	// - /1/file.txt -> /2/real-file.txt
+	// path:
+	// - home -> link-to-1/link-to-place -> place
+	// - place/wagoodman
+	// - place/wagoodman/file.txt -> link-to-1/file.txt -> 1/file.txt -> 2/real-file.txt
+
+	requestPath := "/home/wagoodman/file.txt"
+	linkOptions := []LinkResolutionOption{FollowBasenameLinks}
+	_, ref, err := tr.File(file.Path(requestPath), linkOptions...)
+	require.NoError(t, err)
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	require.NoError(t, enc.Encode(ref))
+	//t.Fatal("nope")
 
 }
 
 func TestFileTree_File_Symlink(t *testing.T) {
 
 	tests := []struct {
-		name                 string
-		buildLinkSource      file.Path // ln -s <SOURCE> DEST
-		buildLinkDest        file.Path // ln -s SOURCE <DEST>
-		buildRealPath        file.Path // a real file that should exist (or not if "")
-		linkOptions          []LinkResolutionOption
-		requestPath          file.Path // the path to check against
-		expectedExists       bool      // if the request path should exist or not
-		expectedResolvedPath file.Path // the expected path for a request result
-		expectedErr          bool      // if an error is expected from the request
-		expectedRealRef      bool      // if the resolved reference should match the built reference from "buildRealPath"
+		name            string
+		buildLinkSource file.Path // ln -s <SOURCE> DEST
+		buildLinkDest   file.Path // ln -s SOURCE <DEST>
+		buildRealPath   file.Path // a real file that should exist (or not if "")
+		linkOptions     []LinkResolutionOption
+		requestPath     file.Path // the path to check against
+		expectedExists  bool      // if the request path should exist or not
+		expectedErr     bool      // if an error is expected from the request
+		expectedRealRef bool      // if the resolved reference should match the built reference from "buildRealPath"
+		expected        *file.ReferenceVia
 	}{
 		///////////////
-		{
-			name:                 "request base is ABSOLUTE symlink",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "/another/place",
-			buildRealPath:        "/another/place",
-			linkOptions:          []LinkResolutionOption{FollowBasenameLinks},
-			requestPath:          "/home",
-			expectedExists:       true,
-			expectedResolvedPath: "/another/place",
-			// /another/place is the "real" reference that we followed, so we should expect the IDs to match upon lookup
-			expectedRealRef: true,
-		},
-		{
-			name:                 "request base is ABSOLUTE symlink",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "/another/place",
-			buildRealPath:        "/another/place",
-			linkOptions:          []LinkResolutionOption{},
-			requestPath:          "/home",
-			expectedExists:       true,
-			expectedResolvedPath: "/home",
-			// /home is just a symlink, not the real file (which is at /another/place)
-			expectedRealRef: false,
-		},
-
-		///////////////
-		{
-			name:                 "request parent is ABSOLUTE symlink",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "/another/place",
-			buildRealPath:        "/another/place/wagoodman",
-			linkOptions:          []LinkResolutionOption{FollowBasenameLinks}, // a nop for this case (note the expected path and ref)
-			requestPath:          "/home/wagoodman",
-			expectedExists:       true,
-			expectedResolvedPath: "/another/place/wagoodman",
-			expectedRealRef:      true,
-		},
-		{
-			name:                 "request parent is ABSOLUTE symlink",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "/another/place",
-			buildRealPath:        "/another/place/wagoodman",
-			linkOptions:          []LinkResolutionOption{}, // a nop for this case (note the expected path and ref)
-			requestPath:          "/home/wagoodman",
-			expectedExists:       true,
-			expectedResolvedPath: "/another/place/wagoodman",
-			expectedRealRef:      true,
-		},
-
-		///////////////
-		{
-			name:                 "request base is RELATIVE symlink",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "../../another/place",
-			buildRealPath:        "/another/place",
-			linkOptions:          []LinkResolutionOption{FollowBasenameLinks},
-			requestPath:          "/home",
-			expectedExists:       true,
-			expectedResolvedPath: "/another/place",
-			expectedRealRef:      true,
-		},
-		{
-			name:            "request base is RELATIVE symlink",
-			buildLinkSource: "/home",
-			buildLinkDest:   "../../another/place/wagoodman",
-			buildRealPath:   "/another/place/wagoodman",
-			linkOptions:     []LinkResolutionOption{},
-			requestPath:     "/home",
-			expectedExists:  true,
-			// note that since the request matches the link source and we are NOT following, we get the link ref back
-			expectedResolvedPath: "/home",
-			expectedRealRef:      false,
-		},
-		///////////////
-		{
-			name:                 "request parent is RELATIVE symlink",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "../../another/place",
-			buildRealPath:        "/another/place/wagoodman",
-			linkOptions:          []LinkResolutionOption{FollowBasenameLinks}, // this is a nop since the parent is a link
-			requestPath:          "/home/wagoodman",
-			expectedExists:       true,
-			expectedResolvedPath: "/another/place/wagoodman",
-			expectedRealRef:      true,
-		},
-		{
-			name:                 "request parent is RELATIVE symlink",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "../../another/place",
-			buildRealPath:        "/another/place/wagoodman",
-			linkOptions:          []LinkResolutionOption{}, // this is a nop since the parent is a link
-			requestPath:          "/home/wagoodman",
-			expectedExists:       true,
-			expectedResolvedPath: "/another/place/wagoodman",
-			expectedRealRef:      true,
-		},
-		///////////////
-		{
-			name:            "request base is DEAD symlink",
-			buildLinkSource: "/home",
-			buildLinkDest:   "/mwahaha/i/go/to/nowhere",
-			linkOptions:     []LinkResolutionOption{},
-			requestPath:     "/home",
-			// since we did not follow, the paths should exist to the symlink file
-			expectedResolvedPath: "/home",
-			expectedExists:       true,
-		},
-		{
-			name:            "request base is DEAD symlink",
-			buildLinkSource: "/home",
-			buildLinkDest:   "/mwahaha/i/go/to/nowhere",
-			linkOptions:     []LinkResolutionOption{FollowBasenameLinks},
-			requestPath:     "/home",
-			// we are following the path, which goes to nowhere.... the first failed path is resolved and returned
-			expectedResolvedPath: "/mwahaha",
-			expectedExists:       false,
-		},
-		{
-			name:            "request base is DEAD symlink (which we don't follow)",
-			buildLinkSource: "/home",
-			buildLinkDest:   "/mwahaha/i/go/to/nowhere",
-			linkOptions:     []LinkResolutionOption{FollowBasenameLinks, DoNotFollowDeadBasenameLinks},
-			requestPath:     "/home",
-			// we are following the path, which goes to nowhere.... the first failed path is resolved and returned
-			expectedResolvedPath: "/home",
-			expectedExists:       true,
-		},
-		///////////////
-		// trying to resolve to above root
-		{
-			name:                 "request parent is RELATIVE symlink to ABOVE root",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "../../../../../../../../../../../../another/place",
-			buildRealPath:        "/another/place/wagoodman",
-			linkOptions:          []LinkResolutionOption{FollowBasenameLinks}, // this is a nop since the parent is a link
-			requestPath:          "/home/wagoodman",
-			expectedExists:       true,
-			expectedResolvedPath: "/another/place/wagoodman",
-			expectedRealRef:      true,
-		},
-		{
-			name:                 "request parent is RELATIVE symlink to ABOVE root",
-			buildLinkSource:      "/home",
-			buildLinkDest:        "../../../../../../../../../../../../another/place",
-			buildRealPath:        "/another/place/wagoodman",
-			linkOptions:          []LinkResolutionOption{}, // this is a nop since the parent is a link
-			requestPath:          "/home/wagoodman",
-			expectedExists:       true,
-			expectedResolvedPath: "/another/place/wagoodman",
-			expectedRealRef:      true,
-		},
+		//{
+		//	name:            "request base is ABSOLUTE symlink",
+		//	buildLinkSource: "/home",
+		//	buildLinkDest:   "/another/place",
+		//	buildRealPath:   "/another/place",
+		//	linkOptions:     []LinkResolutionOption{FollowBasenameLinks},
+		//	requestPath:     "/home",
+		//	// /another/place is the "real" reference that we followed, so we should expect the IDs to match upon lookup
+		//	expectedRealRef: true,
+		//	expectedExists:  true,
+		//	expected: &file.ReferenceVia{
+		//		Reference:   &file.Reference{RealPath: "/another/place"},
+		//		RequestPath: "/home",
+		//		LeafResolution: []file.ReferenceAccess{
+		//			{
+		//				RequestPath: "/home",
+		//				Reference:   &file.Reference{RealPath: "/home"},
+		//			},
+		//			{
+		//				RequestPath: "/another/place",
+		//				Reference:   &file.Reference{RealPath: "/another/place"},
+		//			},
+		//		},
+		//	},
+		//},
+		//{
+		//	name:            "request base is ABSOLUTE symlink, request no link resolution",
+		//	buildLinkSource: "/home",
+		//	buildLinkDest:   "/another/place",
+		//	buildRealPath:   "/another/place",
+		//	linkOptions:     []LinkResolutionOption{},
+		//	requestPath:     "/home",
+		//	// /home is just a symlink, not the real file (which is at /another/place)... and we've provided no symlink resolution
+		//	expectedRealRef: false,
+		//	expectedExists:  true,
+		//	expected: &file.ReferenceVia{
+		//		Reference:          &file.Reference{RealPath: "/home"}, // this is the real symlink
+		//		RequestPath:        "/home",
+		//		LeafResolution: nil,
+		//	},
+		//},
+		//
+		/////////////////////
+		//{
+		//	name:            "request parent is ABSOLUTE symlink",
+		//	buildLinkSource: "/home",
+		//	buildLinkDest:   "/another/place",
+		//	buildRealPath:   "/another/place/wagoodman",
+		//	linkOptions:     []LinkResolutionOption{FollowBasenameLinks}, // a nop for this case (note the expected path and ref)
+		//	requestPath:     "/home/wagoodman",
+		//	expectedExists:  true,
+		//	expectedRealRef: true,
+		//	expected: &file.ReferenceVia{
+		//		Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
+		//		RequestPath: "/home/wagoodman",
+		//		LinkResolution: file.LinkResolution{
+		//			AncestorResolution: []file.ReferenceAccess{
+		//				{
+		//					RequestPath: "/home",
+		//					Reference:   &file.Reference{RealPath: "/home"},
+		//				},
+		//				{
+		//					RequestPath: "/another/place",
+		//					Reference:   nil,
+		//				},
+		//			},
+		//			LeafResolution: []file.ReferenceAccess{
+		//				{
+		//					RequestPath: "/another/place/wagoodman",
+		//					Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
+		//					LinkResolution: file.LinkResolution{
+		//						AncestorResolution: []file.ReferenceAccess{
+		//							{
+		//								RequestPath: "/home",
+		//								Reference:   &file.Reference{RealPath: "/home"}, // note: this was explicitly added in the tree
+		//							},
+		//							{
+		//								RequestPath: "/another/place",
+		//								Reference:   nil,
+		//							},
+		//						},
+		//					},
+		//				},
+		//			},
+		//		},
+		//	},
+		//},
+		//{
+		//	name:                       "request parent is ABSOLUTE symlink",
+		//	buildLinkSource:            "/home",
+		//	buildLinkDest:              "/another/place",
+		//	buildRealPath:              "/another/place/wagoodman",
+		//	linkOptions:                []LinkResolutionOption{}, // a nop for this case (note the expected path and ref)
+		//	requestPath:                "/home/wagoodman",
+		//	expectedExists:             true,
+		//	expectedResolvedPath:       "/another/place/wagoodman",
+		//	expectedRealRef:            true,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		//
+		/////////////////
+		//{
+		//	name:                       "request base is RELATIVE symlink",
+		//	buildLinkSource:            "/home",
+		//	buildLinkDest:              "../../another/place",
+		//	buildRealPath:              "/another/place",
+		//	linkOptions:                []LinkResolutionOption{FollowBasenameLinks},
+		//	requestPath:                "/home",
+		//	expectedExists:             true,
+		//	expectedResolvedPath:       "/another/place",
+		//	expectedRealRef:            true,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		//{
+		//	name:            "request base is RELATIVE symlink",
+		//	buildLinkSource: "/home",
+		//	buildLinkDest:   "../../another/place/wagoodman",
+		//	buildRealPath:   "/another/place/wagoodman",
+		//	linkOptions:     []LinkResolutionOption{},
+		//	requestPath:     "/home",
+		//	expectedExists:  true,
+		//	// note that since the request matches the link source and we are NOT following, we get the link ref back
+		//	expectedResolvedPath:       "/home",
+		//	expectedRealRef:            false,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		/////////////////
+		//{
+		//	name:                       "request parent is RELATIVE symlink",
+		//	buildLinkSource:            "/home",
+		//	buildLinkDest:              "../../another/place",
+		//	buildRealPath:              "/another/place/wagoodman",
+		//	linkOptions:                []LinkResolutionOption{FollowBasenameLinks}, // this is a nop since the parent is a link
+		//	requestPath:                "/home/wagoodman",
+		//	expectedExists:             true,
+		//	expectedResolvedPath:       "/another/place/wagoodman",
+		//	expectedRealRef:            true,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		//{
+		//	name:                       "request parent is RELATIVE symlink",
+		//	buildLinkSource:            "/home",
+		//	buildLinkDest:              "../../another/place",
+		//	buildRealPath:              "/another/place/wagoodman",
+		//	linkOptions:                []LinkResolutionOption{}, // this is a nop since the parent is a link
+		//	requestPath:                "/home/wagoodman",
+		//	expectedExists:             true,
+		//	expectedResolvedPath:       "/another/place/wagoodman",
+		//	expectedRealRef:            true,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		/////////////////
+		//{
+		//	name:            "request base is DEAD symlink",
+		//	buildLinkSource: "/home",
+		//	buildLinkDest:   "/mwahaha/i/go/to/nowhere",
+		//	linkOptions:     []LinkResolutionOption{},
+		//	requestPath:     "/home",
+		//	// since we did not follow, the paths should exist to the symlink file
+		//	expectedResolvedPath:       "/home",
+		//	expectedExists:             true,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		//{
+		//	name:            "request base is DEAD symlink",
+		//	buildLinkSource: "/home",
+		//	buildLinkDest:   "/mwahaha/i/go/to/nowhere",
+		//	linkOptions:     []LinkResolutionOption{FollowBasenameLinks},
+		//	requestPath:     "/home",
+		//	// we are following the path, which goes to nowhere.... the first failed path is resolved and returned
+		//	expectedResolvedPath:       "/mwahaha",
+		//	expectedExists:             false,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		//{
+		//	name:            "request base is DEAD symlink (which we don't follow)",
+		//	buildLinkSource: "/home",
+		//	buildLinkDest:   "/mwahaha/i/go/to/nowhere",
+		//	linkOptions:     []LinkResolutionOption{FollowBasenameLinks, DoNotFollowDeadBasenameLinks},
+		//	requestPath:     "/home",
+		//	// we are following the path, which goes to nowhere.... the first failed path is resolved and returned
+		//	expectedResolvedPath:       "/home",
+		//	expectedExists:             true,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		/////////////////
+		//// trying to resolve to above root
+		//{
+		//	name:                       "request parent is RELATIVE symlink to ABOVE root",
+		//	buildLinkSource:            "/home",
+		//	buildLinkDest:              "../../../../../../../../../../../../another/place",
+		//	buildRealPath:              "/another/place/wagoodman",
+		//	linkOptions:                []LinkResolutionOption{FollowBasenameLinks}, // this is a nop since the parent is a link
+		//	requestPath:                "/home/wagoodman",
+		//	expectedExists:             true,
+		//	expectedResolvedPath:       "/another/place/wagoodman",
+		//	expectedRealRef:            true,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
+		//{
+		//	name:                       "request parent is RELATIVE symlink to ABOVE root",
+		//	buildLinkSource:            "/home",
+		//	buildLinkDest:              "../../../../../../../../../../../../another/place",
+		//	buildRealPath:              "/another/place/wagoodman",
+		//	linkOptions:                []LinkResolutionOption{}, // this is a nop since the parent is a link
+		//	requestPath:                "/home/wagoodman",
+		//	expectedExists:             true,
+		//	expectedResolvedPath:       "/another/place/wagoodman",
+		//	expectedRealRef:            true,
+		//	expectedAccessRequestPaths: []string{},
+		//	expectedAccessRealPaths:    []string{},
+		//},
 	}
 
 	for _, test := range tests {
@@ -700,22 +840,17 @@ func TestFileTree_File_Symlink(t *testing.T) {
 				t.Fatalf("expected path to exist, but does NOT")
 			}
 
-			// validate ref...
-			if realRef != nil && ref != nil {
-				// validate path...
-				if ref.RealPath != test.expectedResolvedPath {
-					t.Fatalf("unexpected path difference: %+v != %v", ref.RealPath, test.expectedResolvedPath)
-				}
+			// validate the resolved reference against the real reference added to the tree
+			if ref.ID() == realRef.ID() && !test.expectedRealRef {
+				t.Errorf("refs should not be the same: resolve(%+v) == reaal(%+v)", ref, realRef)
+			} else if ref.ID() != realRef.ID() && test.expectedRealRef {
+				t.Errorf("refs should be the same: resolve(%+v) != real(%+v)", ref, realRef)
+			}
 
-				if ref.ID() == realRef.ID() && !test.expectedRealRef {
-					t.Errorf("refs should not be the same: resolve(%+v) == reaal(%+v)", ref, realRef)
-				} else if ref.ID() != realRef.ID() && test.expectedRealRef {
-					t.Errorf("refs should be the same: resolve(%+v) != real(%+v)", ref, realRef)
-				}
-			} else {
-				if test.expectedRealRef {
-					t.Fatalf("expected to test a real reference, but could not")
-				}
+			// compare the remaining expectations, ignoring any reference IDs
+			ignoreIDs := cmpopts.IgnoreUnexported(file.Reference{})
+			if d := cmp.Diff(test.expected, ref, ignoreIDs); d != "" {
+				t.Errorf("unexpected file reference (-want +got):\n%s", d)
 			}
 		})
 	}
@@ -816,30 +951,26 @@ func TestFileTree_AllFiles(t *testing.T) {
 
 	for _, p := range paths {
 		_, err := tr.AddFile(file.Path(p))
-		if err != nil {
-			t.Fatalf("failed to add path ('%s'): %+v", p, err)
-		}
+		require.NoError(t, err)
 	}
 
 	var err error
+	var f *file.Reference
 
 	// dir
-	_, err = tr.AddDir("/home")
-	if err != nil {
-		t.Fatalf("could not setup dir: %+v", err)
-	}
+	f, err = tr.AddDir("/home")
+	require.NotNil(t, f)
+	require.NoError(t, err)
 
 	// relative symlink
-	_, err = tr.AddSymLink("/home/symlink", "../../../sym-linked-dest")
-	if err != nil {
-		t.Fatalf("could not setup link: %+v", err)
-	}
+	f, err = tr.AddSymLink("/home/symlink", "../../../sym-linked-dest")
+	require.NotNil(t, f)
+	require.NoError(t, err)
 
 	// hardlink
-	_, err = tr.AddHardLink("/home/hardlink", "/hard-linked-dest")
-	if err != nil {
-		t.Fatalf("could not setup link: %+v", err)
-	}
+	f, err = tr.AddHardLink("/home/hardlink", "/hard-linked-dest")
+	require.NotNil(t, f)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string

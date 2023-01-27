@@ -65,7 +65,7 @@ func TestUnionFileTree_Squash(t *testing.T) {
 	}
 
 	_, f, _ = base.File("/home/wagoodman/more")
-	if f == nil {
+	if f == nil || f.Reference == nil {
 		t.Fatal("base was never created")
 	}
 
@@ -74,17 +74,17 @@ func TestUnionFileTree_Squash(t *testing.T) {
 	}
 
 	_, f, _ = top.File("/home/wagoodman/more")
-	if f != nil {
+	if f.Reference != nil {
 		t.Fatal("top file should have been implicitly nil but wasn't")
 	}
 
 	_, f, _ = squashed.File("/home/wagoodman/more")
-	if f != nil {
+	if f.Reference != nil {
 		t.Fatal("file override to a dir has original properties")
 	}
 
 	_, f, _ = squashed.File("/home/wagoodman/moredir")
-	if f == nil {
+	if f == nil || f.Reference == nil {
 		t.Fatal("dir override to a dir is missing original properties")
 	}
 	if originalMoreDir.ID() != f.ID() {

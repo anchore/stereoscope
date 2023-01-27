@@ -54,16 +54,17 @@ func NewDepthFirstPathWalker(tree *FileTree, visitor FileNodeVisitor, conditions
 	return w
 }
 
-//nolint:gocognit
-func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNode, error) {
+// nolint:gocognit
+func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *nodeAccess, error) {
 	w.pathStack.Push(from)
 
 	var currentPath file.Path
-	var currentNode *filenode.FileNode
+	var currentNode *nodeAccess
 	var err error
 
 	for w.pathStack.Size() > 0 {
 		currentPath = w.pathStack.Pop()
+		// TODO: should we make these link resolutions configurable so you can observe the links on walk as well?
 		currentNode, err = w.tree.node(currentPath, linkResolutionStrategy{
 			FollowAncestorLinks:          true,
 			FollowBasenameLinks:          true,
@@ -72,7 +73,7 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 		if err != nil {
 			return "", nil, err
 		}
-		if currentNode == nil {
+		if currentNode == nil || currentNode.FileNode == nil {
 			return "", nil, fmt.Errorf("nil Node at path=%q", currentPath)
 		}
 
@@ -81,15 +82,15 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 			return currentPath, currentNode, ErrMaxTraversalDepth
 		}
 
-		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(currentPath, *currentNode) {
+		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(currentPath, *currentNode.FileNode) {
 			return currentPath, currentNode, nil
 		}
 		currentPath = currentPath.Normalize()
 
 		// visit
 		if w.visitor != nil && !w.visitedPaths.Contains(currentPath) {
-			if w.conditions.ShouldVisit == nil || w.conditions.ShouldVisit != nil && w.conditions.ShouldVisit(currentPath, *currentNode) {
-				err := w.visitor(currentPath, *currentNode)
+			if w.conditions.ShouldVisit == nil || w.conditions.ShouldVisit != nil && w.conditions.ShouldVisit(currentPath, *currentNode.FileNode) {
+				err := w.visitor(currentPath, *currentNode.FileNode)
 				if err != nil {
 					return currentPath, currentNode, err
 				}
@@ -97,7 +98,7 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 			}
 		}
 
-		if w.conditions.ShouldContinueBranch != nil && !w.conditions.ShouldContinueBranch(currentPath, *currentNode) {
+		if w.conditions.ShouldContinueBranch != nil && !w.conditions.ShouldContinueBranch(currentPath, *currentNode.FileNode) {
 			continue
 		}
 

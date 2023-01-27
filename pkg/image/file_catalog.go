@@ -2,8 +2,10 @@ package image
 
 import (
 	"fmt"
+	"github.com/scylladb/go-set/strset"
 	"io"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 
@@ -22,7 +24,7 @@ type FileCatalog struct {
 	byMIMEType  map[string][]file.ID
 	byExtension map[string][]file.ID
 	byBasename  map[string][]file.ID
-	basenames   []string
+	basenames   *strset.Set
 }
 
 // FileCatalogEntry represents all stored metadata for a single file reference.
@@ -40,6 +42,7 @@ func NewFileCatalog() FileCatalog {
 		byMIMEType:  make(map[string][]file.ID),
 		byExtension: make(map[string][]file.ID),
 		byBasename:  make(map[string][]file.ID),
+		basenames:   strset.New(),
 	}
 }
 
@@ -58,10 +61,12 @@ func (c *FileCatalog) Add(f file.Reference, m file.Metadata, l *Layer, opener fi
 
 	basename := path.Base(string(f.RealPath))
 	c.byBasename[basename] = append(c.byBasename[basename], id)
-	c.basenames = append(c.basenames, basename)
+	c.basenames.Add(basename)
 
+	//fmt.Println("Adding file to catalog: ", f.RealPath, " (", id, ")")
 	for _, ext := range fileExtensions(string(f.RealPath)) {
 		c.byExtension[ext] = append(c.byExtension[ext], id)
+		//fmt.Println("   Extensions ("+ext+"): ", c.byExtension[ext])
 	}
 
 	c.catalog[id] = FileCatalogEntry{
@@ -96,7 +101,9 @@ func (c *FileCatalog) Basenames() []string {
 	c.RLock()
 	defer c.RUnlock()
 
-	return c.basenames
+	bns := c.basenames.List()
+	sort.Strings(bns)
+	return bns
 }
 
 func (c *FileCatalog) GetByMIMEType(mType string) ([]FileCatalogEntry, error) {
@@ -166,27 +173,31 @@ func (c *FileCatalog) GetByBasename(basename string) ([]FileCatalogEntry, error)
 	return entries, nil
 }
 
-func (c *FileCatalog) GetByBasenameGlob(glob string) ([]FileCatalogEntry, error) {
+func (c *FileCatalog) GetByBasenameGlob(globs ...string) ([]FileCatalogEntry, error) {
 	c.RLock()
 	defer c.RUnlock()
 
-	if strings.Contains(glob, "**") {
-		return nil, fmt.Errorf("basename glob patterns with '**' are not supported")
-	}
-	if strings.Contains(glob, "/") {
-		return nil, fmt.Errorf("found directory separator in a basename")
-	}
-
-	patternObj := wildmatch.NewWildMatch(glob)
-
 	var fileEntries []FileCatalogEntry
-	for _, b := range c.Basenames() {
-		if patternObj.IsMatch(b) {
-			bns, err := c.GetByBasename(b)
-			if err != nil {
-				return nil, fmt.Errorf("unable to fetch file references by basename (%q): %w", b, err)
+	basenames := c.Basenames()
+
+	for _, glob := range globs {
+		if strings.Contains(glob, "**") {
+			return nil, fmt.Errorf("basename glob patterns with '**' are not supported")
+		}
+		if strings.Contains(glob, "/") {
+			return nil, fmt.Errorf("found directory separator in a basename")
+		}
+
+		patternObj := wildmatch.NewWildMatch(glob)
+
+		for _, b := range basenames {
+			if patternObj.IsMatch(b) {
+				bns, err := c.GetByBasename(b)
+				if err != nil {
+					return nil, fmt.Errorf("unable to fetch file references by basename (%q): %w", b, err)
+				}
+				fileEntries = append(fileEntries, bns...)
 			}
-			fileEntries = append(fileEntries, bns...)
 		}
 	}
 

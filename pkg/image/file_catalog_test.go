@@ -503,21 +503,21 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			input: "file-1.*",
 			want: []FileCatalogEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
-					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-1.txt",
-						TarHeaderName: "path/branch.d/one/file-1.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
-					},
-				},
-				{
 					File: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/common/file-1.d",
 						TarHeaderName: "path/common/file-1.d",
 						Linkname:      "path/branch.d/one/file-1.txt",
 						TypeFlag:      50,
+					},
+				},
+				{
+					File: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
+					Metadata: file.Metadata{
+						Path:          "/path/branch.d/one/file-1.txt",
+						TarHeaderName: "path/branch.d/one/file-1.txt",
+						TypeFlag:      48,
+						MIMEType:      "text/plain",
 					},
 				},
 			},
@@ -531,26 +531,6 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			name:  "get directory name",
 			input: "bran*.d",
 			want: []FileCatalogEntry{
-				// below is the unique behavior to this function...
-				{
-					File: file.Reference{RealPath: "/path/branch.d"},
-					Metadata: file.Metadata{
-						Path:          "/path/branch.d",
-						TarHeaderName: "path/branch.d/",
-						TypeFlag:      53,
-						IsDir:         true,
-					},
-				},
-				{
-					File: file.Reference{RealPath: "/path/common/branch.d"},
-					Metadata: file.Metadata{
-						Path:          "/path/common/branch.d",
-						TarHeaderName: "path/common/branch.d",
-						Linkname:      "path/branch.d",
-						TypeFlag:      50,
-					},
-				},
-				// below is the same as ByBasename()
 				{
 					File: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
@@ -743,7 +723,6 @@ func TestFileCatalog_GetBasenames(t *testing.T) {
 			want: []string{
 				".file-4.tar.gz",
 				"branch",
-				"branch.d",
 				"branch.d",
 				"common",
 				"file-1.d",
