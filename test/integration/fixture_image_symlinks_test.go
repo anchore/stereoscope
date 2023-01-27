@@ -128,11 +128,11 @@ func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Referen
 		t.Fatalf("missing expected path: %s", expectedResolve)
 	}
 
-	actualResolve, err := i.ResolveLinkByLayerSquash(*link, cfg.perspectiveLayer, cfg.linkOptions...)
+	actualResolve, err := i.ResolveLinkByLayerSquash(*link.Reference, cfg.perspectiveLayer, cfg.linkOptions...)
 	if err != nil {
 		t.Fatalf("failed to resolve link=%+v: %+v", link, err)
 	}
-	return expectedResolve, actualResolve
+	return expectedResolve.Reference, actualResolve.Reference
 }
 
 func fetchContents(t *testing.T, i *image.Image, cfg linkFetchConfig) string {

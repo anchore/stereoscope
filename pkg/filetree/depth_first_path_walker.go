@@ -55,7 +55,7 @@ func NewDepthFirstPathWalker(tree *FileTree, visitor FileNodeVisitor, conditions
 }
 
 // nolint:gocognit
-func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *nodeAccess, error) {
+func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNode, error) {
 	w.pathStack.Push(from)
 
 	var currentPath file.Path
@@ -73,17 +73,17 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *nodeAccess, err
 		if err != nil {
 			return "", nil, err
 		}
-		if currentNode == nil || currentNode.FileNode == nil {
+		if !currentNode.HasFileNode() {
 			return "", nil, fmt.Errorf("nil Node at path=%q", currentPath)
 		}
 
 		// prevent infinite loop
 		if strings.Count(string(currentPath.Normalize()), file.DirSeparator) >= maxDirDepth {
-			return currentPath, currentNode, ErrMaxTraversalDepth
+			return currentPath, currentNode.FileNode, ErrMaxTraversalDepth
 		}
 
 		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(currentPath, *currentNode.FileNode) {
-			return currentPath, currentNode, nil
+			return currentPath, currentNode.FileNode, nil
 		}
 		currentPath = currentPath.Normalize()
 
@@ -92,7 +92,7 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *nodeAccess, err
 			if w.conditions.ShouldVisit == nil || w.conditions.ShouldVisit != nil && w.conditions.ShouldVisit(currentPath, *currentNode.FileNode) {
 				err := w.visitor(currentPath, *currentNode.FileNode)
 				if err != nil {
-					return currentPath, currentNode, err
+					return currentPath, currentNode.FileNode, err
 				}
 				w.visitedPaths.Add(currentPath)
 			}
@@ -113,7 +113,7 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *nodeAccess, err
 		}
 	}
 
-	return currentPath, currentNode, nil
+	return currentPath, currentNode.FileNode, nil
 }
 
 func (w *DepthFirstPathWalker) WalkAll() error {

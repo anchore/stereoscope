@@ -155,8 +155,8 @@ func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 }
 
 // FilesByMIMEType returns file references for files that match at least one of the given MIME types relative to each layer tree.
-func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.ReferenceVia, error) {
-	var refs []file.ReferenceVia
+func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.ReferenceAccessVia, error) {
+	var refs []file.ReferenceAccessVia
 	for _, ty := range mimeTypes {
 		refsForType, err := fetchFilesByMIMEType(l.Tree, l.fileCatalog, ty)
 		if err != nil {
@@ -168,8 +168,8 @@ func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.ReferenceVia, error
 }
 
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types relative to the squashed file tree representation.
-func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.ReferenceVia, error) {
-	var refs []file.ReferenceVia
+func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.ReferenceAccessVia, error) {
+	var refs []file.ReferenceAccessVia
 	for _, ty := range mimeTypes {
 		refsForType, err := fetchFilesByMIMEType(l.SquashedTree, l.fileCatalog, ty)
 		if err != nil {
@@ -181,32 +181,32 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 }
 
 // FilesByExtension returns file references for files that have the given extension.
-func (l *Layer) FilesByExtension(extension string) ([]file.ReferenceVia, error) {
+func (l *Layer) FilesByExtension(extension string) ([]file.ReferenceAccessVia, error) {
 	return fetchFilesByExtension(l.Tree, l.fileCatalog, extension)
 }
 
 // FilesByExtensionFromSquash returns file references for files have the given extension relative to the squash tree.
-func (l *Layer) FilesByExtensionFromSquash(extension string) ([]file.ReferenceVia, error) {
+func (l *Layer) FilesByExtensionFromSquash(extension string) ([]file.ReferenceAccessVia, error) {
 	return fetchFilesByExtension(l.SquashedTree, l.fileCatalog, extension)
 }
 
 // FilesByBasename returns file references for files that have the following basename.
-func (l *Layer) FilesByBasename(basename string) ([]file.ReferenceVia, error) {
+func (l *Layer) FilesByBasename(basename string) ([]file.ReferenceAccessVia, error) {
 	return fetchFilesByBasename(l.Tree, l.fileCatalog, basename)
 }
 
 // FilesByBasenameFromSquash returns file references for files by name relative to the squash tree.
-func (l *Layer) FilesByBasenameFromSquash(extension string) ([]file.ReferenceVia, error) {
+func (l *Layer) FilesByBasenameFromSquash(extension string) ([]file.ReferenceAccessVia, error) {
 	return fetchFilesByBasename(l.SquashedTree, l.fileCatalog, extension)
 }
 
 // FilesByBasenameGlob returns file references for files that have the following basename glob.
-func (l *Layer) FilesByBasenameGlob(glob string) ([]file.ReferenceVia, error) {
+func (l *Layer) FilesByBasenameGlob(glob string) ([]file.ReferenceAccessVia, error) {
 	return fetchFilesByBasenameGlob(l.Tree, l.fileCatalog, glob)
 }
 
 // FilesByBasenameGlobFromSquash returns file references for files by basename glob pattern relative to the squash tree.
-func (l *Layer) FilesByBasenameGlobFromSquash(glob string) ([]file.ReferenceVia, error) {
+func (l *Layer) FilesByBasenameGlobFromSquash(glob string) ([]file.ReferenceAccessVia, error) {
 	return fetchFilesByBasenameGlob(l.SquashedTree, l.fileCatalog, glob)
 }
 

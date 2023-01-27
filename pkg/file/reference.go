@@ -9,54 +9,80 @@ var nextID = 0
 // ID is used for file tree manipulation to uniquely identify tree nodes.
 type ID uint64
 
-type LinkResolution struct {
-	AncestorResolution []ReferenceAccess
-	LeafResolution     []ReferenceAccess
-}
-
-// ReferenceAccess represents the fetching of a file reference via a (possibly different) path.
+// ReferenceAccess represents the fetching of a possibly non-existent file, and how it was accessed.
 type ReferenceAccess struct {
 	RequestPath Path
 	*Reference
 }
 
-// ReferenceVia represents a unique file, and how it was accessed, showing full symlink resolution.
-type ReferenceVia struct {
+// ReferenceAccessVia represents a possibly non-existent file, and how it was accessed, including all symlink and hardlink resolution.
+type ReferenceAccessVia struct {
 	ReferenceAccess
-	LinkResolution
+	LeafLinkResolution []ReferenceAccess
 }
 
-// RequestPaths represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
-func (f *ReferenceVia) RequestPaths() []Path {
-	//paths := []Path{f.RequestPath}
+func (f *ReferenceAccessVia) HasReference() bool {
+	if f == nil {
+		return false
+	}
+	return f.Reference != nil
+}
+
+// RequestResolutionPath represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
+func (f *ReferenceAccessVia) RequestResolutionPath() []Path {
 	var paths []Path
-	for _, p := range f.LeafResolution {
+	var firstPath Path
+	var lastLinkResolutionIsDead bool
+
+	if string(f.RequestPath) != "" {
+		firstPath = f.RequestPath
+		paths = append(paths, f.RequestPath)
+	}
+	for i, p := range f.LeafLinkResolution {
+		if i == 0 && p.RequestPath == f.RequestPath {
+			// ignore link resolution that starts with the same user requested path
+			continue
+		}
+		if firstPath == "" {
+			firstPath = p.RequestPath
+		}
+
 		paths = append(paths, p.RequestPath)
+
+		if i == len(f.LeafLinkResolution)-1 {
+			// we've reached the final link resolution
+			if p.Reference == nil {
+				lastLinkResolutionIsDead = true
+			}
+		}
+	}
+	if f.HasReference() && firstPath != f.Reference.RealPath && !lastLinkResolutionIsDead {
+		// we've reached the final reference that was resolved
+		// we should only do this if there was a link resolution
+		paths = append(paths, f.Reference.RealPath)
 	}
 	return paths
 }
 
-// AccessReferences represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
-func (f *ReferenceVia) AccessReferences() []*Reference {
-	var refs []*Reference
-	for _, p := range f.LeafResolution {
-		refs = append(refs, p.Reference)
-	}
-	//refs = append(refs, f.Reference)
-	return refs
-}
+// ResolutionReferences represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
+func (f *ReferenceAccessVia) ResolutionReferences() []Reference {
+	var refs []Reference
+	var lastLinkResolutionIsDead bool
 
-// RealPaths represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
-func (f *ReferenceVia) RealPaths() []Path {
-	var refs []Path
-	for _, p := range f.LeafResolution {
+	for i, p := range f.LeafLinkResolution {
 		if p.Reference != nil {
-			refs = append(refs, p.Reference.RealPath)
+			refs = append(refs, *p.Reference)
+		}
+		if i == len(f.LeafLinkResolution)-1 {
+			// we've reached the final link resolution
+			if p.Reference == nil {
+				lastLinkResolutionIsDead = true
+			}
 		}
 	}
-	//if f.Reference != nil {
-	//	refs = append(refs, f.Reference.RealPath)
-	//}
+	if f.Reference != nil && !lastLinkResolutionIsDead {
+		refs = append(refs, *f.Reference)
+	}
 	return refs
 }
 
@@ -67,16 +93,13 @@ type Reference struct {
 }
 
 // NewFileReferenceVia shows how a reference was accessed.
-func NewFileReferenceVia(path Path, ref *Reference, ancestors []ReferenceAccess, leafs []ReferenceAccess) *ReferenceVia {
-	return &ReferenceVia{
+func NewFileReferenceVia(path Path, ref *Reference, leafs []ReferenceAccess) *ReferenceAccessVia {
+	return &ReferenceAccessVia{
 		ReferenceAccess: ReferenceAccess{
 			RequestPath: path,
 			Reference:   ref,
 		},
-		LinkResolution: LinkResolution{
-			AncestorResolution: ancestors,
-			LeafResolution:     leafs,
-		},
+		LeafLinkResolution: leafs,
 	}
 }
 

@@ -2,12 +2,13 @@ package image
 
 import (
 	"fmt"
-	"github.com/scylladb/go-set/strset"
 	"io"
 	"path"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/scylladb/go-set/strset"
 
 	"github.com/becheran/wildmatch-go"
 
@@ -63,10 +64,10 @@ func (c *FileCatalog) Add(f file.Reference, m file.Metadata, l *Layer, opener fi
 	c.byBasename[basename] = append(c.byBasename[basename], id)
 	c.basenames.Add(basename)
 
-	//fmt.Println("Adding file to catalog: ", f.RealPath, " (", id, ")")
+	// fmt.Println("Adding file to catalog: ", f.RealPath, " (", id, ")")
 	for _, ext := range fileExtensions(string(f.RealPath)) {
 		c.byExtension[ext] = append(c.byExtension[ext], id)
-		//fmt.Println("   Extensions ("+ext+"): ", c.byExtension[ext])
+		// fmt.Println("   Extensions ("+ext+"): ", c.byExtension[ext])
 	}
 
 	c.catalog[id] = FileCatalogEntry{
