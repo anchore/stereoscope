@@ -205,7 +205,7 @@ func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int6
 				log.Warnf("unable to close file while indexing layer: %+v", err)
 			}
 		}()
-		metadata := file.NewMetadata(entry.Header, entry.Sequence, contents)
+		metadata := file.NewMetadata(entry.Header, contents)
 
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).

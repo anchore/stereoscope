@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 
@@ -111,7 +112,10 @@ func (c *index) Basenames() []string {
 	c.RLock()
 	defer c.RUnlock()
 
-	return c.basenames.List()
+	bns := c.basenames.List()
+	sort.Strings(bns)
+
+	return bns
 }
 
 func (c *index) GetByMIMEType(mType string) ([]IndexEntry, error) {

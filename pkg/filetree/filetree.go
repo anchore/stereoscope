@@ -433,7 +433,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 
 // FilesByGlob fetches zero to many file.References for the given glob pattern (considers symlinks).
 func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([]file.ReferenceAccessVia, error) {
-	results := make([]file.ReferenceAccessVia, 0)
+	var results []file.ReferenceAccessVia
 
 	if len(query) == 0 {
 		return nil, fmt.Errorf("no glob pattern given")

@@ -39,15 +39,14 @@ func TestFileCatalog_Add(t *testing.T) {
 	ref := file.NewFileReference("/somepath")
 
 	metadata := file.Metadata{
-		Path:          "a",
-		TarHeaderName: "b",
-		Linkname:      "c",
-		Size:          1,
-		UserID:        2,
-		GroupID:       3,
-		TypeFlag:      4,
-		IsDir:         true,
-		Mode:          5,
+		Path:     "a",
+		Linkname: "c",
+		Size:     1,
+		UserID:   2,
+		GroupID:  3,
+		TypeFlag: 4,
+		IsDir:    true,
+		Mode:     5,
 	}
 
 	layer := &Layer{
@@ -119,8 +118,7 @@ func TestFileCatalog_FileContents(t *testing.T) {
 	expected := "first file\n"
 
 	metadata := file.Metadata{
-		Path:          p,
-		TarHeaderName: p,
+		Path: p,
 	}
 
 	tr, err := file.NewTarIndex(fixtureFile.Name(), nil)
@@ -231,29 +229,26 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-1.txt",
-						TarHeaderName: "path/branch.d/one/file-1.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-1.txt",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 
 					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/two/file-2.txt",
-						TarHeaderName: "path/branch.d/two/file-2.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/two/file-2.txt",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/file-3.txt"},
 					Metadata: file.Metadata{
-						Path:          "/path/file-3.txt",
-						TarHeaderName: "path/file-3.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/file-3.txt",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 			},
@@ -266,20 +261,18 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d",
-						TarHeaderName: "path/branch.d/",
-						TypeFlag:      53,
-						IsDir:         true,
+						Path:     "/path/branch.d",
+						TypeFlag: 53,
+						IsDir:    true,
 					},
 				},
 				{
 
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-4.d",
-						TarHeaderName: "path/branch.d/one/file-4.d",
-						TypeFlag:      48, // regular file
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-4.d",
+						TypeFlag: 48, // regular file
+						MIMEType: "text/plain",
 					},
 				},
 
@@ -287,20 +280,18 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 
 					Reference: file.Reference{RealPath: "/path/common/branch.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/common/branch.d",
-						TarHeaderName: "path/common/branch.d",
-						Linkname:      "path/branch.d",
-						TypeFlag:      50, // symlink
+						Path:     "/path/common/branch.d",
+						Linkname: "path/branch.d",
+						TypeFlag: 50, // symlink
 					},
 				},
 				{
 
 					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/common/file-1.d",
-						TarHeaderName: "path/common/file-1.d",
-						Linkname:      "path/branch.d/one/file-1.txt",
-						TypeFlag:      50, // symlink
+						Path:     "/path/common/file-1.d",
+						Linkname: "path/branch.d/one/file-1.txt",
+						TypeFlag: 50, // symlink
 					},
 				},
 			},
@@ -312,19 +303,17 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/.file-4.tar.gz",
-						TarHeaderName: "path/branch.d/one/.file-4.tar.gz",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/.file-4.tar.gz",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-4.tar.gz",
-						TarHeaderName: "path/branch.d/one/file-4.tar.gz",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-4.tar.gz",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 			},
@@ -336,19 +325,17 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/.file-4.tar.gz",
-						TarHeaderName: "path/branch.d/one/.file-4.tar.gz",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/.file-4.tar.gz",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-4.tar.gz",
-						TarHeaderName: "path/branch.d/one/file-4.tar.gz",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-4.tar.gz",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 			},
@@ -372,7 +359,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "TarSequence"),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -407,10 +394,9 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-1.txt",
-						TarHeaderName: "path/branch.d/one/file-1.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-1.txt",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 			},
@@ -427,19 +413,17 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d",
-						TarHeaderName: "path/branch.d/",
-						TypeFlag:      53,
-						IsDir:         true,
+						Path:     "/path/branch.d",
+						TypeFlag: 53,
+						IsDir:    true,
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/common/branch.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/common/branch.d",
-						TarHeaderName: "path/common/branch.d",
-						Linkname:      "path/branch.d",
-						TypeFlag:      50, // symlink
+						Path:     "/path/common/branch.d",
+						Linkname: "path/branch.d",
+						TypeFlag: 50, // symlink
 					},
 				},
 			},
@@ -451,10 +435,9 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/common/file-1.d",
-						TarHeaderName: "path/common/file-1.d",
-						Linkname:      "path/branch.d/one/file-1.txt",
-						TypeFlag:      50, // symlink
+						Path:     "/path/common/file-1.d",
+						Linkname: "path/branch.d/one/file-1.txt",
+						TypeFlag: 50, // symlink
 
 					},
 				},
@@ -479,7 +462,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "TarSequence"),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -514,19 +497,17 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/common/file-1.d",
-						TarHeaderName: "path/common/file-1.d",
-						Linkname:      "path/branch.d/one/file-1.txt",
-						TypeFlag:      50,
+						Path:     "/path/common/file-1.d",
+						Linkname: "path/branch.d/one/file-1.txt",
+						TypeFlag: 50,
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-1.txt",
-						TarHeaderName: "path/branch.d/one/file-1.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-1.txt",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 			},
@@ -543,19 +524,17 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d",
-						TarHeaderName: "path/branch.d/",
-						TypeFlag:      53,
-						IsDir:         true,
+						Path:     "/path/branch.d",
+						TypeFlag: 53,
+						IsDir:    true,
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/common/branch.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/common/branch.d",
-						TarHeaderName: "path/common/branch.d",
-						Linkname:      "path/branch.d",
-						TypeFlag:      50, // symlink
+						Path:     "/path/common/branch.d",
+						Linkname: "path/branch.d",
+						TypeFlag: 50, // symlink
 					},
 				},
 			},
@@ -567,10 +546,9 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/common/file-1.d",
-						TarHeaderName: "path/common/file-1.d",
-						Linkname:      "path/branch.d/one/file-1.txt",
-						TypeFlag:      50, // symlink
+						Path:     "/path/common/file-1.d",
+						Linkname: "path/branch.d/one/file-1.txt",
+						TypeFlag: 50, // symlink
 					},
 				},
 			},
@@ -594,7 +572,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "TarSequence"),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -629,55 +607,49 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/.file-4.tar.gz",
-						TarHeaderName: "path/branch.d/one/.file-4.tar.gz",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/.file-4.tar.gz",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-1.txt",
-						TarHeaderName: "path/branch.d/one/file-1.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-1.txt",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-4.d",
-						TarHeaderName: "path/branch.d/one/file-4.d",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-4.d",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/one/file-4.tar.gz",
-						TarHeaderName: "path/branch.d/one/file-4.tar.gz",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/one/file-4.tar.gz",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
 					Metadata: file.Metadata{
-						Path:          "/path/branch.d/two/file-2.txt",
-						TarHeaderName: "path/branch.d/two/file-2.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/branch.d/two/file-2.txt",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/file-3.txt"},
 					Metadata: file.Metadata{
-						Path:          "/path/file-3.txt",
-						TarHeaderName: "path/file-3.txt",
-						TypeFlag:      48,
-						MIMEType:      "text/plain",
+						Path:     "/path/file-3.txt",
+						TypeFlag: 48,
+						MIMEType: "text/plain",
 					},
 				},
 			},
@@ -701,7 +673,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "TarSequence"),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
