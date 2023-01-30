@@ -19,13 +19,6 @@ var _ fs.FS = (*osAdapter)(nil)
 var _ fs.FileInfo = (*fileinfoAdapter)(nil)
 var _ fs.DirEntry = (*fileinfoAdapter)(nil)
 
-type GlobResult struct {
-	MatchPath  file.Path
-	RealPath   file.Path
-	IsDeadLink bool
-	Reference  file.Reference
-}
-
 // fileAdapter is an object meant to implement the doublestar.File for getting Lstat results for an entire directory.
 type fileAdapter struct {
 	os       *osAdapter

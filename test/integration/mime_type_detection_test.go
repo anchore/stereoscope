@@ -22,7 +22,7 @@ func TestContentMIMETypeDetection(t *testing.T) {
 	}
 
 	for mimeType, paths := range pathsByMIMEType {
-		refs, err := img.FilesByMIMETypeFromSquash(mimeType)
+		refs, err := img.SquashedSearchContext().SearchByMIMEType(mimeType)
 		assert.NoError(t, err)
 		assert.NotZero(t, len(refs), "found no refs for type=%q", mimeType)
 		for _, ref := range refs {

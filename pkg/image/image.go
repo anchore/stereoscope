@@ -30,7 +30,7 @@ type Image struct {
 	// Layers contains the rich layer objects in build order
 	Layers []*Layer
 	// FileCatalog contains all file metadata for all files in all layers
-	FileCatalog FileCatalog
+	FileCatalog *FileCatalog
 
 	overrideMetadata []AdditionalMetadata
 }
@@ -127,7 +127,7 @@ func WithOS(o string) AdditionalMetadata {
 	}
 }
 
-// NewImage provides a new, unread image object.
+// NewImage provides a new (unread) image object.
 func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{
 		image:            image,
@@ -201,7 +201,7 @@ func (i *Image) Read() error {
 
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
-		err := layer.Read(&i.FileCatalog, i.Metadata, idx, i.contentCacheDir)
+		err := layer.Read(i.FileCatalog, i.Metadata, idx, i.contentCacheDir)
 		if err != nil {
 			return err
 		}
@@ -264,35 +264,27 @@ func (i *Image) SquashedTree() *filetree.FileTree {
 // FileContentsFromSquash fetches file contents for a single path, relative to the image squash tree.
 // If the path does not exist an error is returned.
 func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(i.SquashedTree(), &i.FileCatalog, path)
+	return fetchFileContentsByPath(i.SquashedTree(), i.FileCatalog, path)
+}
+
+func (i *Image) SquashedSearchContext() filetree.Searcher {
+	return filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog.Index)
 }
 
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types.
-func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.ReferenceAccessVia, error) {
-	var refs []file.ReferenceAccessVia
-	for _, ty := range mimeTypes {
-		refsForType, err := fetchFilesByMIMEType(i.SquashedTree(), &i.FileCatalog, ty)
-		if err != nil {
-			return nil, err
+// Deprecated: please use SquashedSearchContext().SearchByMIMEType() instead.
+func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
+	var refs []file.Reference
+	refVias, err := i.SquashedSearchContext().SearchByMIMEType(mimeTypes...)
+	if err != nil {
+		return nil, err
+	}
+	for _, refVia := range refVias {
+		if refVia.HasReference() {
+			refs = append(refs, *refVia.Reference)
 		}
-		refs = append(refs, refsForType...)
 	}
 	return refs, nil
-}
-
-// FilesByExtensionFromSquash returns file references for files that have the given extension relative to the squash tree.
-func (i *Image) FilesByExtensionFromSquash(extension string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByExtension(i.SquashedTree(), &i.FileCatalog, extension)
-}
-
-// FilesByBasenameFromSquash returns file references for files with the given basename relative to the squash tree.
-func (i *Image) FilesByBasenameFromSquash(basename string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByBasename(i.SquashedTree(), &i.FileCatalog, basename)
-}
-
-// FilesByBasenameGlobFromSquash returns file references for files with the given basename glob pattern relative to the squash tree.
-func (i *Image) FilesByBasenameGlobFromSquash(globs ...string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByBasenameGlob(i.SquashedTree(), &i.FileCatalog, globs...)
 }
 
 // FileContentsByRef fetches file contents for a single file reference, regardless of the source layer.

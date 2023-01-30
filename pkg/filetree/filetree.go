@@ -18,6 +18,26 @@ import (
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
 
+type Reader interface {
+	AllRealPaths() []file.Path
+	AllFiles(types ...file.Type) []file.Reference
+	ListPaths(dir file.Path) ([]file.Path, error)
+	File(path file.Path, options ...LinkResolutionOption) (bool, *file.ReferenceAccessVia, error)
+	Reader() tree.Reader
+	Equal(other *FileTree) bool
+	PathDiff(other *FileTree) (extra, missing []file.Path)
+	Walk(fn func(path file.Path, f filenode.FileNode) error, conditions *WalkConditions) error
+	HasPath(path file.Path, options ...LinkResolutionOption) bool
+}
+
+type Writer interface {
+	AddFile(realPath file.Path) (*file.Reference, error)
+	AddSymLink(realPath file.Path, linkPath file.Path) (*file.Reference, error)
+	AddHardLink(realPath file.Path, linkPath file.Path) (*file.Reference, error)
+	AddDir(realPath file.Path) (*file.Reference, error)
+	RemovePath(path file.Path) error
+}
+
 // nodeAccess represents a request into the tree for a specific path and the resulting node, which may have a different path.
 type nodeAccess struct {
 	RequestPath        file.Path
@@ -412,8 +432,8 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 }
 
 // FilesByGlob fetches zero to many file.References for the given glob pattern (considers symlinks).
-func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([]GlobResult, error) {
-	results := make([]GlobResult, 0)
+func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([]file.ReferenceAccessVia, error) {
+	results := make([]file.ReferenceAccessVia, 0)
 
 	if len(query) == 0 {
 		return nil, fmt.Errorf("no glob pattern given")
@@ -456,16 +476,14 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 		}
 		// the Node must exist and should not be a directory
 		if fna.HasFileNode() && fna.FileNode.FileType != file.TypeDir {
-			result := GlobResult{
-				MatchPath: matchPath,
-				RealPath:  fna.FileNode.RealPath,
-				// we should not be given a link Node UNLESS it is dead
-				IsDeadLink: fna.FileNode.IsLink(),
+			result := file.NewFileReferenceVia(
+				matchPath,
+				fna.FileNode.Reference,
+				newReferenceAccessPath(fna.LeafLinkResolution),
+			)
+			if result != nil {
+				results = append(results, *result)
 			}
-			if fna.FileNode.Reference != nil {
-				result.Reference = *fna.FileNode.Reference
-			}
-			results = append(results, result)
 		}
 	}
 

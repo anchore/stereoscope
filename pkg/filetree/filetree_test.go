@@ -307,7 +307,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			expectedSet := internal.NewStringSet()
 
 			for _, r := range actual {
-				actualSet.Add(string(r.MatchPath))
+				actualSet.Add(string(r.RequestPath))
 			}
 
 			for _, e := range test.expected {
@@ -318,7 +318,7 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 			}
 
 			for _, r := range actual {
-				if !expectedSet.Contains(string(r.MatchPath)) {
+				if !expectedSet.Contains(string(r.RequestPath)) {
 					t.Errorf("extra search hit: %+v", r)
 				}
 			}

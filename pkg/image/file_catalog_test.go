@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-test/deep"
@@ -65,10 +66,9 @@ func TestFileCatalog_Add(t *testing.T) {
 	catalog := NewFileCatalog()
 	catalog.Add(*ref, metadata, layer, nil)
 
-	expected := FileCatalogEntry{
-		File:     *ref,
-		Metadata: metadata,
-		Layer:    layer,
+	expected := filetree.IndexEntry{
+		Reference: *ref,
+		Metadata:  metadata,
 	}
 
 	actual, err := catalog.Get(*ref)
@@ -79,6 +79,8 @@ func TestFileCatalog_Add(t *testing.T) {
 	for d := range deep.Equal(expected, actual) {
 		t.Errorf("diff: %+v", d)
 	}
+
+	assert.Equal(t, layer, catalog.Layer(*ref))
 }
 
 type testLayerContent struct {
@@ -212,22 +214,22 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 	// we don't need the index itself, just the side effect on the file catalog after indexing
 	_, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
-		layerTarIndexer(ft, &fileCatalog, &size, nil, nil),
+		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name    string
 		input   string
-		want    []FileCatalogEntry
+		want    []filetree.IndexEntry
 		wantErr require.ErrorAssertionFunc
 	}{
 		{
 			name:  "get simple extension",
 			input: ".txt",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-1.txt",
 						TarHeaderName: "path/branch.d/one/file-1.txt",
@@ -236,7 +238,8 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
+
+					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/two/file-2.txt",
 						TarHeaderName: "path/branch.d/two/file-2.txt",
@@ -245,7 +248,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/file-3.txt"},
+					Reference: file.Reference{RealPath: "/path/file-3.txt"},
 					Metadata: file.Metadata{
 						Path:          "/path/file-3.txt",
 						TarHeaderName: "path/file-3.txt",
@@ -258,9 +261,10 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 		{
 			name:  "get mixed type extension",
 			input: ".d",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d"},
+
+					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d",
 						TarHeaderName: "path/branch.d/",
@@ -269,7 +273,8 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
+
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-4.d",
 						TarHeaderName: "path/branch.d/one/file-4.d",
@@ -277,8 +282,10 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 						MIMEType:      "text/plain",
 					},
 				},
+
 				{
-					File: file.Reference{RealPath: "/path/common/branch.d"},
+
+					Reference: file.Reference{RealPath: "/path/common/branch.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/common/branch.d",
 						TarHeaderName: "path/common/branch.d",
@@ -287,7 +294,8 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/common/file-1.d"},
+
+					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/common/file-1.d",
 						TarHeaderName: "path/common/file-1.d",
@@ -300,9 +308,9 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 		{
 			name:  "get long extension",
 			input: ".tar.gz",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/.file-4.tar.gz",
 						TarHeaderName: "path/branch.d/one/.file-4.tar.gz",
@@ -311,7 +319,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-4.tar.gz",
 						TarHeaderName: "path/branch.d/one/file-4.tar.gz",
@@ -324,9 +332,9 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 		{
 			name:  "get short extension",
 			input: ".gz",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/.file-4.tar.gz",
 						TarHeaderName: "path/branch.d/one/.file-4.tar.gz",
@@ -335,7 +343,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-4.tar.gz",
 						TarHeaderName: "path/branch.d/one/file-4.tar.gz",
@@ -348,7 +356,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 		{
 			name:  "get non-existent extension",
 			input: ".blerg-123",
-			want:  []FileCatalogEntry{},
+			want:  []filetree.IndexEntry{},
 		},
 	}
 	for _, tt := range tests {
@@ -365,7 +373,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
 				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "TarSequence"),
-				cmpopts.IgnoreFields(FileCatalogEntry{}, "Contents")); d != "" {
+			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
 		})
@@ -382,22 +390,22 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 	// we don't need the index itself, just the side effect on the file catalog after indexing
 	_, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
-		layerTarIndexer(ft, &fileCatalog, &size, nil, nil),
+		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name    string
 		input   string
-		want    []FileCatalogEntry
+		want    []filetree.IndexEntry
 		wantErr require.ErrorAssertionFunc
 	}{
 		{
 			name:  "get existing file name",
 			input: "file-1.txt",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-1.txt",
 						TarHeaderName: "path/branch.d/one/file-1.txt",
@@ -410,14 +418,14 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 		{
 			name:  "get non-existing name",
 			input: "file-11.txt",
-			want:  []FileCatalogEntry{},
+			want:  []filetree.IndexEntry{},
 		},
 		{
 			name:  "get directory name",
 			input: "branch.d",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d"},
+					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d",
 						TarHeaderName: "path/branch.d/",
@@ -426,7 +434,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/common/branch.d"},
+					Reference: file.Reference{RealPath: "/path/common/branch.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/common/branch.d",
 						TarHeaderName: "path/common/branch.d",
@@ -439,14 +447,15 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 		{
 			name:  "get symlink name",
 			input: "file-1.d",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/common/file-1.d"},
+					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/common/file-1.d",
 						TarHeaderName: "path/common/file-1.d",
 						Linkname:      "path/branch.d/one/file-1.txt",
 						TypeFlag:      50, // symlink
+
 					},
 				},
 			},
@@ -471,7 +480,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
 				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "TarSequence"),
-				cmpopts.IgnoreFields(FileCatalogEntry{}, "Contents")); d != "" {
+			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
 		})
@@ -488,22 +497,22 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 	// we don't need the index itself, just the side effect on the file catalog after indexing
 	_, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
-		layerTarIndexer(ft, &fileCatalog, &size, nil, nil),
+		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name    string
 		input   string
-		want    []FileCatalogEntry
+		want    []filetree.IndexEntry
 		wantErr require.ErrorAssertionFunc
 	}{
 		{
 			name:  "get existing file name",
 			input: "file-1.*",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/common/file-1.d"},
+					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/common/file-1.d",
 						TarHeaderName: "path/common/file-1.d",
@@ -512,7 +521,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-1.txt",
 						TarHeaderName: "path/branch.d/one/file-1.txt",
@@ -525,14 +534,14 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 		{
 			name:  "get non-existing name",
 			input: "blerg-*.txt",
-			want:  []FileCatalogEntry{},
+			want:  []filetree.IndexEntry{},
 		},
 		{
 			name:  "get directory name",
 			input: "bran*.d",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d"},
+					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d",
 						TarHeaderName: "path/branch.d/",
@@ -541,7 +550,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/common/branch.d"},
+					Reference: file.Reference{RealPath: "/path/common/branch.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/common/branch.d",
 						TarHeaderName: "path/common/branch.d",
@@ -554,9 +563,9 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 		{
 			name:  "get symlink name",
 			input: "file?1.d",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/common/file-1.d"},
+					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/common/file-1.d",
 						TarHeaderName: "path/common/file-1.d",
@@ -586,7 +595,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
 				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "TarSequence"),
-				cmpopts.IgnoreFields(FileCatalogEntry{}, "Contents")); d != "" {
+			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
 		})
@@ -603,22 +612,22 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 	// we don't need the index itself, just the side effect on the file catalog after indexing
 	_, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
-		layerTarIndexer(ft, &fileCatalog, &size, nil, nil),
+		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name    string
 		input   string
-		want    []FileCatalogEntry
+		want    []filetree.IndexEntry
 		wantErr require.ErrorAssertionFunc
 	}{
 		{
 			name:  "get existing file mimetype",
 			input: "text/plain",
-			want: []FileCatalogEntry{
+			want: []filetree.IndexEntry{
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/.file-4.tar.gz",
 						TarHeaderName: "path/branch.d/one/.file-4.tar.gz",
@@ -627,7 +636,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-1.txt",
 						TarHeaderName: "path/branch.d/one/file-1.txt",
@@ -636,7 +645,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-4.d",
 						TarHeaderName: "path/branch.d/one/file-4.d",
@@ -645,7 +654,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/one/file-4.tar.gz",
 						TarHeaderName: "path/branch.d/one/file-4.tar.gz",
@@ -654,7 +663,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
+					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
 					Metadata: file.Metadata{
 						Path:          "/path/branch.d/two/file-2.txt",
 						TarHeaderName: "path/branch.d/two/file-2.txt",
@@ -663,7 +672,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					},
 				},
 				{
-					File: file.Reference{RealPath: "/path/file-3.txt"},
+					Reference: file.Reference{RealPath: "/path/file-3.txt"},
 					Metadata: file.Metadata{
 						Path:          "/path/file-3.txt",
 						TarHeaderName: "path/file-3.txt",
@@ -676,7 +685,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 		{
 			name:  "get non-existing mimetype",
 			input: "text/bogus",
-			want:  []FileCatalogEntry{},
+			want:  []filetree.IndexEntry{},
 		},
 	}
 	for _, tt := range tests {
@@ -693,7 +702,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
 				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "TarSequence"),
-				cmpopts.IgnoreFields(FileCatalogEntry{}, "Contents")); d != "" {
+			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
 		})
@@ -710,7 +719,7 @@ func TestFileCatalog_GetBasenames(t *testing.T) {
 	// we don't need the index itself, just the side effect on the file catalog after indexing
 	_, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
-		layerTarIndexer(ft, &fileCatalog, &size, nil, nil),
+		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
 
@@ -820,4 +829,28 @@ func fileExists(t *testing.T, filename string) bool {
 		t.Fatal(err)
 	}
 	return !info.IsDir()
+}
+
+func fileExtensions(p string) []string {
+	var exts []string
+	p = strings.TrimSpace(p)
+
+	// ignore oddities
+	if strings.HasSuffix(p, ".") {
+		return exts
+	}
+
+	// ignore directories
+	if strings.HasSuffix(p, "/") {
+		return exts
+	}
+
+	// ignore . which indicate a hidden file
+	p = strings.TrimLeft(path.Base(p), ".")
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i] == '.' {
+			exts = append(exts, p[i:])
+		}
+	}
+	return exts
 }

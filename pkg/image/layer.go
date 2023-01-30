@@ -155,59 +155,43 @@ func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 }
 
 // FilesByMIMEType returns file references for files that match at least one of the given MIME types relative to each layer tree.
-func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.ReferenceAccessVia, error) {
-	var refs []file.ReferenceAccessVia
-	for _, ty := range mimeTypes {
-		refsForType, err := fetchFilesByMIMEType(l.Tree, l.fileCatalog, ty)
-		if err != nil {
-			return nil, err
+// Deprecated: use SearchContext().SearchByMIMEType() instead.
+func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
+	var refs []file.Reference
+	refVias, err := l.SearchContext().SearchByMIMEType(mimeTypes...)
+	if err != nil {
+		return nil, err
+	}
+	for _, refVia := range refVias {
+		if refVia.HasReference() {
+			refs = append(refs, *refVia.Reference)
 		}
-		refs = append(refs, refsForType...)
 	}
 	return refs, nil
 }
 
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types relative to the squashed file tree representation.
-func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.ReferenceAccessVia, error) {
-	var refs []file.ReferenceAccessVia
-	for _, ty := range mimeTypes {
-		refsForType, err := fetchFilesByMIMEType(l.SquashedTree, l.fileCatalog, ty)
-		if err != nil {
-			return nil, err
+// Deprecated: use SquashedSearchContext().SearchByMIMEType() instead.
+func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
+	var refs []file.Reference
+	refVias, err := l.SquashedSearchContext().SearchByMIMEType(mimeTypes...)
+	if err != nil {
+		return nil, err
+	}
+	for _, refVia := range refVias {
+		if refVia.HasReference() {
+			refs = append(refs, *refVia.Reference)
 		}
-		refs = append(refs, refsForType...)
 	}
 	return refs, nil
 }
 
-// FilesByExtension returns file references for files that have the given extension.
-func (l *Layer) FilesByExtension(extension string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByExtension(l.Tree, l.fileCatalog, extension)
+func (l *Layer) SearchContext() filetree.Searcher {
+	return filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
 }
 
-// FilesByExtensionFromSquash returns file references for files have the given extension relative to the squash tree.
-func (l *Layer) FilesByExtensionFromSquash(extension string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByExtension(l.SquashedTree, l.fileCatalog, extension)
-}
-
-// FilesByBasename returns file references for files that have the following basename.
-func (l *Layer) FilesByBasename(basename string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByBasename(l.Tree, l.fileCatalog, basename)
-}
-
-// FilesByBasenameFromSquash returns file references for files by name relative to the squash tree.
-func (l *Layer) FilesByBasenameFromSquash(extension string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByBasename(l.SquashedTree, l.fileCatalog, extension)
-}
-
-// FilesByBasenameGlob returns file references for files that have the following basename glob.
-func (l *Layer) FilesByBasenameGlob(glob string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByBasenameGlob(l.Tree, l.fileCatalog, glob)
-}
-
-// FilesByBasenameGlobFromSquash returns file references for files by basename glob pattern relative to the squash tree.
-func (l *Layer) FilesByBasenameGlobFromSquash(glob string) ([]file.ReferenceAccessVia, error) {
-	return fetchFilesByBasenameGlob(l.SquashedTree, l.fileCatalog, glob)
+func (l *Layer) SquashedSearchContext() filetree.Searcher {
+	return filetree.NewSearchContext(l.SquashedTree, l.fileCatalog.Index)
 }
 
 func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {

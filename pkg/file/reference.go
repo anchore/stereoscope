@@ -2,6 +2,9 @@ package file
 
 import (
 	"fmt"
+	"sort"
+
+	"github.com/scylladb/go-set/strset"
 )
 
 var nextID = 0
@@ -26,6 +29,29 @@ func (f *ReferenceAccessVia) HasReference() bool {
 		return false
 	}
 	return f.Reference != nil
+}
+
+func (f *ReferenceAccessVia) AllPaths() []Path {
+	set := strset.New()
+	set.Add(string(f.RequestPath))
+	if f.Reference != nil {
+		set.Add(string(f.Reference.RealPath))
+	}
+	for _, p := range f.LeafLinkResolution {
+		set.Add(string(p.RequestPath))
+		if p.Reference != nil {
+			set.Add(string(p.Reference.RealPath))
+		}
+	}
+
+	paths := set.List()
+	sort.Strings(paths)
+
+	var results []Path
+	for _, p := range paths {
+		results = append(results, Path(p))
+	}
+	return results
 }
 
 // RequestResolutionPath represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
