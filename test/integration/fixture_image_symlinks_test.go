@@ -92,22 +92,22 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 	if actualResolve.ID() != expectedResolve.ID() {
 		var exLayer = -1
 		var acLayer = -1
-		var exType byte
-		var acType byte
+		var exType file.Type
+		var acType file.Type
 
 		eM, err := i.FileCatalog.Get(*expectedResolve)
 		if err == nil {
-			exLayer = int(eM.Layer.Metadata.Index)
-			exType = eM.Metadata.TypeFlag
+			exLayer = int(i.FileCatalog.Layer(*expectedResolve).Metadata.Index)
+			exType = eM.Metadata.Type
 		}
 
 		aM, err := i.FileCatalog.Get(*actualResolve)
 		if err == nil {
-			acLayer = int(aM.Layer.Metadata.Index)
-			acType = aM.Metadata.TypeFlag
+			acLayer = int(i.FileCatalog.Layer(*actualResolve).Metadata.Index)
+			acType = aM.Metadata.Type
 		}
 
-		t.Fatalf("mismatched link resolution link=%+v: '%+v (layer=%d type=%+v)'!='%+v (layer=%d type=%+v linkName=%s)'", cfg.linkPath, expectedResolve, exLayer, exType, actualResolve, acLayer, acType, aM.Metadata.Linkname)
+		t.Fatalf("mismatched link resolution link=%+v: <%+v (layer=%d type=%+v)> != <%+v (layer=%d type=%+v linkName=%s)>", cfg.linkPath, expectedResolve, exLayer, exType, actualResolve, acLayer, acType, aM.Metadata.LinkDestination)
 	}
 }
 

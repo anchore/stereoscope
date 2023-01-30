@@ -19,15 +19,13 @@ var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the Fil
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
 
 type Reader interface {
-	AllRealPaths() []file.Path
-	AllFiles(types ...file.Type) []file.Reference
-	ListPaths(dir file.Path) ([]file.Path, error)
 	File(path file.Path, options ...LinkResolutionOption) (bool, *file.ReferenceAccessVia, error)
-	Reader() tree.Reader
-	Equal(other *FileTree) bool
-	PathDiff(other *FileTree) (extra, missing []file.Path)
+	FilesByGlob(query string, options ...LinkResolutionOption) ([]file.ReferenceAccessVia, error)
+	// note: there are more reader-like functions, however, let's try to keep this interface small and simple for now
+}
+
+type Walker interface {
 	Walk(fn func(path file.Path, f filenode.FileNode) error, conditions *WalkConditions) error
-	HasPath(path file.Path, options ...LinkResolutionOption) bool
 }
 
 type Writer interface {

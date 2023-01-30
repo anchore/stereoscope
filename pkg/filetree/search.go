@@ -15,11 +15,11 @@ type Searcher interface {
 }
 
 type searchContext struct {
-	tree  *FileTree // this is the tree which all index search results are filtered against
-	index Index     // this index is relative to one or more trees, not just necessarily one
+	tree  Reader // this is the tree which all index search results are filtered against
+	index Index  // this index is relative to one or more trees, not just necessarily one
 }
 
-func NewSearchContext(tree *FileTree, index Index) Searcher {
+func NewSearchContext(tree Reader, index Index) Searcher {
 	return &searchContext{
 		tree:  tree,
 		index: index,

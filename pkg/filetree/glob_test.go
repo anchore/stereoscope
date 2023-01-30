@@ -240,20 +240,20 @@ func TestOSAdapter_ReadDir(t *testing.T) {
 			expected: []fileinfoAdapter{
 				{
 					VirtualPath: "/home/thing.txt",
-					Node:        filenode.FileNode{RealPath: "/home/thing.txt", FileType: 48},
+					Node:        filenode.FileNode{RealPath: "/home/thing.txt", FileType: file.TypeReg},
 				},
 
 				{
 					VirtualPath: "/home/wagoodman",
-					Node:        filenode.FileNode{RealPath: "/home/wagoodman", FileType: 53},
+					Node:        filenode.FileNode{RealPath: "/home/wagoodman", FileType: file.TypeDir},
 				},
 				{
 					VirtualPath: "/home/thing",
-					Node:        filenode.FileNode{RealPath: "/home/thing", FileType: 50, LinkPath: "./thing.txt"},
+					Node:        filenode.FileNode{RealPath: "/home/thing", FileType: file.TypeSymlink, LinkPath: "./thing.txt"},
 				},
 				{
 					VirtualPath: "/home/place",
-					Node:        filenode.FileNode{RealPath: "/home/place", FileType: 49, LinkPath: "/somewhere-else"},
+					Node:        filenode.FileNode{RealPath: "/home/place", FileType: file.TypeHardLink, LinkPath: "/somewhere-else"},
 				},
 			},
 			shouldErr: false,

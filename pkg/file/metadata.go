@@ -14,14 +14,14 @@ import (
 type Metadata struct {
 	// Path is the absolute path representation to the file
 	Path string
-	// Linkname is populated only for hardlinks / symlinks, can be an absolute or relative
-	Linkname string
+	// LinkDestination is populated only for hardlinks / symlinks, can be an absolute or relative
+	LinkDestination string
 	// Size of the file in bytes
 	Size    int64
 	UserID  int
 	GroupID int
-	// TypeFlag is the tar.TypeFlag entry for the file
-	TypeFlag byte
+	// Type is the tar.Type entry for the file
+	Type     Type
 	IsDir    bool
 	Mode     os.FileMode
 	MIMEType string
@@ -29,15 +29,15 @@ type Metadata struct {
 
 func NewMetadata(header tar.Header, content io.Reader) Metadata {
 	return Metadata{
-		Path:     path.Clean(DirSeparator + header.Name),
-		TypeFlag: header.Typeflag,
-		Linkname: header.Linkname,
-		Size:     header.FileInfo().Size(),
-		Mode:     header.FileInfo().Mode(),
-		UserID:   header.Uid,
-		GroupID:  header.Gid,
-		IsDir:    header.FileInfo().IsDir(),
-		MIMEType: MIMEType(content),
+		Path:            path.Clean(DirSeparator + header.Name),
+		Type:            TypeFromTarType(header.Typeflag),
+		LinkDestination: header.Linkname,
+		Size:            header.FileInfo().Size(),
+		Mode:            header.FileInfo().Mode(),
+		UserID:          header.Uid,
+		GroupID:         header.Gid,
+		IsDir:           header.FileInfo().IsDir(),
+		MIMEType:        MIMEType(content),
 	}
 }
 
@@ -48,12 +48,37 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 		return Metadata{}, err
 	}
 
+	var ty Type
+	switch {
+	case fi.IsDir():
+		ty = TypeDir
+	case f.IsRegular():
+		ty = TypeReg
+	case f.IsSymlink():
+		ty = TypeSymlink
+	default:
+		switch fi.Mode() & os.ModeType {
+		case os.ModeNamedPipe:
+			ty = TypeFifo
+		case os.ModeSocket:
+			ty = TypeSocket
+		case os.ModeDevice:
+			ty = TypeBlockDevice
+		case os.ModeCharDevice:
+			ty = TypeCharacterDevice
+		case os.ModeIrregular:
+			ty = TypeIrregular
+		}
+		// note: cannot determine hardlink from squashfs.File (but case us not possible)
+	}
+
 	md := Metadata{
-		Path:     filepath.Clean(filepath.Join("/", path)),
-		Linkname: f.SymlinkPath(),
-		Size:     fi.Size(),
-		IsDir:    f.IsDir(),
-		Mode:     fi.Mode(),
+		Path:            filepath.Clean(filepath.Join("/", path)),
+		LinkDestination: f.SymlinkPath(),
+		Size:            fi.Size(),
+		IsDir:           f.IsDir(),
+		Mode:            fi.Mode(),
+		Type:            ty,
 	}
 
 	if f.IsRegular() {

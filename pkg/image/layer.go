@@ -1,7 +1,6 @@
 package image
 
 import (
-	"archive/tar"
 	"bytes"
 	"errors"
 	"fmt"
@@ -218,18 +217,18 @@ func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int6
 		// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
 		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
 		var fileReference *file.Reference
-		switch metadata.TypeFlag {
-		case tar.TypeSymlink:
-			fileReference, err = ft.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+		switch metadata.Type {
+		case file.TypeSymlink:
+			fileReference, err = ft.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
 			if err != nil {
 				return err
 			}
-		case tar.TypeLink:
-			fileReference, err = ft.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+		case file.TypeHardLink:
+			fileReference, err = ft.AddHardLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
 			if err != nil {
 				return err
 			}
-		case tar.TypeDir:
+		case file.TypeDir:
 			fileReference, err = ft.AddDir(file.Path(metadata.Path))
 			if err != nil {
 				return err
@@ -241,7 +240,7 @@ func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int6
 			}
 		}
 		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.Linkname)
+			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.LinkDestination)
 		}
 
 		if size != nil {
@@ -278,7 +277,7 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 
 		switch {
 		case f.IsSymlink():
-			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
+			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
 			if err != nil {
 				return err
 			}
@@ -295,7 +294,7 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 		}
 
 		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during squashfs iteration", metadata.Path, metadata.Linkname)
+			return fmt.Errorf("could not add path=%q link=%q during squashfs iteration", metadata.Path, metadata.LinkDestination)
 		}
 
 		l.Metadata.Size += metadata.Size
