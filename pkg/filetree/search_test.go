@@ -100,7 +100,11 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 	}
 
 	tree := NewFileTree()
-	ref, err := tree.AddFile("/path/to/file.txt")
+	ref, err := tree.AddSymLink("/link-to-path", "/path")
+	require.NoError(t, err)
+	require.NotNil(t, ref)
+
+	ref, err = tree.AddFile("/path/to/file.txt")
 	require.NoError(t, err)
 	require.NotNil(t, ref)
 
@@ -129,6 +133,25 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				{
 					ReferenceAccess: file.ReferenceAccess{
 						RequestPath: "/path/to/file.txt",
+						Reference: &file.Reference{
+							RealPath: "/path/to/file.txt",
+						},
+					},
+				},
+			},
+		}, {
+			name:   "virtual path exists",
+			fields: defaultFields,
+			args: args{
+				// note: this is a glob through a symlink (ancestor). If not using the index, this will work
+				// just fine, since we do a full tree search. However, if using the index, this shortcut will
+				// dodge any ancestor symlink and will not find the file.
+				glob: "**/link-to-path/to/file.txt",
+			},
+			want: []file.ReferenceAccessVia{
+				{
+					ReferenceAccess: file.ReferenceAccess{
+						RequestPath: "/link-to-path/to/file.txt",
 						Reference: &file.Reference{
 							RealPath: "/path/to/file.txt",
 						},
