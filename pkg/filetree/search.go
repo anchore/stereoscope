@@ -3,6 +3,8 @@ package filetree
 import (
 	"fmt"
 
+	"github.com/anchore/stereoscope/internal/log"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/bmatcuk/doublestar/v4"
 )
@@ -28,12 +30,16 @@ func NewSearchContext(tree Reader, index Index) Searcher {
 
 func (i searchContext) SearchByPath(path string, options ...LinkResolutionOption) (*file.ReferenceAccessVia, error) {
 	// TODO: one day this could leverage indexes outside of the tree, but today this is not implemented
+	log.WithFields("path", path).Trace("searching filetree by path")
+
 	options = append(options, FollowBasenameLinks)
 	_, ref, err := i.tree.File(file.Path(path), options...)
 	return ref, err
 }
 
 func (i searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.ReferenceAccessVia, error) {
+	log.WithFields("types", mimeTypes).Trace("searching filetree by MIME types")
+
 	var fileEntries []IndexEntry
 
 	for _, mType := range mimeTypes {
@@ -48,6 +54,8 @@ func (i searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.ReferenceAc
 }
 
 func (i searchContext) SearchByGlob(pattern string, options ...LinkResolutionOption) ([]file.ReferenceAccessVia, error) {
+	log.WithFields("glob", pattern).Trace("searching filetree by glob")
+
 	if i.index == nil {
 		options = append(options, FollowBasenameLinks)
 		return i.tree.FilesByGlob(pattern, options...)
@@ -99,6 +107,8 @@ func (i searchContext) searchByGlob(request searchRequest, options ...LinkResolu
 		}
 		return refs, nil
 	case searchByGlob:
+		log.WithFields("glob", request.value).Trace("glob provided is an expensive search, consider using a more specific indexed search")
+
 		options = append(options, FollowBasenameLinks)
 		return i.tree.FilesByGlob(request.value, options...)
 	}
