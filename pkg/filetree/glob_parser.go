@@ -37,38 +37,60 @@ type searchRequest struct {
 	requirement string
 }
 
-func parseGlob(glob string) searchRequest {
+func parseGlob(glob string) []searchRequest {
 	glob = cleanGlob(glob)
 
-	if !strings.ContainsAny(glob, "*?") {
-		return searchRequest{
-			searchBasis: searchByPath,
-			value:       glob,
+	if !strings.ContainsAny(glob, "*?[]{}") {
+		return []searchRequest{
+			{
+				searchBasis: searchByPath,
+				value:       glob,
+			},
 		}
 	}
 
+	beforeBasename, basename := splitAtBasename(glob)
+	requests := parseGlobBasename(basename)
+	for i := range requests {
+		applyRequirement(&requests[i], beforeBasename, glob)
+	}
+
+	return requests
+}
+
+func splitAtBasename(glob string) (string, string) {
+	// TODO: need to correctly avoid indexes within [] and {} groups
 	basenameSplitAt := strings.LastIndex(glob, "/")
 
 	var basename string
+	var beforeBasename string
 	if basenameSplitAt == -1 {
 		// note: this has no glob path prefix, thus no requirement...
 		// this can only be a basename, basename glob, or extension
 		basename = glob
+		beforeBasename = ""
 	} else if basenameSplitAt < len(glob)-1 {
 		basename = glob[basenameSplitAt+1:]
 	}
 
-	request := parseGlobBasename(basename)
+	if basenameSplitAt >= 0 && basenameSplitAt < len(glob)-1 {
+		beforeBasename = glob[:basenameSplitAt]
+	}
 
-	requirement := glob
-	if basenameSplitAt == -1 {
-		requirement = ""
-	} else if basenameSplitAt < len(glob)-1 {
-		requirementSection := glob[:basenameSplitAt]
-		switch requirementSection {
+	return beforeBasename, basename
+}
+
+func applyRequirement(request *searchRequest, beforeBasename, glob string) {
+	var requirement string
+
+	if beforeBasename != "" {
+		requirement = glob
+		switch beforeBasename {
 		case "**", request.requirement:
 			requirement = ""
 		}
+	} else {
+		requirement = ""
 	}
 
 	request.requirement = requirement
@@ -79,41 +101,115 @@ func parseGlob(glob string) searchRequest {
 			request.requirement = ""
 		}
 	}
-
-	return request
 }
 
-func parseGlobBasename(input string) searchRequest {
-	extensionFields := strings.Split(input, "*.")
+func parseGlobBasename(basenameInput string) []searchRequest {
+	if strings.ContainsAny(basenameInput, "[]{}") {
+		return parseBasenameAltAndClassGlobSections(basenameInput)
+	}
+
+	extensionFields := strings.Split(basenameInput, "*.")
 	if len(extensionFields) == 2 && extensionFields[0] == "" {
 		possibleExtension := extensionFields[1]
 		if !strings.ContainsAny(possibleExtension, "*?") {
 			// special case, this is plain extension
-			return searchRequest{
-				searchBasis: searchByExtension,
-				value:       "." + possibleExtension,
+			return []searchRequest{
+				{
+					searchBasis: searchByExtension,
+					value:       "." + possibleExtension,
+				},
 			}
 		}
 	}
 
-	if !strings.ContainsAny(input, "*?") {
+	if !strings.ContainsAny(basenameInput, "*?") {
 		// special case, this is plain extension
-		return searchRequest{
-			searchBasis: searchByBasename,
-			value:       input,
+		return []searchRequest{
+			{
+				searchBasis: searchByBasename,
+				value:       basenameInput,
+			},
 		}
 	}
 
-	if strings.ReplaceAll(strings.ReplaceAll(input, "?", ""), "*", "") == "" {
+	if strings.ReplaceAll(strings.ReplaceAll(basenameInput, "?", ""), "*", "") == "" {
 		// special case, this is a glob that is only asterisks... do not process!
-		return searchRequest{
-			searchBasis: searchByGlob,
+		return []searchRequest{
+			{
+				searchBasis: searchByGlob,
+				// note: we let the parent caller attach the full glob value
+			},
 		}
 	}
 
-	return searchRequest{
-		searchBasis: searchByBasenameGlob,
-		value:       input,
+	return []searchRequest{
+		{
+			searchBasis: searchByBasenameGlob,
+			value:       basenameInput,
+		},
+	}
+}
+
+func parseBasenameAltAndClassGlobSections(basenameInput string) []searchRequest {
+	// TODO: process escape sequences
+
+	altStartCount := strings.Count(basenameInput, "{")
+	altEndCount := strings.Count(basenameInput, "}")
+	classStartCount := strings.Count(basenameInput, "[")
+	classEndCount := strings.Count(basenameInput, "]")
+
+	if altStartCount != altEndCount || classStartCount != classEndCount {
+		// imbalanced braces, this is not a valid glob relative to just the basename
+		return []searchRequest{
+			{
+				searchBasis: searchByGlob,
+				// note: we let the parent caller attach the full glob value
+			},
+		}
+	}
+
+	if classStartCount > 0 {
+		// parsing this is not supported at this time
+		return []searchRequest{
+			{
+				searchBasis: searchByBasenameGlob,
+				value:       basenameInput,
+			},
+		}
+	}
+
+	// if the glob is the simplest list form, them allow for breaking into sub-searches
+	if altStartCount == 1 {
+		indexStartIsPrefix := strings.Index(basenameInput, "{") == 0
+		indexEndIsSuffix := strings.Index(basenameInput, "}") == len(basenameInput)-1
+		if indexStartIsPrefix && indexEndIsSuffix {
+			// this is a simple list, split it up
+			// e.g. {a,b,c} -> a, b, c
+			altSections := strings.Split(basenameInput[1:len(basenameInput)-1], ",")
+			if len(altSections) > 1 {
+				var requests []searchRequest
+				for _, altSection := range altSections {
+					basis := searchByBasename
+					if strings.ContainsAny(altSection, "*?") {
+						basis = searchByBasenameGlob
+					}
+
+					requests = append(requests, searchRequest{
+						searchBasis: basis,
+						value:       altSection,
+					})
+				}
+				return requests
+			}
+		}
+	}
+
+	// there is some sort of alt usage, but it is not a simple list... just treat it as a glob
+	return []searchRequest{
+		{
+			searchBasis: searchByBasenameGlob,
+			value:       basenameInput,
+		},
 	}
 }
 

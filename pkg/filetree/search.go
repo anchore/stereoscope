@@ -61,7 +61,16 @@ func (i searchContext) SearchByGlob(pattern string, options ...LinkResolutionOpt
 		return i.tree.FilesByGlob(pattern, options...)
 	}
 
-	return i.searchByGlob(parseGlob(pattern), options...)
+	var allRefs []file.ReferenceAccessVia
+	for _, request := range parseGlob(pattern) {
+		refs, err := i.searchByGlob(request, options...)
+		if err != nil {
+			return nil, fmt.Errorf("unable to search by glob=%q: %w", pattern, err)
+		}
+		allRefs = append(allRefs, refs...)
+	}
+
+	return allRefs, nil
 }
 
 func (i searchContext) searchByGlob(request searchRequest, options ...LinkResolutionOption) ([]file.ReferenceAccessVia, error) {
