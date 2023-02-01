@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+
 	"github.com/anchore/go-logger"
 	"github.com/anchore/go-logger/adapter/logrus"
 
-	"io/ioutil"
 	"os"
 
 	"github.com/anchore/stereoscope"
@@ -93,7 +94,7 @@ func main() {
 		panic(err)
 	}
 
-	content, err := ioutil.ReadAll(contentReader)
+	content, err := io.ReadAll(contentReader)
 	if err != nil {
 		panic(err)
 	}

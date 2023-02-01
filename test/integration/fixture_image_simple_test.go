@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 	"testing"
 
@@ -182,7 +181,7 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 					if err != nil {
 						b.Fatalf("unable to read: %+v", err)
 					}
-					_, err = ioutil.ReadAll(f.Contents())
+					_, err = io.ReadAll(f.Contents())
 				}
 			}
 		})
@@ -317,7 +316,7 @@ func assertImageSimpleContents(t *testing.T, i *image.Image) {
 		if !ok {
 			t.Errorf("extra path found: %+v", path)
 		}
-		b, err := ioutil.ReadAll(actual)
+		b, err := io.ReadAll(actual)
 		if err != nil {
 			t.Errorf("failed to read %+v : %+v", path, err)
 		}

@@ -5,7 +5,7 @@ package integration
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -140,7 +140,7 @@ func fetchContents(t *testing.T, i *image.Image, cfg linkFetchConfig) string {
 	if err != nil {
 		t.Fatalf("could not fetch contents of %+v: %+v", cfg.linkPath, err)
 	}
-	b, err := ioutil.ReadAll(contents)
+	b, err := io.ReadAll(contents)
 	if err != nil {
 		t.Fatalf("unable to fetch contents for %+v : %+v", cfg, err)
 	}

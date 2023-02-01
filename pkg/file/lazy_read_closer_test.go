@@ -2,7 +2,6 @@ package file
 
 import (
 	"io"
-	"io/ioutil"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -15,7 +14,7 @@ func TestDeferredReadCloser(t *testing.T) {
 	dReader := NewLazyReadCloser(filepath)
 	require.Nil(t, dReader.file, "should not have a file, but we do somehow")
 
-	actualContents, err := ioutil.ReadAll(dReader)
+	actualContents, err := io.ReadAll(dReader)
 	require.NotNil(t, dReader.file, "should have a file, but we do not somehow")
 	require.NoError(t, err)
 	require.Equal(t, allContent, actualContents)
