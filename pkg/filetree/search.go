@@ -27,8 +27,6 @@ type searchContext struct {
 	// the following enables correct link resolution when searching via the index
 	linkForwardRef   map[node.ID]node.ID    // {link-node-id: link-destination-node-id}
 	linkBackwardRefs map[node.ID]node.IDSet // {link-destination-node-id: str([link-node-id, ...])}
-	// allLinks         node.IDSet             // set([link-node-id, ...]) // all links, regardless of whether they are resolved or not
-	// unresolvedLinks  node.IDSet             // set([link-node-id, ...]) // we have not figured the forward/backward refs for these links yet
 }
 
 func NewSearchContext(tree *FileTree, index Index) Searcher {
@@ -176,6 +174,9 @@ func (sc searchContext) searchByGlob(request searchRequest, options ...LinkResol
 			return nil, err
 		}
 		return refs, nil
+	case searchByParentBasename:
+		return sc.searchByParentBasename(request)
+
 	case searchByGlob:
 		log.WithFields("glob", request.value).Trace("glob provided is an expensive search, consider using a more specific indexed search")
 
@@ -184,6 +185,46 @@ func (sc searchContext) searchByGlob(request searchRequest, options ...LinkResol
 	}
 
 	return nil, fmt.Errorf("invalid search request: %+v", request.searchBasis)
+}
+
+func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.ReferenceAccessVia, error) {
+	indexes, err := sc.index.GetByBasename(request.value)
+	if err != nil {
+		return nil, fmt.Errorf("unable to search by extension=%q: %w", request.value, err)
+	}
+	refs, err := sc.referencesWithRequirement(request.requirement, indexes)
+	if err != nil {
+		return nil, err
+	}
+
+	var results []file.ReferenceAccessVia
+	for _, ref := range refs {
+		paths, err := sc.tree.ListPaths(ref.RequestPath)
+		if err != nil {
+			// this may not be a directory, that's alright, just continue...
+			continue
+		}
+		for _, p := range paths {
+			_, nestedRef, err := sc.tree.File(p, FollowBasenameLinks)
+			if err != nil {
+				return nil, fmt.Errorf("unable to fetch file reference from parent path %q for path=%q: %w", ref.RequestPath, p, err)
+			}
+			if !nestedRef.HasReference() {
+				continue
+			}
+			// note: the requirement was written for the parent, so we need to consider the new
+			// child path by adding /* to match all children
+			matches, err := matchesRequirement(*nestedRef, request.requirement+"/*")
+			if err != nil {
+				return nil, err
+			}
+			if matches {
+				results = append(results, *nestedRef)
+			}
+		}
+	}
+
+	return results, nil
 }
 
 func (sc searchContext) referencesWithRequirement(requirement string, entries []IndexEntry) ([]file.ReferenceAccessVia, error) {
@@ -198,25 +239,30 @@ func (sc searchContext) referencesWithRequirement(requirement string, entries []
 
 	var results []file.ReferenceAccessVia
 	for _, ref := range refs {
-		var foundMatchingRequirement bool
-		allRefPaths := ref.AllPaths()
-		for _, p := range allRefPaths {
-			matched, err := doublestar.Match(requirement, string(p))
-			if err != nil {
-				return nil, fmt.Errorf("unable to match glob pattern=%q to path=%q: %w", requirement, p, err)
-			}
-			if matched {
-				foundMatchingRequirement = true
-				break
-			}
+		matches, err := matchesRequirement(ref, requirement)
+		if err != nil {
+			return nil, err
 		}
-		if !foundMatchingRequirement {
-			continue
+		if matches {
+			results = append(results, ref)
 		}
-		results = append(results, ref)
 	}
 
 	return results, nil
+}
+
+func matchesRequirement(ref file.ReferenceAccessVia, requirement string) (bool, error) {
+	allRefPaths := ref.AllRequestPaths()
+	for _, p := range allRefPaths {
+		matched, err := doublestar.Match(requirement, string(p))
+		if err != nil {
+			return false, fmt.Errorf("unable to match glob pattern=%q to path=%q: %w", requirement, p, err)
+		}
+		if matched {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 type cacheRequest struct {

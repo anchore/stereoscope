@@ -11,6 +11,7 @@ const (
 	searchByExtension
 	searchByBasename
 	searchByBasenameGlob
+	searchByParentBasename
 )
 
 type searchBasis int
@@ -27,6 +28,8 @@ func (s searchBasis) String() string {
 		return "basename"
 	case searchByBasenameGlob:
 		return "basename-glob"
+	case searchByParentBasename:
+		return "parent-basename"
 	}
 	return "unknown search basis"
 }
@@ -35,6 +38,14 @@ type searchRequest struct {
 	searchBasis
 	value       string
 	requirement string
+}
+
+func (s searchRequest) String() string {
+	value := s.searchBasis.String() + ": " + s.value
+	if s.requirement != "" {
+		value += " (requirement: " + s.requirement + ")"
+	}
+	return value
 }
 
 func parseGlob(glob string) []searchRequest {
@@ -50,6 +61,22 @@ func parseGlob(glob string) []searchRequest {
 	}
 
 	beforeBasename, basename := splitAtBasename(glob)
+
+	if basename == "*" {
+		_, nestedBasename := splitAtBasename(beforeBasename)
+		if !strings.ContainsAny(nestedBasename, "*?[]{}") {
+			// special case: glob is a parent glob
+			requests := []searchRequest{
+				{
+					searchBasis: searchByParentBasename,
+					value:       nestedBasename,
+					requirement: beforeBasename,
+				},
+			}
+			return requests
+		}
+	}
+
 	requests := parseGlobBasename(basename)
 	for i := range requests {
 		applyRequirement(&requests[i], beforeBasename, glob)

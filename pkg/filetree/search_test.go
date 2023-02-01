@@ -118,11 +118,16 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, fileRef)
 
+	toRef, err := tree.AddDir("/path/to")
+	require.NoError(t, err)
+	require.NotNil(t, toRef)
+
 	idx := NewIndex()
 	idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
 	idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymlink})
 	idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymlink})
 	idx.Add(*doubleLinkToPathRef, file.Metadata{Type: file.TypeSymlink})
+	idx.Add(*toRef, file.Metadata{Type: file.TypeDir})
 
 	defaultFields := fields{
 		tree:  tree,
@@ -142,28 +147,14 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 			args: args{
 				glob: "/**/t?/fil?.txt",
 			},
+			// note: result "/link-to-file" resolves to the file but does not show up since the request path
+			// does not match the requirement glob
 			want: []file.ReferenceAccessVia{
 				{
 					ReferenceAccess: file.ReferenceAccess{
 						RequestPath: "/double-link-to-path/to/file.txt",
 						Reference: &file.Reference{
 							RealPath: "/path/to/file.txt",
-						},
-					},
-				},
-				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/link-to-file",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
-					},
-					LeafLinkResolution: []file.ReferenceAccess{
-						{
-							RequestPath: "/link-to-file",
-							Reference: &file.Reference{
-								RealPath: "/link-to-file",
-							},
 						},
 					},
 				},
@@ -193,6 +184,57 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				// just fine, since we do a full tree search. However, if using the index, this shortcut will
 				// dodge any ancestor symlink and will not find the file.
 				glob: "**/link-to-path/to/file.txt",
+			},
+			want: []file.ReferenceAccessVia{
+				{
+					ReferenceAccess: file.ReferenceAccess{
+						RequestPath: "/link-to-path/to/file.txt",
+						Reference: &file.Reference{
+							RealPath: "/path/to/file.txt",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:   "access all children",
+			fields: defaultFields,
+			args: args{
+				glob: "**/path/to/*",
+			},
+			want: []file.ReferenceAccessVia{
+				{
+					ReferenceAccess: file.ReferenceAccess{
+						RequestPath: "/path/to/file.txt",
+						Reference: &file.Reference{
+							RealPath: "/path/to/file.txt",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:   "access all children as path",
+			fields: defaultFields,
+			args: args{
+				glob: "/path/to/*",
+			},
+			want: []file.ReferenceAccessVia{
+				{
+					ReferenceAccess: file.ReferenceAccess{
+						RequestPath: "/path/to/file.txt",
+						Reference: &file.Reference{
+							RealPath: "/path/to/file.txt",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:   "access via symlink for all children",
+			fields: defaultFields,
+			args: args{
+				glob: "**/link-to-path/to/*",
 			},
 			want: []file.ReferenceAccessVia{
 				{

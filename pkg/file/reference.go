@@ -19,6 +19,8 @@ type ReferenceAccessVia struct {
 	LeafLinkResolution []ReferenceAccess
 }
 
+type ReferenceAccessVias []ReferenceAccessVia
+
 func (f *ReferenceAccessVia) HasReference() bool {
 	if f == nil {
 		return false
@@ -37,6 +39,23 @@ func (f *ReferenceAccessVia) AllPaths() []Path {
 		if p.Reference != nil {
 			set.Add(string(p.Reference.RealPath))
 		}
+	}
+
+	paths := set.List()
+	sort.Strings(paths)
+
+	var results []Path
+	for _, p := range paths {
+		results = append(results, Path(p))
+	}
+	return results
+}
+
+func (f *ReferenceAccessVia) AllRequestPaths() []Path {
+	set := strset.New()
+	set.Add(string(f.RequestPath))
+	for _, p := range f.LeafLinkResolution {
+		set.Add(string(p.RequestPath))
 	}
 
 	paths := set.List()

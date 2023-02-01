@@ -233,15 +233,26 @@ func Test_parseGlob(t *testing.T) {
 		},
 		{
 			name: "fallback to full glob search",
-			glob: "**/foo/bar/*",
+			glob: "**/foo/bar/**?/**",
 			want: []searchRequest{
 				{
 					searchBasis: searchByGlob,
-					value:       "**/foo/bar/*",
+					value:       "**/foo/bar/*?/**",
 				},
 			},
 		},
-		// edge cases
+		{
+			name: "use parent basename for directory contents",
+			glob: "**/foo/bar/*",
+			want: []searchRequest{
+				{
+					searchBasis: searchByParentBasename,
+					value:       "bar",
+					requirement: "**/foo/bar",
+				},
+			},
+		},
+		// special cases
 		{
 			name: "empty string",
 			glob: "",
@@ -279,6 +290,26 @@ func Test_parseGlob(t *testing.T) {
 					searchBasis: searchByBasenameGlob,
 					value:       "b*r",
 					requirement: "/foo/b*r", // note that the slash is removed since this should be a clean path
+				},
+			},
+		},
+		{
+			name: "ends with *",
+			glob: "**/foo/b*r/*",
+			want: []searchRequest{
+				{
+					searchBasis: searchByGlob,
+					value:       "**/foo/b*r/*",
+				},
+			},
+		},
+		{
+			name: "ends with ***",
+			glob: "**/foo/b*r/**",
+			want: []searchRequest{
+				{
+					searchBasis: searchByGlob,
+					value:       "**/foo/b*r/**",
 				},
 			},
 		},
