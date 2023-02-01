@@ -1,11 +1,34 @@
-package node
+package file
 
-type ID string
+import "sort"
+
+var nextID = 0 // note: this is governed by the reference constructor
+
+// ID is used for file tree manipulation to uniquely identify tree nodes.
+type ID uint64
+
+type IDs []ID
+
+func (ids IDs) Len() int {
+	return len(ids)
+}
+
+func (ids IDs) Less(i, j int) bool {
+	return ids[i] < ids[j]
+}
+
+func (ids IDs) Swap(i, j int) {
+	ids[i], ids[j] = ids[j], ids[i]
+}
 
 type IDSet map[ID]struct{}
 
 func NewIDSet() IDSet {
 	return make(IDSet)
+}
+
+func (s IDSet) Size() int {
+	return len(s)
 }
 
 func (s IDSet) Merge(other IDSet) {
@@ -43,6 +66,9 @@ func (s IDSet) List() []ID {
 	for i := range s {
 		ret = append(ret, i)
 	}
+
+	sort.Sort(IDs(ret))
+
 	return ret
 }
 

@@ -7,11 +7,6 @@ import (
 	"github.com/scylladb/go-set/strset"
 )
 
-var nextID = 0
-
-// ID is used for file tree manipulation to uniquely identify tree nodes.
-type ID uint64
-
 // ReferenceAccess represents the fetching of a possibly non-existent file, and how it was accessed.
 type ReferenceAccess struct {
 	RequestPath Path

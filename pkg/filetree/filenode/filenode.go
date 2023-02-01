@@ -2,6 +2,7 @@ package filenode
 
 import (
 	"path"
+	"path/filepath"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/tree/node"
@@ -69,4 +70,22 @@ func (n *FileNode) IsLink() bool {
 
 func IDByPath(p file.Path) node.ID {
 	return node.ID(p)
+}
+
+func (n *FileNode) RenderLinkDestination() file.Path {
+	if !n.IsLink() {
+		return ""
+	}
+
+	if n.LinkPath.IsAbsolutePath() {
+		// use links with absolute paths blindly
+		return n.LinkPath
+	}
+
+	// resolve relative link paths
+	var parentDir string
+	parentDir, _ = filepath.Split(string(n.RealPath)) // TODO: alex: should this be path.Split, not filepath.Split?
+
+	// assemble relative link path by normalizing: "/cur/dir/../file1.txt" --> "/cur/file1.txt"
+	return file.Path(path.Clean(path.Join(parentDir, string(n.LinkPath))))
 }

@@ -2,7 +2,6 @@ package filetree
 
 import (
 	"errors"
-	"fmt"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
@@ -84,6 +83,40 @@ func TestFileTree_RemovePath(t *testing.T) {
 	err = tr.RemovePath("/")
 	if !errors.Is(err, ErrRemovingRoot) {
 		t.Fatalf("should not be able to remove root path, but the call returned err: %v", err)
+	}
+}
+
+func TestFileTree_FilesByGlob_AncestorSymlink(t *testing.T) {
+	var err error
+	tr := NewFileTree()
+
+	_, err = tr.AddSymLink("/parent-link", "/parent")
+	require.NoError(t, err)
+
+	_, err = tr.AddDir("/parent")
+	require.NoError(t, err)
+
+	expectedRef, err := tr.AddFile("/parent/file.txt")
+	require.NoError(t, err)
+
+	expected := []file.ReferenceAccessVia{
+		{
+			ReferenceAccess: file.ReferenceAccess{
+				RequestPath: "/parent-link/file.txt",
+				Reference:   expectedRef,
+			},
+			LeafLinkResolution: nil,
+		},
+	}
+
+	requestGlob := "**/parent-link/file.txt"
+	linkOptions := []LinkResolutionOption{FollowBasenameLinks}
+	ref, err := tr.FilesByGlob(requestGlob, linkOptions...)
+	require.NoError(t, err)
+
+	opt := cmp.AllowUnexported(file.Reference{})
+	if d := cmp.Diff(expected, ref, opt); d != "" {
+		t.Errorf("unexpected file reference (-want +got):\n%s", d)
 	}
 }
 
@@ -954,7 +987,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("%s (follow=%+v)", test.name, test.linkOptions), func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			tr := NewFileTree()
 			_, err := tr.AddSymLink(test.buildLinkSource, test.buildLinkDest)
 			if err != nil {

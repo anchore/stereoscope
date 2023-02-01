@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/anchore/stereoscope/internal/log"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/becheran/wildmatch-go"
 	"github.com/scylladb/go-set/strset"
@@ -21,9 +23,10 @@ type Index interface {
 type IndexReader interface {
 	Exists(f file.Reference) bool
 	Get(f file.Reference) (IndexEntry, error)
-	GetByMIMEType(mType string) ([]IndexEntry, error)
-	GetByExtension(extension string) ([]IndexEntry, error)
-	GetByBasename(basename string) ([]IndexEntry, error)
+	GetByMIMEType(mTypes ...string) ([]IndexEntry, error)
+	GetByFileType(fTypes ...file.Type) ([]IndexEntry, error)
+	GetByExtension(extensions ...string) ([]IndexEntry, error)
+	GetByBasename(basenames ...string) ([]IndexEntry, error)
 	GetByBasenameGlob(globs ...string) ([]IndexEntry, error)
 	Basenames() []string
 }
@@ -37,9 +40,10 @@ type IndexWriter interface {
 type index struct {
 	*sync.RWMutex
 	index       map[file.ID]IndexEntry
-	byMIMEType  map[string][]file.ID
-	byExtension map[string][]file.ID
-	byBasename  map[string][]file.ID
+	byFileType  map[file.Type]file.IDSet
+	byMIMEType  map[string]file.IDSet
+	byExtension map[string]file.IDSet
+	byBasename  map[string]file.IDSet
 	basenames   *strset.Set
 }
 
@@ -48,9 +52,10 @@ func NewIndex() Index {
 	return &index{
 		RWMutex:     &sync.RWMutex{},
 		index:       make(map[file.ID]IndexEntry),
-		byMIMEType:  make(map[string][]file.ID),
-		byExtension: make(map[string][]file.ID),
-		byBasename:  make(map[string][]file.ID),
+		byFileType:  make(map[file.Type]file.IDSet),
+		byMIMEType:  make(map[string]file.IDSet),
+		byExtension: make(map[string]file.IDSet),
+		byBasename:  make(map[string]file.IDSet),
 		basenames:   strset.New(),
 	}
 }
@@ -66,21 +71,42 @@ type IndexEntry struct {
 func (c *index) Add(f file.Reference, m file.Metadata) {
 	c.Lock()
 	defer c.Unlock()
+
 	id := f.ID()
 
+	if _, ok := c.index[id]; ok {
+		log.WithFields("id", id, "path", f.RealPath).Debug("overwriting existing file index entry")
+	}
+
 	if m.MIMEType != "" {
+		if _, ok := c.byMIMEType[m.MIMEType]; !ok {
+			c.byMIMEType[m.MIMEType] = file.NewIDSet()
+		}
 		// an empty MIME type means that we didn't have the contents of the file to determine the MIME type. If we have
 		// the contents and the MIME type could not be determined then the default value is application/octet-stream.
-		c.byMIMEType[m.MIMEType] = append(c.byMIMEType[m.MIMEType], id)
+		c.byMIMEType[m.MIMEType].Add(id)
 	}
 
 	basename := path.Base(string(f.RealPath))
-	c.byBasename[basename] = append(c.byBasename[basename], id)
+
+	if _, ok := c.byBasename[basename]; !ok {
+		c.byBasename[basename] = file.NewIDSet()
+	}
+
+	c.byBasename[basename].Add(id)
 	c.basenames.Add(basename)
 
 	for _, ext := range fileExtensions(string(f.RealPath)) {
-		c.byExtension[ext] = append(c.byExtension[ext], id)
+		if _, ok := c.byExtension[ext]; !ok {
+			c.byExtension[ext] = file.NewIDSet()
+		}
+		c.byExtension[ext].Add(id)
 	}
+
+	if _, ok := c.byFileType[m.Type]; !ok {
+		c.byFileType[m.Type] = file.NewIDSet()
+	}
+	c.byFileType[m.Type].Add(id)
 
 	c.index[id] = IndexEntry{
 		Reference: f,
@@ -118,68 +144,101 @@ func (c *index) Basenames() []string {
 	return bns
 }
 
-func (c *index) GetByMIMEType(mType string) ([]IndexEntry, error) {
+func (c *index) GetByFileType(fTypes ...file.Type) ([]IndexEntry, error) {
 	c.RLock()
 	defer c.RUnlock()
 
-	fileIDs, ok := c.byMIMEType[mType]
-	if !ok {
-		return nil, nil
-	}
-
 	var entries []IndexEntry
-	for _, id := range fileIDs {
-		entry, ok := c.index[id]
+
+	for _, fType := range fTypes {
+		fileIDs, ok := c.byFileType[fType]
 		if !ok {
-			return nil, os.ErrNotExist
+			continue
 		}
-		entries = append(entries, entry)
+
+		for _, id := range fileIDs.List() {
+			entry, ok := c.index[id]
+			if !ok {
+				return nil, os.ErrNotExist
+			}
+			entries = append(entries, entry)
+		}
 	}
 
 	return entries, nil
 }
 
-func (c *index) GetByExtension(extension string) ([]IndexEntry, error) {
+func (c *index) GetByMIMEType(mTypes ...string) ([]IndexEntry, error) {
 	c.RLock()
 	defer c.RUnlock()
 
-	fileIDs, ok := c.byExtension[extension]
-	if !ok {
-		return nil, nil
-	}
-
 	var entries []IndexEntry
-	for _, id := range fileIDs {
-		entry, ok := c.index[id]
+
+	for _, mType := range mTypes {
+		fileIDs, ok := c.byMIMEType[mType]
 		if !ok {
-			return nil, os.ErrNotExist
+			continue
 		}
-		entries = append(entries, entry)
+
+		for _, id := range fileIDs.List() {
+			entry, ok := c.index[id]
+			if !ok {
+				return nil, os.ErrNotExist
+			}
+			entries = append(entries, entry)
+		}
 	}
 
 	return entries, nil
 }
 
-func (c *index) GetByBasename(basename string) ([]IndexEntry, error) {
+func (c *index) GetByExtension(extensions ...string) ([]IndexEntry, error) {
 	c.RLock()
 	defer c.RUnlock()
 
-	if strings.Contains(basename, "/") {
-		return nil, fmt.Errorf("found directory separator in a basename")
+	var entries []IndexEntry
+
+	for _, extension := range extensions {
+		fileIDs, ok := c.byExtension[extension]
+		if !ok {
+			continue
+		}
+
+		for _, id := range fileIDs.List() {
+			entry, ok := c.index[id]
+			if !ok {
+				return nil, os.ErrNotExist
+			}
+			entries = append(entries, entry)
+		}
 	}
 
-	fileIDs, ok := c.byBasename[basename]
-	if !ok {
-		return nil, nil
-	}
+	return entries, nil
+}
+
+func (c *index) GetByBasename(basenames ...string) ([]IndexEntry, error) {
+	c.RLock()
+	defer c.RUnlock()
 
 	var entries []IndexEntry
-	for _, id := range fileIDs {
-		entry, ok := c.index[id]
-		if !ok {
-			return nil, os.ErrNotExist
+
+	for _, basename := range basenames {
+		if strings.Contains(basename, "/") {
+			return nil, fmt.Errorf("found directory separator in a basename")
 		}
-		entries = append(entries, entry)
+
+		fileIDs, ok := c.byBasename[basename]
+		if !ok {
+			continue
+		}
+
+		for _, id := range fileIDs.List() {
+			entry, ok := c.index[id]
+			if !ok {
+				return nil, os.ErrNotExist
+			}
+			entries = append(entries, entry)
+		}
 	}
 
 	return entries, nil
