@@ -152,6 +152,14 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 			want: []file.ReferenceAccessVia{
 				{
 					ReferenceAccess: file.ReferenceAccess{
+						RequestPath: "/path/to/file.txt",
+						Reference: &file.Reference{
+							RealPath: "/path/to/file.txt",
+						},
+					},
+				},
+				{
+					ReferenceAccess: file.ReferenceAccess{
 						RequestPath: "/double-link-to-path/to/file.txt",
 						Reference: &file.Reference{
 							RealPath: "/path/to/file.txt",
@@ -161,14 +169,6 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				{
 					ReferenceAccess: file.ReferenceAccess{
 						RequestPath: "/link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
-					},
-				},
-				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/path/to/file.txt",
 						Reference: &file.Reference{
 							RealPath: "/path/to/file.txt",
 						},
@@ -302,6 +302,55 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				glob: "**/link-to-path/to/file.txt",
 			},
 			want: []file.ReferenceAccessVia{
+				{
+					ReferenceAccess: file.ReferenceAccess{
+						RequestPath: "/link-to-path/to/file.txt",
+						Reference: &file.Reference{
+							RealPath: "/path/to/file.txt",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:   "by extension",
+			fields: defaultFields,
+			args: args{
+				// note: this is a glob through a symlink (ancestor). If not using the index, this will work
+				// just fine, since we do a full tree search. However, if using the index, this shortcut will
+				// dodge any ancestor symlink and will not find the file.
+				glob: "**/*.txt",
+			},
+			want: []file.ReferenceAccessVia{
+				{
+					ReferenceAccess: file.ReferenceAccess{
+						RequestPath: "/path/to/file.txt",
+						Reference:   &file.Reference{RealPath: "/path/to/file.txt"},
+					},
+				},
+				{
+					ReferenceAccess: file.ReferenceAccess{
+						RequestPath: "/double-link-to-path/to/file.txt",
+						Reference: &file.Reference{
+							RealPath: "/path/to/file.txt",
+						},
+					},
+				},
+				// note: this is NOT expected since the input glob does not match against the request path
+				//{
+				//	ReferenceAccess: file.ReferenceAccess{
+				//		RequestPath: "/link-to-file",
+				//		Reference: &file.Reference{
+				//			RealPath: "/path/to/file.txt",
+				//		},
+				//	},
+				//	LeafLinkResolution: []file.ReferenceAccess{
+				//		{
+				//			RequestPath: "/link-to-file",
+				//			Reference:   &file.Reference{RealPath: "/link-to-file"},
+				//		},
+				//	},
+				//},
 				{
 					ReferenceAccess: file.ReferenceAccess{
 						RequestPath: "/link-to-path/to/file.txt",

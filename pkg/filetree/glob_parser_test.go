@@ -49,6 +49,7 @@ func Test_parseGlob(t *testing.T) {
 				{
 					searchBasis: searchByExtension,
 					value:       ".txt",
+					requirement: "**/*.txt",
 				},
 			},
 		},

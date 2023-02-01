@@ -107,7 +107,14 @@ func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.ReferenceA
 		fileEntries = append(fileEntries, entries...)
 	}
 
-	return sc.referencesInTree(fileEntries)
+	refs, err := sc.referencesInTree(fileEntries)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Sort(file.ReferenceAccessVias(refs))
+
+	return refs, nil
 }
 
 // add case for status.d/* like things that hook up directly into filetree.ListPaths()
@@ -224,6 +231,8 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 		}
 	}
 
+	sort.Sort(file.ReferenceAccessVias(results))
+
 	return results, nil
 }
 
@@ -247,6 +256,8 @@ func (sc searchContext) referencesWithRequirement(requirement string, entries []
 			results = append(results, ref)
 		}
 	}
+
+	sort.Sort(file.ReferenceAccessVias(results))
 
 	return results, nil
 }

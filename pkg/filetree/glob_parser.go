@@ -114,7 +114,9 @@ func applyRequirement(request *searchRequest, beforeBasename, glob string) {
 		requirement = glob
 		switch beforeBasename {
 		case "**", request.requirement:
-			requirement = ""
+			if request.searchBasis != searchByExtension {
+				requirement = ""
+			}
 		}
 	} else {
 		requirement = ""
@@ -150,7 +152,7 @@ func parseGlobBasename(basenameInput string) []searchRequest {
 	}
 
 	if !strings.ContainsAny(basenameInput, "*?") {
-		// special case, this is plain extension
+		// special case, this is plain basename
 		return []searchRequest{
 			{
 				searchBasis: searchByBasename,
