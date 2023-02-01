@@ -219,6 +219,15 @@ func (sc searchContext) referencesWithRequirement(requirement string, entries []
 	return results, nil
 }
 
+type cacheRequest struct {
+	RealPath file.Path
+}
+
+type cacheResult struct {
+	Paths file.PathSet
+	Error error
+}
+
 func (sc searchContext) allPathsToNode(fn *filenode.FileNode) ([]file.Path, error) {
 	if fn == nil {
 		return nil, nil
@@ -226,7 +235,9 @@ func (sc searchContext) allPathsToNode(fn *filenode.FileNode) ([]file.Path, erro
 
 	observedPaths := file.NewPathSet()
 
-	paths, err := sc.pathsToNode(fn, "", observedPaths)
+	cache := map[cacheRequest]cacheResult{}
+
+	paths, err := sc.pathsToNode(fn, observedPaths, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -239,19 +250,42 @@ func (sc searchContext) allPathsToNode(fn *filenode.FileNode) ([]file.Path, erro
 	return pathsList, nil
 }
 
-func (sc searchContext) pathsToNode(fn *filenode.FileNode, suffix string, observedPaths file.PathSet) (file.PathSet, error) {
+func (sc searchContext) pathsToNode(fn *filenode.FileNode, observedPaths file.PathSet, cache map[cacheRequest]cacheResult) (file.PathSet, error) {
+	req := cacheRequest{
+		RealPath: fn.RealPath,
+	}
+
+	if result, ok := cache[req]; ok {
+		return result.Paths, result.Error
+	}
+
+	paths, err := sc._pathsToNode(fn, observedPaths, cache)
+
+	cache[req] = cacheResult{
+		Paths: paths,
+		Error: err,
+	}
+
+	return paths, err
+}
+
+// nolint: funlen
+func (sc searchContext) _pathsToNode(fn *filenode.FileNode, observedPaths file.PathSet, cache map[cacheRequest]cacheResult) (file.PathSet, error) {
 	if fn == nil {
 		return nil, nil
 	}
 
+	paths := file.NewPathSet()
+	paths.Add(fn.RealPath)
+
 	if observedPaths != nil {
 		if observedPaths.Contains(fn.RealPath) {
-			return nil, fmt.Errorf("found circular reference to path=%q", fn.RealPath)
+			// we've already observed this path, so we can stop here
+			return nil, nil
 		}
 		observedPaths.Add(fn.RealPath)
 	}
 
-	paths := file.NewPathSet()
 	nodeID := fn.ID()
 
 	addPath := func(suffix string, ps ...file.Path) {
@@ -263,34 +297,27 @@ func (sc searchContext) pathsToNode(fn *filenode.FileNode, suffix string, observ
 		}
 	}
 
-	if suffix == "" {
-		addPath(suffix, fn.RealPath)
-	}
-
 	// add all paths to the node that are linked to it
-	for linkSrcID := range sc.linkBackwardRefs[nodeID].Enumerate() {
+	for _, linkSrcID := range sc.linkBackwardRefs[nodeID].List() {
 		pfn := sc.tree.tree.Node(linkSrcID)
 		if pfn == nil {
 			log.WithFields("id", nodeID, "parent", linkSrcID).Warn("found non-existent parent link")
 			continue
 		}
-		linkSrcPaths, err := sc.pathsToNode(pfn.(*filenode.FileNode), "", observedPaths)
+		linkSrcPaths, err := sc.pathsToNode(pfn.(*filenode.FileNode), observedPaths, cache)
 		if err != nil {
 			return nil, err
 		}
 
-		addPath(suffix, linkSrcPaths.List()...)
+		addPath("", linkSrcPaths.List()...)
 	}
 
 	// crawl up the tree to find all paths to our parent and repeat
-	return paths, sc.pathsToParents(paths)
-}
-
-func (sc searchContext) pathsToParents(paths file.PathSet) error {
-	for p := range paths.Enumerate() {
+	for _, p := range paths.List() {
 		nextNestedSuffix := p.Basename()
 		allParentPaths := p.ConstituentPaths()
 		sort.Sort(sort.Reverse(file.Paths(allParentPaths)))
+
 		for _, pp := range allParentPaths {
 			if pp == "/" {
 				break
@@ -304,21 +331,23 @@ func (sc searchContext) pathsToParents(paths file.PathSet) error {
 				FollowBasenameLinks: false,
 			})
 			if err != nil {
-				return fmt.Errorf("unable to get parent node for path=%q: %w", pp, err)
+				return nil, fmt.Errorf("unable to get parent node for path=%q: %w", pp, err)
 			}
 
 			if !pna.HasFileNode() {
 				continue
 			}
 
-			parentLinkPaths, err := sc.pathsToNode(pna.FileNode, nestedSuffix, nil)
+			parentLinkPaths, err := sc.pathsToNode(pna.FileNode, observedPaths, cache)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			paths.Merge(parentLinkPaths)
+			addPath(nestedSuffix, parentLinkPaths.List()...)
 		}
 	}
-	return nil
+	observedPaths.Remove(fn.RealPath)
+
+	return paths, nil
 }
 
 func (sc searchContext) fileNodesInTree(fileEntries []IndexEntry) ([]*filenode.FileNode, error) {

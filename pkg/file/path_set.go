@@ -11,7 +11,7 @@ func (s PathSet) Size() int {
 }
 
 func (s PathSet) Merge(other PathSet) {
-	for i := range other.Enumerate() {
+	for _, i := range other.List() {
 		s.Add(i)
 	}
 }
@@ -45,17 +45,6 @@ func (s PathSet) List() []Path {
 	for i := range s {
 		ret = append(ret, i)
 	}
-	return ret
-}
-
-func (s PathSet) Enumerate() <-chan Path {
-	ret := make(chan Path)
-	go func() {
-		defer close(ret)
-		for i := range s {
-			ret <- i
-		}
-	}()
 	return ret
 }
 

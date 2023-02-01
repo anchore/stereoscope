@@ -37,7 +37,9 @@ type Layer struct {
 	// in lower layers relative to this one.
 	SquashedTree *filetree.FileTree
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
-	fileCatalog *FileCatalog
+	fileCatalog           *FileCatalog
+	SquashedSearchContext filetree.Searcher
+	SearchContext         filetree.Searcher
 }
 
 // NewLayer provides a new, unread layer object.
@@ -136,6 +138,8 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		return fmt.Errorf("unknown layer media type: %+v", l.Metadata.MediaType)
 	}
 
+	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
+
 	monitor.SetCompleted()
 
 	return nil
@@ -157,7 +161,7 @@ func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 // Deprecated: use SearchContext().SearchByMIMEType() instead.
 func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
-	refVias, err := l.SearchContext().SearchByMIMEType(mimeTypes...)
+	refVias, err := l.SearchContext.SearchByMIMEType(mimeTypes...)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +177,7 @@ func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
 // Deprecated: use SquashedSearchContext().SearchByMIMEType() instead.
 func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
-	refVias, err := l.SquashedSearchContext().SearchByMIMEType(mimeTypes...)
+	refVias, err := l.SquashedSearchContext.SearchByMIMEType(mimeTypes...)
 	if err != nil {
 		return nil, err
 	}
@@ -183,14 +187,6 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 		}
 	}
 	return refs, nil
-}
-
-func (l *Layer) SearchContext() filetree.Searcher {
-	return filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
-}
-
-func (l *Layer) SquashedSearchContext() filetree.Searcher {
-	return filetree.NewSearchContext(l.SquashedTree, l.fileCatalog.Index)
 }
 
 func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {

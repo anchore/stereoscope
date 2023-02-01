@@ -45,14 +45,16 @@ func isInPathResolutionLoop(path string, ft *FileTree) (bool, error) {
 	allPathSet := file.NewPathSet()
 	allPaths := file.Path(path).AllPaths()
 	for _, p := range allPaths {
-		fn, err := ft.node(p, linkResolutionStrategy{
+		fna, err := ft.node(p, linkResolutionStrategy{
 			FollowAncestorLinks: true,
 			FollowBasenameLinks: true,
 		})
 		if err != nil {
 			return false, err
 		}
-		allPathSet.Add(file.Path(fn.FileNode.ID()))
+		if fna.HasFileNode() {
+			allPathSet.Add(file.Path(fna.FileNode.ID()))
+		}
 	}
 	// we want to allow for getting children out of the first iteration of a infinite path, but NOT allowing
 	// beyond the second iteration down an infinite path.
@@ -86,23 +88,23 @@ func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]fs.DirEntry, 0)
-	fn, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
+	fna, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
 	if err != nil {
 		return ret, err
 	}
-	if fn == nil {
+	if !fna.HasFileNode() {
 		return ret, nil
 	}
 
-	isInPathResolutionLoop, err := isInPathResolutionLoop(f.name, f.filetree)
-	if err != nil || isInPathResolutionLoop {
+	isInLoop, err := isInPathResolutionLoop(f.name, f.filetree)
+	if err != nil || isInLoop {
 		return ret, err
 	}
 
-	for idx, child := range f.filetree.tree.Children(fn.FileNode) {
+	for idx, child := range f.filetree.tree.Children(fna.FileNode) {
 		if idx == n && n != -1 {
 			break
 		}
@@ -125,23 +127,23 @@ type osAdapter struct {
 
 func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 	var ret = make([]fs.DirEntry, 0)
-	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
 	if err != nil {
 		return ret, err
 	}
-	if fn == nil {
+	if !fna.HasFileNode() {
 		return ret, nil
 	}
 
-	isInPathResolutionLoop, err := isInPathResolutionLoop(name, a.filetree)
-	if err != nil || isInPathResolutionLoop {
+	isInLoop, err := isInPathResolutionLoop(name, a.filetree)
+	if err != nil || isInLoop {
 		return ret, err
 	}
 
-	for _, child := range a.filetree.tree.Children(fn.FileNode) {
+	for _, child := range a.filetree.tree.Children(fna.FileNode) {
 		requestPath := path.Join(name, filepath.Base(string(child.ID())))
 		r, err := a.Lstat(requestPath)
 		if err == nil {
@@ -157,7 +159,7 @@ func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
 func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
-	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		// Lstat by definition requires that basename symlinks are not followed
 		FollowBasenameLinks:          false,
@@ -166,13 +168,13 @@ func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}
-	if fn == nil || fn.FileNode == nil {
+	if !fna.HasFileNode() {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
 
 	return &fileinfoAdapter{
 		VirtualPath: file.Path(name),
-		Node:        *fn.FileNode,
+		Node:        *fna.FileNode,
 	}, nil
 }
 
@@ -187,7 +189,7 @@ func (a *osAdapter) Open(name string) (fs.File, error) {
 
 // Stat returns a FileInfo describing the named file.
 func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
-	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks:          true,
 		FollowBasenameLinks:          true,
 		DoNotFollowDeadBasenameLinks: a.doNotFollowDeadBasenameLinks,
@@ -195,12 +197,12 @@ func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}
-	if fn == nil || fn.FileNode == nil {
+	if !fna.HasFileNode() {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
 	return &fileinfoAdapter{
 		VirtualPath: file.Path(name),
-		Node:        *fn.FileNode,
+		Node:        *fna.FileNode,
 	}, nil
 }
 

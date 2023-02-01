@@ -396,6 +396,37 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 		wantErr require.ErrorAssertionFunc
 	}{
 		{
+			name: "simple dir",
+			want: []file.Path{
+				"/path/to",
+			},
+			input: func() input {
+				tree := NewFileTree()
+
+				fileRef, err := tree.AddFile("/path/to/file.txt")
+				require.NoError(t, err)
+				require.NotNil(t, fileRef)
+
+				idx := NewIndex()
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
+
+				na, err := tree.node("/path/to", linkResolutionStrategy{
+					FollowAncestorLinks:          false,
+					FollowBasenameLinks:          false,
+					DoNotFollowDeadBasenameLinks: false,
+				})
+				require.NoError(t, err)
+				require.NotNil(t, na)
+				require.NotNil(t, na.FileNode)
+				require.Equal(t, file.Path("/path/to"), na.FileNode.RealPath)
+
+				return input{
+					query: na.FileNode,
+					sc:    NewSearchContext(tree, idx).(*searchContext),
+				}
+			}(),
+		},
+		{
 			name: "dead symlink",
 			want: []file.Path{
 				"/path/to/file.txt",
@@ -432,8 +463,12 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 			}(),
 		},
 		{
-			name:    "symlink triangle cycle",
-			wantErr: require.Error,
+			name: "symlink triangle cycle",
+			want: []file.Path{
+				"/1",
+				"/2",
+				"/3",
+			},
 			input: func() input {
 				tree := NewFileTree()
 
@@ -463,6 +498,60 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, na)
 				require.NotNil(t, na.FileNode)
 				require.Equalf(t, link1.ID(), na.FileNode.Reference.ID(), "query node should be the same as the first link")
+
+				return input{
+					query: na.FileNode,
+					sc:    NewSearchContext(tree, idx).(*searchContext),
+				}
+			}(),
+		},
+		{
+			// note: this isn't a real link cycle, but it does look like one while resolving from a leaf to the root
+			name: "reverse symlink cycle",
+			want: []file.Path{
+				"/bin/ttyd",
+				"/usr/bin/X11/ttyd",
+				"/usr/bin/ttyd",
+			},
+			input: func() input {
+				tree := NewFileTree()
+
+				usrRef, err := tree.AddDir("/usr")
+				require.NoError(t, err)
+				require.NotNil(t, usrRef)
+
+				usrBinRef, err := tree.AddDir("/usr/bin")
+				require.NoError(t, err)
+				require.NotNil(t, usrBinRef)
+
+				ttydRef, err := tree.AddFile("/usr/bin/ttyd")
+				require.NoError(t, err)
+				require.NotNil(t, ttydRef)
+
+				binLinkRef, err := tree.AddSymLink("/bin", "usr/bin")
+				require.NoError(t, err)
+				require.NotNil(t, binLinkRef)
+
+				x11LinkRef, err := tree.AddSymLink("/usr/bin/X11", ".")
+				require.NoError(t, err)
+				require.NotNil(t, x11LinkRef)
+
+				idx := NewIndex()
+				idx.Add(*usrRef, file.Metadata{Type: file.TypeDir})
+				idx.Add(*usrBinRef, file.Metadata{Type: file.TypeDir})
+				idx.Add(*binLinkRef, file.Metadata{Type: file.TypeSymlink})
+				idx.Add(*x11LinkRef, file.Metadata{Type: file.TypeSymlink})
+				idx.Add(*ttydRef, file.Metadata{Type: file.TypeReg})
+
+				na, err := tree.node(ttydRef.RealPath, linkResolutionStrategy{
+					FollowAncestorLinks:          false,
+					FollowBasenameLinks:          false,
+					DoNotFollowDeadBasenameLinks: false,
+				})
+				require.NoError(t, err)
+				require.NotNil(t, na)
+				require.NotNil(t, na.FileNode)
+				require.Equalf(t, ttydRef.ID(), na.FileNode.Reference.ID(), "query node should be the same as usr/bin/ttyd binary")
 
 				return input{
 					query: na.FileNode,

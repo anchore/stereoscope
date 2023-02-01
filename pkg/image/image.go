@@ -32,6 +32,8 @@ type Image struct {
 	// FileCatalog contains all file metadata for all files in all layers
 	FileCatalog *FileCatalog
 
+	SquashedSearchContext filetree.Searcher
+
 	overrideMetadata []AdditionalMetadata
 }
 
@@ -214,7 +216,11 @@ func (i *Image) Read() error {
 	i.Layers = layers
 
 	// in order to resolve symlinks all squashed trees must be available
-	return i.squash(readProg)
+	err = i.squash(readProg)
+
+	i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog.Index)
+
+	return err
 }
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
@@ -239,6 +245,7 @@ func (i *Image) squash(prog *progress.Manual) error {
 		}
 
 		layer.SquashedTree = squashedTree
+		layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 		lastSquashTree = squashedTree
 
 		prog.N++
@@ -267,15 +274,11 @@ func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchFileContentsByPath(i.SquashedTree(), i.FileCatalog, path)
 }
 
-func (i *Image) SquashedSearchContext() filetree.Searcher {
-	return filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog.Index)
-}
-
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types.
 // Deprecated: please use SquashedSearchContext().SearchByMIMEType() instead.
 func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
-	refVias, err := i.SquashedSearchContext().SearchByMIMEType(mimeTypes...)
+	refVias, err := i.SquashedSearchContext.SearchByMIMEType(mimeTypes...)
 	if err != nil {
 		return nil, err
 	}

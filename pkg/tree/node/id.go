@@ -9,7 +9,7 @@ func NewIDSet() IDSet {
 }
 
 func (s IDSet) Merge(other IDSet) {
-	for i := range other.Enumerate() {
+	for _, i := range other.List() {
 		s.Add(i)
 	}
 }
@@ -43,17 +43,6 @@ func (s IDSet) List() []ID {
 	for i := range s {
 		ret = append(ret, i)
 	}
-	return ret
-}
-
-func (s IDSet) Enumerate() <-chan ID {
-	ret := make(chan ID)
-	go func() {
-		defer close(ret)
-		for i := range s {
-			ret <- i
-		}
-	}()
 	return ret
 }
 
