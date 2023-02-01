@@ -115,7 +115,7 @@ func getAuthMethods(params *sshClientConfig) ([]ssh.AuthMethod, error) {
 }
 
 func getSSHCallback(params *sshClientConfig) ssh.HostKeyCallback {
-	// nolint: gosec
+	//nolint: gosec
 	cb := ssh.InsecureIgnoreHostKey()
 	if !params.secure {
 		return cb
