@@ -6,20 +6,20 @@ import (
 )
 
 const (
-	TypeReg             Type = 'r'
-	TypeHardLink        Type = 'h'
-	TypeSymlink         Type = 'l'
-	TypeCharacterDevice Type = 'c'
-	TypeBlockDevice     Type = 'b'
-	TypeDir             Type = 'd'
-	TypeFifo            Type = 'f'
-	TypeSocket          Type = 's'
-	TypeIrregular       Type = '?'
+	TypeReg Type = iota
+	TypeHardLink
+	TypeSymlink
+	TypeCharacterDevice
+	TypeBlockDevice
+	TypeDir
+	TypeFifo
+	TypeSocket
+	TypeIrregular
 )
 
 // why use a rune type? we're looking for something that is memory compact but is easily human interpretable.
 
-type Type rune
+type Type int
 
 func AllTypes() []Type {
 	return []Type{

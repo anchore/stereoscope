@@ -124,7 +124,12 @@ func (sc searchContext) SearchByGlob(pattern string, options ...LinkResolutionOp
 
 	if sc.index == nil {
 		options = append(options, FollowBasenameLinks)
-		return sc.tree.FilesByGlob(pattern, options...)
+		refs, err := sc.tree.FilesByGlob(pattern, options...)
+		if err != nil {
+			return nil, fmt.Errorf("unable to search by glob=%q: %w", pattern, err)
+		}
+		sort.Sort(file.ReferenceAccessVias(refs))
+		return refs, nil
 	}
 
 	var allRefs []file.ReferenceAccessVia
@@ -135,6 +140,8 @@ func (sc searchContext) SearchByGlob(pattern string, options ...LinkResolutionOp
 		}
 		allRefs = append(allRefs, refs...)
 	}
+
+	sort.Sort(file.ReferenceAccessVias(allRefs))
 
 	return allRefs, nil
 }
@@ -231,8 +238,6 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 		}
 	}
 
-	sort.Sort(file.ReferenceAccessVias(results))
-
 	return results, nil
 }
 
@@ -256,8 +261,6 @@ func (sc searchContext) referencesWithRequirement(requirement string, entries []
 			results = append(results, ref)
 		}
 	}
-
-	sort.Sort(file.ReferenceAccessVias(results))
 
 	return results, nil
 }

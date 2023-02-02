@@ -232,6 +232,7 @@ func (i *Image) squash(prog *progress.Manual) error {
 		if idx == 0 {
 			lastSquashTree = layer.Tree
 			layer.SquashedTree = layer.Tree
+			layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 			continue
 		}
 

@@ -6,6 +6,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/scylladb/go-set/iset"
+
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
@@ -109,15 +111,15 @@ func (t *FileTree) AllFiles(types ...file.Type) []file.Reference {
 		types = []file.Type{file.TypeReg}
 	}
 
-	typeSet := internal.NewStringSet()
+	typeSet := iset.New()
 	for _, t := range types {
-		typeSet.Add(string(t))
+		typeSet.Add(int(t))
 	}
 
 	var files []file.Reference
 	for _, n := range t.tree.Nodes() {
 		f := n.(*filenode.FileNode)
-		if typeSet.Contains(string(f.FileType)) && f.Reference != nil {
+		if typeSet.Has(int(f.FileType)) && f.Reference != nil {
 			files = append(files, *f.Reference)
 		}
 	}
