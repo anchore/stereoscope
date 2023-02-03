@@ -1,8 +1,9 @@
 package internal
 
 import (
-	"golang.org/x/exp/constraints"
 	"sort"
+
+	"golang.org/x/exp/constraints"
 )
 
 type orderedComparable interface {

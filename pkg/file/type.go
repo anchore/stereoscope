@@ -37,7 +37,7 @@ func AllTypes() []Type {
 
 func TypeFromTarType(ty byte) Type {
 	switch ty {
-	case tar.TypeReg, tar.TypeRegA:
+	case tar.TypeReg, tar.TypeRegA: //nolint: staticcheck
 		return TypeReg
 	case tar.TypeLink:
 		return TypeHardLink
