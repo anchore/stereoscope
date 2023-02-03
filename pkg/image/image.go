@@ -277,8 +277,15 @@ func (i *Image) SquashedTree() filetree.Reader {
 	return topLayer.SquashedTree
 }
 
+// OpenPathFromSquash fetches file contents for a single path, relative to the image squash tree.
+// If the path does not exist an error is returned.
+func (i *Image) OpenPathFromSquash(path file.Path) (io.ReadCloser, error) {
+	return fetchReaderByPath(i.SquashedTree(), i.FileCatalog, path)
+}
+
 // FileContentsFromSquash fetches file contents for a single path, relative to the image squash tree.
 // If the path does not exist an error is returned.
+// Deprecated: use OpenPathFromSquash() instead.
 func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchReaderByPath(i.SquashedTree(), i.FileCatalog, path)
 }
@@ -299,15 +306,15 @@ func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-// OpenFile fetches file contents for a single file reference, regardless of the source layer.
+// OpenReference fetches file contents for a single file reference, regardless of the source layer.
 // If the path does not exist an error is returned.
-func (i *Image) OpenFile(ref file.Reference) (io.ReadCloser, error) {
+func (i *Image) OpenReference(ref file.Reference) (io.ReadCloser, error) {
 	return i.FileCatalog.Open(ref)
 }
 
 // FileContentsByRef fetches file contents for a single file reference, regardless of the source layer.
 // If the path does not exist an error is returned.
-// Deprecated: please use OpenFile() instead.
+// Deprecated: please use OpenReference() instead.
 func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 	return i.FileCatalog.Open(ref)
 }

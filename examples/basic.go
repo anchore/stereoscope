@@ -89,7 +89,7 @@ func main() {
 	//////////////////////////////////////////////////////////////////
 	// Fetch file contents from the (squashed) image
 	filePath := file.Path("/etc/group")
-	contentReader, err := image.FileContentsFromSquash(filePath)
+	contentReader, err := image.OpenPathFromSquash(filePath)
 	if err != nil {
 		panic(err)
 	}

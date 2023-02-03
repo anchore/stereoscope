@@ -5,6 +5,7 @@ package integration
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"io"
 	"testing"
 
@@ -113,37 +114,24 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 
 func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Reference, *file.Reference) {
 	_, link, err := i.Layers[cfg.linkLayer].Tree.File(file.Path(cfg.linkPath), cfg.linkOptions...)
-	if err != nil {
-		t.Fatalf("unable to get link: %+v", err)
-	}
-	if link == nil {
-		t.Fatalf("missing expected link: %s", cfg.linkPath)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, link)
 
 	_, expectedResolve, err := i.Layers[cfg.resolveLayer].Tree.File(file.Path(cfg.expectedPath), cfg.linkOptions...)
-	if err != nil {
-		t.Fatalf("unable to get resolved link: %+v", err)
-	}
-	if expectedResolve == nil {
-		t.Fatalf("missing expected path: %s", expectedResolve)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, expectedResolve)
 
 	actualResolve, err := i.ResolveLinkByLayerSquash(*link.Reference, cfg.perspectiveLayer, cfg.linkOptions...)
-	if err != nil {
-		t.Fatalf("failed to resolve link=%+v: %+v", link, err)
-	}
+	require.NoError(t, err)
 	return expectedResolve.Reference, actualResolve.Reference
 }
 
 func fetchContents(t *testing.T, i *image.Image, cfg linkFetchConfig) string {
-	contents, err := i.Layers[cfg.perspectiveLayer].OpenFileFromSquash(file.Path(cfg.linkPath))
-	if err != nil {
-		t.Fatalf("could not fetch contents of %+v: %+v", cfg.linkPath, err)
-	}
+	contents, err := i.Layers[cfg.perspectiveLayer].OpenPathFromSquash(file.Path(cfg.linkPath))
+	require.NoError(t, err)
+
 	b, err := io.ReadAll(contents)
-	if err != nil {
-		t.Fatalf("unable to fetch contents for %+v : %+v", cfg, err)
-	}
+	require.NoError(t, err)
 	return string(b)
 }
 

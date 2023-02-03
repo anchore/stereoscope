@@ -146,28 +146,28 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	return nil
 }
 
-// OpenFile reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
+// OpenPath reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
-func (l *Layer) OpenFile(path file.Path) (io.ReadCloser, error) {
+func (l *Layer) OpenPath(path file.Path) (io.ReadCloser, error) {
 	return fetchReaderByPath(l.Tree, l.fileCatalog, path)
 }
 
-// OpenFileFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
+// OpenPathFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
-func (l *Layer) OpenFileFromSquash(path file.Path) (io.ReadCloser, error) {
+func (l *Layer) OpenPathFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
 }
 
 // FileContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
-// Deprecated: use OpenFile() instead.
+// Deprecated: use OpenPath() instead.
 func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
 	return fetchReaderByPath(l.Tree, l.fileCatalog, path)
 }
 
 // FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
-// Deprecated: use OpenFileFromSquash() instead.
+// Deprecated: use OpenPathFromSquash() instead.
 func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
 }
