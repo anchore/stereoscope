@@ -30,7 +30,7 @@ type Image struct {
 	// Layers contains the rich layer objects in build order
 	Layers []*Layer
 	// FileCatalog contains all file metadata for all files in all layers
-	FileCatalog *FileCatalog
+	FileCatalog FileCatalogReader
 
 	SquashedSearchContext filetree.Searcher
 
@@ -130,11 +130,16 @@ func WithOS(o string) AdditionalMetadata {
 }
 
 // NewImage provides a new (unread) image object.
+// Deprecated: use New() instead
 func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
+	return New(image, contentCacheDir, additionalMetadata...)
+}
+
+// New provides a new (unread) image object.
+func New(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{
 		image:            image,
 		contentCacheDir:  contentCacheDir,
-		FileCatalog:      NewFileCatalog(),
 		overrideMetadata: additionalMetadata,
 	}
 	return imgObj
@@ -201,9 +206,11 @@ func (i *Image) Read() error {
 	// let consumers know of a monitorable event (image save + copy stages)
 	readProg := i.trackReadProgress(i.Metadata)
 
+	fileCatalog := NewFileCatalog()
+
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
-		err := layer.Read(i.FileCatalog, i.Metadata, idx, i.contentCacheDir)
+		err := layer.Read(fileCatalog, i.Metadata, idx, i.contentCacheDir)
 		if err != nil {
 			return err
 		}
@@ -218,7 +225,8 @@ func (i *Image) Read() error {
 	// in order to resolve symlinks all squashed trees must be available
 	err = i.squash(readProg)
 
-	i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog.Index)
+	i.FileCatalog = fileCatalog
+	i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
 
 	return err
 }
@@ -226,11 +234,11 @@ func (i *Image) Read() error {
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
 func (i *Image) squash(prog *progress.Manual) error {
-	var lastSquashTree *filetree.FileTree
+	var lastSquashTree filetree.ReadWriter
 
 	for idx, layer := range i.Layers {
 		if idx == 0 {
-			lastSquashTree = layer.Tree
+			lastSquashTree = layer.Tree.(filetree.ReadWriter)
 			layer.SquashedTree = layer.Tree
 			layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 			continue
@@ -238,7 +246,7 @@ func (i *Image) squash(prog *progress.Manual) error {
 
 		var unionTree = filetree.NewUnionFileTree()
 		unionTree.PushTree(lastSquashTree)
-		unionTree.PushTree(layer.Tree)
+		unionTree.PushTree(layer.Tree.(filetree.ReadWriter))
 
 		squashedTree, err := unionTree.Squash()
 		if err != nil {
@@ -258,11 +266,11 @@ func (i *Image) squash(prog *progress.Manual) error {
 }
 
 // SquashedTree returns the pre-computed image squash file tree.
-func (i *Image) SquashedTree() *filetree.FileTree {
+func (i *Image) SquashedTree() filetree.Reader {
 	layerCount := len(i.Layers)
 
 	if layerCount == 0 {
-		return filetree.NewFileTree()
+		return filetree.New()
 	}
 
 	topLayer := i.Layers[layerCount-1]
@@ -272,7 +280,7 @@ func (i *Image) SquashedTree() *filetree.FileTree {
 // FileContentsFromSquash fetches file contents for a single path, relative to the image squash tree.
 // If the path does not exist an error is returned.
 func (i *Image) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(i.SquashedTree(), i.FileCatalog, path)
+	return fetchReaderByPath(i.SquashedTree(), i.FileCatalog, path)
 }
 
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types.
@@ -291,10 +299,17 @@ func (i *Image) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
+// OpenFile fetches file contents for a single file reference, regardless of the source layer.
+// If the path does not exist an error is returned.
+func (i *Image) OpenFile(ref file.Reference) (io.ReadCloser, error) {
+	return i.FileCatalog.Open(ref)
+}
+
 // FileContentsByRef fetches file contents for a single file reference, regardless of the source layer.
 // If the path does not exist an error is returned.
+// Deprecated: please use OpenFile() instead.
 func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
-	return i.FileCatalog.FileContents(ref)
+	return i.FileCatalog.Open(ref)
 }
 
 // ResolveLinkByLayerSquash resolves a symlink or hardlink for the given file reference relative to the result from

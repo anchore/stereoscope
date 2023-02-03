@@ -109,7 +109,7 @@ func (t *testLayerContent) MediaType() (types.MediaType, error) {
 	panic("not implemented")
 }
 
-func TestFileCatalog_FileContents(t *testing.T) {
+func TestFileCatalog_Open(t *testing.T) {
 	fixtureFile := getTarFixture(t, "fixture-1")
 
 	// a real path & contents from the fixture
@@ -141,7 +141,7 @@ func TestFileCatalog_FileContents(t *testing.T) {
 	catalog := NewFileCatalog()
 	catalog.Add(*ref, metadata, layer, opener)
 
-	reader, err := catalog.FileContents(*ref)
+	reader, err := catalog.Open(*ref)
 	require.NoError(t, err)
 
 	actual, err := io.ReadAll(reader)
@@ -205,7 +205,7 @@ func Test_fileExtensions(t *testing.T) {
 func TestFileCatalog_GetByExtension(t *testing.T) {
 	fixtureTarFile := getTarFixture(t, "fixture-2")
 
-	ft := filetree.NewFileTree()
+	ft := filetree.New()
 	fileCatalog := NewFileCatalog()
 	var size int64
 
@@ -370,7 +370,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 func TestFileCatalog_GetByBasename(t *testing.T) {
 	fixtureTarFile := getTarFixture(t, "fixture-2")
 
-	ft := filetree.NewFileTree()
+	ft := filetree.New()
 	fileCatalog := NewFileCatalog()
 	var size int64
 
@@ -472,7 +472,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 	fixtureTarFile := getTarFixture(t, "fixture-2")
 
-	ft := filetree.NewFileTree()
+	ft := filetree.New()
 	fileCatalog := NewFileCatalog()
 	var size int64
 
@@ -582,7 +582,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 func TestFileCatalog_GetByMimeType(t *testing.T) {
 	fixtureTarFile := getTarFixture(t, "fixture-2")
 
-	ft := filetree.NewFileTree()
+	ft := filetree.New()
 	fileCatalog := NewFileCatalog()
 	var size int64
 
@@ -683,7 +683,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 func TestFileCatalog_GetBasenames(t *testing.T) {
 	fixtureTarFile := getTarFixture(t, "fixture-2")
 
-	ft := filetree.NewFileTree()
+	ft := filetree.New()
 	fileCatalog := NewFileCatalog()
 	var size int64
 

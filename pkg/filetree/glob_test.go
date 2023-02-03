@@ -10,7 +10,7 @@ import (
 )
 
 func TestFileInfoAdapter(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	tr.AddFile("/home/thing.txt")
 	tr.AddDir("/home/wagoodman")
 	tr.AddSymLink("/home/thing", "./thing.txt")
@@ -118,7 +118,7 @@ func TestFileInfoAdapter(t *testing.T) {
 }
 
 func TestOsAdapter_PreventInfiniteLoop(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	tr.AddFile("/usr/bin/busybox")
 	tr.AddSymLink("/usr/bin/X11", ".")
 
@@ -167,7 +167,7 @@ func TestOsAdapter_PreventInfiniteLoop(t *testing.T) {
 }
 
 func TestFileInfoAdapter_PreventInfiniteLoop(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	tr.AddFile("/usr/bin/busybox")
 	tr.AddSymLink("/usr/bin/X11", ".")
 
@@ -470,7 +470,7 @@ func TestOSAdapter_Stat(t *testing.T) {
 }
 
 func newHelperTree() *FileTree {
-	tr := NewFileTree()
+	tr := New()
 	tr.AddFile("/home/thing.txt")
 	tr.AddDir("/home/wagoodman")
 	tr.AddSymLink("/home/thing", "./thing.txt")

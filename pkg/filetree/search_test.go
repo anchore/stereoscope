@@ -21,7 +21,7 @@ func Test_searchContext_SearchByPath(t *testing.T) {
 		options []LinkResolutionOption
 	}
 
-	tree := NewFileTree()
+	tree := New()
 	ref, err := tree.AddFile("/path/to/file.txt")
 	require.NoError(t, err)
 	require.NotNil(t, ref)
@@ -101,7 +101,7 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 		options []LinkResolutionOption
 	}
 
-	tree := NewFileTree()
+	tree := New()
 	doubleLinkToPathRef, err := tree.AddSymLink("/double-link-to-path", "/link-to-path")
 	require.NoError(t, err)
 	require.NotNil(t, doubleLinkToPathRef)
@@ -402,7 +402,7 @@ func Test_searchContext_SearchByMIMEType(t *testing.T) {
 		mimeTypes string
 	}
 
-	tree := NewFileTree()
+	tree := New()
 	ref, err := tree.AddFile("/path/to/file.txt")
 	require.NoError(t, err)
 	require.NotNil(t, ref)
@@ -492,7 +492,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				fileRef, err := tree.AddFile("/path/to/file.txt")
 				require.NoError(t, err)
@@ -523,7 +523,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to/file.txt",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				deafLinkRef, err := tree.AddSymLink("/link-to-file", "/path/to/dead/file.txt")
 				require.NoError(t, err)
@@ -561,7 +561,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/3",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				link1, err := tree.AddSymLink("/1", "/2")
 				require.NoError(t, err)
@@ -605,7 +605,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/usr/bin/ttyd",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				usrRef, err := tree.AddDir("/usr")
 				require.NoError(t, err)
@@ -657,7 +657,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to/file.txt",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				linkToFileRef, err := tree.AddSymLink("/link-to-file", "/path/to/file.txt")
 				require.NoError(t, err)
@@ -695,7 +695,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to/file.txt",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				doubleLinkToFileRef, err := tree.AddSymLink("/double-link-to-file", "/link-to-file")
 				require.NoError(t, err)
@@ -737,7 +737,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to/file.txt",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				dirTo, err := tree.AddDir("/path/to")
 				require.NoError(t, err)
@@ -780,7 +780,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to/file.txt",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				dirTo, err := tree.AddDir("/path/to")
 				require.NoError(t, err)
@@ -830,7 +830,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to/file.txt",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				dirTo, err := tree.AddDir("/path/to")
 				require.NoError(t, err)
@@ -893,7 +893,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to/link-to-file",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				linkToAnotherViaLinkRef, err := tree.AddSymLink("/path/link-to-another", "/link-to-to/another")
 				require.NoError(t, err)
@@ -961,7 +961,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				"/path/to/link-to-file",
 			},
 			input: func() input {
-				tree := NewFileTree()
+				tree := New()
 
 				linkToAnotherViaLinkRef, err := tree.AddSymLink("/path/link-to-another", "../link-to-to/another")
 				require.NoError(t, err)

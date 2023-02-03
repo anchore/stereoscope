@@ -10,7 +10,7 @@ import (
 )
 
 func dfsTestTree(t *testing.T) (*FileTree, map[string]*file.Reference) {
-	tr := NewFileTree()
+	tr := New()
 
 	possiblePaths := make(map[string]*file.Reference)
 
@@ -233,7 +233,7 @@ func TestDFS_WalkAll_ConditionalBranchPruning(t *testing.T) {
 }
 
 func TestDFS_WalkAll_MaxDirDepthTerminatesTraversal(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 
 	possiblePaths := make(map[string]*file.Reference)
 

@@ -136,7 +136,7 @@ func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Referen
 }
 
 func fetchContents(t *testing.T, i *image.Image, cfg linkFetchConfig) string {
-	contents, err := i.Layers[cfg.perspectiveLayer].FileContentsFromSquash(file.Path(cfg.linkPath))
+	contents, err := i.Layers[cfg.perspectiveLayer].OpenFileFromSquash(file.Path(cfg.linkPath))
 	if err != nil {
 		t.Fatalf("could not fetch contents of %+v: %+v", cfg.linkPath, err)
 	}

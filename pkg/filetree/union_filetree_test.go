@@ -8,7 +8,7 @@ import (
 
 func TestUnionFileTree_Squash(t *testing.T) {
 	ut := NewUnionFileTree()
-	base := NewFileTree()
+	base := New()
 
 	base.AddFile("/home/wagoodman/some/stuff-1.txt")
 	originalNode, _ := base.AddFile("/home/wagoodman/some/stuff-2-overlap.txt")
@@ -16,7 +16,7 @@ func TestUnionFileTree_Squash(t *testing.T) {
 	originalMore, _ := base.AddFile("/home/wagoodman/more")
 	originalMoreDir, _ := base.AddDir("/home/wagoodman/moredir")
 
-	top := NewFileTree()
+	top := New()
 	top.AddFile("/etc/redhat-release")
 	// note: override /home/wagoodman/more (a file) as a directory
 	top.AddFile("/home/wagoodman/more/things.txt")
@@ -95,13 +95,13 @@ func TestUnionFileTree_Squash(t *testing.T) {
 
 func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 	ut := NewUnionFileTree()
-	base := NewFileTree()
+	base := New()
 
 	base.AddFile("/some/stuff-1.txt")
 	base.AddFile("/some/stuff-2.txt")
 	base.AddFile("/other/things-1.txt")
 
-	top := NewFileTree()
+	top := New()
 	top.AddFile("/some/" + file.OpaqueWhiteout)
 	top.AddFile("/other/" + file.WhiteoutPrefix + "things-1.txt")
 

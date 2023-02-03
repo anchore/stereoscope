@@ -19,75 +19,19 @@ import (
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
 
-type Reader interface {
-	File(path file.Path, options ...LinkResolutionOption) (bool, *file.ReferenceAccessVia, error)
-	FilesByGlob(query string, options ...LinkResolutionOption) ([]file.ReferenceAccessVia, error)
-	// note: there are more reader-like functions, however, let's try to keep this interface small and simple for now
-}
-
-type Walker interface {
-	Walk(fn func(path file.Path, f filenode.FileNode) error, conditions *WalkConditions) error
-}
-
-type Writer interface {
-	AddFile(realPath file.Path) (*file.Reference, error)
-	AddSymLink(realPath file.Path, linkPath file.Path) (*file.Reference, error)
-	AddHardLink(realPath file.Path, linkPath file.Path) (*file.Reference, error)
-	AddDir(realPath file.Path) (*file.Reference, error)
-	RemovePath(path file.Path) error
-}
-
-// nodeAccess represents a request into the tree for a specific path and the resulting node, which may have a different path.
-type nodeAccess struct {
-	RequestPath        file.Path
-	FileNode           *filenode.FileNode // note: it is important that nodeAccess does not behave like FileNode (then it can be added to the tree directly)
-	LeafLinkResolution []nodeAccess
-}
-
-func (na *nodeAccess) HasFileNode() bool {
-	if na == nil {
-		return false
-	}
-	return na.FileNode != nil
-}
-
-func (na *nodeAccess) FileReferenceVia() *file.ReferenceAccessVia {
-	if !na.HasFileNode() {
-		return nil
-	}
-	return file.NewFileReferenceVia(
-		na.RequestPath,
-		na.FileNode.Reference,
-		newReferenceAccessPath(na.LeafLinkResolution),
-	)
-}
-
-func (na *nodeAccess) References() []file.Reference {
-	if !na.HasFileNode() {
-		return nil
-	}
-	var refs []file.Reference
-
-	if na.FileNode.Reference != nil {
-		refs = append(refs, *na.FileNode.Reference)
-	}
-
-	for _, l := range na.LeafLinkResolution {
-		if l.HasFileNode() && l.FileNode.Reference != nil {
-			refs = append(refs, *l.FileNode.Reference)
-		}
-	}
-
-	return refs
-}
-
 // FileTree represents a file/directory Tree
 type FileTree struct {
 	tree *tree.Tree
 }
 
 // NewFileTree creates a new FileTree instance.
+// Deprecated: use New() instead.
 func NewFileTree() *FileTree {
+	return New()
+}
+
+// New creates a new FileTree instance.
+func New() *FileTree {
 	t := tree.NewTree()
 
 	// Initialize FileTree with a root "/" Node
@@ -99,8 +43,8 @@ func NewFileTree() *FileTree {
 }
 
 // Copy returns a Copy of the current FileTree.
-func (t *FileTree) Copy() (*FileTree, error) {
-	ct := NewFileTree()
+func (t *FileTree) Copy() (ReadWriter, error) {
+	ct := New()
 	ct.tree = t.tree.Copy()
 	return ct, nil
 }
@@ -760,8 +704,8 @@ func (t *FileTree) RemoveChildPaths(path file.Path) error {
 	return nil
 }
 
-// Reader returns a tree.Reader useful for Tree traversal.
-func (t *FileTree) Reader() tree.Reader {
+// TreeReader returns a tree.Reader useful for Tree traversal.
+func (t *FileTree) TreeReader() tree.Reader {
 	return t.tree
 }
 
@@ -817,12 +761,12 @@ func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error, cond
 	return NewDepthFirstPathWalker(t, fn, conditions).WalkAll()
 }
 
-// merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
+// Merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
 // are path conflicts. This is the basis function for squashing (where the current Tree is the bottom Tree and the
 // given Tree is the top Tree).
 //
 //nolint:gocognit,funlen
-func (t *FileTree) merge(upper *FileTree) error {
+func (t *FileTree) Merge(upper Reader) error {
 	conditions := tree.WalkConditions{
 		ShouldContinueBranch: func(n node.Node) bool {
 			p := file.Path(n.ID())
@@ -840,22 +784,22 @@ func (t *FileTree) merge(upper *FileTree) error {
 		}
 		upperNode := n.(*filenode.FileNode)
 		// opaque directories must be processed first
-		if upper.hasOpaqueDirectory(upperNode.RealPath) {
+		if hasOpaqueDirectory(upper, upperNode.RealPath) {
 			err := t.RemoveChildPaths(upperNode.RealPath)
 			if err != nil {
-				return fmt.Errorf("filetree merge failed to remove child paths (upperPath=%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to remove child paths (upperPath=%s): %w", upperNode.RealPath, err)
 			}
 		}
 
 		if upperNode.RealPath.IsWhiteout() {
 			lowerPath, err := upperNode.RealPath.UnWhiteoutPath()
 			if err != nil {
-				return fmt.Errorf("filetree merge failed to find original upperPath for whiteout (upperPath=%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to find original upperPath for whiteout (upperPath=%s): %w", upperNode.RealPath, err)
 			}
 
 			err = t.RemovePath(lowerPath)
 			if err != nil {
-				return fmt.Errorf("filetree merge failed to remove upperPath (upperPath=%s): %w", lowerPath, err)
+				return fmt.Errorf("filetree Merge failed to remove upperPath (upperPath=%s): %w", lowerPath, err)
 			}
 
 			return nil
@@ -866,7 +810,7 @@ func (t *FileTree) merge(upper *FileTree) error {
 			FollowBasenameLinks: false,
 		})
 		if err != nil {
-			return fmt.Errorf("filetree merge failed when looking for path=%q : %w", upperNode.RealPath, err)
+			return fmt.Errorf("filetree Merge failed when looking for path=%q : %w", upperNode.RealPath, err)
 		}
 		if !lowerNode.HasFileNode() {
 			// there is no existing Node... add parents and prepare to set
@@ -887,12 +831,12 @@ func (t *FileTree) merge(upper *FileTree) error {
 			// on removal of child paths
 			err := t.RemoveChildPaths(upperNode.RealPath)
 			if err != nil {
-				return fmt.Errorf("filetree merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
 			}
 		}
 		// graft a copy of the upper Node with potential lower information into the lower tree
 		if err := t.setFileNode(&nodeCopy); err != nil {
-			return fmt.Errorf("filetree merge failed to set file Node (Node=%+v): %w", nodeCopy, err)
+			return fmt.Errorf("filetree Merge failed to set file Node (Node=%+v): %w", nodeCopy, err)
 		}
 
 		return nil
@@ -901,10 +845,10 @@ func (t *FileTree) merge(upper *FileTree) error {
 	// we are using the tree walker instead of the path walker to only look at an resolve merging of real files
 	// with no consideration to virtual paths (paths that are valid in the filetree because constituent paths
 	// contain symlinks).
-	return tree.NewDepthFirstWalkerWithConditions(upper.Reader(), visitor, conditions).WalkAll()
+	return tree.NewDepthFirstWalkerWithConditions(upper.TreeReader(), visitor, conditions).WalkAll()
 }
 
-func (t *FileTree) hasOpaqueDirectory(directoryPath file.Path) bool {
+func hasOpaqueDirectory(t Reader, directoryPath file.Path) bool {
 	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
 	return t.HasPath(opaqueWhiteoutChild)
 }

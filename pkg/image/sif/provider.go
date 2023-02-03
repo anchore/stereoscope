@@ -51,5 +51,5 @@ func (p *SingularityImageProvider) Provide(ctx context.Context, userMetadata ...
 	}
 	metadata = append(metadata, userMetadata...)
 
-	return image.NewImage(ui, contentCacheDir, metadata...), nil
+	return image.New(ui, contentCacheDir, metadata...), nil
 }

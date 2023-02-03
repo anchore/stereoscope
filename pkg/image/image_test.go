@@ -98,7 +98,7 @@ func TestImageAdditionalMetadata(t *testing.T) {
 				os.Remove(tempFile.Name())
 			})
 
-			img := NewImage(nil, tempFile.Name(), test.options...)
+			img := New(nil, tempFile.Name(), test.options...)
 
 			err = img.applyOverrideMetadata()
 			if err != nil {

@@ -69,5 +69,5 @@ func (p *DirectoryImageProvider) Provide(_ context.Context, userMetadata ...imag
 		return nil, err
 	}
 
-	return image.NewImage(img, contentTempDir, metadata...), nil
+	return image.New(img, contentTempDir, metadata...), nil
 }

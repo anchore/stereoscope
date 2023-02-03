@@ -9,6 +9,12 @@ import (
 	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
+type FileCatalogReader interface {
+	Layer(file.Reference) *Layer
+	Open(file.Reference) (io.ReadCloser, error)
+	filetree.IndexReader
+}
+
 // FileCatalog represents all file metadata and source tracing for all files contained within the image layer
 // blobs (i.e. everything except for the image index/manifest/metadata files).
 type FileCatalog struct {
@@ -31,10 +37,13 @@ func NewFileCatalog() *FileCatalog {
 // Add creates a new FileCatalogEntry for the given file reference and metadata, cataloged by the ID of the
 // file reference (overwriting any existing entries without warning).
 func (c *FileCatalog) Add(f file.Reference, m file.Metadata, l *Layer, opener file.Opener) {
-	c.Index.Add(f, m)
+	c.Index.Add(f, m) // note: the index is already thread-safe
+	c.addImageReferences(f.ID(), l, opener)
+}
+
+func (c *FileCatalog) addImageReferences(id file.ID, l *Layer, opener file.Opener) {
 	c.Lock()
 	defer c.Unlock()
-	id := f.ID()
 	c.layerByID[id] = l
 	c.openerByID[id] = opener
 }
@@ -46,9 +55,9 @@ func (c *FileCatalog) Layer(f file.Reference) *Layer {
 	return c.layerByID[f.ID()]
 }
 
-// FileContents reads the file contents for the given file reference from the underlying image/layer blob. An error
-// is returned if there is no file at the given path and layer or the read operation cannot continue.
-func (c *FileCatalog) FileContents(f file.Reference) (io.ReadCloser, error) {
+// Open returns a io.ReadCloser for the given file reference. The underlying io.ReadCloser will not attempt to
+// allocate resources until the first read is performed.
+func (c *FileCatalog) Open(f file.Reference) (io.ReadCloser, error) {
 	c.RLock()
 	defer c.RUnlock()
 

@@ -32,10 +32,10 @@ type Layer struct {
 	// Metadata contains select layer attributes
 	Metadata LayerMetadata
 	// Tree is a filetree that represents the structure of the layer tar contents ("diff tree")
-	Tree *filetree.FileTree
+	Tree filetree.Reader
 	// SquashedTree is a filetree that represents the combination of this layers diff tree and all diff trees
 	// in lower layers relative to this one.
-	SquashedTree *filetree.FileTree
+	SquashedTree filetree.Reader
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
 	fileCatalog           *FileCatalog
 	SquashedSearchContext filetree.Searcher
@@ -81,7 +81,8 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 // file tree, and the layer squash tree.
 func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
 	var err error
-	l.Tree = filetree.NewFileTree()
+	tree := filetree.New()
+	l.Tree = tree
 	l.fileCatalog = catalog
 	l.Metadata, err = newLayerMetadata(imgMetadata, l.layer, idx)
 	if err != nil {
@@ -111,7 +112,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 		l.indexedContent, err = file.NewTarIndex(
 			tarFilePath,
-			layerTarIndexer(l.Tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
+			layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
@@ -126,9 +127,9 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 		// Walk the more efficient walk if we're blessed with an io.ReaderAt.
 		if ra, ok := r.(io.ReaderAt); ok {
-			err = file.WalkSquashFS(ra, l.squashfsVisitor(monitor))
+			err = file.WalkSquashFS(ra, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
 		} else {
-			err = file.WalkSquashFSFromReader(r, l.squashfsVisitor(monitor))
+			err = file.WalkSquashFSFromReader(r, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
 		}
 		if err != nil {
 			return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
@@ -145,16 +146,30 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 	return nil
 }
 
+// OpenFile reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
+// An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+func (l *Layer) OpenFile(path file.Path) (io.ReadCloser, error) {
+	return fetchReaderByPath(l.Tree, l.fileCatalog, path)
+}
+
+// OpenFileFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
+// An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+func (l *Layer) OpenFileFromSquash(path file.Path) (io.ReadCloser, error) {
+	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
+}
+
 // FileContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+// Deprecated: use OpenFile() instead.
 func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
+	return fetchReaderByPath(l.Tree, l.fileCatalog, path)
 }
 
 // FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+// Deprecated: use OpenFileFromSquash() instead.
 func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
+	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
 }
 
 // FilesByMIMEType returns file references for files that match at least one of the given MIME types relative to each layer tree.
@@ -189,7 +204,9 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
+func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
+	builder := filetree.NewBuilder(ft, fileCatalog.Index)
+
 	return func(index file.TarIndexEntry) error {
 		var err error
 		var entry = index.ToTarFileEntry()
@@ -212,37 +229,15 @@ func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int6
 		//
 		// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
 		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
-		var fileReference *file.Reference
-		switch metadata.Type {
-		case file.TypeSymlink:
-			fileReference, err = ft.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
-			if err != nil {
-				return err
-			}
-		case file.TypeHardLink:
-			fileReference, err = ft.AddHardLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
-			if err != nil {
-				return err
-			}
-		case file.TypeDir:
-			fileReference, err = ft.AddDir(file.Path(metadata.Path))
-			if err != nil {
-				return err
-			}
-		default:
-			fileReference, err = ft.AddFile(file.Path(metadata.Path))
-			if err != nil {
-				return err
-			}
-		}
-		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.LinkDestination)
+		ref, err := builder.Add(metadata)
+		if err != nil {
+			return err
 		}
 
 		if size != nil {
 			*(size) += metadata.Size
 		}
-		fileCatalog.Add(*fileReference, metadata, layerRef, index.Open)
+		fileCatalog.addImageReferences(ref.ID(), layerRef, index.Open)
 
 		if monitor != nil {
 			monitor.N++
@@ -251,7 +246,9 @@ func layerTarIndexer(ft *filetree.FileTree, fileCatalog *FileCatalog, size *int6
 	}
 }
 
-func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
+func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.SquashFSVisitor {
+	builder := filetree.NewBuilder(ft, fileCatalog.Index)
+
 	return func(fsys fs.FS, path string, d fs.DirEntry) error {
 		ff, err := fsys.Open(path)
 		if err != nil {
@@ -261,7 +258,7 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 
 		f, ok := ff.(*squashfs.File)
 		if !ok {
-			return errors.New("unexpected file type")
+			return errors.New("unexpected file type from squashfs")
 		}
 
 		metadata, err := file.NewMetadataFromSquashFSFile(path, f)
@@ -269,32 +266,15 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 			return err
 		}
 
-		var fileReference *file.Reference
-
-		switch {
-		case f.IsSymlink():
-			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
-			if err != nil {
-				return err
-			}
-		case f.IsDir():
-			fileReference, err = l.Tree.AddDir(file.Path(metadata.Path))
-			if err != nil {
-				return err
-			}
-		default:
-			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
-			if err != nil {
-				return err
-			}
+		fileReference, err := builder.Add(metadata)
+		if err != nil {
+			return err
 		}
 
-		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during squashfs iteration", metadata.Path, metadata.LinkDestination)
+		if size != nil {
+			*(size) += metadata.Size
 		}
-
-		l.Metadata.Size += metadata.Size
-		l.fileCatalog.Add(*fileReference, metadata, l, func() io.ReadCloser {
+		fileCatalog.addImageReferences(fileReference.ID(), layerRef, func() io.ReadCloser {
 			r, err := fsys.Open(path)
 			if err != nil {
 				// The file.Opener interface doesn't give us a way to return an error, and callers

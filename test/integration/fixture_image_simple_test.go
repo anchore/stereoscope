@@ -177,7 +177,7 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 		b.Run(c.source, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for _, ref := range paths {
-					f, err := img.FileCatalog.FileContents(ref)
+					f, err := img.FileCatalog.Open(ref)
 					if err != nil {
 						b.Fatalf("unable to read: %+v", err)
 					}
@@ -230,20 +230,20 @@ func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 	t.Helper()
 	//t.Log("Asserting squashed trees...")
 
-	one := filetree.NewFileTree()
+	one := filetree.New()
 	one.AddFile("/somefile-1.txt")
 
-	two := filetree.NewFileTree()
+	two := filetree.New()
 	two.AddFile("/somefile-1.txt")
 	two.AddFile("/somefile-2.txt")
 
-	three := filetree.NewFileTree()
+	three := filetree.New()
 	three.AddFile("/somefile-1.txt")
 	three.AddFile("/somefile-2.txt")
 	three.AddFile("/really/.wh..wh..opq")
 	three.AddFile("/really/nested/file-3.txt")
 
-	expectedTrees := map[uint]*filetree.FileTree{
+	expectedTrees := map[uint]filetree.Reader{
 		0: one,
 		1: two,
 		2: three,
@@ -257,7 +257,7 @@ func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 
 	compareLayerSquashTrees(t, expectedTrees, i, ignorePaths)
 
-	squashed := filetree.NewFileTree()
+	squashed := filetree.New()
 	squashed.AddFile("/somefile-1.txt")
 	squashed.AddFile("/somefile-2.txt")
 	squashed.AddFile("/really/nested/file-3.txt")
@@ -269,17 +269,17 @@ func assertImageSimpleTrees(t *testing.T, i *image.Image) {
 	t.Helper()
 	//t.Log("Asserting trees...")
 
-	one := filetree.NewFileTree()
+	one := filetree.New()
 	one.AddFile("/somefile-1.txt")
 
-	two := filetree.NewFileTree()
+	two := filetree.New()
 	two.AddFile("/somefile-2.txt")
 
-	three := filetree.NewFileTree()
+	three := filetree.New()
 	three.AddFile("/really/.wh..wh..opq")
 	three.AddFile("/really/nested/file-3.txt")
 
-	expectedTrees := map[uint]*filetree.FileTree{
+	expectedTrees := map[uint]filetree.Reader{
 		0: one,
 		1: two,
 		2: three,

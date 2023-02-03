@@ -14,7 +14,7 @@ import (
 )
 
 func TestFileTree_AddPath(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	path := file.Path("/home")
 	fileNode, err := tr.AddFile(path)
 	if err != nil {
@@ -28,7 +28,7 @@ func TestFileTree_AddPath(t *testing.T) {
 }
 
 func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	path := file.Path("/home/wagoodman/awesome/file.txt")
 	fileNode, err := tr.AddFile(path)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 }
 
 func TestFileTree_RemovePath(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	path := file.Path("/home/wagoodman/awesome/file.txt")
 	_, err := tr.AddFile(path)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestFileTree_RemovePath(t *testing.T) {
 
 func TestFileTree_FilesByGlob_AncestorSymlink(t *testing.T) {
 	var err error
-	tr := NewFileTree()
+	tr := New()
 
 	_, err = tr.AddSymLink("/parent-link", "/parent")
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func TestFileTree_FilesByGlob_AncestorSymlink(t *testing.T) {
 }
 
 func TestFileTree_FilesByGlob(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 
 	paths := []string{
 		"/home/wagoodman/awesome/file.txt",
@@ -362,14 +362,14 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 }
 
 func TestFileTree_Merge(t *testing.T) {
-	tr1 := NewFileTree()
+	tr1 := New()
 	tr1.AddFile("/home/wagoodman/awesome/file-1.txt")
 
-	tr2 := NewFileTree()
+	tr2 := New()
 	tr2.AddFile("/home/wagoodman/awesome/file-2.txt")
 
-	if err := tr1.merge(tr2); err != nil {
-		t.Fatalf("error on merge : %+v", err)
+	if err := tr1.Merge(tr2); err != nil {
+		t.Fatalf("error on Merge : %+v", err)
 	}
 
 	for _, p := range []file.Path{"/home/wagoodman/awesome/file-1.txt", "/home/wagoodman/awesome/file-2.txt"} {
@@ -380,34 +380,34 @@ func TestFileTree_Merge(t *testing.T) {
 }
 
 func TestFileTree_Merge_Overwrite(t *testing.T) {
-	tr1 := NewFileTree()
+	tr1 := New()
 	tr1.AddFile("/home/wagoodman/awesome/file.txt")
 
-	tr2 := NewFileTree()
+	tr2 := New()
 	newRef, _ := tr2.AddFile("/home/wagoodman/awesome/file.txt")
 
-	if err := tr1.merge(tr2); err != nil {
-		t.Fatalf("error on merge : %+v", err)
+	if err := tr1.Merge(tr2); err != nil {
+		t.Fatalf("error on Merge : %+v", err)
 	}
 
 	_, f, _ := tr1.File("/home/wagoodman/awesome/file.txt")
 	if f.ID() != newRef.ID() {
-		t.Fatalf("did not overwrite paths on merge")
+		t.Fatalf("did not overwrite paths on Merge")
 	}
 
 }
 
 func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
-	tr1 := NewFileTree()
+	tr1 := New()
 	_, err := tr1.AddFile("/home/wagoodman/awesome/file.txt")
 	require.NoError(t, err)
 
-	tr2 := NewFileTree()
+	tr2 := New()
 	_, err = tr2.AddFile("/home/wagoodman/.wh..wh..opq")
 	require.NoError(t, err)
 
-	if err := tr1.merge(tr2); err != nil {
-		t.Fatalf("error on merge : %+v", err)
+	if err := tr1.Merge(tr2); err != nil {
+		t.Fatalf("error on Merge : %+v", err)
 	}
 
 	for _, p := range []file.Path{"/home/wagoodman", "/home"} {
@@ -425,14 +425,14 @@ func TestFileTree_Merge_OpaqueWhiteout(t *testing.T) {
 }
 
 func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
-	tr1 := NewFileTree()
+	tr1 := New()
 	tr1.AddFile("/home")
 
-	tr2 := NewFileTree()
+	tr2 := New()
 	tr2.AddFile("/home/luhring/.wh..wh..opq")
 
-	if err := tr1.merge(tr2); err != nil {
-		t.Fatalf("error on merge : %+v", err)
+	if err := tr1.Merge(tr2); err != nil {
+		t.Fatalf("error on Merge : %+v", err)
 	}
 
 	for _, p := range []file.Path{"/home/luhring", "/home"} {
@@ -443,14 +443,14 @@ func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
 }
 
 func TestFileTree_Merge_Whiteout(t *testing.T) {
-	tr1 := NewFileTree()
+	tr1 := New()
 	tr1.AddFile("/home/wagoodman/awesome/file.txt")
 
-	tr2 := NewFileTree()
+	tr2 := New()
 	tr2.AddFile("/home/wagoodman/awesome/.wh.file.txt")
 
-	if err := tr1.merge(tr2); err != nil {
-		t.Fatalf("error on merge : %+v", err)
+	if err := tr1.Merge(tr2); err != nil {
+		t.Fatalf("error on Merge : %+v", err)
 	}
 
 	for _, p := range []file.Path{"/home/wagoodman/awesome", "/home/wagoodman", "/home"} {
@@ -468,14 +468,14 @@ func TestFileTree_Merge_Whiteout(t *testing.T) {
 }
 
 func TestFileTree_Merge_DirOverride(t *testing.T) {
-	tr1 := NewFileTree()
+	tr1 := New()
 	tr1.AddFile("/home/wagoodman/awesome/place")
 
-	tr2 := NewFileTree()
+	tr2 := New()
 	tr2.AddFile("/home/wagoodman/awesome/place/thing.txt")
 
-	if err := tr1.merge(tr2); err != nil {
-		t.Fatalf("error on merge : %+v", err)
+	if err := tr1.Merge(tr2); err != nil {
+		t.Fatalf("error on Merge : %+v", err)
 	}
 
 	for _, p := range []file.Path{"/home/wagoodman/awesome/place", "/home/wagoodman/awesome/place/thing.txt"} {
@@ -499,17 +499,17 @@ func TestFileTree_Merge_DirOverride(t *testing.T) {
 }
 
 func TestFileTree_Merge_RemoveChildPathsOnOverride(t *testing.T) {
-	lowerTree := NewFileTree()
+	lowerTree := New()
 	// add a file in the lower tree, which implicitly adds "/home/wagoodman/awesome/place" as a directory type
 	lowerTree.AddFile("/home/wagoodman/awesome/place/thing.txt")
 
-	upperTree := NewFileTree()
+	upperTree := New()
 	// add "/home/wagoodman/awesome/place" as a file type in the upper treee
 	upperTree.AddFile("/home/wagoodman/awesome/place")
 
 	// merge the upper tree into the lower tree
-	if err := lowerTree.merge(upperTree); err != nil {
-		t.Fatalf("error on merge : %+v", err)
+	if err := lowerTree.Merge(upperTree); err != nil {
+		t.Fatalf("error on Merge : %+v", err)
 	}
 
 	// the directory should still exist
@@ -539,7 +539,7 @@ func TestFileTree_Merge_RemoveChildPathsOnOverride(t *testing.T) {
 
 func TestFileTree_File_MultiSymlink(t *testing.T) {
 	var err error
-	tr := NewFileTree()
+	tr := New()
 
 	_, err = tr.AddSymLink("/home", "/link-to-1/link-to-place")
 	require.NoError(t, err)
@@ -622,7 +622,7 @@ func TestFileTree_File_MultiSymlink(t *testing.T) {
 
 func TestFileTree_File_MultiSymlink_deadlink(t *testing.T) {
 	var err error
-	tr := NewFileTree()
+	tr := New()
 
 	_, err = tr.AddSymLink("/home", "/link-to-1/link-to-place")
 	require.NoError(t, err)
@@ -988,7 +988,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			tr := NewFileTree()
+			tr := New()
 			_, err := tr.AddSymLink(test.buildLinkSource, test.buildLinkDest)
 			if err != nil {
 				t.Fatalf("unexpected an error on add link: %+v", err)
@@ -1035,7 +1035,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 }
 
 func TestFileTree_File_MultipleIndirections(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	// first indirection
 	_, err := tr.AddSymLink("/home", "/another/place")
 	if err != nil {
@@ -1076,7 +1076,7 @@ func TestFileTree_File_MultipleIndirections(t *testing.T) {
 }
 
 func TestFileTree_File_CycleDetection(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	// first indirection
 	_, err := tr.AddSymLink("/home", "/another/place")
 	if err != nil {
@@ -1102,7 +1102,7 @@ func TestFileTree_File_CycleDetection(t *testing.T) {
 }
 
 func TestFileTree_File_DeadCycleDetection(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	_, err := tr.AddSymLink("/somewhere/acorn", "noobaa-core/../acorn/bin/acorn")
 	require.NoError(t, err)
 
@@ -1119,7 +1119,7 @@ func TestFileTree_File_DeadCycleDetection(t *testing.T) {
 }
 
 func TestFileTree_AllFiles(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 
 	paths := []string{
 		"/home/a-file.txt",

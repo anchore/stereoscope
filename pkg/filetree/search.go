@@ -21,17 +21,17 @@ type Searcher interface {
 }
 
 type searchContext struct {
-	tree  *FileTree // this is the tree which all index search results are filtered against
-	index Index     // this index is relative to one or more trees, not just necessarily one
+	tree  *FileTree   // this is the tree which all index search results are filtered against
+	index IndexReader // this index is relative to one or more trees, not just necessarily one
 
 	// the following enables correct link resolution when searching via the index
 	linkForwardRef   map[node.ID]node.ID    // {link-node-id: link-destination-node-id}
 	linkBackwardRefs map[node.ID]node.IDSet // {link-destination-node-id: str([link-node-id, ...])}
 }
 
-func NewSearchContext(tree *FileTree, index Index) Searcher {
+func NewSearchContext(tree Reader, index IndexReader) Searcher {
 	c := &searchContext{
-		tree:             tree,
+		tree:             tree.(*FileTree),
 		index:            index,
 		linkForwardRef:   make(map[node.ID]node.ID),
 		linkBackwardRefs: make(map[node.ID]node.IDSet),

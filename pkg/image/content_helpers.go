@@ -8,9 +8,9 @@ import (
 	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
-// fetchFileContentsByPath is a common helper function for resolving the file contents for a path from the file
+// fetchReaderByPath is a common helper function for resolving the file contents for a path from the file
 // catalog relative to the given tree.
-func fetchFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, path file.Path) (io.ReadCloser, error) {
+func fetchReaderByPath(ft filetree.Reader, fileCatalog FileCatalogReader, path file.Path) (io.ReadCloser, error) {
 	exists, refVia, err := ft.File(path, filetree.FollowBasenameLinks)
 	if err != nil {
 		return nil, err
@@ -19,7 +19,7 @@ func fetchFileContentsByPath(ft *filetree.FileTree, fileCatalog *FileCatalog, pa
 		return nil, fmt.Errorf("could not find file path in Tree: %s", path)
 	}
 
-	reader, err := fileCatalog.FileContents(*refVia.Reference)
+	reader, err := fileCatalog.Open(*refVia.Reference)
 	if err != nil {
 		return nil, err
 	}

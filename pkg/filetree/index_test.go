@@ -16,7 +16,7 @@ import (
 func commonIndexFixture(t *testing.T) Index {
 	t.Helper()
 
-	tree := NewFileTree()
+	tree := New()
 	idx := NewIndex()
 
 	addDir := func(path file.Path) {
