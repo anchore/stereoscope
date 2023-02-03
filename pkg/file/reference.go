@@ -1,8 +1,6 @@
 package file
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // Reference represents a unique file. This is useful when path is not good enough (i.e. you have the same file path for two files in two different container image layers, and you need to be able to distinguish them apart)
 type Reference struct {

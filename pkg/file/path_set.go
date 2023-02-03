@@ -2,8 +2,10 @@ package file
 
 type PathSet map[Path]struct{}
 
-func NewPathSet() PathSet {
-	return make(PathSet)
+func NewPathSet(is ...Path) PathSet {
+	s := make(PathSet)
+	s.Add(is...)
+	return s
 }
 
 func (s PathSet) Size() int {

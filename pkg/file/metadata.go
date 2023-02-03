@@ -6,6 +6,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"syscall"
+
+	"github.com/anchore/stereoscope/internal/log"
 
 	"github.com/sylabs/squashfs"
 )
@@ -17,10 +20,9 @@ type Metadata struct {
 	// LinkDestination is populated only for hardlinks / symlinks, can be an absolute or relative
 	LinkDestination string
 	// Size of the file in bytes
-	Size    int64
-	UserID  int
-	GroupID int
-	// Type is the tar.Type entry for the file
+	Size     int64
+	UserID   int
+	GroupID  int
 	Type     Type
 	IsDir    bool
 	Mode     os.FileMode
@@ -86,4 +88,53 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 	}
 
 	return md, nil
+}
+
+func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
+	var mimeType string
+	uid, gid := getXid(info)
+
+	ty := TypeFromMode(info.Mode())
+
+	if ty == TypeReg {
+		f, err := os.Open(path)
+		if err != nil {
+			// TODO: it may be that the file is inaccessible, however, this is not an error or a warning. In the future we need to track these as known-unknowns
+			f = nil
+		} else {
+			defer func() {
+				if err := f.Close(); err != nil {
+					log.Warnf("unable to close file while obtaining metadata: %s", path)
+				}
+			}()
+		}
+
+		mimeType = MIMEType(f)
+	}
+
+	// TODO: should we clean up path to be the real, absolute path?
+
+	return Metadata{
+		Path: path,
+		Mode: info.Mode(),
+		Type: ty,
+		// unsupported across platforms
+		UserID:   uid,
+		GroupID:  gid,
+		Size:     info.Size(),
+		MIMEType: mimeType,
+		IsDir:    info.IsDir(),
+	}
+}
+
+// getXid is the UID GID system info for unix
+func getXid(info os.FileInfo) (uid, gid int) {
+	uid = -1
+	gid = -1
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		uid = int(stat.Uid)
+		gid = int(stat.Gid)
+	}
+
+	return uid, gid
 }
