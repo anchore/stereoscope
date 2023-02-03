@@ -156,7 +156,7 @@ func (c *index) GetByFileType(fTypes ...file.Type) ([]IndexEntry, error) {
 			continue
 		}
 
-		for _, id := range fileIDs.List() {
+		for _, id := range fileIDs.Sorted() {
 			entry, ok := c.index[id]
 			if !ok {
 				return nil, os.ErrNotExist
@@ -180,7 +180,7 @@ func (c *index) GetByMIMEType(mTypes ...string) ([]IndexEntry, error) {
 			continue
 		}
 
-		for _, id := range fileIDs.List() {
+		for _, id := range fileIDs.Sorted() {
 			entry, ok := c.index[id]
 			if !ok {
 				return nil, os.ErrNotExist
@@ -204,7 +204,7 @@ func (c *index) GetByExtension(extensions ...string) ([]IndexEntry, error) {
 			continue
 		}
 
-		for _, id := range fileIDs.List() {
+		for _, id := range fileIDs.Sorted() {
 			entry, ok := c.index[id]
 			if !ok {
 				return nil, os.ErrNotExist
@@ -232,7 +232,7 @@ func (c *index) GetByBasename(basenames ...string) ([]IndexEntry, error) {
 			continue
 		}
 
-		for _, id := range fileIDs.List() {
+		for _, id := range fileIDs.Sorted() {
 			entry, ok := c.index[id]
 			if !ok {
 				return nil, os.ErrNotExist

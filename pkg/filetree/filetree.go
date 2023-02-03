@@ -304,7 +304,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 
 // return FileNode of the basename in the given path (no resolution is done at or past the basename). Note: it is
 // assumed that the given path has already been normalized.
-func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths internal.Set) (*nodeAccess, error) {
+func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths file.PathSet) (*nodeAccess, error) {
 	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
 	// use it, otherwise, continue with ancestor resolution
 	currentNodeAccess, err := t.node(path, linkResolutionStrategy{})
@@ -379,14 +379,14 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths internal.
 // resolveNodeLinks takes the given FileNode and resolves all links at the base of the real path for the node (this implies
 // that NO ancestors are considered).
 // nolint: funlen
-func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, attemptedPaths internal.Set) (*nodeAccess, error) {
+func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, attemptedPaths file.PathSet) (*nodeAccess, error) {
 	if n == nil {
 		return nil, fmt.Errorf("cannot resolve links with nil Node given")
 	}
 
 	// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing nodes that do not exist
 	if attemptedPaths == nil {
-		attemptedPaths = internal.NewStringSet()
+		attemptedPaths = file.NewPathSet()
 	}
 
 	// note: this assumes that callers are passing paths in which the constituent parts are NOT symlinks
@@ -435,12 +435,12 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 		lastNode = currentNodeAccess
 
 		// break any cycles with non-existent paths (before attempting to look the path up again)
-		if attemptedPaths.Contains(string(nextPath)) {
+		if attemptedPaths.Contains(nextPath) {
 			return nil, ErrLinkCycleDetected
 		}
 
 		// get the next Node (based on the next path)
-		attemptedPaths.Add(string(nextPath))
+		attemptedPaths.Add(nextPath)
 		currentNodeAccess, err = t.resolveAncestorLinks(nextPath, attemptedPaths)
 		if err != nil {
 			if currentNodeAccess != nil {
