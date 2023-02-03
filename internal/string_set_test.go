@@ -6,21 +6,21 @@ import (
 	"testing"
 )
 
-func TestOrderableSet_Size(t *testing.T) {
-	type testCase[T orderedComparable] struct {
+func TestStringSet_Size(t *testing.T) {
+	type testCase struct {
 		name string
-		s    OrderableSet[T]
+		s    StringSet
 		want int
 	}
-	tests := []testCase[string]{
+	tests := []testCase{
 		{
 			name: "empty set",
-			s:    NewOrderableSet[string](),
+			s:    NewStringSet(),
 			want: 0,
 		},
 		{
 			name: "non-empty set",
-			s:    NewOrderableSet[string]("items", "in", "set"),
+			s:    NewStringSet("items", "in", "set"),
 			want: 3,
 		},
 	}
@@ -33,20 +33,20 @@ func TestOrderableSet_Size(t *testing.T) {
 	}
 }
 
-func TestOrderableSet_Add(t *testing.T) {
-	type args[T orderedComparable] struct {
-		ids []T
+func TestStringSet_Add(t *testing.T) {
+	type args struct {
+		ids []string
 	}
-	type testCase[T orderedComparable] struct {
+	type testCase struct {
 		name string
-		s    OrderableSet[T]
-		args args[T]
+		s    StringSet
+		args args
 	}
-	tests := []testCase[string]{
+	tests := []testCase{
 		{
 			name: "add multiple",
-			s:    NewOrderableSet[string](),
-			args: args[string]{ids: []string{"a", "b", "c"}},
+			s:    NewStringSet(),
+			args: args{ids: []string{"a", "b", "c"}},
 		},
 	}
 	for _, tt := range tests {
@@ -61,21 +61,21 @@ func TestOrderableSet_Add(t *testing.T) {
 	}
 }
 
-func TestOrderableSet_Remove(t *testing.T) {
-	type args[T orderedComparable] struct {
-		ids []T
+func TestStringSet_Remove(t *testing.T) {
+	type args struct {
+		ids []string
 	}
-	type testCase[T orderedComparable] struct {
+	type testCase struct {
 		name     string
-		s        OrderableSet[T]
-		args     args[T]
-		expected []T
+		s        StringSet
+		args     args
+		expected []string
 	}
-	tests := []testCase[string]{
+	tests := []testCase{
 		{
 			name:     "remove multiple",
-			s:        NewOrderableSet[string]("a", "b", "c"),
-			args:     args[string]{ids: []string{"a", "b"}},
+			s:        NewStringSet("a", "b", "c"),
+			args:     args{ids: []string{"a", "b"}},
 			expected: []string{"c"},
 		},
 	}
@@ -96,27 +96,27 @@ func TestOrderableSet_Remove(t *testing.T) {
 	}
 }
 
-func TestOrderableSet_Contains(t *testing.T) {
-	type args[T orderedComparable] struct {
-		i T
+func TestStringSet_Contains(t *testing.T) {
+	type args struct {
+		i string
 	}
-	type testCase[T orderedComparable] struct {
+	type testCase struct {
 		name string
-		s    OrderableSet[T]
-		args args[T]
+		s    StringSet
+		args args
 		want bool
 	}
-	tests := []testCase[string]{
+	tests := []testCase{
 		{
 			name: "contains",
-			s:    NewOrderableSet[string]("a", "b", "c"),
-			args: args[string]{i: "a"},
+			s:    NewStringSet("a", "b", "c"),
+			args: args{i: "a"},
 			want: true,
 		},
 		{
 			name: "not contains",
-			s:    NewOrderableSet[string]("a", "b", "c"),
-			args: args[string]{i: "x"},
+			s:    NewStringSet("a", "b", "c"),
+			args: args{i: "x"},
 			want: false,
 		},
 	}
@@ -129,15 +129,15 @@ func TestOrderableSet_Contains(t *testing.T) {
 	}
 }
 
-func TestOrderableSet_Clear(t *testing.T) {
-	type testCase[T orderedComparable] struct {
+func TestStringSet_Clear(t *testing.T) {
+	type testCase struct {
 		name string
-		s    OrderableSet[T]
+		s    StringSet
 	}
-	tests := []testCase[string]{
+	tests := []testCase{
 		{
 			name: "go case",
-			s:    NewOrderableSet[string]("a", "b", "c"),
+			s:    NewStringSet("a", "b", "c"),
 		},
 	}
 	for _, tt := range tests {
@@ -148,16 +148,16 @@ func TestOrderableSet_Clear(t *testing.T) {
 	}
 }
 
-func TestOrderableSet_List(t *testing.T) {
-	type testCase[T orderedComparable] struct {
+func TestStringSet_List(t *testing.T) {
+	type testCase struct {
 		name string
-		s    OrderableSet[T]
-		want []T
+		s    StringSet
+		want []string
 	}
-	tests := []testCase[string]{
+	tests := []testCase{
 		{
 			name: "go case",
-			s:    NewOrderableSet[string]("a", "b", "c"),
+			s:    NewStringSet("a", "b", "c"),
 			want: []string{"a", "b", "c"},
 		},
 	}
@@ -168,16 +168,16 @@ func TestOrderableSet_List(t *testing.T) {
 	}
 }
 
-func TestOrderableSet_Sorted(t *testing.T) {
-	type testCase[T orderedComparable] struct {
+func TestStringSet_Sorted(t *testing.T) {
+	type testCase struct {
 		name string
-		s    OrderableSet[T]
-		want []T
+		s    StringSet
+		want []string
 	}
-	tests := []testCase[string]{
+	tests := []testCase{
 		{
 			name: "go case",
-			s:    NewOrderableSet[string]("a", "b", "c"),
+			s:    NewStringSet("a", "b", "c"),
 			want: []string{"a", "b", "c"},
 		},
 	}
@@ -188,33 +188,33 @@ func TestOrderableSet_Sorted(t *testing.T) {
 	}
 }
 
-func TestOrderableSet_ContainsAny(t *testing.T) {
-	type args[T orderedComparable] struct {
-		ids []T
+func TestStringSet_ContainsAny(t *testing.T) {
+	type args struct {
+		ids []string
 	}
-	type testCase[T orderedComparable] struct {
+	type testCase struct {
 		name string
-		s    OrderableSet[T]
-		args args[T]
+		s    StringSet
+		args args
 		want bool
 	}
-	tests := []testCase[string]{
+	tests := []testCase{
 		{
 			name: "contains one",
-			s:    NewOrderableSet[string]("a", "b", "c"),
-			args: args[string]{ids: []string{"a", "x"}},
+			s:    NewStringSet("a", "b", "c"),
+			args: args{ids: []string{"a", "x"}},
 			want: true,
 		},
 		{
 			name: "contains all",
-			s:    NewOrderableSet[string]("a", "b", "c"),
-			args: args[string]{ids: []string{"a", "b"}},
+			s:    NewStringSet("a", "b", "c"),
+			args: args{ids: []string{"a", "b"}},
 			want: true,
 		},
 		{
 			name: "contains none",
-			s:    NewOrderableSet[string]("a", "b", "c"),
-			args: args[string]{ids: []string{"x", "y"}},
+			s:    NewStringSet("a", "b", "c"),
+			args: args{ids: []string{"x", "y"}},
 			want: false,
 		},
 	}

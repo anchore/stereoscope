@@ -329,7 +329,7 @@ func (sc searchContext) pathsToNode(fn *filenode.FileNode, observedPaths file.Pa
 	return paths, err
 }
 
-//nolint: funlen
+// nolint: funlen
 func (sc searchContext) _pathsToNode(fn *filenode.FileNode, observedPaths file.PathSet, cache map[cacheRequest]cacheResult) (file.PathSet, error) {
 	if fn == nil {
 		return nil, nil

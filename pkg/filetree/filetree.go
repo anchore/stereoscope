@@ -378,7 +378,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths file.Path
 
 // resolveNodeLinks takes the given FileNode and resolves all links at the base of the real path for the node (this implies
 // that NO ancestors are considered).
-//nolint: funlen
+// nolint: funlen
 func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, attemptedPaths file.PathSet) (*nodeAccess, error) {
 	if n == nil {
 		return nil, fmt.Errorf("cannot resolve links with nil Node given")
