@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -211,7 +210,7 @@ func TestFileCatalog_FileContents(t *testing.T) {
 	}
 
 	opener := func() io.ReadCloser {
-		return ioutil.NopCloser(entries[0].Reader)
+		return io.NopCloser(entries[0].Reader)
 	}
 
 	catalog := NewFileCatalog()
@@ -222,7 +221,7 @@ func TestFileCatalog_FileContents(t *testing.T) {
 		t.Fatalf("could not get contents by ref: %+v", err)
 	}
 
-	actual, err := ioutil.ReadAll(reader)
+	actual, err := io.ReadAll(reader)
 	if err != nil {
 		t.Fatalf("could not read content reader: %+v", err)
 	}

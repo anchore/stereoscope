@@ -96,7 +96,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 
 	if registryOptions.InsecureSkipTLSVerify {
 		t := &http.Transport{
-			// nolint: gosec
+			//nolint: gosec
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 		options = append(options, remote.WithTransport(t))

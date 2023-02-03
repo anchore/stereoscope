@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -67,7 +66,7 @@ func getSigners(keyPath, passphrase string) (signers []ssh.Signer, err error) {
 		return
 	}
 
-	key, err := ioutil.ReadFile(keyPath)
+	key, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +115,7 @@ func getAuthMethods(params *sshClientConfig) ([]ssh.AuthMethod, error) {
 }
 
 func getSSHCallback(params *sshClientConfig) ssh.HostKeyCallback {
-	// nolint: gosec
+	//nolint: gosec
 	cb := ssh.InsecureIgnoreHostKey()
 	if !params.secure {
 		return cb
