@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -34,7 +33,7 @@ func TestReaderFromTar_GoCase(t *testing.T) {
 		t.Fatal("could not get file reader from tar:", err)
 	}
 
-	contents, err := ioutil.ReadAll(fileReader)
+	contents, err := io.ReadAll(fileReader)
 	if err != nil {
 		t.Fatal("could not read from file reader:", err)
 	}

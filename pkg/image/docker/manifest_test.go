@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
-	"github.com/sergi/go-diff/diffmatchpatch"
-	"io/ioutil"
+	"io"
 	"os"
 	"testing"
+
+	"github.com/sergi/go-diff/diffmatchpatch"
 
 	"github.com/anchore/go-testutils"
 	"github.com/go-test/deep"
@@ -48,7 +49,7 @@ func TestNewManifest(t *testing.T) {
 				t.Fatalf("could not open fixture: %+v", err)
 			}
 
-			contents, err := ioutil.ReadAll(fh)
+			contents, err := io.ReadAll(fh)
 			if err != nil {
 				t.Fatalf("could not read fixture: %+v", err)
 			}
@@ -105,7 +106,7 @@ func TestManifestTags(t *testing.T) {
 				t.Fatalf("could not open fixture: %+v", err)
 			}
 
-			contents, err := ioutil.ReadAll(fh)
+			contents, err := io.ReadAll(fh)
 			if err != nil {
 				t.Fatalf("could not read fixture: %+v", err)
 			}
@@ -129,7 +130,7 @@ func TestAssembleOCIManifest(t *testing.T) {
 		t.Fatalf("could not open config: %+v", err)
 	}
 
-	configBytes, err := ioutil.ReadAll(fh)
+	configBytes, err := io.ReadAll(fh)
 	if err != nil {
 		t.Fatalf("could not read config: %+v", err)
 	}

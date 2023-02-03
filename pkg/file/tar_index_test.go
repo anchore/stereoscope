@@ -6,7 +6,6 @@ package file
 import (
 	"archive/tar"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -56,7 +55,7 @@ func TestIndexedTarIndex_GoCase(t *testing.T) {
 			t.Errorf("mismatched header name: %q != %q", entry.Header.Name, name)
 		}
 
-		actualContents, err := ioutil.ReadAll(entry.Reader)
+		actualContents, err := io.ReadAll(entry.Reader)
 		if err != nil {
 			t.Errorf("could not read from file reader: %+v", err)
 			continue
@@ -94,7 +93,7 @@ func TestIndexedTarReader_DuplicateEntries(t *testing.T) {
 			t.Errorf("mismatched header name: %q != %q", entry.Header.Name, path)
 		}
 
-		actualContents, err := ioutil.ReadAll(entry.Reader)
+		actualContents, err := io.ReadAll(entry.Reader)
 		if err != nil {
 			t.Errorf("could not read from file reader: %+v", err)
 			continue
@@ -108,7 +107,7 @@ func TestIndexedTarReader_DuplicateEntries(t *testing.T) {
 }
 
 func duplicateEntryTarballFixture(t *testing.T) *os.File {
-	tempFile, err := ioutil.TempFile("", "stereoscope-dup-tar-entry-fixture-XXXXXX")
+	tempFile, err := os.CreateTemp("", "stereoscope-dup-tar-entry-fixture-XXXXXX")
 	if err != nil {
 		t.Fatalf("could not create tempfile: %+v", err)
 	}

@@ -3,7 +3,6 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -90,7 +89,7 @@ func TestImageAdditionalMetadata(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			tempFile, err := ioutil.TempFile("", "")
+			tempFile, err := os.CreateTemp("", "")
 			if err != nil {
 				t.Fatalf("could not create tempfile: %+v", err)
 			}

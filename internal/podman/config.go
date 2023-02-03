@@ -2,8 +2,8 @@ package podman
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 
 	"github.com/docker/docker/pkg/homedir"
@@ -108,7 +108,7 @@ func isScheme(uri, scheme string) bool {
 }
 
 func parseContainerConfig(path string) (*containersConfig, error) {
-	configBytes, err := ioutil.ReadFile(path)
+	configBytes, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

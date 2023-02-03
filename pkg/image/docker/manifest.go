@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -62,7 +61,7 @@ func extractManifest(tarPath string) (*dockerManifest, error) {
 		return nil, err
 	}
 
-	contents, err := ioutil.ReadAll(manifestReader)
+	contents, err := io.ReadAll(manifestReader)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read manifest.json: %w", err)
 	}
@@ -92,7 +91,7 @@ func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest
 		return nil, nil, fmt.Errorf("unable to find docker config: %w", err)
 	}
 
-	configContents, err := ioutil.ReadAll(configReader)
+	configContents, err := io.ReadAll(configReader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read docker config: %w", err)
 	}
