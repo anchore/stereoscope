@@ -2,6 +2,7 @@ package filetree
 
 import (
 	"fmt"
+
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
@@ -48,6 +49,6 @@ func (b *Builder) Add(metadata file.Metadata) (*file.Reference, error) {
 	}
 
 	b.index.Add(*ref, metadata)
-	
+
 	return ref, nil
 }

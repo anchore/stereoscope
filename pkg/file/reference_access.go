@@ -20,7 +20,8 @@ type ReferenceAccessVia struct {
 
 type ReferenceAccessVias []ReferenceAccessVia
 
-// NewFileReferenceVia shows how a reference was accessed.
+// NewFileReferenceVia create a new ReferenceAccessVia for the given request path, showing the resolved reference (or
+// nil if it does not exist), and the link resolution of the basename of the request path transitively.
 func NewFileReferenceVia(path Path, ref *Reference, leafs []ReferenceAccess) *ReferenceAccessVia {
 	return &ReferenceAccessVia{
 		ReferenceAccess: ReferenceAccess{
