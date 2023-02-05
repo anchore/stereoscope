@@ -2,11 +2,12 @@ package file
 
 import (
 	"archive/tar"
-	"github.com/anchore/stereoscope/internal/log"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/anchore/stereoscope/internal/log"
 
 	"github.com/sylabs/squashfs"
 )
