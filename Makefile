@@ -22,20 +22,28 @@ SUCCESS := $(BOLD)$(GREEN)
 # Test variables #################################
 COVERAGE_THRESHOLD := 55  # the quality gate lower threshold for unit test total % coverage (by function statements)
 
-ifeq "$(strip $(VERSION))" ""
-    override VERSION = $(shell git describe --always --tags --dirty)
+## Build variables #################################
+SNAPSHOT_DIR := ./snapshot
+VERSION := $(shell git describe --dirty --always --tags)
+
+ifndef VERSION
+	$(error VERSION is not set)
 endif
 
 ifndef TEMP_DIR
     $(error TEMP_DIR is not set)
 endif
 
-ifndef REF_NAME
-	REF_NAME = $(VERSION)
-endif
-
 define title
     @printf '$(TITLE)$(1)$(RESET)\n'
+endef
+
+define safe_rm_rf
+	bash -c 'test -z "$(1)" && false || rm -rf $(1)'
+endef
+
+define safe_rm_rf_children
+	bash -c 'test -z "$(1)" && false || rm -rf $(1)/*'
 endef
 
 .PHONY: all
@@ -122,10 +130,10 @@ integration: integration-tools ## Run integration tests
 .PHONY: benchmark
 benchmark: $(TEMP_DIR) ## Run benchmark tests and compare against the baseline (if available)
 	$(call title,Running benchmark tests)
-	go test -cpu 2 -p 1 -run=^Benchmark -bench=. -count=5 -benchmem ./... | tee $(TEMP_DIR)/benchmark-$(REF_NAME).txt
+	go test -cpu 2 -p 1 -run=^Benchmark -bench=. -count=5 -benchmem ./... | tee $(TEMP_DIR)/benchmark-$(VERSION).txt
 	(test -s $(TEMP_DIR)/benchmark-main.txt && \
-		$(TEMP_DIR)/benchstat $(TEMP_DIR)/benchmark-main.txt $(TEMP_DIR)/benchmark-$(REF_NAME).txt || \
-		$(TEMP_DIR)/benchstat $(TEMP_DIR)/benchmark-$(REF_NAME).txt) \
+		$(TEMP_DIR)/benchstat $(TEMP_DIR)/benchmark-main.txt $(TEMP_DIR)/benchmark-$(VERSION).txt || \
+		$(TEMP_DIR)/benchstat $(TEMP_DIR)/benchmark-$(VERSION).txt) \
 			| tee $(TEMP_DIR)/benchstat.txt
 
 
@@ -159,11 +167,19 @@ integration-tools-save:
 ## Build-related targets #################################
 
 .PHONY: snapshot
-snapshot: ## Build the binary
+snapshot: clean-snapshot ## Build the binary
 	$(call title,Build compatability test)
-	@.github/scripts/build.sh
+	@.github/scripts/build.sh $(SNAPSHOT_DIR)
 
 ## Cleanup targets #################################
+
+.PHONY: clean
+clean: clear-test-cache clean-snapshot ## Delete all generated artifacts
+	$(call safe_rm_rf_children,$(TEMP_DIR))
+
+.PHONY: clean-snapshot
+clean-snapshot: ## Delete all snapshot builds
+	$(call safe_rm_rf,$(SNAPSHOT_DIR))
 
 .PHONY: clear-test-cache
 clear-test-cache: ## Delete all test cache (built docker image tars)

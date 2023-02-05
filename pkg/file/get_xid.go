@@ -1,5 +1,4 @@
-//go:build linux || darwin || netbsd
-// +build linux darwin netbsd
+//go:build !windows
 
 package file
 

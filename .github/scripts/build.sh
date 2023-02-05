@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+SNAPSHOT_DIR=$1
+
 # Based on https://gist.github.com/eduncan911/68775dba9d3c028181e4 and https://gist.github.com/makeworld-the-better-one/e1bb127979ae4195f43aaa3ad46b1097
 # but improved to use the `go` command so it never goes out of date.
 
@@ -11,10 +13,10 @@ contains() {
     [[ $1 =~ (^|[[:space:]])$2($|[[:space:]]) ]]
 }
 
-mkdir -p snapshot
-rm -f snapshot/*
+mkdir -p "${SNAPSHOT_DIR}"
 
-OUTPUT=snapshot/stereoscope-example
+BUILD_TARGET=./examples
+OUTPUT=${SNAPSHOT_DIR}/stereoscope-example
 FAILURES=""
 
 # You can set your own flags on the command line
@@ -60,14 +62,14 @@ while IFS= read -r target; do
         for GOARM in $arms; do
             BIN_FILENAME="${OUTPUT}-${GOOS}-${GOARCH}${GOARM}"
             if [[ "${GOOS}" == "windows" ]]; then BIN_FILENAME="${BIN_FILENAME}.exe"; fi
-            CMD="GOARM=${GOARM} GOOS=${GOOS} GOARCH=${GOARCH} go build $FLAGS -o ${BIN_FILENAME} $@"
+            CMD="GOARM=${GOARM} GOOS=${GOOS} GOARCH=${GOARCH} go build $FLAGS -o ${BIN_FILENAME} ${BUILD_TARGET}"
             echo "${CMD}"
             eval "${CMD}" || FAILURES="${FAILURES} ${GOOS}/${GOARCH}${GOARM}"
         done
     else
         # Build non-arm here
         if [[ "${GOOS}" == "windows" ]]; then BIN_FILENAME="${BIN_FILENAME}.exe"; fi
-        CMD="GOOS=${GOOS} GOARCH=${GOARCH} go build $FLAGS -o ${BIN_FILENAME} $@"
+        CMD="GOOS=${GOOS} GOARCH=${GOARCH} go build $FLAGS -o ${BIN_FILENAME} ${BUILD_TARGET}"
         echo "${CMD}"
         eval "${CMD}" || FAILURES="${FAILURES} ${GOOS}/${GOARCH}"
     fi
