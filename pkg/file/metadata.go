@@ -2,13 +2,11 @@ package file
 
 import (
 	"archive/tar"
+	"github.com/anchore/stereoscope/internal/log"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
-	"syscall"
-
-	"github.com/anchore/stereoscope/internal/log"
 
 	"github.com/sylabs/squashfs"
 )
@@ -125,16 +123,4 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 		MIMEType: mimeType,
 		IsDir:    info.IsDir(),
 	}
-}
-
-// getXid is the UID GID system info for unix
-func getXid(info os.FileInfo) (uid, gid int) {
-	uid = -1
-	gid = -1
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		uid = int(stat.Uid)
-		gid = int(stat.Gid)
-	}
-
-	return uid, gid
 }
