@@ -25,7 +25,6 @@ type searchContext struct {
 	index IndexReader // this index is relative to one or more trees, not just necessarily one
 
 	// the following enables correct link resolution when searching via the index
-	linkForwardRef   map[node.ID]node.ID    // {link-node-id: link-destination-node-id}
 	linkBackwardRefs map[node.ID]node.IDSet // {link-destination-node-id: str([link-node-id, ...])}
 }
 
@@ -33,7 +32,6 @@ func NewSearchContext(tree Reader, index IndexReader) Searcher {
 	c := &searchContext{
 		tree:             tree.(*FileTree),
 		index:            index,
-		linkForwardRef:   make(map[node.ID]node.ID),
 		linkBackwardRefs: make(map[node.ID]node.IDSet),
 	}
 
@@ -71,9 +69,6 @@ func (sc *searchContext) buildLinkResolutionIndex() error {
 
 		linkID := fn.ID()
 		destinationID := destinationFna.FileNode.ID()
-
-		// add forward reference...
-		sc.linkForwardRef[linkID] = destinationID
 
 		// add backward reference...
 		if _, ok := sc.linkBackwardRefs[destinationID]; !ok {

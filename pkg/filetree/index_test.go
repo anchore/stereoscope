@@ -130,6 +130,182 @@ func Test_fileExtensions(t *testing.T) {
 	}
 }
 
+func TestFileCatalog_GetByFileType(t *testing.T) {
+	fileIndex := commonIndexFixture(t)
+
+	tests := []struct {
+		name    string
+		input   []file.Type
+		want    []IndexEntry
+		wantErr require.ErrorAssertionFunc
+	}{
+		{
+			name:  "get real file",
+			input: []file.Type{file.TypeReg},
+			want: []IndexEntry{
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
+					Metadata: file.Metadata{
+						Path:     "/path/branch.d/one/file-1.txt",
+						Type:     file.TypeReg,
+						MIMEType: "text/plain",
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
+					Metadata: file.Metadata{
+						Path:     "/path/branch.d/one/file-4.d",
+						Type:     file.TypeReg,
+						MIMEType: "text/plain",
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
+					Metadata: file.Metadata{
+						Path:     "/path/branch.d/one/file-4.tar.gz",
+						Type:     file.TypeReg,
+						MIMEType: "text/plain",
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
+					Metadata: file.Metadata{
+						Path:     "/path/branch.d/one/.file-4.tar.gz",
+						Type:     file.TypeReg,
+						MIMEType: "text/plain",
+					},
+				},
+				{
+
+					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
+					Metadata: file.Metadata{
+						Path:     "/path/branch.d/two/file-2.txt",
+						Type:     file.TypeReg,
+						MIMEType: "text/plain",
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/file-3.txt"},
+					Metadata: file.Metadata{
+						Path:     "/path/file-3.txt",
+						Type:     file.TypeReg,
+						MIMEType: "text/plain",
+					},
+				},
+			},
+		},
+		{
+			name:  "get directories",
+			input: []file.Type{file.TypeDir},
+			want: []IndexEntry{
+				{
+					Reference: file.Reference{RealPath: "/path"},
+					Metadata: file.Metadata{
+						Path:  "/path",
+						Type:  file.TypeDir,
+						IsDir: true,
+					},
+				},
+				{
+
+					Reference: file.Reference{RealPath: "/path/branch.d"},
+					Metadata: file.Metadata{
+						Path:  "/path/branch.d",
+						Type:  file.TypeDir,
+						IsDir: true,
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/one"},
+					Metadata: file.Metadata{
+						Path:  "/path/branch.d/one",
+						Type:  file.TypeDir,
+						IsDir: true,
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/two"},
+					Metadata: file.Metadata{
+						Path:  "/path/branch.d/two",
+						Type:  file.TypeDir,
+						IsDir: true,
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/common"},
+					Metadata: file.Metadata{
+						Path:  "/path/common",
+						Type:  file.TypeDir,
+						IsDir: true,
+					},
+				},
+			},
+		},
+		{
+			name:  "get links",
+			input: []file.Type{file.TypeHardLink, file.TypeSymlink},
+			want: []IndexEntry{
+				{
+					Reference: file.Reference{RealPath: "/path/common/branch.d"},
+					Metadata: file.Metadata{
+						Path:            "/path/common/branch.d",
+						LinkDestination: "path/branch.d",
+						Type:            file.TypeSymlink,
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/common/branch"},
+					Metadata: file.Metadata{
+						Path:            "/path/common/branch",
+						LinkDestination: "path/branch.d",
+						Type:            file.TypeSymlink,
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/common/file-4"},
+					Metadata: file.Metadata{
+						Path:            "/path/common/file-4",
+						LinkDestination: "path/branch.d/one/file-4.d",
+						Type:            file.TypeSymlink,
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
+					Metadata: file.Metadata{
+						Path:            "/path/common/file-1.d",
+						LinkDestination: "path/branch.d/one/file-1.txt",
+						Type:            file.TypeSymlink,
+					},
+				},
+			},
+		},
+		{
+			name:  "get non-existent types",
+			input: []file.Type{file.TypeBlockDevice, file.TypeCharacterDevice, file.TypeFifo, file.TypeSocket, file.TypeIrregular},
+			want:  []IndexEntry{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.wantErr == nil {
+				tt.wantErr = require.NoError
+			}
+			actual, err := fileIndex.GetByFileType(tt.input...)
+			tt.wantErr(t, err)
+			if err != nil {
+				return
+			}
+			if d := cmp.Diff(tt.want, actual,
+				cmpopts.EquateEmpty(),
+				cmpopts.IgnoreUnexported(file.Reference{}),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+			); d != "" {
+				t.Errorf("diff: %s", d)
+			}
+		})
+	}
+}
+
 func TestFileCatalog_GetByExtension(t *testing.T) {
 	fileIndex := commonIndexFixture(t)
 
