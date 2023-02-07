@@ -465,7 +465,7 @@ func (sc searchContext) referencesInTree(fileEntries []IndexEntry) ([]file.Resol
 		}
 
 		for _, ref := range expandedRefs {
-			for _, accessRef := range ref.ResolutionReferences() {
+			for _, accessRef := range ref.References() {
 				if accessRef.ID() == entry.Reference.ID() {
 					// we know this entry exists in the tree, keep track of the reference for this file
 					refs = append(refs, ref)

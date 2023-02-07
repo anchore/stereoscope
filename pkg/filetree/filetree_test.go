@@ -2,13 +2,13 @@ package filetree
 
 import (
 	"errors"
+	"github.com/scylladb/go-set/strset"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
 
-	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/stretchr/testify/assert"
@@ -335,8 +335,8 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 				return
 			}
 
-			actualSet := internal.NewStringSet()
-			expectedSet := internal.NewStringSet()
+			actualSet := strset.New()
+			expectedSet := strset.New()
 
 			for _, r := range actual {
 				actualSet.Add(string(r.RequestPath))
@@ -344,13 +344,13 @@ func TestFileTree_FilesByGlob(t *testing.T) {
 
 			for _, e := range test.expected {
 				expectedSet.Add(e)
-				if !actualSet.Contains(e) {
+				if !actualSet.Has(e) {
 					t.Errorf("missing search hit: %s", e)
 				}
 			}
 
 			for _, r := range actual {
-				if !expectedSet.Contains(string(r.RequestPath)) {
+				if !expectedSet.Has(string(r.RequestPath)) {
 					t.Errorf("extra search hit: %+v", r)
 				}
 			}

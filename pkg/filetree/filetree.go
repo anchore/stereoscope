@@ -3,13 +3,13 @@ package filetree
 import (
 	"errors"
 	"fmt"
+	"github.com/scylladb/go-set/strset"
 	"path"
 	"sort"
 	"strings"
 
 	"github.com/scylladb/go-set/iset"
 
-	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/tree"
@@ -342,7 +342,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 	currentNodeAccess := n
 
 	// keep resolving links until a regular file or directory is found
-	alreadySeen := internal.NewStringSet()
+	alreadySeen := strset.New()
 	var err error
 	for {
 		nodePath = append(nodePath, *currentNodeAccess)
@@ -356,7 +356,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 			break
 		}
 
-		if alreadySeen.Contains(string(currentNodeAccess.FileNode.RealPath)) {
+		if alreadySeen.Has(string(currentNodeAccess.FileNode.RealPath)) {
 			return nil, ErrLinkCycleDetected
 		}
 
@@ -714,24 +714,24 @@ func (t *FileTree) TreeReader() tree.Reader {
 
 // PathDiff shows the path differences between two trees (useful for testing)
 func (t *FileTree) PathDiff(other *FileTree) (extra, missing []file.Path) {
-	ourPaths := internal.NewStringSet()
+	ourPaths := strset.New()
 	for _, fn := range t.tree.Nodes() {
 		ourPaths.Add(string(fn.ID()))
 	}
 
-	theirPaths := internal.NewStringSet()
+	theirPaths := strset.New()
 	for _, fn := range other.tree.Nodes() {
 		theirPaths.Add(string(fn.ID()))
 	}
 
 	for _, fn := range other.tree.Nodes() {
-		if !ourPaths.Contains(string(fn.ID())) {
+		if !ourPaths.Has(string(fn.ID())) {
 			extra = append(extra, file.Path(fn.ID()))
 		}
 	}
 
 	for _, fn := range t.tree.Nodes() {
-		if !theirPaths.Contains(string(fn.ID())) {
+		if !theirPaths.Has(string(fn.ID())) {
 			missing = append(missing, file.Path(fn.ID()))
 		}
 	}

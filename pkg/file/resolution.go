@@ -135,8 +135,8 @@ func (f *Resolution) RequestResolutionPath() []Path {
 	return paths
 }
 
-// ResolutionReferences represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
-func (f *Resolution) ResolutionReferences() []Reference {
+// References represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
+func (f *Resolution) References() []Reference {
 	var refs []Reference
 	var lastLinkResolutionIsDead bool
 
