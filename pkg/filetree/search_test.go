@@ -364,6 +364,13 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 			if d := cmp.Diff(tt.want, got, opts...); d != "" {
 				t.Errorf("SearchByGlob() mismatch (-want +got):\n%s", d)
 			}
+
+			expected, err := tt.fields.tree.FilesByGlob(tt.args.glob, tt.args.options...)
+			require.NoError(t, err)
+
+			if d := cmp.Diff(expected, got, opts...); d != "" {
+				t.Errorf("Difference relative to tree results mismatch (-want +got):\n%s", d)
+			}
 		})
 	}
 }
@@ -1001,7 +1008,8 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 			if err != nil {
 				return
 			}
-			assert.ElementsMatchf(t, tt.want, got, cmp.Diff(tt.want, got))
+
+			assert.ElementsMatchf(t, tt.want, got, cmp.Diff(tt.want, got), "expected and actual paths should match")
 		})
 	}
 }

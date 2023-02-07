@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/scylladb/go-set/iset"
@@ -464,6 +465,8 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 			}
 		}
 	}
+
+	sort.Sort(file.Resolutions(results))
 
 	return results, nil
 }
