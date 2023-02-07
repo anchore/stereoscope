@@ -6,37 +6,32 @@ import (
 	"github.com/scylladb/go-set/strset"
 )
 
-// ReferenceAccess represents the fetching of a possibly non-existent file, and how it was accessed.
-type ReferenceAccess struct {
+// Resolution represents the fetching of a possibly non-existent file via a request path.
+type Resolution struct {
 	RequestPath Path
 	*Reference
+	// LinkResolutions represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
+	// note: today this only shows resolutions via the basename of the request path, but in the future it may show all resolutions.
+	LinkResolutions []Resolution
 }
 
-// ReferenceAccessVia represents a possibly non-existent file, and how it was accessed, including all symlink and hardlink resolution.
-type ReferenceAccessVia struct {
-	ReferenceAccess
-	LeafLinkResolution []ReferenceAccess
-}
+type Resolutions []Resolution
 
-type ReferenceAccessVias []ReferenceAccessVia
-
-// NewFileReferenceVia create a new ReferenceAccessVia for the given request path, showing the resolved reference (or
+// NewResolution create a new Resolution for the given request path, showing the resolved reference (or
 // nil if it does not exist), and the link resolution of the basename of the request path transitively.
-func NewFileReferenceVia(path Path, ref *Reference, leafs []ReferenceAccess) *ReferenceAccessVia {
-	return &ReferenceAccessVia{
-		ReferenceAccess: ReferenceAccess{
-			RequestPath: path,
-			Reference:   ref,
-		},
-		LeafLinkResolution: leafs,
+func NewResolution(path Path, ref *Reference, leafs []Resolution) *Resolution {
+	return &Resolution{
+		RequestPath:     path,
+		Reference:       ref,
+		LinkResolutions: leafs,
 	}
 }
 
-func (f ReferenceAccessVias) Len() int {
+func (f Resolutions) Len() int {
 	return len(f)
 }
 
-func (f ReferenceAccessVias) Less(i, j int) bool {
+func (f Resolutions) Less(i, j int) bool {
 	ith := f[i]
 	jth := f[j]
 
@@ -53,24 +48,24 @@ func (f ReferenceAccessVias) Less(i, j int) bool {
 	return ith.RequestPath < jth.RequestPath
 }
 
-func (f ReferenceAccessVias) Swap(i, j int) {
+func (f Resolutions) Swap(i, j int) {
 	f[i], f[j] = f[j], f[i]
 }
 
-func (f *ReferenceAccessVia) HasReference() bool {
+func (f *Resolution) HasReference() bool {
 	if f == nil {
 		return false
 	}
 	return f.Reference != nil
 }
 
-func (f *ReferenceAccessVia) AllPaths() []Path {
+func (f *Resolution) AllPaths() []Path {
 	set := strset.New()
 	set.Add(string(f.RequestPath))
 	if f.Reference != nil {
 		set.Add(string(f.Reference.RealPath))
 	}
-	for _, p := range f.LeafLinkResolution {
+	for _, p := range f.LinkResolutions {
 		set.Add(string(p.RequestPath))
 		if p.Reference != nil {
 			set.Add(string(p.Reference.RealPath))
@@ -87,10 +82,10 @@ func (f *ReferenceAccessVia) AllPaths() []Path {
 	return results
 }
 
-func (f *ReferenceAccessVia) AllRequestPaths() []Path {
+func (f *Resolution) AllRequestPaths() []Path {
 	set := strset.New()
 	set.Add(string(f.RequestPath))
-	for _, p := range f.LeafLinkResolution {
+	for _, p := range f.LinkResolutions {
 		set.Add(string(p.RequestPath))
 	}
 
@@ -105,7 +100,7 @@ func (f *ReferenceAccessVia) AllRequestPaths() []Path {
 }
 
 // RequestResolutionPath represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
-func (f *ReferenceAccessVia) RequestResolutionPath() []Path {
+func (f *Resolution) RequestResolutionPath() []Path {
 	var paths []Path
 	var firstPath Path
 	var lastLinkResolutionIsDead bool
@@ -114,7 +109,7 @@ func (f *ReferenceAccessVia) RequestResolutionPath() []Path {
 		firstPath = f.RequestPath
 		paths = append(paths, f.RequestPath)
 	}
-	for i, p := range f.LeafLinkResolution {
+	for i, p := range f.LinkResolutions {
 		if i == 0 && p.RequestPath == f.RequestPath {
 			// ignore link resolution that starts with the same user requested path
 			continue
@@ -125,7 +120,7 @@ func (f *ReferenceAccessVia) RequestResolutionPath() []Path {
 
 		paths = append(paths, p.RequestPath)
 
-		if i == len(f.LeafLinkResolution)-1 {
+		if i == len(f.LinkResolutions)-1 {
 			// we've reached the final link resolution
 			if p.Reference == nil {
 				lastLinkResolutionIsDead = true
@@ -141,15 +136,15 @@ func (f *ReferenceAccessVia) RequestResolutionPath() []Path {
 }
 
 // ResolutionReferences represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
-func (f *ReferenceAccessVia) ResolutionReferences() []Reference {
+func (f *Resolution) ResolutionReferences() []Reference {
 	var refs []Reference
 	var lastLinkResolutionIsDead bool
 
-	for i, p := range f.LeafLinkResolution {
+	for i, p := range f.LinkResolutions {
 		if p.Reference != nil {
 			refs = append(refs, *p.Reference)
 		}
-		if i == len(f.LeafLinkResolution)-1 {
+		if i == len(f.LinkResolutions)-1 {
 			// we've reached the final link resolution
 			if p.Reference == nil {
 				lastLinkResolutionIsDead = true

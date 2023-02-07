@@ -52,15 +52,15 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 	var ty Type
 	switch {
 	case fi.IsDir():
-		ty = TypeDir
+		ty = TypeDirectory
 	case f.IsRegular():
-		ty = TypeReg
+		ty = TypeRegular
 	case f.IsSymlink():
-		ty = TypeSymlink
+		ty = TypeSymLink
 	default:
 		switch fi.Mode() & os.ModeType {
 		case os.ModeNamedPipe:
-			ty = TypeFifo
+			ty = TypeFIFO
 		case os.ModeSocket:
 			ty = TypeSocket
 		case os.ModeDevice:
@@ -95,7 +95,7 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 
 	ty := TypeFromMode(info.Mode())
 
-	if ty == TypeReg {
+	if ty == TypeRegular {
 		f, err := os.Open(path)
 		if err != nil {
 			// TODO: it may be that the file is inaccessible, however, this is not an error or a warning. In the future we need to track these as known-unknowns

@@ -19,14 +19,14 @@ func (na *nodeAccess) HasFileNode() bool {
 	return na.FileNode != nil
 }
 
-func (na *nodeAccess) FileReferenceVia() *file.ReferenceAccessVia {
+func (na *nodeAccess) FileResolution() *file.Resolution {
 	if !na.HasFileNode() {
 		return nil
 	}
-	return file.NewFileReferenceVia(
+	return file.NewResolution(
 		na.RequestPath,
 		na.FileNode.Reference,
-		newReferenceAccessPath(na.LeafLinkResolution),
+		newResolutions(na.LeafLinkResolution),
 	)
 }
 

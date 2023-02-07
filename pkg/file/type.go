@@ -6,13 +6,13 @@ import (
 )
 
 const (
-	TypeReg Type = iota
+	TypeRegular Type = iota
 	TypeHardLink
-	TypeSymlink
+	TypeSymLink
 	TypeCharacterDevice
 	TypeBlockDevice
-	TypeDir
-	TypeFifo
+	TypeDirectory
+	TypeFIFO
 	TypeSocket
 	TypeIrregular
 )
@@ -23,13 +23,13 @@ type Type int
 
 func AllTypes() []Type {
 	return []Type{
-		TypeReg,
+		TypeRegular,
 		TypeHardLink,
-		TypeSymlink,
+		TypeSymLink,
 		TypeCharacterDevice,
 		TypeBlockDevice,
-		TypeDir,
-		TypeFifo,
+		TypeDirectory,
+		TypeFIFO,
 		TypeSocket,
 		TypeIrregular,
 	}
@@ -38,19 +38,19 @@ func AllTypes() []Type {
 func TypeFromTarType(ty byte) Type {
 	switch ty {
 	case tar.TypeReg, tar.TypeRegA: // nolint: staticcheck
-		return TypeReg
+		return TypeRegular
 	case tar.TypeLink:
 		return TypeHardLink
 	case tar.TypeSymlink:
-		return TypeSymlink
+		return TypeSymLink
 	case tar.TypeChar:
 		return TypeCharacterDevice
 	case tar.TypeBlock:
 		return TypeBlockDevice
 	case tar.TypeDir:
-		return TypeDir
+		return TypeDirectory
 	case tar.TypeFifo:
-		return TypeFifo
+		return TypeFIFO
 	default:
 		return TypeIrregular
 	}
@@ -59,7 +59,7 @@ func TypeFromTarType(ty byte) Type {
 func TypeFromMode(mode os.FileMode) Type {
 	switch {
 	case isSet(mode, os.ModeSymlink):
-		return TypeSymlink
+		return TypeSymLink
 	case isSet(mode, os.ModeIrregular):
 		return TypeIrregular
 	case isSet(mode, os.ModeCharDevice):
@@ -67,13 +67,13 @@ func TypeFromMode(mode os.FileMode) Type {
 	case isSet(mode, os.ModeDevice):
 		return TypeBlockDevice
 	case isSet(mode, os.ModeNamedPipe):
-		return TypeFifo
+		return TypeFIFO
 	case isSet(mode, os.ModeSocket):
 		return TypeSocket
 	case mode.IsDir():
-		return TypeDir
+		return TypeDirectory
 	case mode.IsRegular():
-		return TypeReg
+		return TypeRegular
 	default:
 		return TypeIrregular
 	}
@@ -85,19 +85,19 @@ func isSet(mode, field os.FileMode) bool {
 
 func (t Type) String() string {
 	switch t {
-	case TypeReg:
+	case TypeRegular:
 		return "RegularFile"
 	case TypeHardLink:
 		return "HardLink"
-	case TypeSymlink:
+	case TypeSymLink:
 		return "SymbolicLink"
 	case TypeCharacterDevice:
 		return "CharacterDevice"
 	case TypeBlockDevice:
 		return "BlockDevice"
-	case TypeDir:
+	case TypeDirectory:
 		return "Directory"
-	case TypeFifo:
+	case TypeFIFO:
 		return "FIFONode"
 	case TypeSocket:
 		return "Socket"

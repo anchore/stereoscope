@@ -20,8 +20,8 @@ type Reader interface {
 }
 
 type PathReader interface {
-	File(path file.Path, options ...LinkResolutionOption) (bool, *file.ReferenceAccessVia, error)
-	FilesByGlob(query string, options ...LinkResolutionOption) ([]file.ReferenceAccessVia, error)
+	File(path file.Path, options ...LinkResolutionOption) (bool, *file.Resolution, error)
+	FilesByGlob(query string, options ...LinkResolutionOption) ([]file.Resolution, error)
 	AllRealPaths() []file.Path
 	ListPaths(dir file.Path) ([]file.Path, error)
 	HasPath(path file.Path, options ...LinkResolutionOption) bool

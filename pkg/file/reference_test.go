@@ -5,31 +5,28 @@ import (
 	"testing"
 )
 
-func TestReferenceAccessVia_RequestPaths(t *testing.T) {
+func TestResolution_RequestResolutionPath(t *testing.T) {
 	tests := []struct {
 		name    string
-		subject ReferenceAccessVia
+		subject Resolution
 		want    []Path
 	}{
 		{
 			name: "empty",
-			subject: ReferenceAccessVia{
-				ReferenceAccess:    ReferenceAccess{},
-				LeafLinkResolution: nil,
+			subject: Resolution{
+				LinkResolutions: nil,
 			},
 			want: nil,
 		},
 		{
 			name: "single ref",
-			subject: ReferenceAccessVia{
-				ReferenceAccess: ReferenceAccess{
-					RequestPath: "/home/wagoodman/file.txt",
-					Reference: &Reference{
-						id:       1,
-						RealPath: "/home/wagoodman/file.txt",
-					},
+			subject: Resolution{
+				RequestPath: "/home/wagoodman/file.txt",
+				Reference: &Reference{
+					id:       1,
+					RealPath: "/home/wagoodman/file.txt",
 				},
-				LeafLinkResolution: nil,
+				LinkResolutions: nil,
 			},
 			want: []Path{
 				"/home/wagoodman/file.txt",
@@ -38,12 +35,10 @@ func TestReferenceAccessVia_RequestPaths(t *testing.T) {
 		{
 			// /home -> /another/place
 			name: "ref with 1 leaf link resolutions",
-			subject: ReferenceAccessVia{
-				ReferenceAccess: ReferenceAccess{
-					RequestPath: "/home",
-					Reference:   &Reference{RealPath: "/another/place"},
-				},
-				LeafLinkResolution: []ReferenceAccess{
+			subject: Resolution{
+				RequestPath: "/home",
+				Reference:   &Reference{RealPath: "/another/place"},
+				LinkResolutions: []Resolution{
 					{
 						RequestPath: "/home",
 						Reference:   &Reference{RealPath: "/home"},
@@ -72,12 +67,10 @@ func TestReferenceAccessVia_RequestPaths(t *testing.T) {
 			//          └── file.txt -> link-to-1/file.txt
 
 			name: "ref with 2 leaf link resolutions",
-			subject: ReferenceAccessVia{
-				ReferenceAccess: ReferenceAccess{
-					RequestPath: "/home/wagoodman/file.txt",
-					Reference:   &Reference{RealPath: "/2/real-file.txt"},
-				},
-				LeafLinkResolution: []ReferenceAccess{
+			subject: Resolution{
+				RequestPath: "/home/wagoodman/file.txt",
+				Reference:   &Reference{RealPath: "/2/real-file.txt"},
+				LinkResolutions: []Resolution{
 					{
 						RequestPath: "/place/wagoodman/file.txt",
 						Reference:   &Reference{RealPath: "/place/wagoodman/file.txt"},
@@ -110,14 +103,12 @@ func TestReferenceAccessVia_RequestPaths(t *testing.T) {
 			//          └── file.txt -> link-to-1/file.txt
 
 			name: "ref with dead link",
-			subject: ReferenceAccessVia{
-				ReferenceAccess: ReferenceAccess{
-					RequestPath: "/home/wagoodman/file.txt",
-					// note: this falls back to the last path that exists which is the behavior for link resolution options:
-					//	 []LinkResolutionOption{FollowBasenameLinks, DoNotFollowDeadBasenameLinks}
-					Reference: &Reference{RealPath: "/1/file.txt"},
-				},
-				LeafLinkResolution: []ReferenceAccess{
+			subject: Resolution{
+				RequestPath: "/home/wagoodman/file.txt",
+				// note: this falls back to the last path that exists which is the behavior for link resolution options:
+				//	 []LinkResolutionOption{FollowBasenameLinks, DoNotFollowDeadBasenameLinks}
+				Reference: &Reference{RealPath: "/1/file.txt"},
+				LinkResolutions: []Resolution{
 					{
 						RequestPath: "/place/wagoodman/file.txt",
 						Reference:   &Reference{RealPath: "/place/wagoodman/file.txt"},
@@ -148,35 +139,32 @@ func TestReferenceAccessVia_RequestPaths(t *testing.T) {
 	}
 }
 
-func TestReferenceAccessVia_AccessReferences(t *testing.T) {
+func TestReferenceResolutionVia_ResolutionReferences(t *testing.T) {
 	type fields struct {
-		ReferenceAccess    ReferenceAccess
-		LeafLinkResolution []ReferenceAccess
+		ReferenceResolution Resolution
+		LeafLinkResolution  []Resolution
 	}
 	tests := []struct {
 		name    string
-		subject ReferenceAccessVia
+		subject Resolution
 		want    []Reference
 	}{
 		{
 			name: "empty",
-			subject: ReferenceAccessVia{
-				ReferenceAccess:    ReferenceAccess{},
-				LeafLinkResolution: nil,
+			subject: Resolution{
+				LinkResolutions: nil,
 			},
 			want: nil,
 		},
 		{
 			name: "single ref",
-			subject: ReferenceAccessVia{
-				ReferenceAccess: ReferenceAccess{
-					RequestPath: "/home/wagoodman/file.txt",
-					Reference: &Reference{
-						id:       1,
-						RealPath: "/home/wagoodman/file.txt",
-					},
+			subject: Resolution{
+				RequestPath: "/home/wagoodman/file.txt",
+				Reference: &Reference{
+					id:       1,
+					RealPath: "/home/wagoodman/file.txt",
 				},
-				LeafLinkResolution: nil,
+				LinkResolutions: nil,
 			},
 			want: []Reference{
 				{
@@ -188,12 +176,10 @@ func TestReferenceAccessVia_AccessReferences(t *testing.T) {
 		{
 			// /home -> /another/place
 			name: "ref with 1 leaf link resolutions",
-			subject: ReferenceAccessVia{
-				ReferenceAccess: ReferenceAccess{
-					RequestPath: "/home",
-					Reference:   &Reference{RealPath: "/another/place"},
-				},
-				LeafLinkResolution: []ReferenceAccess{
+			subject: Resolution{
+				RequestPath: "/home",
+				Reference:   &Reference{RealPath: "/another/place"},
+				LinkResolutions: []Resolution{
 					{
 						RequestPath: "/home",
 						Reference:   &Reference{RealPath: "/home"},
@@ -222,12 +208,10 @@ func TestReferenceAccessVia_AccessReferences(t *testing.T) {
 			//          └── file.txt -> link-to-1/file.txt
 
 			name: "ref with 2 leaf link resolutions",
-			subject: ReferenceAccessVia{
-				ReferenceAccess: ReferenceAccess{
-					RequestPath: "/home/wagoodman/file.txt",
-					Reference:   &Reference{RealPath: "/2/real-file.txt"},
-				},
-				LeafLinkResolution: []ReferenceAccess{
+			subject: Resolution{
+				RequestPath: "/home/wagoodman/file.txt",
+				Reference:   &Reference{RealPath: "/2/real-file.txt"},
+				LinkResolutions: []Resolution{
 					{
 						RequestPath: "/place/wagoodman/file.txt",
 						Reference:   &Reference{RealPath: "/place/wagoodman/file.txt"},
@@ -259,14 +243,12 @@ func TestReferenceAccessVia_AccessReferences(t *testing.T) {
 			//          └── file.txt -> link-to-1/file.txt
 
 			name: "ref with dead link",
-			subject: ReferenceAccessVia{
-				ReferenceAccess: ReferenceAccess{
-					RequestPath: "/home/wagoodman/file.txt",
-					// note: this falls back to the last path that exists which is the behavior for link resolution options:
-					//	 []LinkResolutionOption{FollowBasenameLinks, DoNotFollowDeadBasenameLinks}
-					Reference: &Reference{RealPath: "/1/file.txt"},
-				},
-				LeafLinkResolution: []ReferenceAccess{
+			subject: Resolution{
+				RequestPath: "/home/wagoodman/file.txt",
+				// note: this falls back to the last path that exists which is the behavior for link resolution options:
+				//	 []LinkResolutionOption{FollowBasenameLinks, DoNotFollowDeadBasenameLinks}
+				Reference: &Reference{RealPath: "/1/file.txt"},
+				LinkResolutions: []Resolution{
 					{
 						RequestPath: "/place/wagoodman/file.txt",
 						Reference:   &Reference{RealPath: "/place/wagoodman/file.txt"},

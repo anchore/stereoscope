@@ -6,12 +6,23 @@ import (
 )
 
 const (
+	// searchByGlob is the default, unparsed/processed glob value searched directly against the filetree.
 	searchByGlob searchBasis = iota
-	searchByPath
+
+	// searchByFullPath indicates that the given glob value is not a glob, thus a (simpler) path lookup against the filetree should be performed as the search.
+	searchByFullPath
+
+	// searchByExtension indicates cases like "**/*.py" where the only specific glob element indicates the file or directory extension.
 	searchByExtension
+
+	// searchByBasename indicates cases like "**/bin/python" where the only specific glob element indicates the file or directory basename (e.g. "python").
 	searchByBasename
+
+	// searchByBasenameGlob indicates cases like "**/bin/python*" where the search space is limited to the full set of all basenames that match the given glob.
 	searchByBasenameGlob
-	searchByParentBasename
+
+	// searchBySubDirectory indicates cases like "**/var/lib/dpkg/status.d/*" where we're interested in selecting all files within a directory (but not the directory itself).
+	searchBySubDirectory
 )
 
 type searchBasis int
@@ -20,16 +31,16 @@ func (s searchBasis) String() string {
 	switch s {
 	case searchByGlob:
 		return "glob"
-	case searchByPath:
-		return "path"
+	case searchByFullPath:
+		return "full-path"
 	case searchByExtension:
 		return "extension"
 	case searchByBasename:
 		return "basename"
 	case searchByBasenameGlob:
 		return "basename-glob"
-	case searchByParentBasename:
-		return "parent-basename"
+	case searchBySubDirectory:
+		return "subdirectory"
 	}
 	return "unknown search basis"
 }
@@ -54,7 +65,7 @@ func parseGlob(glob string) []searchRequest {
 	if !strings.ContainsAny(glob, "*?[]{}") {
 		return []searchRequest{
 			{
-				searchBasis: searchByPath,
+				searchBasis: searchByFullPath,
 				value:       glob,
 			},
 		}
@@ -68,7 +79,7 @@ func parseGlob(glob string) []searchRequest {
 			// special case: glob is a parent glob
 			requests := []searchRequest{
 				{
-					searchBasis: searchByParentBasename,
+					searchBasis: searchBySubDirectory,
 					value:       nestedBasename,
 					requirement: beforeBasename,
 				},

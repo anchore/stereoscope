@@ -18,7 +18,7 @@ type FileNode struct {
 func NewDir(p file.Path, ref *file.Reference) *FileNode {
 	return &FileNode{
 		RealPath:  p,
-		FileType:  file.TypeDir,
+		FileType:  file.TypeDirectory,
 		Reference: ref,
 	}
 }
@@ -26,7 +26,7 @@ func NewDir(p file.Path, ref *file.Reference) *FileNode {
 func NewFile(p file.Path, ref *file.Reference) *FileNode {
 	return &FileNode{
 		RealPath:  p,
-		FileType:  file.TypeReg,
+		FileType:  file.TypeRegular,
 		Reference: ref,
 	}
 }
@@ -34,7 +34,7 @@ func NewFile(p file.Path, ref *file.Reference) *FileNode {
 func NewSymLink(p, linkPath file.Path, ref *file.Reference) *FileNode {
 	return &FileNode{
 		RealPath:  p,
-		FileType:  file.TypeSymlink,
+		FileType:  file.TypeSymLink,
 		LinkPath:  linkPath,
 		Reference: ref,
 	}
@@ -65,7 +65,7 @@ func (n *FileNode) Copy() node.Node {
 }
 
 func (n *FileNode) IsLink() bool {
-	return n.FileType == file.TypeHardLink || n.FileType == file.TypeSymlink
+	return n.FileType == file.TypeHardLink || n.FileType == file.TypeSymLink
 }
 
 func IDByPath(p file.Path) node.ID {

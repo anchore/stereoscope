@@ -23,7 +23,7 @@ func (b *Builder) Add(metadata file.Metadata) (*file.Reference, error) {
 	var ref *file.Reference
 	var err error
 	switch metadata.Type {
-	case file.TypeSymlink:
+	case file.TypeSymLink:
 		ref, err = b.tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
 		if err != nil {
 			return nil, err
@@ -33,7 +33,7 @@ func (b *Builder) Add(metadata file.Metadata) (*file.Reference, error) {
 		if err != nil {
 			return nil, err
 		}
-	case file.TypeDir:
+	case file.TypeDirectory:
 		ref, err = b.tree.AddDir(file.Path(metadata.Path))
 		if err != nil {
 			return nil, err

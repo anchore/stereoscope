@@ -17,7 +17,7 @@ func Test_parseGlob(t *testing.T) {
 			glob: "foo/bar/basename.txt",
 			want: []searchRequest{
 				{
-					searchBasis: searchByPath,
+					searchBasis: searchByFullPath,
 					value:       "foo/bar/basename.txt",
 				},
 			},
@@ -27,7 +27,7 @@ func Test_parseGlob(t *testing.T) {
 			glob: "/foo/bar/basename.txt",
 			want: []searchRequest{
 				{
-					searchBasis: searchByPath,
+					searchBasis: searchByFullPath,
 					value:       "/foo/bar/basename.txt",
 				},
 			},
@@ -79,7 +79,7 @@ func Test_parseGlob(t *testing.T) {
 			glob: "basename.txt",
 			want: []searchRequest{
 				{
-					searchBasis: searchByPath,
+					searchBasis: searchByFullPath,
 					value:       "basename.txt",
 				},
 			},
@@ -247,7 +247,7 @@ func Test_parseGlob(t *testing.T) {
 			glob: "**/foo/bar/*",
 			want: []searchRequest{
 				{
-					searchBasis: searchByParentBasename,
+					searchBasis: searchBySubDirectory,
 					value:       "bar",
 					requirement: "**/foo/bar",
 				},
@@ -259,7 +259,7 @@ func Test_parseGlob(t *testing.T) {
 			glob: "",
 			want: []searchRequest{
 				{
-					searchBasis: searchByPath,
+					searchBasis: searchByFullPath,
 				},
 			},
 		},
@@ -268,7 +268,7 @@ func Test_parseGlob(t *testing.T) {
 			glob: "/",
 			want: []searchRequest{
 				{
-					searchBasis: searchByPath,
+					searchBasis: searchByFullPath,
 					value:       "/",
 				},
 			},
@@ -278,7 +278,7 @@ func Test_parseGlob(t *testing.T) {
 			glob: "///",
 			want: []searchRequest{
 				{
-					searchBasis: searchByPath,
+					searchBasis: searchByFullPath,
 					value:       "/",
 				},
 			},

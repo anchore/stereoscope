@@ -52,7 +52,7 @@ func (t *FileTree) Copy() (ReadWriter, error) {
 // AllFiles returns all files within the FileTree (defaults to regular files only, but you can provide one or more allow types).
 func (t *FileTree) AllFiles(types ...file.Type) []file.Reference {
 	if len(types) == 0 {
-		types = []file.Type{file.TypeReg}
+		types = []file.Type{file.TypeRegular}
 	}
 
 	typeSet := iset.New()
@@ -94,7 +94,7 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 		return nil, nil
 	}
 
-	if fna.FileNode.FileType != file.TypeDir {
+	if fna.FileNode.FileType != file.TypeDirectory {
 		return nil, nil
 	}
 
@@ -119,13 +119,13 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 }
 
 // File fetches a file.Reference for the given path. Returns nil if the path does not exist in the FileTree.
-func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, *file.ReferenceAccessVia, error) {
+func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, *file.Resolution, error) {
 	currentNode, err := t.file(path, options...)
 	if err != nil {
 		return false, nil, err
 	}
 	if currentNode.HasFileNode() {
-		return true, currentNode.FileReferenceVia(), err
+		return true, currentNode.FileResolution(), err
 	}
 	return false, nil, err
 }
@@ -172,14 +172,14 @@ func (t *FileTree) file(path file.Path, options ...LinkResolutionOption) (*nodeA
 	return nil, err
 }
 
-func newReferenceAccessPath(nodePath []nodeAccess) []file.ReferenceAccess {
-	var refPath []file.ReferenceAccess
+func newResolutions(nodePath []nodeAccess) []file.Resolution {
+	var refPath []file.Resolution
 	for i, n := range nodePath {
 		if i == len(nodePath)-1 && n.FileNode != nil {
-			// this is already on the parent ReferenceAccessVia object (unless it is a dead link)
+			// this is already on the parent Access object (unless it is a dead link)
 			break
 		}
-		access := file.ReferenceAccess{
+		access := file.Resolution{
 			RequestPath: n.RequestPath,
 		}
 		if n.FileNode != nil {
@@ -410,8 +410,8 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 }
 
 // FilesByGlob fetches zero to many file.References for the given glob pattern (considers symlinks).
-func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([]file.ReferenceAccessVia, error) {
-	var results []file.ReferenceAccessVia
+func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([]file.Resolution, error) {
+	var results []file.Resolution
 
 	if len(query) == 0 {
 		return nil, fmt.Errorf("no glob pattern given")
@@ -453,11 +453,11 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 			return nil, err
 		}
 		// the Node must exist and should not be a directory
-		if fna.HasFileNode() && fna.FileNode.FileType != file.TypeDir {
-			result := file.NewFileReferenceVia(
+		if fna.HasFileNode() && fna.FileNode.FileType != file.TypeDirectory {
+			result := file.NewResolution(
 				matchPath,
 				fna.FileNode.Reference,
-				newReferenceAccessPath(fna.LeafLinkResolution),
+				newResolutions(fna.LeafLinkResolution),
 			)
 			if result != nil {
 				results = append(results, *result)
@@ -479,7 +479,7 @@ func (t *FileTree) AddFile(realPath file.Path) (*file.Reference, error) {
 	}
 	if fna.HasFileNode() {
 		// this path already exists
-		if fna.FileNode.FileType != file.TypeReg {
+		if fna.FileNode.FileType != file.TypeRegular {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a regular file", realPath)
 		}
 		// this is a regular file, provide a new or existing file.Reference
@@ -507,7 +507,7 @@ func (t *FileTree) AddSymLink(realPath file.Path, linkPath file.Path) (*file.Ref
 	}
 	if fna.HasFileNode() {
 		// this path already exists
-		if fna.FileNode.FileType != file.TypeSymlink {
+		if fna.FileNode.FileType != file.TypeSymLink {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a symlink file", realPath)
 		}
 		// this is a symlink file, provide a new or existing file.Reference
@@ -566,7 +566,7 @@ func (t *FileTree) AddDir(realPath file.Path) (*file.Reference, error) {
 	}
 	if fna.HasFileNode() {
 		// this path already exists
-		if fna.FileNode.FileType != file.TypeDir {
+		if fna.FileNode.FileType != file.TypeDirectory {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a symlink file", realPath)
 		}
 		// this is a directory, provide a new or existing file.Reference
@@ -826,7 +826,7 @@ func (t *FileTree) Merge(upper Reader) error {
 			nodeCopy.Reference = lowerNode.FileNode.Reference
 		}
 
-		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDir && lowerNode.FileNode.FileType == file.TypeDir {
+		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory && lowerNode.FileNode.FileType == file.TypeDirectory {
 			// NOTE: both upperNode and lowerNode paths are the same, and does not have an effect
 			// on removal of child paths
 			err := t.RemoveChildPaths(upperNode.RealPath)

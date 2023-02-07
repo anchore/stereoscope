@@ -230,7 +230,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-1.txt",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -239,7 +239,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/two/file-2.txt",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -247,7 +247,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/file-3.txt"},
 					Metadata: file.Metadata{
 						Path:     "/path/file-3.txt",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -262,7 +262,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
 						Path:  "/path/branch.d",
-						Type:  file.TypeDir,
+						Type:  file.TypeDirectory,
 						IsDir: true,
 					},
 				},
@@ -271,7 +271,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-4.d",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -282,7 +282,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Metadata: file.Metadata{
 						Path:            "/path/common/branch.d",
 						LinkDestination: "path/branch.d",
-						Type:            file.TypeSymlink,
+						Type:            file.TypeSymLink,
 					},
 				},
 				{
@@ -291,7 +291,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Metadata: file.Metadata{
 						Path:            "/path/common/file-1.d",
 						LinkDestination: "path/branch.d/one/file-1.txt",
-						Type:            file.TypeSymlink,
+						Type:            file.TypeSymLink,
 					},
 				},
 			},
@@ -304,7 +304,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/.file-4.tar.gz",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -312,7 +312,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-4.tar.gz",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -326,7 +326,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/.file-4.tar.gz",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -334,7 +334,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-4.tar.gz",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -395,7 +395,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-1.txt",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -414,7 +414,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
 						Path:  "/path/branch.d",
-						Type:  file.TypeDir,
+						Type:  file.TypeDirectory,
 						IsDir: true,
 					},
 				},
@@ -423,7 +423,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 					Metadata: file.Metadata{
 						Path:            "/path/common/branch.d",
 						LinkDestination: "path/branch.d",
-						Type:            file.TypeSymlink,
+						Type:            file.TypeSymLink,
 					},
 				},
 			},
@@ -437,7 +437,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 					Metadata: file.Metadata{
 						Path:            "/path/common/file-1.d",
 						LinkDestination: "path/branch.d/one/file-1.txt",
-						Type:            file.TypeSymlink,
+						Type:            file.TypeSymLink,
 					},
 				},
 			},
@@ -498,14 +498,14 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 					Metadata: file.Metadata{
 						Path:            "/path/common/file-1.d",
 						LinkDestination: "path/branch.d/one/file-1.txt",
-						Type:            file.TypeSymlink,
+						Type:            file.TypeSymLink,
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-1.txt",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -524,7 +524,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
 						Path:  "/path/branch.d",
-						Type:  file.TypeDir,
+						Type:  file.TypeDirectory,
 						IsDir: true,
 					},
 				},
@@ -533,7 +533,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 					Metadata: file.Metadata{
 						Path:            "/path/common/branch.d",
 						LinkDestination: "path/branch.d",
-						Type:            file.TypeSymlink,
+						Type:            file.TypeSymLink,
 					},
 				},
 			},
@@ -547,7 +547,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 					Metadata: file.Metadata{
 						Path:            "/path/common/file-1.d",
 						LinkDestination: "path/branch.d/one/file-1.txt",
-						Type:            file.TypeSymlink,
+						Type:            file.TypeSymLink,
 					},
 				},
 			},
@@ -607,7 +607,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/.file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/.file-4.tar.gz",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -615,7 +615,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-1.txt",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -623,7 +623,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.d"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-4.d",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -631,7 +631,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/one/file-4.tar.gz"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/one/file-4.tar.gz",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -639,7 +639,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
 					Metadata: file.Metadata{
 						Path:     "/path/branch.d/two/file-2.txt",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},
@@ -647,7 +647,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 					Reference: file.Reference{RealPath: "/path/file-3.txt"},
 					Metadata: file.Metadata{
 						Path:     "/path/file-3.txt",
-						Type:     file.TypeReg,
+						Type:     file.TypeRegular,
 						MIMEType: "text/plain",
 					},
 				},

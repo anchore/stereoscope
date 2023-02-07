@@ -18,13 +18,13 @@ func TestFileMetadataFromTar(t *testing.T) {
 	tarReader := getTarFixture(t, "fixture-1")
 
 	expected := []Metadata{
-		{Path: "/path", Type: TypeDir, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch", Type: TypeDir, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/one", Type: TypeDir, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o700, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/one/file-1.txt", Type: TypeReg, LinkDestination: "", Size: 11, Mode: 0o700, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
-		{Path: "/path/branch/two", Type: TypeDir, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/two/file-2.txt", Type: TypeReg, LinkDestination: "", Size: 12, Mode: 0o755, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
-		{Path: "/path/file-3.txt", Type: TypeReg, LinkDestination: "", Size: 11, Mode: 0o664, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
+		{Path: "/path", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
+		{Path: "/path/branch", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
+		{Path: "/path/branch/one", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o700, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
+		{Path: "/path/branch/one/file-1.txt", Type: TypeRegular, LinkDestination: "", Size: 11, Mode: 0o700, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
+		{Path: "/path/branch/two", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
+		{Path: "/path/branch/two/file-2.txt", Type: TypeRegular, LinkDestination: "", Size: 12, Mode: 0o755, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
+		{Path: "/path/file-3.txt", Type: TypeRegular, LinkDestination: "", Size: 11, Mode: 0o664, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
 	}
 
 	var actual []Metadata
@@ -55,22 +55,22 @@ func TestFileMetadataFromPath(t *testing.T) {
 	}{
 		{
 			path:             "test-fixtures/symlinks-simple/readme",
-			expectedType:     TypeReg,
+			expectedType:     TypeRegular,
 			expectedMIMEType: "text/plain",
 		},
 		{
 			path:             "test-fixtures/symlinks-simple/link_to_new_readme",
-			expectedType:     TypeSymlink,
+			expectedType:     TypeSymLink,
 			expectedMIMEType: "",
 		},
 		{
 			path:             "test-fixtures/symlinks-simple/link_to_link_to_new_readme",
-			expectedType:     TypeSymlink,
+			expectedType:     TypeSymLink,
 			expectedMIMEType: "",
 		},
 		{
 			path:             "test-fixtures/symlinks-simple",
-			expectedType:     TypeDir,
+			expectedType:     TypeDirectory,
 			expectedMIMEType: "",
 		},
 	}

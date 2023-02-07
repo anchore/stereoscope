@@ -243,7 +243,7 @@ func (a *fileinfoAdapter) Mode() os.FileMode {
 	// the underlying implementation for symlinks and hardlinks share the same semantics in the tree implementation
 	// (meaning resolution is required) where as in a real file system this is taken care of by the driver
 	// by making the file point to the same inode as another --making the indirection transparent to applications.
-	if a.Node.FileType == file.TypeSymlink || a.Node.FileType == file.TypeHardLink {
+	if a.Node.FileType == file.TypeSymLink || a.Node.FileType == file.TypeHardLink {
 		mode |= os.ModeSymlink
 	}
 	return mode
@@ -256,7 +256,7 @@ func (a *fileinfoAdapter) ModTime() time.Time {
 
 // IsDir is an abbreviation for Mode().IsDir().
 func (a *fileinfoAdapter) IsDir() bool {
-	return a.Node.FileType == file.TypeDir
+	return a.Node.FileType == file.TypeDirectory
 }
 
 // Sys contains underlying data source (nothing in this case).

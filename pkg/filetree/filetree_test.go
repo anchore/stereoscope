@@ -2,10 +2,11 @@ package filetree
 
 import (
 	"errors"
+	"testing"
+
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
-	"testing"
 
 	"github.com/anchore/stereoscope/internal"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -99,13 +100,11 @@ func TestFileTree_FilesByGlob_AncestorSymlink(t *testing.T) {
 	expectedRef, err := tr.AddFile("/parent/file.txt")
 	require.NoError(t, err)
 
-	expected := []file.ReferenceAccessVia{
+	expected := []file.Resolution{
 		{
-			ReferenceAccess: file.ReferenceAccess{
-				RequestPath: "/parent-link/file.txt",
-				Reference:   expectedRef,
-			},
-			LeafLinkResolution: nil,
+			RequestPath:     "/parent-link/file.txt",
+			Reference:       expectedRef,
+			LinkResolutions: nil,
 		},
 	}
 
@@ -492,7 +491,7 @@ func TestFileTree_Merge_DirOverride(t *testing.T) {
 		t.Fatalf("somehow override path does not exist?")
 	}
 
-	if n.FileNode.FileType != file.TypeDir {
+	if n.FileNode.FileType != file.TypeDirectory {
 		t.Errorf("did not override to dir")
 	}
 
@@ -531,7 +530,7 @@ func TestFileTree_Merge_RemoveChildPathsOnOverride(t *testing.T) {
 		t.Fatalf("somehow override path does not exist?")
 	}
 
-	if fileNode.FileNode.FileType != file.TypeReg {
+	if fileNode.FileNode.FileType != file.TypeRegular {
 		t.Errorf("did not override to dir")
 	}
 
@@ -590,12 +589,10 @@ func TestFileTree_File_MultiSymlink(t *testing.T) {
 	// - place/wagoodman
 	// - place/wagoodman/file.txt -> link-to-1/file.txt -> 1/file.txt -> 2/real-file.txt
 
-	expected := &file.ReferenceAccessVia{
-		ReferenceAccess: file.ReferenceAccess{
-			RequestPath: "/home/wagoodman/file.txt",
-			Reference:   &file.Reference{RealPath: "/2/real-file.txt"},
-		},
-		LeafLinkResolution: []file.ReferenceAccess{
+	expected := &file.Resolution{
+		RequestPath: "/home/wagoodman/file.txt",
+		Reference:   &file.Reference{RealPath: "/2/real-file.txt"},
+		LinkResolutions: []file.Resolution{
 			{
 				RequestPath: "/place/wagoodman/file.txt",
 				Reference:   &file.Reference{RealPath: "/place/wagoodman/file.txt"},
@@ -672,12 +669,10 @@ func TestFileTree_File_MultiSymlink_deadlink(t *testing.T) {
 	// - place/wagoodman
 	// - place/wagoodman/file.txt -> link-to-1/file.txt -> 1/file.txt -> 2/real-file.txt
 
-	expected := &file.ReferenceAccessVia{
-		ReferenceAccess: file.ReferenceAccess{
-			RequestPath: "/home/wagoodman/file.txt",
-			Reference:   &file.Reference{RealPath: "/1/file.txt"},
-		},
-		LeafLinkResolution: []file.ReferenceAccess{
+	expected := &file.Resolution{
+		RequestPath: "/home/wagoodman/file.txt",
+		Reference:   &file.Reference{RealPath: "/1/file.txt"},
+		LinkResolutions: []file.Resolution{
 			{
 				RequestPath: "/place/wagoodman/file.txt",
 				Reference:   &file.Reference{RealPath: "/place/wagoodman/file.txt"},
@@ -728,7 +723,7 @@ func TestFileTree_File_Symlink(t *testing.T) {
 		expectedExists  bool      // if the request path should exist or not
 		expectedErr     bool      // if an error is expected from the request
 		expectedRealRef bool      // if the resolved reference should match the built reference from "buildRealPath"
-		expected        *file.ReferenceAccessVia
+		expected        *file.Resolution
 	}{
 		///////////////////
 		{
@@ -741,12 +736,10 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			// /another/place is the "real" reference that we followed, so we should expect the IDs to match upon lookup
 			expectedRealRef: true,
 			expectedExists:  true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home",
-					Reference:   &file.Reference{RealPath: "/another/place"},
-				},
-				LeafLinkResolution: []file.ReferenceAccess{
+			expected: &file.Resolution{
+				RequestPath: "/home",
+				Reference:   &file.Reference{RealPath: "/another/place"},
+				LinkResolutions: []file.Resolution{
 					{
 						RequestPath: "/home",
 						Reference:   &file.Reference{RealPath: "/home"},
@@ -764,12 +757,10 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			// /home is just a symlink, not the real file (which is at /another/place)... and we've provided no symlink resolution
 			expectedRealRef: false,
 			expectedExists:  true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home",
-					Reference:   &file.Reference{RealPath: "/home"},
-				},
-				LeafLinkResolution: nil,
+			expected: &file.Resolution{
+				RequestPath:     "/home",
+				Reference:       &file.Reference{RealPath: "/home"},
+				LinkResolutions: nil,
 			},
 		},
 
@@ -783,14 +774,12 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			requestPath:     "/home/wagoodman",
 			expectedExists:  true,
 			expectedRealRef: true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home/wagoodman",
-					Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
-				},
+			expected: &file.Resolution{
+				RequestPath: "/home/wagoodman",
+				Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
 				// note: the request is on the leaf, which is within a symlink, but is not a symlink itself.
 				// this means that all resolution is on the ancestors (thus not a link resolution on the leaf)
-				LeafLinkResolution: nil,
+				LinkResolutions: nil,
 			},
 		},
 		{
@@ -805,14 +794,12 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			// why are we seeing a result that requires link resolution but we've requested no link resolution?
 			// because there is always ancestor link resolution by default, and this example is only via
 			// ancestors, thus the leaf is still resolved (since it doesn't have a link).
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home/wagoodman",
-					Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
-				},
+			expected: &file.Resolution{
+				RequestPath: "/home/wagoodman",
+				Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
 				// note: the request is on the leaf, which is within a symlink, but is not a symlink itself.
 				// this means that all resolution is on the ancestors (thus not a link resolution on the leaf)
-				LeafLinkResolution: nil,
+				LinkResolutions: nil,
 			},
 		},
 
@@ -826,12 +813,10 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			requestPath:     "/home",
 			expectedExists:  true,
 			expectedRealRef: true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home",
-					Reference:   &file.Reference{RealPath: "/another/place"},
-				},
-				LeafLinkResolution: []file.ReferenceAccess{
+			expected: &file.Resolution{
+				RequestPath: "/home",
+				Reference:   &file.Reference{RealPath: "/another/place"},
+				LinkResolutions: []file.Resolution{
 					{
 						RequestPath: "/home",
 						Reference:   &file.Reference{RealPath: "/home"},
@@ -849,12 +834,10 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			expectedExists:  true,
 			// note that since the request matches the link source and we are NOT following, we get the link ref back
 			expectedRealRef: false,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home",
-					Reference:   &file.Reference{RealPath: "/home"},
-				},
-				LeafLinkResolution: nil,
+			expected: &file.Resolution{
+				RequestPath:     "/home",
+				Reference:       &file.Reference{RealPath: "/home"},
+				LinkResolutions: nil,
 			},
 		},
 		/////////////////
@@ -867,14 +850,12 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			requestPath:     "/home/wagoodman",
 			expectedExists:  true,
 			expectedRealRef: true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home/wagoodman",
-					Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
-				},
+			expected: &file.Resolution{
+				RequestPath: "/home/wagoodman",
+				Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
 				// note: the request is on the leaf, which is within a symlink, but is not a symlink itself.
 				// (the symlink is for an ancestor... so we don't show link resolutions)
-				LeafLinkResolution: nil,
+				LinkResolutions: nil,
 			},
 		},
 		{
@@ -886,14 +867,12 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			requestPath:     "/home/wagoodman",
 			expectedExists:  true,
 			expectedRealRef: true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home/wagoodman",
-					Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
-				},
+			expected: &file.Resolution{
+				RequestPath: "/home/wagoodman",
+				Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
 				// note: the request is on the leaf, which is within a symlink, but is not a symlink itself.
 				// (the symlink is for an ancestor... so we don't show link resolutions)
-				LeafLinkResolution: nil,
+				LinkResolutions: nil,
 			},
 		},
 		///////////////
@@ -905,12 +884,10 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			requestPath:     "/home",
 			// since we did not follow, the paths should exist to the symlink file
 			expectedExists: true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home",
-					Reference:   &file.Reference{RealPath: "/home"},
-				},
-				LeafLinkResolution: nil,
+			expected: &file.Resolution{
+				RequestPath:     "/home",
+				Reference:       &file.Reference{RealPath: "/home"},
+				LinkResolutions: nil,
 			},
 		},
 		{
@@ -931,12 +908,10 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			requestPath:     "/home",
 			// we are following the path, which goes to nowhere.... the first failed path is resolved and returned
 			expectedExists: true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home",
-					Reference:   &file.Reference{RealPath: "/home"},
-				},
-				LeafLinkResolution: []file.ReferenceAccess{
+			expected: &file.Resolution{
+				RequestPath: "/home",
+				Reference:   &file.Reference{RealPath: "/home"},
+				LinkResolutions: []file.Resolution{
 					{
 						RequestPath: "/home",
 						Reference:   &file.Reference{RealPath: "/home"},
@@ -959,12 +934,10 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			requestPath:     "/home/wagoodman",
 			expectedExists:  true,
 			expectedRealRef: true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home/wagoodman",
-					Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
-				},
-				LeafLinkResolution: nil,
+			expected: &file.Resolution{
+				RequestPath:     "/home/wagoodman",
+				Reference:       &file.Reference{RealPath: "/another/place/wagoodman"},
+				LinkResolutions: nil,
 			},
 		},
 		{
@@ -976,12 +949,10 @@ func TestFileTree_File_Symlink(t *testing.T) {
 			requestPath:     "/home/wagoodman",
 			expectedExists:  true,
 			expectedRealRef: true,
-			expected: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/home/wagoodman",
-					Reference:   &file.Reference{RealPath: "/another/place/wagoodman"},
-				},
-				LeafLinkResolution: nil,
+			expected: &file.Resolution{
+				RequestPath:     "/home/wagoodman",
+				Reference:       &file.Reference{RealPath: "/another/place/wagoodman"},
+				LinkResolutions: nil,
 			},
 		},
 	}
@@ -1162,7 +1133,7 @@ func TestFileTree_AllFiles(t *testing.T) {
 		},
 		{
 			name:     "reg",
-			types:    []file.Type{file.TypeReg},
+			types:    []file.Type{file.TypeRegular},
 			expected: []string{"/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif"},
 		},
 		{
@@ -1172,17 +1143,17 @@ func TestFileTree_AllFiles(t *testing.T) {
 		},
 		{
 			name:     "symlink",
-			types:    []file.Type{file.TypeSymlink},
+			types:    []file.Type{file.TypeSymLink},
 			expected: []string{"/home/symlink"},
 		},
 		{
 			name:     "multiple",
-			types:    []file.Type{file.TypeReg, file.TypeSymlink},
+			types:    []file.Type{file.TypeRegular, file.TypeSymLink},
 			expected: []string{"/home/a-file.txt", "/sym-linked-dest/a-.gif", "/hard-linked-dest/b-.gif", "/home/symlink"},
 		},
 		{
 			name:  "dir",
-			types: []file.Type{file.TypeDir},
+			types: []file.Type{file.TypeDirectory},
 			// note: only explicitly added directories exist in the catalog
 			expected: []string{"/home"},
 		},

@@ -23,21 +23,21 @@ func TestFileInfoAdapter(t *testing.T) {
 			VirtualPath: "/home/thing.txt",
 			Node: filenode.FileNode{
 				RealPath: "/home/thing.txt",
-				FileType: file.TypeReg,
+				FileType: file.TypeRegular,
 			},
 		},
 		"/home/wagoodman": {
 			VirtualPath: "/home/wagoodman",
 			Node: filenode.FileNode{
 				RealPath: "/home/wagoodman",
-				FileType: file.TypeDir,
+				FileType: file.TypeDirectory,
 			},
 		},
 		"/home/thing": {
 			VirtualPath: "/home/thing",
 			Node: filenode.FileNode{
 				RealPath: "/home/thing",
-				FileType: file.TypeSymlink,
+				FileType: file.TypeSymLink,
 				LinkPath: "./thing.txt",
 			},
 		},
@@ -240,16 +240,16 @@ func TestOSAdapter_ReadDir(t *testing.T) {
 			expected: []fileinfoAdapter{
 				{
 					VirtualPath: "/home/thing.txt",
-					Node:        filenode.FileNode{RealPath: "/home/thing.txt", FileType: file.TypeReg},
+					Node:        filenode.FileNode{RealPath: "/home/thing.txt", FileType: file.TypeRegular},
 				},
 
 				{
 					VirtualPath: "/home/wagoodman",
-					Node:        filenode.FileNode{RealPath: "/home/wagoodman", FileType: file.TypeDir},
+					Node:        filenode.FileNode{RealPath: "/home/wagoodman", FileType: file.TypeDirectory},
 				},
 				{
 					VirtualPath: "/home/thing",
-					Node:        filenode.FileNode{RealPath: "/home/thing", FileType: file.TypeSymlink, LinkPath: "./thing.txt"},
+					Node:        filenode.FileNode{RealPath: "/home/thing", FileType: file.TypeSymLink, LinkPath: "./thing.txt"},
 				},
 				{
 					VirtualPath: "/home/place",
@@ -312,7 +312,7 @@ func TestOSAdapter_Lstat(t *testing.T) {
 				VirtualPath: "/home",
 				Node: filenode.FileNode{
 					RealPath: "/home",
-					FileType: file.TypeDir,
+					FileType: file.TypeDirectory,
 				},
 			},
 		},
@@ -324,7 +324,7 @@ func TestOSAdapter_Lstat(t *testing.T) {
 				VirtualPath: "/home/thing",
 				Node: filenode.FileNode{
 					RealPath: "/home/thing",
-					FileType: file.TypeSymlink,
+					FileType: file.TypeSymLink,
 					LinkPath: "./thing.txt",
 				},
 			},
@@ -400,7 +400,7 @@ func TestOSAdapter_Stat(t *testing.T) {
 				VirtualPath: "/home",
 				Node: filenode.FileNode{
 					RealPath: "/home",
-					FileType: file.TypeDir,
+					FileType: file.TypeDirectory,
 				},
 			},
 		},
@@ -413,7 +413,7 @@ func TestOSAdapter_Stat(t *testing.T) {
 				VirtualPath: "/home/thing",
 				Node: filenode.FileNode{
 					RealPath: "/home/thing.txt",
-					FileType: file.TypeReg,
+					FileType: file.TypeRegular,
 				},
 			},
 		},

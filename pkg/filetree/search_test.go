@@ -38,7 +38,7 @@ func Test_searchContext_SearchByPath(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    *file.ReferenceAccessVia
+		want    *file.Resolution
 		wantErr require.ErrorAssertionFunc
 	}{
 		{
@@ -47,12 +47,10 @@ func Test_searchContext_SearchByPath(t *testing.T) {
 			args: args{
 				path: "/path/to/file.txt",
 			},
-			want: &file.ReferenceAccessVia{
-				ReferenceAccess: file.ReferenceAccess{
-					RequestPath: "/path/to/file.txt",
-					Reference: &file.Reference{
-						RealPath: "/path/to/file.txt",
-					},
+			want: &file.Resolution{
+				RequestPath: "/path/to/file.txt",
+				Reference: &file.Reference{
+					RealPath: "/path/to/file.txt",
 				},
 			},
 		},
@@ -123,11 +121,11 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 	require.NotNil(t, toRef)
 
 	idx := NewIndex()
-	idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-	idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymlink})
-	idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymlink})
-	idx.Add(*doubleLinkToPathRef, file.Metadata{Type: file.TypeSymlink})
-	idx.Add(*toRef, file.Metadata{Type: file.TypeDir})
+	idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+	idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymLink})
+	idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymLink})
+	idx.Add(*doubleLinkToPathRef, file.Metadata{Type: file.TypeSymLink})
+	idx.Add(*toRef, file.Metadata{Type: file.TypeDirectory})
 
 	defaultFields := fields{
 		tree:  tree,
@@ -138,7 +136,7 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    []file.ReferenceAccessVia
+		want    []file.Resolution
 		wantErr require.ErrorAssertionFunc
 	}{
 		{
@@ -149,29 +147,26 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 			},
 			// note: result "/link-to-file" resolves to the file but does not show up since the request path
 			// does not match the requirement glob
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+
+					RequestPath: "/path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/double-link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+
+					RequestPath: "/double-link-to-path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+
+					RequestPath: "/link-to-path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -185,13 +180,11 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				// dodge any ancestor symlink and will not find the file.
 				glob: "**/link-to-path/to/file.txt",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/link-to-path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -202,13 +195,11 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 			args: args{
 				glob: "**/path/to/*",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -219,13 +210,11 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 			args: args{
 				glob: "/path/to/*",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -236,13 +225,11 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 			args: args{
 				glob: "**/link-to-path/to/*",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/link-to-path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -256,13 +243,11 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				// dodge any ancestor symlink and will not find the file.
 				glob: "**/double-link-to-path/to/file.txt",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/double-link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/double-link-to-path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -273,15 +258,13 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 			args: args{
 				glob: "**/link-to-file",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/link-to-file",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/link-to-file",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
-					LeafLinkResolution: []file.ReferenceAccess{
+					LinkResolutions: []file.Resolution{
 						{
 							RequestPath: "/link-to-file",
 							Reference: &file.Reference{
@@ -301,13 +284,11 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				// dodge any ancestor symlink and will not find the file.
 				glob: "**/link-to-path/to/file.txt",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/link-to-path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -321,30 +302,26 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				// dodge any ancestor symlink and will not find the file.
 				glob: "**/*.txt",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/path/to/file.txt",
-						Reference:   &file.Reference{RealPath: "/path/to/file.txt"},
-					},
+					RequestPath: "/path/to/file.txt",
+					Reference:   &file.Reference{RealPath: "/path/to/file.txt"},
 				},
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/double-link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/double-link-to-path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 				// note: this is NOT expected since the input glob does not match against the request path
 				//{
-				//	ReferenceAccess: file.ReferenceAccess{
+				//	Resolution: file.Resolution{
 				//		RequestPath: "/link-to-file",
 				//		Reference: &file.Reference{
 				//			RealPath: "/path/to/file.txt",
 				//		},
 				//	},
-				//	LeafLinkResolution: []file.ReferenceAccess{
+				//	LinkResolutions: []file.Resolution{
 				//		{
 				//			RequestPath: "/link-to-file",
 				//			Reference:   &file.Reference{RealPath: "/link-to-file"},
@@ -352,11 +329,9 @@ func Test_searchContext_SearchByGlob(t *testing.T) {
 				//	},
 				//},
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/link-to-path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/link-to-path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -419,7 +394,7 @@ func Test_searchContext_SearchByMIMEType(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    []file.ReferenceAccessVia
+		want    []file.Resolution
 		wantErr require.ErrorAssertionFunc
 	}{
 		{
@@ -428,13 +403,11 @@ func Test_searchContext_SearchByMIMEType(t *testing.T) {
 			args: args{
 				mimeTypes: "plain/text",
 			},
-			want: []file.ReferenceAccessVia{
+			want: []file.Resolution{
 				{
-					ReferenceAccess: file.ReferenceAccess{
-						RequestPath: "/path/to/file.txt",
-						Reference: &file.Reference{
-							RealPath: "/path/to/file.txt",
-						},
+					RequestPath: "/path/to/file.txt",
+					Reference: &file.Reference{
+						RealPath: "/path/to/file.txt",
 					},
 				},
 			},
@@ -499,7 +472,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
 
 				na, err := tree.node("/path/to", linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -534,8 +507,8 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-				idx.Add(*deafLinkRef, file.Metadata{Type: file.TypeSymlink})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+				idx.Add(*deafLinkRef, file.Metadata{Type: file.TypeSymLink})
 
 				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -576,9 +549,9 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, link3)
 
 				idx := NewIndex()
-				idx.Add(*link1, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*link2, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*link3, file.Metadata{Type: file.TypeSymlink})
+				idx.Add(*link1, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*link2, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*link3, file.Metadata{Type: file.TypeSymLink})
 
 				na, err := tree.node(link1.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -628,11 +601,11 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, x11LinkRef)
 
 				idx := NewIndex()
-				idx.Add(*usrRef, file.Metadata{Type: file.TypeDir})
-				idx.Add(*usrBinRef, file.Metadata{Type: file.TypeDir})
-				idx.Add(*binLinkRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*x11LinkRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*ttydRef, file.Metadata{Type: file.TypeReg})
+				idx.Add(*usrRef, file.Metadata{Type: file.TypeDirectory})
+				idx.Add(*usrBinRef, file.Metadata{Type: file.TypeDirectory})
+				idx.Add(*binLinkRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*x11LinkRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*ttydRef, file.Metadata{Type: file.TypeRegular})
 
 				na, err := tree.node(ttydRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -668,8 +641,8 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-				idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymlink})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+				idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymLink})
 
 				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -710,9 +683,9 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-				idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*doubleLinkToFileRef, file.Metadata{Type: file.TypeSymlink})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+				idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*doubleLinkToFileRef, file.Metadata{Type: file.TypeSymLink})
 
 				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -752,9 +725,9 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*dirTo, file.Metadata{Type: file.TypeDir})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
 
 				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -799,10 +772,10 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*dirTo, file.Metadata{Type: file.TypeDir})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
 
 				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -857,12 +830,12 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*anotherLinkToPathRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*anotherLinkToToRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*dirTo, file.Metadata{Type: file.TypeDir})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*anotherLinkToPathRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*anotherLinkToToRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
 
 				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -924,13 +897,13 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-				idx.Add(*linkToAnotherViaLinkRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*pathToLinkToFileRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*dirTo, file.Metadata{Type: file.TypeDir})
-				idx.Add(*dirAnother, file.Metadata{Type: file.TypeDir})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+				idx.Add(*linkToAnotherViaLinkRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*pathToLinkToFileRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
+				idx.Add(*dirAnother, file.Metadata{Type: file.TypeDirectory})
 
 				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
@@ -992,13 +965,13 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				require.NotNil(t, fileRef)
 
 				idx := NewIndex()
-				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeReg})
-				idx.Add(*linkToAnotherViaLinkRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*pathToLinkToFileRef, file.Metadata{Type: file.TypeSymlink})
-				idx.Add(*dirTo, file.Metadata{Type: file.TypeDir})
-				idx.Add(*dirAnother, file.Metadata{Type: file.TypeDir})
+				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
+				idx.Add(*linkToAnotherViaLinkRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*pathToLinkToFileRef, file.Metadata{Type: file.TypeSymLink})
+				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
+				idx.Add(*dirAnother, file.Metadata{Type: file.TypeDirectory})
 
 				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
 					FollowAncestorLinks:          false,
