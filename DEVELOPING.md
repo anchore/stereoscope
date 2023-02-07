@@ -6,6 +6,7 @@ In order to test and develop in this repo you will need the following dependenci
 - Golang
 - docker
 - make
+- podman (for benchmark and integration tests only)
 
 After cloning the following step can help you get setup:
 1. run `make bootstrap` to download go mod dependencies, create the `/.tmp` dir, and download helper utilities.
