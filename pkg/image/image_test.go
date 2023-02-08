@@ -3,10 +3,11 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"os"
 	"testing"
 
-	"github.com/go-test/deep"
 	"github.com/google/go-containerregistry/pkg/name"
 )
 
@@ -97,13 +98,17 @@ func TestImageAdditionalMetadata(t *testing.T) {
 				os.Remove(tempFile.Name())
 			})
 
-			img := NewImage(nil, tempFile.Name(), test.options...)
+			img := New(nil, tempFile.Name(), test.options...)
 
 			err = img.applyOverrideMetadata()
 			if err != nil {
 				t.Fatalf("could not create image: %+v", err)
 			}
-			for _, d := range deep.Equal(img, &test.image) {
+			if d := cmp.Diff(img, &test.image,
+				cmpopts.IgnoreFields(Image{}, "FileCatalog"),
+				cmpopts.IgnoreUnexported(Image{}),
+				cmp.AllowUnexported(name.Tag{}, name.Repository{}, name.Registry{}),
+			); d != "" {
 				t.Errorf("diff: %+v", d)
 			}
 		})

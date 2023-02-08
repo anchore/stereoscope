@@ -27,7 +27,7 @@ type DepthFirstWalker struct {
 	visitor    NodeVisitor
 	tree       Reader
 	stack      node.Stack
-	visited    node.Set
+	visited    node.IDSet
 	conditions WalkConditions
 }
 

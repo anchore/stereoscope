@@ -9,6 +9,7 @@
 coverage.txt
 **/test-fixtures/cache/
 **/*.fingerprint
+snapshot/
 
 # Binaries for programs and plugins
 *.exe
