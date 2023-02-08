@@ -24,7 +24,7 @@ FLAGS=${FLAGS:-"-ldflags=\"-s -w\""}
 
 # A list of OSes and architectures to not build for, space-separated
 # It can be set from the command line when the script is called.
-NOT_ALLOWED_OS=${NOT_ALLOWED_OS:-"js android ios solaris illumos aix dragonfly plan9"}
+NOT_ALLOWED_OS=${NOT_ALLOWED_OS:-"js android ios solaris illumos aix dragonfly plan9 freebsd openbsd netbsd"}
 NOT_ALLOWED_ARCH=${NOT_ALLOWED_ARCH:-"riscv64 mips mips64 mips64le ppc64 ppc64le s390x wasm"}
 
 
