@@ -78,4 +78,3 @@ runs:
       shell: bash
       run: |
         DEBIAN_FRONTEND=noninteractive sudo apt update && sudo -E apt install -y ${{ inputs.bootstrap-apt-packages }}
-
