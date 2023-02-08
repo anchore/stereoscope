@@ -1,7 +1,6 @@
 package image
 
 import (
-	"archive/tar"
 	"bytes"
 	"errors"
 	"fmt"
@@ -33,12 +32,14 @@ type Layer struct {
 	// Metadata contains select layer attributes
 	Metadata LayerMetadata
 	// Tree is a filetree that represents the structure of the layer tar contents ("diff tree")
-	Tree *filetree.FileTree
+	Tree filetree.Reader
 	// SquashedTree is a filetree that represents the combination of this layers diff tree and all diff trees
 	// in lower layers relative to this one.
-	SquashedTree *filetree.FileTree
+	SquashedTree filetree.Reader
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
-	fileCatalog *FileCatalog
+	fileCatalog           *FileCatalog
+	SquashedSearchContext filetree.Searcher
+	SearchContext         filetree.Searcher
 }
 
 // NewLayer provides a new, unread layer object.
@@ -80,7 +81,8 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 // file tree, and the layer squash tree.
 func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
 	var err error
-	l.Tree = filetree.NewFileTree()
+	tree := filetree.New()
+	l.Tree = tree
 	l.fileCatalog = catalog
 	l.Metadata, err = newLayerMetadata(imgMetadata, l.layer, idx)
 	if err != nil {
@@ -108,7 +110,10 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 			return err
 		}
 
-		l.indexedContent, err = file.NewTarIndex(tarFilePath, l.indexer(monitor))
+		l.indexedContent, err = file.NewTarIndex(
+			tarFilePath,
+			layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
+		)
 		if err != nil {
 			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 		}
@@ -122,9 +127,9 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 		// Walk the more efficient walk if we're blessed with an io.ReaderAt.
 		if ra, ok := r.(io.ReaderAt); ok {
-			err = file.WalkSquashFS(ra, l.squashfsVisitor(monitor))
+			err = file.WalkSquashFS(ra, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
 		} else {
-			err = file.WalkSquashFSFromReader(r, l.squashfsVisitor(monitor))
+			err = file.WalkSquashFSFromReader(r, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
 		}
 		if err != nil {
 			return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
@@ -134,50 +139,74 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		return fmt.Errorf("unknown layer media type: %+v", l.Metadata.MediaType)
 	}
 
+	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
+
 	monitor.SetCompleted()
 
 	return nil
 }
 
-// FetchContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
+// OpenPath reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+func (l *Layer) OpenPath(path file.Path) (io.ReadCloser, error) {
+	return fetchReaderByPath(l.Tree, l.fileCatalog, path)
+}
+
+// OpenPathFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
+// An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+func (l *Layer) OpenPathFromSquash(path file.Path) (io.ReadCloser, error) {
+	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
+}
+
+// FileContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
+// An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+// Deprecated: use OpenPath() instead.
 func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(l.Tree, l.fileCatalog, path)
+	return fetchReaderByPath(l.Tree, l.fileCatalog, path)
 }
 
 // FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+// Deprecated: use OpenPathFromSquash() instead.
 func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
-	return fetchFileContentsByPath(l.SquashedTree, l.fileCatalog, path)
+	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
 }
 
 // FilesByMIMEType returns file references for files that match at least one of the given MIME types relative to each layer tree.
+// Deprecated: use SearchContext().SearchByMIMEType() instead.
 func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
-	for _, ty := range mimeTypes {
-		refsForType, err := fetchFilesByMIMEType(l.Tree, l.fileCatalog, ty)
-		if err != nil {
-			return nil, err
+	refVias, err := l.SearchContext.SearchByMIMEType(mimeTypes...)
+	if err != nil {
+		return nil, err
+	}
+	for _, refVia := range refVias {
+		if refVia.HasReference() {
+			refs = append(refs, *refVia.Reference)
 		}
-		refs = append(refs, refsForType...)
 	}
 	return refs, nil
 }
 
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types relative to the squashed file tree representation.
+// Deprecated: use SquashedSearchContext().SearchByMIMEType() instead.
 func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
-	for _, ty := range mimeTypes {
-		refsForType, err := fetchFilesByMIMEType(l.SquashedTree, l.fileCatalog, ty)
-		if err != nil {
-			return nil, err
+	refVias, err := l.SquashedSearchContext.SearchByMIMEType(mimeTypes...)
+	if err != nil {
+		return nil, err
+	}
+	for _, refVia := range refVias {
+		if refVia.HasReference() {
+			refs = append(refs, *refVia.Reference)
 		}
-		refs = append(refs, refsForType...)
 	}
 	return refs, nil
 }
 
-func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
+func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
+	builder := filetree.NewBuilder(ft, fileCatalog.Index)
+
 	return func(index file.TarIndexEntry) error {
 		var err error
 		var entry = index.ToTarFileEntry()
@@ -188,7 +217,7 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 				log.Warnf("unable to close file while indexing layer: %+v", err)
 			}
 		}()
-		metadata := file.NewMetadata(entry.Header, entry.Sequence, contents)
+		metadata := file.NewMetadata(entry.Header, contents)
 
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
@@ -200,42 +229,26 @@ func (l *Layer) indexer(monitor *progress.Manual) file.TarIndexVisitor {
 		//
 		// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
 		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
-		var fileReference *file.Reference
-		switch metadata.TypeFlag {
-		case tar.TypeSymlink:
-			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
-			if err != nil {
-				return err
-			}
-		case tar.TypeLink:
-			fileReference, err = l.Tree.AddHardLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
-			if err != nil {
-				return err
-			}
-		case tar.TypeDir:
-			fileReference, err = l.Tree.AddDir(file.Path(metadata.Path))
-			if err != nil {
-				return err
-			}
-		default:
-			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
-			if err != nil {
-				return err
-			}
-		}
-		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during tar iteration", metadata.Path, metadata.Linkname)
+		ref, err := builder.Add(metadata)
+		if err != nil {
+			return err
 		}
 
-		l.Metadata.Size += metadata.Size
-		l.fileCatalog.Add(*fileReference, metadata, l, index.Open)
+		if size != nil {
+			*(size) += metadata.Size
+		}
+		fileCatalog.addImageReferences(ref.ID(), layerRef, index.Open)
 
-		monitor.N++
+		if monitor != nil {
+			monitor.N++
+		}
 		return nil
 	}
 }
 
-func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
+func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.SquashFSVisitor {
+	builder := filetree.NewBuilder(ft, fileCatalog.Index)
+
 	return func(fsys fs.FS, path string, d fs.DirEntry) error {
 		ff, err := fsys.Open(path)
 		if err != nil {
@@ -245,7 +258,7 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 
 		f, ok := ff.(*squashfs.File)
 		if !ok {
-			return errors.New("unexpected file type")
+			return errors.New("unexpected file type from squashfs")
 		}
 
 		metadata, err := file.NewMetadataFromSquashFSFile(path, f)
@@ -253,32 +266,15 @@ func (l *Layer) squashfsVisitor(monitor *progress.Manual) file.SquashFSVisitor {
 			return err
 		}
 
-		var fileReference *file.Reference
-
-		switch {
-		case f.IsSymlink():
-			fileReference, err = l.Tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.Linkname))
-			if err != nil {
-				return err
-			}
-		case f.IsDir():
-			fileReference, err = l.Tree.AddDir(file.Path(metadata.Path))
-			if err != nil {
-				return err
-			}
-		default:
-			fileReference, err = l.Tree.AddFile(file.Path(metadata.Path))
-			if err != nil {
-				return err
-			}
+		fileReference, err := builder.Add(metadata)
+		if err != nil {
+			return err
 		}
 
-		if fileReference == nil {
-			return fmt.Errorf("could not add path=%q link=%q during squashfs iteration", metadata.Path, metadata.Linkname)
+		if size != nil {
+			*(size) += metadata.Size
 		}
-
-		l.Metadata.Size += metadata.Size
-		l.fileCatalog.Add(*fileReference, metadata, l, func() io.ReadCloser {
+		fileCatalog.addImageReferences(fileReference.ID(), layerRef, func() io.ReadCloser {
 			r, err := fsys.Open(path)
 			if err != nil {
 				// The file.Opener interface doesn't give us a way to return an error, and callers

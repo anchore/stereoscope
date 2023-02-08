@@ -62,40 +62,36 @@ func TestMetadataFromTar(t *testing.T) {
 			name:    "path/branch/two/file-2.txt",
 			fixture: "fixture-1",
 			expected: Metadata{
-				Path:          "/path/branch/two/file-2.txt",
-				TarHeaderName: "path/branch/two/file-2.txt",
-				TarSequence:   5,
-				Linkname:      "",
-				Size:          12,
-				UserID:        1337,
-				GroupID:       5432,
-				TypeFlag:      0x30,
-				IsDir:         false,
-				Mode:          0x1ed,
-				MIMEType:      "application/octet-stream",
+				Path:            "/path/branch/two/file-2.txt",
+				LinkDestination: "",
+				Size:            12,
+				UserID:          1337,
+				GroupID:         5432,
+				Type:            TypeRegular,
+				IsDir:           false,
+				Mode:            0x1ed,
+				MIMEType:        "application/octet-stream",
 			},
 		},
 		{
 			name:    "path/branch/two/",
 			fixture: "fixture-1",
 			expected: Metadata{
-				Path:          "/path/branch/two",
-				TarHeaderName: "path/branch/two/",
-				TarSequence:   4,
-				Linkname:      "",
-				Size:          0,
-				UserID:        1337,
-				GroupID:       5432,
-				TypeFlag:      0x35,
-				IsDir:         true,
-				Mode:          0x800001ed,
-				MIMEType:      "",
+				Path:            "/path/branch/two",
+				LinkDestination: "",
+				Size:            0,
+				UserID:          1337,
+				GroupID:         5432,
+				Type:            TypeDirectory,
+				IsDir:           true,
+				Mode:            0x800001ed,
+				MIMEType:        "",
 			},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			f := getTarFixture(t, "fixture-1")
+			f := getTarFixture(t, test.fixture)
 			metadata, err := MetadataFromTar(f, test.name)
 			assert.NoError(t, err)
 			assert.Equal(t, test.expected, metadata)

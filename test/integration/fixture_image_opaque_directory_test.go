@@ -17,7 +17,7 @@ func TestImage_SquashedTree_OpaqueDirectoryExistsInFileCatalog(t *testing.T) {
 		t.Fatalf("unable to get file=%q : %+v", path, err)
 	}
 
-	_, err = image.FileCatalog.Get(*ref)
+	_, err = image.FileCatalog.Get(*ref.Reference)
 	if err != nil {
 		t.Fatal(err)
 	}
