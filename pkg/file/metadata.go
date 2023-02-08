@@ -111,8 +111,6 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 		mimeType = MIMEType(f)
 	}
 
-	// TODO: should we clean up path to be the real, absolute path?
-
 	return Metadata{
 		Path: path,
 		Mode: info.Mode(),

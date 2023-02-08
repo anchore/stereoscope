@@ -66,7 +66,7 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 
 	for w.pathStack.Size() > 0 {
 		currentPath = w.pathStack.Pop()
-		// TODO: should we make these link resolutions configurable so you can observe the links on walk as well?
+		// TODO: should we make these link resolutions configurable so you can observe the links on walk as well? (take link resolution options as a parameter)
 		currentNode, err = w.tree.node(currentPath, linkResolutionStrategy{
 			FollowAncestorLinks:          true,
 			FollowBasenameLinks:          true,
