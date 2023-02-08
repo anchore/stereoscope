@@ -3,10 +3,11 @@ package filetree
 import (
 	"errors"
 	"fmt"
-	"github.com/scylladb/go-set/strset"
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/scylladb/go-set/strset"
 
 	"github.com/scylladb/go-set/iset"
 

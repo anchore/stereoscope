@@ -190,7 +190,7 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 
 func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues testCase) {
 	t.Helper()
-	//t.Log("Asserting metadata...")
+	t.Log("Asserting metadata...")
 
 	if i.Metadata.MediaType != expectedValues.imageMediaType {
 		t.Errorf("unexpected image media type: %+v", i.Metadata.MediaType)
@@ -228,7 +228,7 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 
 func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 	t.Helper()
-	//t.Log("Asserting squashed trees...")
+	t.Log("Asserting squashed trees...")
 
 	one := filetree.New()
 	one.AddFile("/somefile-1.txt")
@@ -267,7 +267,7 @@ func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 
 func assertImageSimpleTrees(t *testing.T, i *image.Image) {
 	t.Helper()
-	//t.Log("Asserting trees...")
+	t.Log("Asserting trees...")
 
 	one := filetree.New()
 	one.AddFile("/somefile-1.txt")
@@ -296,7 +296,7 @@ func assertImageSimpleTrees(t *testing.T, i *image.Image) {
 
 func assertImageSimpleContents(t *testing.T, i *image.Image) {
 	t.Helper()
-	//t.Log("Asserting contents...")
+	t.Log("Asserting contents...")
 
 	expectedContents := map[string]string{
 		"/somefile-1.txt":           "this file has contents",
@@ -306,7 +306,7 @@ func assertImageSimpleContents(t *testing.T, i *image.Image) {
 
 	actualContents := make(map[string]io.Reader)
 	for path := range expectedContents {
-		reader, err := i.FileContentsFromSquash(file.Path(path))
+		reader, err := i.OpenPathFromSquash(file.Path(path))
 		if err != nil {
 			t.Fatal("unable to fetch multiple contents", err)
 		}

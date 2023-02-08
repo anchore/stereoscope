@@ -58,9 +58,11 @@ func NewDepthFirstPathWalker(tree *FileTree, visitor FileNodeVisitor, conditions
 func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNode, error) {
 	w.pathStack.Push(from)
 
-	var currentPath file.Path
-	var currentNode *nodeAccess
-	var err error
+	var (
+		currentPath file.Path
+		currentNode *nodeAccess
+		err         error
+	)
 
 	for w.pathStack.Size() > 0 {
 		currentPath = w.pathStack.Pop()

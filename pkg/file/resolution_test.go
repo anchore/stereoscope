@@ -9,7 +9,6 @@ import (
 func TestResolution_Less(t *testing.T) {
 
 	realA := Resolution{
-
 		RequestPath: "/parent/a",
 		Reference: &Reference{
 			RealPath: "/parent/a",
@@ -17,7 +16,6 @@ func TestResolution_Less(t *testing.T) {
 	}
 
 	realB := Resolution{
-
 		RequestPath: "/parent/b",
 		Reference: &Reference{
 			RealPath: "/parent/b",
@@ -25,7 +23,6 @@ func TestResolution_Less(t *testing.T) {
 	}
 
 	linkToA := Resolution{
-
 		RequestPath: "/parent-link/a",
 		Reference: &Reference{
 			RealPath: "/a",

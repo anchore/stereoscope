@@ -20,8 +20,10 @@ func NewBuilder(tree Writer, index IndexWriter) *Builder {
 }
 
 func (b *Builder) Add(metadata file.Metadata) (*file.Reference, error) {
-	var ref *file.Reference
-	var err error
+	var (
+		ref *file.Reference
+		err error
+	)
 	switch metadata.Type {
 	case file.TypeSymLink:
 		ref, err = b.tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))
