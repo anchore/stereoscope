@@ -1135,6 +1135,24 @@ func TestFileTree_File_ResolutionWithMultipleAncestorResolutionsForSameNode(t *t
 	require.NoError(t, err)
 
 	exists, resolution, err := tr.File("/usr/local/bin/ksh", FollowBasenameLinks)
+	/*
+		/usr/bin/ksh93 <-- Real file
+		/bin -> /usr/bin
+		/usr/bin/ksh -> /etc/alternatives/ksh
+		/etc/alternatives/ksh -> /bin/ksh93
+	*/
+
+	// ls -al /usr/local/bin/ksh
+	// /usr/local/bin/ksh -> /bin/ksh
+
+	// ls -al /bin/ksh
+	// /bin/ksh -> /etc/alternatives/ksh
+
+	// ls -al /etc/alternatives/ksh
+	// /etc/alternatives/ksh -> /bin/ksh93
+
+	// the test.... we should not stop when a small cycle for /usr/bin is done more than once
+	_, _, err = tr.File("/usr/local/bin/ksh", FollowBasenameLinks)
 	require.NoError(t, err)
 	assert.True(t, exists)
 	assert.True(t, resolution.HasReference())
