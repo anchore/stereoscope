@@ -1079,6 +1079,7 @@ func TestFileTree_File_DeadCycleDetection(t *testing.T) {
 
 	// the test.... do we stop when a cycle is detected?
 	exists, _, err := tr.File("/somewhere/acorn", FollowBasenameLinks)
+	// TODO: check this case
 	if err != ErrLinkCycleDetected {
 		t.Fatalf("should have gotten an error on resolving a file")
 	}
@@ -1087,6 +1088,39 @@ func TestFileTree_File_DeadCycleDetection(t *testing.T) {
 		t.Errorf("resolution should not exist in cycle")
 	}
 
+}
+
+func TestFileTree_File_DeadCycleDetection_BAD(t *testing.T) {
+	tr := New()
+	_, err := tr.AddFile("/usr/bin/ksh93")
+	require.NoError(t, err)
+	_, err = tr.AddSymLink("/bin", "/usr/bin")
+	require.NoError(t, err)
+	_, err = tr.AddSymLink("/usr/bin/ksh", "/etc/alternatives/ksh")
+	require.NoError(t, err)
+	_, err = tr.AddSymLink("/etc/alternatives/ksh", "/bin/ksh93")
+	require.NoError(t, err)
+	_, err = tr.AddSymLink("/usr/local/bin/ksh", "/bin/ksh")
+	require.NoError(t, err)
+
+	/*
+		/usr/bin/ksh93 <-- Real file
+		/bin -> /usr/bin
+		/usr/bin/ksh -> /etc/alternatives/ksh
+		/etc/alternatives/ksh -> /bin/ksh93
+	*/
+
+	// ls -al /usr/local/bin/ksh
+	// /usr/local/bin/ksh -> /bin/ksh
+	// ls -al /bin/ksh
+	// /bin/ksh -> /etc/alternatives/ksh
+	// /etc/alternatives/ksh
+	// /etc/alternatives/ksh -> /bin/ksh93
+	// /bin/ksh93
+
+	// the test.... do we stop when a cycle is detected?
+	_, _, err = tr.File("/usr/local/bin/ksh", FollowBasenameLinks)
+	require.NoError(t, err)
 }
 
 func TestFileTree_AllFiles(t *testing.T) {
