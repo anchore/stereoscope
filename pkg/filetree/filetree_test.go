@@ -1091,9 +1091,35 @@ func TestFileTree_File_DeadCycleDetection(t *testing.T) {
 
 }
 
-func TestFileTree_File_DeadCycleDetection_BAD(t *testing.T) {
+func TestFileTree_File_ShortCircuitDeadBasenameLinkCycles(t *testing.T) {
 	tr := New()
 	_, err := tr.AddFile("/usr/bin/ksh93")
+	require.NoError(t, err)
+
+	linkPath, err := tr.AddSymLink("/usr/local/bin/ksh", "/bin/ksh")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/bin", "/usr/bin/ksh93")
+	require.NoError(t, err)
+
+	// note: we follow dead basename links
+	exists, resolution, err := tr.File("/usr/local/bin/ksh", FollowBasenameLinks)
+	require.NoError(t, err)
+	assert.False(t, exists)
+	assert.False(t, resolution.HasReference())
+
+	// note: we don't follow dead basename links
+	exists, resolution, err = tr.File("/usr/local/bin/ksh", FollowBasenameLinks, DoNotFollowDeadBasenameLinks)
+	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.True(t, resolution.HasReference())
+	assert.Equal(t, *linkPath, *resolution.Reference)
+}
+
+// regression: Syft issue https://github.com/anchore/syft/issues/1586
+func TestFileTree_File_ResolutionWithMultipleAncestorResolutionsForSameNode(t *testing.T) {
+	tr := New()
+	actualRef, err := tr.AddFile("/usr/bin/ksh93")
 	require.NoError(t, err)
 
 	_, err = tr.AddSymLink("/usr/local/bin/ksh", "/bin/ksh")
@@ -1108,26 +1134,11 @@ func TestFileTree_File_DeadCycleDetection_BAD(t *testing.T) {
 	_, err = tr.AddSymLink("/usr/bin/ksh", "/etc/alternatives/ksh")
 	require.NoError(t, err)
 
-	/*
-		/usr/bin/ksh93 <-- Real file
-		/bin -> /usr/bin
-		/usr/bin/ksh -> /etc/alternatives/ksh
-		/etc/alternatives/ksh -> /bin/ksh93
-	*/
-
-	//
-
-	// ls -al /usr/local/bin/ksh
-	// /usr/local/bin/ksh -> /bin/ksh
-	// ls -al /bin/ksh
-	// /bin/ksh -> /etc/alternatives/ksh
-	// /etc/alternatives/ksh
-	// /etc/alternatives/ksh -> /bin/ksh93
-	// /bin/ksh93
-
-	// the test.... do we stop when a cycle is detected?
-	_, _, err = tr.File("/usr/local/bin/ksh", FollowBasenameLinks)
+	exists, resolution, err := tr.File("/usr/local/bin/ksh", FollowBasenameLinks)
 	require.NoError(t, err)
+	assert.True(t, exists)
+	assert.True(t, resolution.HasReference())
+	assert.Equal(t, *actualRef, *resolution.Reference)
 }
 
 func TestFileTree_AllFiles(t *testing.T) {
