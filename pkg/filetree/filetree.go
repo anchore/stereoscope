@@ -250,7 +250,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 
 // return FileNode of the basename in the given path (no resolution is done at or past the basename). Note: it is
 // assumed that the given path has already been normalized.
-func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPaths file.PathSet) (*nodeAccess, error) {
+func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPaths file.PathCountSet) (*nodeAccess, error) {
 	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
 	// use it, otherwise, continue with ancestor resolution
 	currentNodeAccess, err := t.node(path, linkResolutionStrategy{})
@@ -325,7 +325,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPa
 // resolveNodeLinks takes the given FileNode and resolves all links at the base of the real path for the node (this implies
 // that NO ancestors are considered).
 // nolint: funlen
-func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, currentlyResolvingLinkPaths file.PathSet) (*nodeAccess, error) {
+func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, currentlyResolvingLinkPaths file.PathCountSet) (*nodeAccess, error) {
 	if n == nil {
 		return nil, fmt.Errorf("cannot resolve links with nil Node given")
 	}
@@ -334,7 +334,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 	// this represents current link resolution requests that are in progress. This set is pruned once the resolution
 	// has been completed.
 	if currentlyResolvingLinkPaths == nil {
-		currentlyResolvingLinkPaths = file.NewPathSet()
+		currentlyResolvingLinkPaths = file.NewPathCountSet()
 	}
 
 	// note: this assumes that callers are passing paths in which the constituent parts are NOT symlinks
