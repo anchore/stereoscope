@@ -75,3 +75,39 @@ func (s PathSet) ContainsAny(ids ...Path) bool {
 	}
 	return false
 }
+
+type PathCountSet map[Path]int
+
+func NewPathCountSet(is ...Path) PathCountSet {
+	s := make(PathCountSet)
+	s.Add(is...)
+	return s
+}
+
+func (s PathCountSet) Add(ids ...Path) {
+	for _, i := range ids {
+		if _, ok := s[i]; !ok {
+			s[i] = 1
+			continue
+		}
+		s[i]++
+	}
+}
+
+func (s PathCountSet) Remove(ids ...Path) {
+	for _, i := range ids {
+		if _, ok := s[i]; !ok {
+			continue
+		}
+
+		s[i]--
+		if s[i] <= 0 {
+			delete(s, i)
+		}
+	}
+}
+
+func (s PathCountSet) Contains(i Path) bool {
+	count, ok := s[i]
+	return ok && count > 0
+}

@@ -250,7 +250,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 
 // return FileNode of the basename in the given path (no resolution is done at or past the basename). Note: it is
 // assumed that the given path has already been normalized.
-func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths file.PathSet) (*nodeAccess, error) {
+func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPaths file.PathCountSet) (*nodeAccess, error) {
 	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
 	// use it, otherwise, continue with ancestor resolution
 	currentNodeAccess, err := t.node(path, linkResolutionStrategy{})
@@ -306,7 +306,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths file.Path
 		// links until the next Node is resolved (or not).
 		isLastPart := idx == len(pathParts)-1
 		if !isLastPart && currentNodeAccess.FileNode.IsLink() {
-			currentNodeAccess, err = t.resolveNodeLinks(currentNodeAccess, true, attemptedPaths)
+			currentNodeAccess, err = t.resolveNodeLinks(currentNodeAccess, true, currentlyResolvingLinkPaths)
 			if err != nil {
 				// only expected to happen on cycles
 				return currentNodeAccess, err
@@ -325,14 +325,16 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths file.Path
 // resolveNodeLinks takes the given FileNode and resolves all links at the base of the real path for the node (this implies
 // that NO ancestors are considered).
 // nolint: funlen
-func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, attemptedPaths file.PathSet) (*nodeAccess, error) {
+func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, currentlyResolvingLinkPaths file.PathCountSet) (*nodeAccess, error) {
 	if n == nil {
 		return nil, fmt.Errorf("cannot resolve links with nil Node given")
 	}
 
-	// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing nodes that do not exist
-	if attemptedPaths == nil {
-		attemptedPaths = file.NewPathSet()
+	// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing nodes that do not exist.
+	// this represents current link resolution requests that are in progress. This set is pruned once the resolution
+	// has been completed.
+	if currentlyResolvingLinkPaths == nil {
+		currentlyResolvingLinkPaths = file.NewPathCountSet()
 	}
 
 	// note: this assumes that callers are passing paths in which the constituent parts are NOT symlinks
@@ -342,8 +344,10 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 
 	currentNodeAccess := n
 
-	// keep resolving links until a regular file or directory is found
-	alreadySeen := strset.New()
+	// keep resolving links until a regular file or directory is found.
+	// Note: this is NOT redundant relative to the 'currentlyResolvingLinkPaths' set. This set is used to short-circuit
+	// real paths that have been revisited through potentially different links (or really anyway).
+	realPathsVisited := strset.New()
 	var err error
 	for {
 		nodePath = append(nodePath, *currentNodeAccess)
@@ -357,7 +361,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 			break
 		}
 
-		if alreadySeen.Has(string(currentNodeAccess.FileNode.RealPath)) {
+		if realPathsVisited.Has(string(currentNodeAccess.FileNode.RealPath)) {
 			return nil, ErrLinkCycleDetected
 		}
 
@@ -368,7 +372,8 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 		}
 
 		// prepare for the next iteration
-		alreadySeen.Add(string(currentNodeAccess.FileNode.RealPath))
+		// already seen is important for the context of this loop
+		realPathsVisited.Add(string(currentNodeAccess.FileNode.RealPath))
 
 		nextPath = currentNodeAccess.FileNode.RenderLinkDestination()
 
@@ -381,13 +386,14 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 		lastNode = currentNodeAccess
 
 		// break any cycles with non-existent paths (before attempting to look the path up again)
-		if attemptedPaths.Contains(nextPath) {
+		if currentlyResolvingLinkPaths.Contains(nextPath) {
 			return nil, ErrLinkCycleDetected
 		}
 
-		// get the next Node (based on the next path)
-		attemptedPaths.Add(nextPath)
-		currentNodeAccess, err = t.resolveAncestorLinks(nextPath, attemptedPaths)
+		// get the next Node (based on the next path)a
+		// attempted paths maintains state across calls to resolveAncestorLinks
+		currentlyResolvingLinkPaths.Add(nextPath)
+		currentNodeAccess, err = t.resolveAncestorLinks(nextPath, currentlyResolvingLinkPaths)
 		if err != nil {
 			if currentNodeAccess != nil {
 				currentNodeAccess.LeafLinkResolution = append(currentNodeAccess.LeafLinkResolution, nodePath...)
@@ -396,6 +402,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 			// only expected to occur upon cycle detection
 			return currentNodeAccess, err
 		}
+		currentlyResolvingLinkPaths.Remove(nextPath)
 	}
 
 	if !currentNodeAccess.HasFileNode() && !followDeadBasenameLinks {

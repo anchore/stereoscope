@@ -224,3 +224,45 @@ func TestPathSet_ContainsAny(t *testing.T) {
 		})
 	}
 }
+
+func TestPathCountSet(t *testing.T) {
+	s := NewPathCountSet()
+
+	s.Add("a", "b") // {a: 1, b: 1}
+	assert.True(t, s.Contains("a"))
+	assert.True(t, s.Contains("b"))
+	assert.False(t, s.Contains("c"))
+
+	s.Add("a", "c") // {a: 2, b: 1, c: 1}
+	assert.True(t, s.Contains("a"))
+	assert.True(t, s.Contains("b"))
+	assert.True(t, s.Contains("c"))
+
+	s.Remove("a") // {a: 1, b: 1, c: 1}
+	assert.True(t, s.Contains("a"))
+	assert.True(t, s.Contains("b"))
+	assert.True(t, s.Contains("c"))
+
+	s.Remove("a", "b") // {c: 1}
+	assert.False(t, s.Contains("a"))
+	assert.False(t, s.Contains("b"))
+	assert.True(t, s.Contains("c"))
+
+	s.Remove("a", "b", "v", "c") // {}
+	assert.False(t, s.Contains("a"))
+	assert.False(t, s.Contains("b"))
+	assert.False(t, s.Contains("c"))
+
+	s.Add("a", "a", "a", "a") // {a: 4}
+	assert.True(t, s.Contains("a"))
+	assert.Equal(t, 4, s["a"])
+
+	s.Remove("a", "a", "a") // {a: 1}
+	assert.True(t, s.Contains("a"))
+
+	s.Remove("a", "a", "a", "a") // {}
+	assert.False(t, s.Contains("a"))
+
+	s.Remove("a", "a", "a", "a", "a", "a", "a", "a") // {}
+	assert.False(t, s.Contains("a"))
+}
