@@ -250,6 +250,9 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 
 // return FileNode of the basename in the given path (no resolution is done at or past the basename). Note: it is
 // assumed that the given path has already been normalized.
+// TODO: don't record what was visited in attempted paths, record the request path before the call
+// TODO: memoize the attempted paths where we remove paths that are resolve so they can be seen again
+// TODO: add a second set which is visited links which is also checked for attempted paths
 func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths file.PathSet) (*nodeAccess, error) {
 	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
 	// use it, otherwise, continue with ancestor resolution
@@ -368,6 +371,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 		}
 
 		// prepare for the next iteration
+		// already seen is important for the context of this loop
 		alreadySeen.Add(string(currentNodeAccess.FileNode.RealPath))
 
 		nextPath = currentNodeAccess.FileNode.RenderLinkDestination()
@@ -381,11 +385,13 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 		lastNode = currentNodeAccess
 
 		// break any cycles with non-existent paths (before attempting to look the path up again)
+		// TODO: DOUBT
 		if attemptedPaths.Contains(nextPath) {
 			return nil, ErrLinkCycleDetected
 		}
 
-		// get the next Node (based on the next path)
+		// get the next Node (based on the next path)a
+		// attempted paths maintains state across calls to resolveAncestorLinks
 		attemptedPaths.Add(nextPath)
 		currentNodeAccess, err = t.resolveAncestorLinks(nextPath, attemptedPaths)
 		if err != nil {
