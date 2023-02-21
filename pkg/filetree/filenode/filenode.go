@@ -77,7 +77,6 @@ func (n *FileNode) RenderLinkDestination() file.Path {
 		return ""
 	}
 
-	// TODO: do we want to assert on if a destination exists or not here?
 	if n.LinkPath.IsAbsolutePath() {
 		// use links with absolute paths blindly
 		return n.LinkPath
