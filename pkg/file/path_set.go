@@ -90,7 +90,7 @@ func (s PathCountSet) Add(ids ...Path) {
 			s[i] = 1
 			continue
 		}
-		s[i] += 1
+		s[i]++
 	}
 }
 
