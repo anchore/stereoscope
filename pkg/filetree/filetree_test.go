@@ -1161,6 +1161,31 @@ func TestFileTree_File_ResolutionWithMultipleAncestorResolutionsForSameNode(t *t
 	assert.Equal(t, *actualRef, *resolution.Reference)
 }
 
+func TestFileTreeMaxLinkDepth(t *testing.T) {
+	tr := New()
+	_, err := tr.AddFile("/usr/bin/ksh93")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/usr/local/bin/ksh", "/bin/ksh")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/bin", "/usr/bin")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/etc/alternatives/ksh", "/bin/ksh93")
+	require.NoError(t, err)
+
+	_, err = tr.AddSymLink("/usr/bin/ksh", "/etc/alternatives/ksh")
+	require.NoError(t, err)
+	rs := linkResolutionStrategy{}
+
+	currentNode, err := tr.node("/usr/local/bin/ksh", rs)
+	require.NoError(t, err)
+
+	_, err = tr.resolveNodeLinks(currentNode, !rs.DoNotFollowDeadBasenameLinks, nil, 2)
+	require.Error(t, err)
+}
+
 func TestFileTree_MaxDepthLimit(t *testing.T) {
 	tr := New()
 	_, err := tr.AddFile("/usr/bin/ksh")

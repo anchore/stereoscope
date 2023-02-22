@@ -351,6 +351,13 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 	realPathsVisited := strset.New()
 	var err error
 	for {
+		// we need to short-circuit link resolution that never resolves (depth) due to a cycle referencing
+		// maxLinkDepth is counted across all calls to resolveAncestorLinks and resolveNodeLinks
+		maxLinkDepth--
+		if maxLinkDepth < 1 {
+			return nil, ErrStackDepthExceeded
+		}
+
 		nodePath = append(nodePath, *currentNodeAccess)
 
 		// if there is no next path, return this reference (dead link)
@@ -389,13 +396,6 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 		// break any cycles with non-existent paths (before attempting to look the path up again)
 		if currentlyResolvingLinkPaths.Contains(nextPath) {
 			return nil, ErrLinkCycleDetected
-		}
-
-		// we need to short-circuit link resolution that never resolves (depth) due to a cycle referencing
-		// maxLinkDepth is counted across all calls to resolveAncestorLinks and resolveNodeLinks
-		maxLinkDepth--
-		if maxLinkDepth < 1 {
-			return nil, ErrStackDepthExceeded
 		}
 
 		// get the next Node (based on the next path)
