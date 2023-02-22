@@ -2,6 +2,7 @@ package filetree
 
 import (
 	"errors"
+	"fmt"
 	"github.com/scylladb/go-set/strset"
 	"testing"
 
@@ -1158,6 +1159,23 @@ func TestFileTree_File_ResolutionWithMultipleAncestorResolutionsForSameNode(t *t
 	assert.True(t, exists)
 	assert.True(t, resolution.HasReference())
 	assert.Equal(t, *actualRef, *resolution.Reference)
+}
+
+func TestFileTree_MaxDepthLimit(t *testing.T) {
+	tr := New()
+	_, err := tr.AddFile("/usr/bin/ksh")
+
+	for i := 0; i < 10; i++ {
+		_, err = tr.AddSymLink(
+			file.Path(fmt.Sprintf("/usr/local/ksh%d", i)),
+			file.Path(fmt.Sprintf("/usr/bin/ksh%d", i+1)),
+		)
+		require.NoError(t, err)
+	}
+	_, err = tr.AddSymLink("/usr/bin/ksh10", "/usr/bin/ksh")
+
+	_, _, err = tr.File("/usr/local/ksh0", FollowBasenameLinks)
+	require.NoError(t, err)
 }
 
 func TestFileTree_AllFiles(t *testing.T) {

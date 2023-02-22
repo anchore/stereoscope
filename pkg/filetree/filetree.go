@@ -20,6 +20,7 @@ import (
 
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
+var ErrStackDepthExceeded = errors.New("maximum link resolution stack depth exceeded")
 var MaxLinkDepth = 100
 
 // FileTree represents a file/directory Tree
@@ -342,7 +343,6 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 	var lastNode *nodeAccess
 	var nodePath []nodeAccess
 	var nextPath file.Path
-
 	currentNodeAccess := n
 
 	// keep resolving links until a regular file or directory is found.
@@ -391,11 +391,11 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 			return nil, ErrLinkCycleDetected
 		}
 
-		// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing
-		// this is counted across all calls to resolveAncestorLinks and resolveNodeLinks
+		// we need to short-circuit link resolution that never resolves (depth) due to a cycle referencing
+		// maxLinkDepth is counted across all calls to resolveAncestorLinks and resolveNodeLinks
 		maxLinkDepth--
 		if maxLinkDepth < 1 {
-			return nil, ErrLinkCycleDetected
+			return nil, ErrStackDepthExceeded
 		}
 
 		// get the next Node (based on the next path)
