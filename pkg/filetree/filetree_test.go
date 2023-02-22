@@ -1183,24 +1183,37 @@ func TestFileTreeMaxLinkDepth(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tr.resolveNodeLinks(currentNode, !rs.DoNotFollowDeadBasenameLinks, nil, 2)
-	require.Error(t, err)
+	require.Error(t, err, "should have gotten an error on resolution of a dead cycle")
+	// require certain error
+	if err != ErrLinkResolutionDepth {
+		t.Fatalf("should have gotten an ErrLinkResolutionDepth resolving a file")
+	}
 }
 
-func TestFileTree_MaxDepthLimit(t *testing.T) {
+func TestFileTree_MaximumLinkResolutionExceeded(t *testing.T) {
 	tr := New()
-	_, err := tr.AddFile("/usr/bin/ksh")
+	ref, err := tr.AddFile("/usr/bin/ksh")
 
-	for i := 0; i < 10; i++ {
+	// we hard code this in filetree to 100
+	for i := 0; i < maxLinkResolutionDepth; i++ {
 		_, err = tr.AddSymLink(
-			file.Path(fmt.Sprintf("/usr/local/ksh%d", i)),
+			file.Path(fmt.Sprintf("/usr/bin/ksh%d", i)),
 			file.Path(fmt.Sprintf("/usr/bin/ksh%d", i+1)),
 		)
 		require.NoError(t, err)
 	}
-	_, err = tr.AddSymLink("/usr/bin/ksh10", "/usr/bin/ksh")
 
-	_, _, err = tr.File("/usr/local/ksh0", FollowBasenameLinks)
+	// explicitly link 10 to ksh
+	_, err = tr.AddSymLink("/usr/bin/ksh100", "/usr/bin/ksh")
+
+	// we should be short-circuiting the resolution of multiple SymLinks > 100
+	_, _, err = tr.File("/usr/bin/ksh0", FollowBasenameLinks)
+	require.Error(t, err)
+
+	b, fr, err := tr.File("/usr/bin/ksh90", FollowBasenameLinks)
 	require.NoError(t, err)
+	assert.True(t, b)
+	assert.Equal(t, ref, fr.Reference)
 }
 
 func TestFileTree_AllFiles(t *testing.T) {

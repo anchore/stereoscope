@@ -20,8 +20,8 @@ import (
 
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
-var ErrStackDepthExceeded = errors.New("maximum link resolution stack depth exceeded")
-var MaxLinkDepth = 100
+var ErrLinkResolutionDepth = errors.New("maximum link resolution stack depth exceeded")
+var maxLinkResolutionDepth = 100
 
 // FileTree represents a file/directory Tree
 type FileTree struct {
@@ -215,7 +215,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 	var currentNode *nodeAccess
 	var err error
 	if strategy.FollowAncestorLinks {
-		currentNode, err = t.resolveAncestorLinks(normalizedPath, nil, MaxLinkDepth)
+		currentNode, err = t.resolveAncestorLinks(normalizedPath, nil, maxLinkResolutionDepth)
 		if err != nil {
 			if currentNode != nil {
 				currentNode.RequestPath = normalizedPath
@@ -241,7 +241,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 	}
 
 	if strategy.FollowBasenameLinks {
-		currentNode, err = t.resolveNodeLinks(currentNode, !strategy.DoNotFollowDeadBasenameLinks, nil, MaxLinkDepth)
+		currentNode, err = t.resolveNodeLinks(currentNode, !strategy.DoNotFollowDeadBasenameLinks, nil, maxLinkResolutionDepth)
 	}
 	if currentNode != nil {
 		currentNode.RequestPath = normalizedPath
@@ -355,7 +355,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 		// maxLinkDepth is counted across all calls to resolveAncestorLinks and resolveNodeLinks
 		maxLinkDepth--
 		if maxLinkDepth < 1 {
-			return nil, ErrStackDepthExceeded
+			return nil, ErrLinkResolutionDepth
 		}
 
 		nodePath = append(nodePath, *currentNodeAccess)
