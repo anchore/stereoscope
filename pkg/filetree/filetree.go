@@ -337,8 +337,6 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 	if currentlyResolvingLinkPaths == nil {
 		currentlyResolvingLinkPaths = file.NewPathCountSet()
 	}
-	// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing
-	maxLinkDepth--
 
 	// note: this assumes that callers are passing paths in which the constituent parts are NOT symlinks
 	var lastNode *nodeAccess
@@ -393,6 +391,9 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 			return nil, ErrLinkCycleDetected
 		}
 
+		// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing
+		// this is counted across all calls to resolveAncestorLinks and resolveNodeLinks
+		maxLinkDepth--
 		if maxLinkDepth < 1 {
 			return nil, ErrLinkCycleDetected
 		}
