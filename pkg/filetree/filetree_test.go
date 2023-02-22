@@ -1135,6 +1135,7 @@ func TestFileTree_File_ResolutionWithMultipleAncestorResolutionsForSameNode(t *t
 	require.NoError(t, err)
 
 	exists, resolution, err := tr.File("/usr/local/bin/ksh", FollowBasenameLinks)
+  require.NoError(t, err)
 	/*
 		/usr/bin/ksh93 <-- Real file
 		/bin -> /usr/bin
