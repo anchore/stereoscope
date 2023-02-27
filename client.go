@@ -170,5 +170,5 @@ func SetBus(b *partybus.Bus) {
 // Cleanup deletes all directories created by stereoscope calls. Note: please use image.Image.Cleanup() over this
 // function when possible.
 func Cleanup() {
-	log.Warn("cleanup is deprecated - no need to call. please use image.Image.Cleanup()")
+	log.Debug("cleanup is deprecated - no need to call. please use image.Image.Cleanup()")
 }
