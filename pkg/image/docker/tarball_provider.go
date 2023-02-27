@@ -82,5 +82,5 @@ func (p *TarballImageProvider) Provide(_ context.Context, userMetadata ...image.
 		return nil, err
 	}
 
-	return image.New(img, contentTempDir, metadata...), nil
+	return image.New(img, p.tmpDirGen, contentTempDir, metadata...), nil
 }

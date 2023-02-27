@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/scylladb/go-set/strset"
 
@@ -23,6 +22,9 @@ import (
 type Image struct {
 	// image is the raw image metadata and content provider from the GCR lib
 	image v1.Image
+	// tmpDirGen is a dir generator used by Providers. Multiple directories may
+	// be created and cleanup must use this to prevent polluting the disk
+	tmpDirGen *file.TempDirGenerator
 	// contentCacheDir is where all layer tar cache is stored.
 	contentCacheDir string
 	// Metadata contains select image attributes
@@ -131,14 +133,15 @@ func WithOS(o string) AdditionalMetadata {
 
 // NewImage provides a new (unread) image object.
 // Deprecated: use New() instead
-func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
-	return New(image, contentCacheDir, additionalMetadata...)
+func NewImage(image v1.Image, tmpDirGen *file.TempDirGenerator, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
+	return New(image, tmpDirGen, contentCacheDir, additionalMetadata...)
 }
 
 // New provides a new (unread) image object.
-func New(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
+func New(image v1.Image, tmpDirGen *file.TempDirGenerator, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{
 		image:            image,
+		tmpDirGen:        tmpDirGen,
 		contentCacheDir:  contentCacheDir,
 		overrideMetadata: additionalMetadata,
 	}
@@ -341,8 +344,8 @@ func (i *Image) Cleanup() error {
 	if i == nil {
 		return nil
 	}
-	if i.contentCacheDir != "" {
-		if err := os.RemoveAll(i.contentCacheDir); err != nil {
+	if i.tmpDirGen != nil {
+		if err := i.tmpDirGen.Cleanup(); err != nil {
 			return err
 		}
 	}
