@@ -122,17 +122,17 @@ func (p *PullStatus) onEvent(event *pullEvent) {
 	if currentPhase >= AlreadyExistsPhase {
 		phaseProgress.SetCompleted()
 	} else {
-		phaseProgress.N = int64(event.ProgressDetail.Current)
-		phaseProgress.Total = int64(event.ProgressDetail.Total)
+		phaseProgress.Set(int64(event.ProgressDetail.Current))
+		phaseProgress.SetTotal(int64(event.ProgressDetail.Total))
 	}
 
 	if currentPhase == DownloadingPhase {
 		dl := p.downloadProgress[layer]
-		dl.N = int64(event.ProgressDetail.Current)
-		dl.Total = int64(event.ProgressDetail.Total)
+		dl.Set(int64(event.ProgressDetail.Current))
+		dl.SetTotal(int64(event.ProgressDetail.Total))
 	} else if currentPhase >= DownloadCompletePhase {
 		dl := p.downloadProgress[layer]
-		dl.N = dl.Total
+		dl.Set(dl.Size())
 		dl.SetCompleted()
 	}
 }
