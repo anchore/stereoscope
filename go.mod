@@ -29,7 +29,7 @@ require (
 	github.com/sylabs/sif/v2 v2.8.1
 	github.com/sylabs/squashfs v0.6.1
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
-	github.com/wagoodman/go-progress v0.0.0-20200621122631-1a2120f0695a
+	github.com/wagoodman/go-progress v0.0.0-20230301185719-21920a456ad5
 	golang.org/x/crypto v0.0.0-20220315160706-3147a52a75dd
 )
 
@@ -84,5 +84,3 @@ require (
 	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/wagoodman/go-progress => ../go-progress
