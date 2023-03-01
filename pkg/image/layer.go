@@ -240,7 +240,7 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		fileCatalog.addImageReferences(ref.ID(), layerRef, index.Open)
 
 		if monitor != nil {
-			monitor.N++
+			monitor.Increment()
 		}
 		return nil
 	}
@@ -285,7 +285,7 @@ func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 			return r
 		})
 
-		monitor.N++
+		monitor.Increment()
 		return nil
 	}
 }
