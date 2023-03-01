@@ -155,10 +155,10 @@ func (i *Image) IDs() []string {
 }
 
 func (i *Image) trackReadProgress(metadata Metadata) *progress.Manual {
-	prog := &progress.Manual{
+	prog := progress.NewManual(
 		// x2 for read and squash of each layer
-		Total: int64(len(metadata.Config.RootFS.DiffIDs) * 2),
-	}
+		int64(len(metadata.Config.RootFS.DiffIDs) * 2),
+	)
 
 	bus.Publish(partybus.Event{
 		Type:   event.ReadImage,
@@ -217,7 +217,7 @@ func (i *Image) Read() error {
 		i.Metadata.Size += layer.Metadata.Size
 		layers = append(layers, layer)
 
-		readProg.N++
+		readProg.Increment()
 	}
 
 	i.Layers = layers
@@ -257,7 +257,7 @@ func (i *Image) squash(prog *progress.Manual) error {
 		layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 		lastSquashTree = squashedTree
 
-		prog.N++
+		prog.Increment()
 	}
 
 	prog.SetCompleted()
