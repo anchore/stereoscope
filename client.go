@@ -146,7 +146,7 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		}
 		provider = sif.NewProviderFromPath(imgStr, tempDirGenerator)
 	default:
-		return nil, fmt.Errorf("unable determine image source")
+		return nil, fmt.Errorf("unable to determine image source")
 	}
 	return provider, nil
 }
