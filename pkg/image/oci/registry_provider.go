@@ -111,11 +111,15 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	}
 
 	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
-	// If no explicit authenticator can be found, then fallback to the keychain.
+	// If no explicit authenticator can be found, check if explicit Keychain has
+	// been provided, and if not, then fallback to the default keychain.
 	authenticator := registryOptions.Authenticator(ref.Context().RegistryStr())
-	if authenticator != nil {
+	switch {
+	case authenticator != nil:
 		options = append(options, remote.WithAuth(authenticator))
-	} else {
+	case registryOptions.Keychain != nil:
+		options = append(options, remote.WithAuthFromKeychain(registryOptions.Keychain))
+	default:
 		// use the Keychain specified from a docker config file.
 		log.Debugf("no registry credentials configured, using the default keychain")
 		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
