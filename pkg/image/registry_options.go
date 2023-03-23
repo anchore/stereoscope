@@ -6,10 +6,13 @@ import (
 )
 
 // RegistryOptions for the OCI registry provider.
+// If no specific Credential is found in the RegistryCredentials, will check
+// for Keychain, and barring that will use Default Keychain.
 type RegistryOptions struct {
 	InsecureSkipTLSVerify bool
 	InsecureUseHTTP       bool
 	Credentials           []RegistryCredentials
+	Keychain              authn.Keychain
 	Platform              string
 }
 
