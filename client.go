@@ -18,6 +18,8 @@ import (
 	"github.com/wagoodman/go-partybus"
 )
 
+var rootTempDirGenerator = file.NewTempDirGenerator("stereoscope")
+
 func WithRegistryOptions(options image.RegistryOptions) Option {
 	return func(c *config) error {
 		c.Registry = options
@@ -98,7 +100,7 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 
 func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, error) {
 	var provider image.Provider
-	tempDirGenerator := file.NewTempDirGenerator("stereoscope")
+	tempDirGenerator := rootTempDirGenerator.NewGenerator()
 	platformSelectionUnsupported := fmt.Errorf("specified platform=%q however image source=%q does not support selecting platform", cfg.Platform.String(), source.String())
 
 	switch source {
@@ -167,8 +169,10 @@ func SetBus(b *partybus.Bus) {
 	bus.SetPublisher(b)
 }
 
-// Cleanup deletes all directories created by stereoscope calls. Note: please use image.Image.Cleanup() over this
-// function when possible.
+// Cleanup deletes all directories created by stereoscope calls.
+// Deprecated: please use image.Image.Cleanup() over this.
 func Cleanup() {
-	log.Debug("cleanup is deprecated - no need to call. please use image.Image.Cleanup()")
+	if err := rootTempDirGenerator.Cleanup(); err != nil {
+		log.Errorf("failed to cleanup tempdir root: %w", err)
+	}
 }

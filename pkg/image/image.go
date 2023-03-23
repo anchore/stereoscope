@@ -4,7 +4,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"os"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/scylladb/go-set/strset"
 
 	"github.com/anchore/stereoscope/internal/bus"
@@ -344,10 +346,19 @@ func (i *Image) Cleanup() error {
 	if i == nil {
 		return nil
 	}
+	var errs error
 	if i.tmpDirGen != nil {
 		if err := i.tmpDirGen.Cleanup(); err != nil {
-			return err
+			errs = multierror.Append(errs, err)
+		}
+
+		if i.contentCacheDir != "" {
+			if _, err := os.Stat(i.contentCacheDir); !os.IsNotExist(err) {
+				if err := os.RemoveAll(i.contentCacheDir); err != nil {
+					errs = multierror.Append(errs, err)
+				}
+			}
 		}
 	}
-	return nil
+	return errs
 }
