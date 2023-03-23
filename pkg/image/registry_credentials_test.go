@@ -30,6 +30,19 @@ func TestRegistryCredentials_Authenticator(t *testing.T) {
 			}),
 		},
 		{
+			name: "basic auth with authn.Authenticator",
+			credentials: RegistryCredentials{
+				Authenticator: &authn.Basic{
+					Username: exampleUsername,
+					Password: examplePassword,
+				},
+			},
+			authenticatorAssertion: basicAuth(authn.Basic{
+				Username: exampleUsername,
+				Password: examplePassword,
+			}),
+		},
+		{
 			name: "basic auth without username",
 			credentials: RegistryCredentials{
 				Username: "",

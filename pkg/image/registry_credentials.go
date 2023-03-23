@@ -6,18 +6,25 @@ import (
 )
 
 // RegistryCredentials contains any information necessary to authenticate against an OCI-distribution-compliant
-// registry (either with basic auth or bearer token). Note: only valid for the OCI registry provider.
+// registry (either with basic auth, or bearer token, or ggcr authenticator
+// implementation). Note: only valid for the OCI registry provider.
 type RegistryCredentials struct {
 	Authority string
 	Username  string
 	Password  string
 	Token     string
+	// Explicitly pass in the Authenticator, allowing for things like
+	// k8schain to be passed through explicitly.
+	Authenticator authn.Authenticator
 }
 
 // authenticator returns an authn.Authenticator for the given credentials.
 // Authentication methods are attempted in the following order until a viable method is found: (1) basic auth,
 // (2) bearer token. If no viable authentication method is found, authenticator returns nil.
 func (c RegistryCredentials) authenticator() authn.Authenticator {
+	if c.Authenticator != nil {
+		return c.Authenticator
+	}
 	if c.Username != "" && c.Password != "" {
 		log.Debugf("using basic auth for registry %q", c.Authority)
 		return &authn.Basic{
