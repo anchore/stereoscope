@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/scylladb/go-set/strset"
 
 	"github.com/anchore/stereoscope/internal/bus"
@@ -23,6 +24,9 @@ import (
 type Image struct {
 	// image is the raw image metadata and content provider from the GCR lib
 	image v1.Image
+	// tmpDirGen is a dir generator used by Providers. Multiple directories may
+	// be created and cleanup must use this to prevent polluting the disk
+	tmpDirGen *file.TempDirGenerator
 	// contentCacheDir is where all layer tar cache is stored.
 	contentCacheDir string
 	// Metadata contains select image attributes
@@ -131,14 +135,15 @@ func WithOS(o string) AdditionalMetadata {
 
 // NewImage provides a new (unread) image object.
 // Deprecated: use New() instead
-func NewImage(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
-	return New(image, contentCacheDir, additionalMetadata...)
+func NewImage(image v1.Image, tmpDirGen *file.TempDirGenerator, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
+	return New(image, tmpDirGen, contentCacheDir, additionalMetadata...)
 }
 
 // New provides a new (unread) image object.
-func New(image v1.Image, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
+func New(image v1.Image, tmpDirGen *file.TempDirGenerator, contentCacheDir string, additionalMetadata ...AdditionalMetadata) *Image {
 	imgObj := &Image{
 		image:            image,
+		tmpDirGen:        tmpDirGen,
 		contentCacheDir:  contentCacheDir,
 		overrideMetadata: additionalMetadata,
 	}
@@ -341,10 +346,19 @@ func (i *Image) Cleanup() error {
 	if i == nil {
 		return nil
 	}
-	if i.contentCacheDir != "" {
-		if err := os.RemoveAll(i.contentCacheDir); err != nil {
-			return err
+	var errs error
+	if i.tmpDirGen != nil {
+		if err := i.tmpDirGen.Cleanup(); err != nil {
+			errs = multierror.Append(errs, err)
+		}
+
+		if i.contentCacheDir != "" {
+			if _, err := os.Stat(i.contentCacheDir); !os.IsNotExist(err) {
+				if err := os.RemoveAll(i.contentCacheDir); err != nil {
+					errs = multierror.Append(errs, err)
+				}
+			}
 		}
 	}
-	return nil
+	return errs
 }
