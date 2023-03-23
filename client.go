@@ -169,8 +169,8 @@ func SetBus(b *partybus.Bus) {
 	bus.SetPublisher(b)
 }
 
-// Cleanup deletes all directories created by stereoscope calls. Note: please use image.Image.Cleanup() over this
-// function when possible.
+// Cleanup deletes all directories created by stereoscope calls.
+// Deprecated: please use image.Image.Cleanup() over this.
 func Cleanup() {
 	if err := rootTempDirGenerator.Cleanup(); err != nil {
 		log.Errorf("failed to cleanup tempdir root: %w", err)

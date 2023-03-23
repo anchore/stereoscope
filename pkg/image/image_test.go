@@ -3,10 +3,11 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"os"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/google/go-containerregistry/pkg/name"
 )
@@ -98,7 +99,7 @@ func TestImageAdditionalMetadata(t *testing.T) {
 				os.Remove(tempFile.Name())
 			})
 
-			img := New(nil, tempFile.Name(), test.options...)
+			img := New(nil, nil, tempFile.Name(), test.options...)
 
 			err = img.applyOverrideMetadata()
 			if err != nil {
