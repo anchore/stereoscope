@@ -10,8 +10,43 @@ import (
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/assert"
 	"github.com/sylabs/sif/v2/pkg/sif"
 )
+
+func Test(t *testing.T) {
+	cases := []struct {
+		desc        string
+		image       string
+		sourceInput []Source
+		expected    Source
+	}{
+		{
+			desc:        "No input returns UnknownSource",
+			image:       "test:test",
+			sourceInput: []Source{},
+			expected:    UnknownSource,
+		},
+		{
+			desc:  "OciRegistry is returned when preferenced first",
+			image: "test:test",
+			sourceInput: []Source{
+				OciRegistrySource,
+				DockerDaemonSource,
+				PodmanDaemonSource,
+			},
+			expected: OciRegistrySource,
+		},
+		// TODO: dependency injection update to test docker/podman cases
+
+	}
+	for _, c := range cases {
+		t.Run(c.desc, func(t *testing.T) {
+			s := DetermineDefaultImagePullSource(c.image, c.sourceInput)
+			assert.Equal(t, s, c.expected)
+		})
+	}
+}
 
 func TestDetectSource(t *testing.T) {
 	cases := []struct {

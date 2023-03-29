@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/anchore/stereoscope/internal/docker"
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/afero"
@@ -131,43 +133,62 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 	return source, location, nil
 }
 
-// DetermineDefaultImagePullSource takes an image reference string as input, and
-// determines a Source to use to pull the image. If the input doesn't specify an
+func checkImageDaemon(f func() (*client.Client, error)) error {
+	c, err := f()
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		pong, err := c.Ping(ctx)
+		if err == nil && pong.APIVersion != "" {
+			// the daemon exists and is accessible
+			// return the desired source
+			return nil
+		}
+		return err
+	}
+	return err
+}
+
+// DetermineDefaultImagePullSource takes an image reference string as input
+// along with an ordered list of sources to check. It uses these to determine a
+// source to use to pull the image. If the input doesn't specify an
 // image reference (i.e. an image that can be _pulled_), UnknownSource is
 // returned. Otherwise, if the Docker daemon is available, DockerDaemonSource is
 // returned, and if not, OciRegistrySource is returned.
-func DetermineDefaultImagePullSource(userInput string) Source {
+func DetermineDefaultImagePullSource(userInput string, sources []Source) Source {
 	if !isRegistryReference(userInput) {
 		return UnknownSource
 	}
 
-	// verify that the Docker daemon is accessible before assuming we can use it
-	c, err := docker.GetClient()
-	if err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		pong, err := c.Ping(ctx)
-		if err == nil && pong.APIVersion != "" {
-			// the Docker daemon exists and is accessible
+	// check based on preferred order first
+	for _, source := range sources {
+		switch source {
+		case DockerDaemonSource:
+			// verify that the Docker daemon is
+			// accessible before assuming we can use it
+			err := checkImageDaemon(docker.GetClient)
+			if err != nil {
+				log.Tracef("docker daemon not available: %w", err)
+				continue
+			}
 			return DockerDaemonSource
-		}
-	}
-
-	c, err = podman.GetClient()
-	if err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		pong, err := c.Ping(ctx)
-		if err == nil && pong.APIVersion != "" {
-			// the Docker daemon exists and is accessible
+		// verify that the Podman daemon is
+		// accessible before assuming we can use it
+		case PodmanDaemonSource:
+			err := checkImageDaemon(podman.GetClient)
+			if err != nil {
+				log.Tracef("podman daemon not available: %w", err)
+				continue
+			}
 			return PodmanDaemonSource
+		case OciRegistrySource:
+			return OciRegistrySource
 		}
 	}
 
-	// fallback to using the registry directly
-	return OciRegistrySource
+	// daemons could not be accessed and OciRegistrySource was not a given option
+	return UnknownSource
 }
 
 // DetectSourceFromPath will distinguish between a oci-layout dir, oci-archive, and a docker-archive for a given filesystem.
