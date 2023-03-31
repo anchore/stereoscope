@@ -45,7 +45,7 @@ func isInPathResolutionLoop(path string, ft *FileTree) (bool, error) {
 	allPathSet := file.NewPathSet()
 	allPaths := file.Path(path).AllPaths()
 	for _, p := range allPaths {
-		fna, err := ft.node(p, linkResolutionStrategy{
+		fna, err := ft.node(p, LinkResolutionStrategy{
 			FollowAncestorLinks: true,
 			FollowBasenameLinks: true,
 		})
@@ -88,7 +88,7 @@ func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]fs.DirEntry, 0)
-	fna, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
+	fna, err := f.filetree.node(file.Path(f.name), LinkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
@@ -127,7 +127,7 @@ type osAdapter struct {
 
 func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 	var ret = make([]fs.DirEntry, 0)
-	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), LinkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
@@ -159,7 +159,7 @@ func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
 func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
-	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), LinkResolutionStrategy{
 		FollowAncestorLinks: true,
 		// Lstat by definition requires that basename symlinks are not followed
 		FollowBasenameLinks:          false,
@@ -189,7 +189,7 @@ func (a *osAdapter) Open(name string) (fs.File, error) {
 
 // Stat returns a FileInfo describing the named file.
 func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
-	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), LinkResolutionStrategy{
 		FollowAncestorLinks:          true,
 		FollowBasenameLinks:          true,
 		DoNotFollowDeadBasenameLinks: a.doNotFollowDeadBasenameLinks,

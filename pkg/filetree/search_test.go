@@ -2,13 +2,14 @@ package filetree
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func Test_searchContext_SearchByPath(t *testing.T) {
@@ -481,7 +482,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx := NewIndex()
 				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
 
-				na, err := tree.node("/path/to", linkResolutionStrategy{
+				na, err := tree.node("/path/to", LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -517,7 +518,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
 				idx.Add(*deafLinkRef, file.Metadata{Type: file.TypeSymLink})
 
-				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(fileRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -560,7 +561,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*link2, file.Metadata{Type: file.TypeSymLink})
 				idx.Add(*link3, file.Metadata{Type: file.TypeSymLink})
 
-				na, err := tree.node(link1.RealPath, linkResolutionStrategy{
+				na, err := tree.node(link1.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -614,7 +615,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*x11LinkRef, file.Metadata{Type: file.TypeSymLink})
 				idx.Add(*ttydRef, file.Metadata{Type: file.TypeRegular})
 
-				na, err := tree.node(ttydRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(ttydRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -651,7 +652,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*fileRef, file.Metadata{MIMEType: "plain/text", Type: file.TypeRegular})
 				idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymLink})
 
-				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(fileRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -694,7 +695,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*linkToFileRef, file.Metadata{Type: file.TypeSymLink})
 				idx.Add(*doubleLinkToFileRef, file.Metadata{Type: file.TypeSymLink})
 
-				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(fileRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -736,7 +737,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*linkToToRef, file.Metadata{Type: file.TypeSymLink})
 				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
 
-				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(fileRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -784,7 +785,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*linkToPathRef, file.Metadata{Type: file.TypeSymLink})
 				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
 
-				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(fileRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -844,7 +845,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*anotherLinkToToRef, file.Metadata{Type: file.TypeSymLink})
 				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
 
-				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(fileRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -912,7 +913,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
 				idx.Add(*dirAnother, file.Metadata{Type: file.TypeDirectory})
 
-				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(fileRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,
@@ -980,7 +981,7 @@ func Test_searchContext_allPathsToNode(t *testing.T) {
 				idx.Add(*dirTo, file.Metadata{Type: file.TypeDirectory})
 				idx.Add(*dirAnother, file.Metadata{Type: file.TypeDirectory})
 
-				na, err := tree.node(fileRef.RealPath, linkResolutionStrategy{
+				na, err := tree.node(fileRef.RealPath, LinkResolutionStrategy{
 					FollowAncestorLinks:          false,
 					FollowBasenameLinks:          false,
 					DoNotFollowDeadBasenameLinks: false,

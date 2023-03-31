@@ -45,7 +45,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	parent := file.Path("/home/wagoodman")
 	child := file.Path("/home/wagoodman/awesome")
 
-	n, err := tr.node(parent, linkResolutionStrategy{})
+	n, err := tr.node(parent, LinkResolutionStrategy{})
 	if err != nil {
 		t.Fatalf("could not get parent Node: %+v", err)
 	}
@@ -484,7 +484,7 @@ func TestFileTree_Merge_DirOverride(t *testing.T) {
 		}
 	}
 
-	n, err := tr1.node("/home/wagoodman/awesome/place", linkResolutionStrategy{})
+	n, err := tr1.node("/home/wagoodman/awesome/place", LinkResolutionStrategy{})
 	if err != nil {
 		t.Fatalf("could not get override dir: %+v", err)
 	}
@@ -523,7 +523,7 @@ func TestFileTree_Merge_RemoveChildPathsOnOverride(t *testing.T) {
 	}
 
 	// explicitly ensure that the dir that was overridden to a file is explicitly that
-	fileNode, err := lowerTree.node("/home/wagoodman/awesome/place", linkResolutionStrategy{})
+	fileNode, err := lowerTree.node("/home/wagoodman/awesome/place", LinkResolutionStrategy{})
 	if err != nil {
 		t.Fatalf("could not get override dir: %+v", err)
 	}
@@ -1177,7 +1177,7 @@ func TestFileTreeMaxLinkDepth(t *testing.T) {
 
 	_, err = tr.AddSymLink("/usr/bin/ksh", "/etc/alternatives/ksh")
 	require.NoError(t, err)
-	rs := linkResolutionStrategy{}
+	rs := LinkResolutionStrategy{}
 
 	currentNode, err := tr.node("/usr/local/bin/ksh", rs)
 	require.NoError(t, err)

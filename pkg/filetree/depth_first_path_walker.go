@@ -31,6 +31,8 @@ type WalkConditions struct {
 	// Whether we should consider children of this Node to be included in the traversal path.
 	// Return true to traverse children of this Node.
 	ShouldContinueBranch func(file.Path, filenode.FileNode) bool
+
+	LinkStrategy *LinkResolutionStrategy
 }
 
 // DepthFirstPathWalker implements stateful depth-first Tree traversal.
@@ -61,20 +63,27 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 	var (
 		currentPath file.Path
 		currentNode *nodeAccess
+		linkStrat   *LinkResolutionStrategy
 		err         error
 	)
 
 	for w.pathStack.Size() > 0 {
 		currentPath = w.pathStack.Pop()
-		// TODO: should we make these link resolutions configurable so you can observe the links on walk as well? (take link resolution options as a parameter)
-		currentNode, err = w.tree.node(currentPath, linkResolutionStrategy{
-			FollowAncestorLinks:          true,
-			FollowBasenameLinks:          true,
-			DoNotFollowDeadBasenameLinks: true,
-		})
+		linkStrat = w.conditions.LinkStrategy
+
+		if linkStrat == nil {
+			linkStrat = &LinkResolutionStrategy{
+				FollowAncestorLinks:          true,
+				FollowBasenameLinks:          true,
+				DoNotFollowDeadBasenameLinks: true,
+			}
+		}
+
+		currentNode, err = w.tree.node(currentPath, *linkStrat)
 		if err != nil {
 			return "", nil, err
 		}
+
 		if !currentNode.HasFileNode() {
 			return "", nil, fmt.Errorf("nil Node at path=%q", currentPath)
 		}

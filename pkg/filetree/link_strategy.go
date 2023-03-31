@@ -18,16 +18,16 @@ const (
 // LinkResolutionOption is a single link resolution rule.
 type LinkResolutionOption int
 
-// linkResolutionStrategy describes the full set of possible link resolution rules and their indications (to follow or not).
-type linkResolutionStrategy struct {
+// LinkResolutionStrategy describes the full set of possible link resolution rules and their indications (to follow or not).
+type LinkResolutionStrategy struct {
 	FollowAncestorLinks          bool
 	FollowBasenameLinks          bool
 	DoNotFollowDeadBasenameLinks bool
 }
 
 // newLinkResolutionStrategy creates a new linkResolutionStrategy for the given set of LinkResolutionOptions.
-func newLinkResolutionStrategy(options ...LinkResolutionOption) linkResolutionStrategy {
-	s := linkResolutionStrategy{}
+func newLinkResolutionStrategy(options ...LinkResolutionOption) LinkResolutionStrategy {
+	s := LinkResolutionStrategy{}
 	for _, o := range options {
 		switch o {
 		case FollowBasenameLinks:
@@ -43,6 +43,6 @@ func newLinkResolutionStrategy(options ...LinkResolutionOption) linkResolutionSt
 
 // FollowLinks indicates if the current strategy supports following links in one way or another (either in path
 // ancestors or basename).
-func (s linkResolutionStrategy) FollowLinks() bool {
+func (s LinkResolutionStrategy) FollowLinks() bool {
 	return s.FollowAncestorLinks || s.FollowBasenameLinks
 }
