@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/anchore/stereoscope/internal/log"
 
@@ -19,13 +20,16 @@ type Metadata struct {
 	// LinkDestination is populated only for hardlinks / symlinks, can be an absolute or relative
 	LinkDestination string
 	// Size of the file in bytes
-	Size     int64
-	UserID   int
-	GroupID  int
-	Type     Type
-	IsDir    bool
-	Mode     os.FileMode
-	MIMEType string
+	Size       int64
+	UserID     int
+	GroupID    int
+	Type       Type
+	IsDir      bool
+	Mode       os.FileMode
+	MIMEType   string
+	ModTime    time.Time
+	AccessTime time.Time
+	ChangeTime time.Time
 }
 
 func NewMetadata(header tar.Header, content io.Reader) Metadata {
@@ -38,6 +42,9 @@ func NewMetadata(header tar.Header, content io.Reader) Metadata {
 		UserID:          header.Uid,
 		GroupID:         header.Gid,
 		IsDir:           header.FileInfo().IsDir(),
+		ModTime:         header.ModTime,
+		AccessTime:      header.AccessTime,
+		ChangeTime:      header.ChangeTime,
 		MIMEType:        MIMEType(content),
 	}
 }
@@ -79,6 +86,7 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 		Size:            fi.Size(),
 		IsDir:           f.IsDir(),
 		Mode:            fi.Mode(),
+		ModTime:         fi.ModTime(),
 		Type:            ty,
 	}
 
@@ -121,5 +129,6 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 		Size:     info.Size(),
 		MIMEType: mimeType,
 		IsDir:    info.IsDir(),
+		ModTime:  info.ModTime(),
 	}
 }

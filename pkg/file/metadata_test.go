@@ -4,12 +4,14 @@
 package file
 
 import (
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/go-test/deep"
 )
@@ -18,13 +20,13 @@ func TestFileMetadataFromTar(t *testing.T) {
 	tarReader := getTarFixture(t, "fixture-1")
 
 	expected := []Metadata{
-		{Path: "/path", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/one", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o700, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/one/file-1.txt", Type: TypeRegular, LinkDestination: "", Size: 11, Mode: 0o700, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
-		{Path: "/path/branch/two", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/two/file-2.txt", Type: TypeRegular, LinkDestination: "", Size: 12, Mode: 0o755, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
-		{Path: "/path/file-3.txt", Type: TypeRegular, LinkDestination: "", Size: 11, Mode: 0o664, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
+		{Path: "/path", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: "", ModTime: time.Time{}, AccessTime: time.Time{}, ChangeTime: time.Time{}},
+		{Path: "/path/branch", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: "", ModTime: time.Time{}, AccessTime: time.Time{}, ChangeTime: time.Time{}},
+		{Path: "/path/branch/one", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o700, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: "", ModTime: time.Time{}, AccessTime: time.Time{}, ChangeTime: time.Time{}},
+		{Path: "/path/branch/one/file-1.txt", Type: TypeRegular, LinkDestination: "", Size: 11, Mode: 0o700, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain", ModTime: time.Time{}, AccessTime: time.Time{}, ChangeTime: time.Time{}},
+		{Path: "/path/branch/two", Type: TypeDirectory, LinkDestination: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: "", ModTime: time.Time{}, AccessTime: time.Time{}, ChangeTime: time.Time{}},
+		{Path: "/path/branch/two/file-2.txt", Type: TypeRegular, LinkDestination: "", Size: 12, Mode: 0o755, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain", ModTime: time.Time{}, AccessTime: time.Time{}, ChangeTime: time.Time{}},
+		{Path: "/path/file-3.txt", Type: TypeRegular, LinkDestination: "", Size: 11, Mode: 0o664, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain", ModTime: time.Time{}, AccessTime: time.Time{}, ChangeTime: time.Time{}},
 	}
 
 	var actual []Metadata
@@ -33,6 +35,11 @@ func TestFileMetadataFromTar(t *testing.T) {
 		if strings.HasSuffix(entry.Header.Name, ".txt") {
 			contents = strings.NewReader("#!/usr/bin/env bash\necho 'awesome script'")
 		}
+
+		entry.Header.ModTime = time.Time{}
+		entry.Header.ChangeTime = time.Time{}
+		entry.Header.AccessTime = time.Time{}
+
 		actual = append(actual, NewMetadata(entry.Header, contents))
 		return nil
 	}

@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -93,6 +94,9 @@ func TestMetadataFromTar(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			f := getTarFixture(t, test.fixture)
 			metadata, err := MetadataFromTar(f, test.name)
+			metadata.ModTime = time.Time{}
+			metadata.AccessTime = time.Time{}
+			metadata.ChangeTime = time.Time{}
 			assert.NoError(t, err)
 			assert.Equal(t, test.expected, metadata)
 		})
