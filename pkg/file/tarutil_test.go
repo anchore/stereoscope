@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -71,6 +72,9 @@ func TestMetadataFromTar(t *testing.T) {
 				IsDir:           false,
 				Mode:            0x1ed,
 				MIMEType:        "application/octet-stream",
+				ModTime:         time.Date(2019, time.September, 16, 0, 0, 0, 0, time.UTC),
+				AccessTime:      time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
+				ChangeTime:      time.Time{},
 			},
 		},
 		{
@@ -86,6 +90,9 @@ func TestMetadataFromTar(t *testing.T) {
 				IsDir:           true,
 				Mode:            0x800001ed,
 				MIMEType:        "",
+				ModTime:         time.Date(2019, time.September, 16, 0, 0, 0, 0, time.UTC),
+				AccessTime:      time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
+				ChangeTime:      time.Time{},
 			},
 		},
 	}

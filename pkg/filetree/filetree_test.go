@@ -3,8 +3,9 @@ package filetree
 import (
 	"errors"
 	"fmt"
-	"github.com/scylladb/go-set/strset"
 	"testing"
+
+	"github.com/scylladb/go-set/strset"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
