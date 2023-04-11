@@ -86,7 +86,7 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 		Size:            fi.Size(),
 		IsDir:           f.IsDir(),
 		Mode:            fi.Mode(),
-		ModTime:         fi.ModTime(),
+		ModTime:         fi.ModTime().UTC(),
 		Type:            ty,
 	}
 
@@ -129,6 +129,6 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 		Size:     info.Size(),
 		MIMEType: mimeType,
 		IsDir:    info.IsDir(),
-		ModTime:  info.ModTime(),
+		ModTime:  info.ModTime().UTC(),
 	}
 }
