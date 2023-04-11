@@ -381,7 +381,7 @@ func (sc searchContext) _pathsToNode(fn *filenode.FileNode, observedPaths file.P
 			nestedSuffix := nextNestedSuffix
 			nextNestedSuffix = path.Join(pp.Basename(), nestedSuffix)
 
-			pna, err := sc.tree.node(pp, LinkResolutionStrategy{
+			pna, err := sc.tree.node(pp, linkResolutionStrategy{
 				FollowAncestorLinks: true,
 				FollowBasenameLinks: false,
 			})
