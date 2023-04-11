@@ -42,9 +42,9 @@ func NewMetadata(header tar.Header, content io.Reader) Metadata {
 		UserID:          header.Uid,
 		GroupID:         header.Gid,
 		IsDir:           header.FileInfo().IsDir(),
-		ModTime:         header.ModTime,
-		AccessTime:      header.AccessTime,
-		ChangeTime:      header.ChangeTime,
+		ModTime:         header.ModTime.UTC(),
+		AccessTime:      header.AccessTime.UTC(),
+		ChangeTime:      header.ChangeTime.UTC(),
 		MIMEType:        MIMEType(content),
 	}
 }
