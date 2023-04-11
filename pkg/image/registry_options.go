@@ -14,6 +14,9 @@ type RegistryOptions struct {
 	Credentials           []RegistryCredentials
 	Keychain              authn.Keychain
 	Platform              string
+	CAFile                string
+	ClientCert            string
+	ClientKey             string
 }
 
 // Authenticator returns an object capable of authenticating against the given registry. If no credentials match the
