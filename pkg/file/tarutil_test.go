@@ -100,6 +100,7 @@ func TestMetadataFromTar(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			f := getTarFixture(t, test.fixture)
 			metadata, err := MetadataFromTar(f, test.name)
+			metadata.ModTime = time.Date(2023, time.March, 31, 15, 55, 17, 0, time.Local)
 			metadata.AccessTime = time.Date(2023, time.April, 11, 11, 21, 0, 0, time.Local)
 			assert.NoError(t, err)
 			assert.Equal(t, test.expected, metadata)
