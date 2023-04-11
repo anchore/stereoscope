@@ -72,6 +72,9 @@ func TestMetadataFromTar(t *testing.T) {
 				IsDir:           false,
 				Mode:            0x1ed,
 				MIMEType:        "application/octet-stream",
+				ModTime:         time.Date(2023, time.March, 31, 15, 55, 17, 0, time.Local),
+				AccessTime:      time.Date(2023, time.April, 11, 11, 21, 0, 0, time.Local),
+				ChangeTime:      time.Time{},
 			},
 		},
 		{
@@ -87,6 +90,9 @@ func TestMetadataFromTar(t *testing.T) {
 				IsDir:           true,
 				Mode:            0x800001ed,
 				MIMEType:        "",
+				ModTime:         time.Date(2023, time.March, 31, 15, 55, 17, 0, time.Local),
+				AccessTime:      time.Date(2023, time.April, 11, 11, 21, 0, 0, time.Local),
+				ChangeTime:      time.Time{},
 			},
 		},
 	}
@@ -94,9 +100,7 @@ func TestMetadataFromTar(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			f := getTarFixture(t, test.fixture)
 			metadata, err := MetadataFromTar(f, test.name)
-			metadata.ModTime = time.Time{}
-			metadata.AccessTime = time.Time{}
-			metadata.ChangeTime = time.Time{}
+			metadata.AccessTime = time.Date(2023, time.April, 11, 11, 21, 0, 0, time.Local)
 			assert.NoError(t, err)
 			assert.Equal(t, test.expected, metadata)
 		})
