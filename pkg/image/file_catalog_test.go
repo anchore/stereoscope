@@ -6,11 +6,6 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"os"
 	"os/exec"
@@ -18,6 +13,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/go-test/deep"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -359,7 +360,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "ModTime", "AccessTime", "ChangeTime"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -461,7 +462,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "ModTime", "AccessTime", "ChangeTime"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -571,7 +572,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "ModTime", "AccessTime", "ChangeTime"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -672,7 +673,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size", "ModTime", "AccessTime", "ChangeTime"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}

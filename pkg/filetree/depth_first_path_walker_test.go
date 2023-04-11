@@ -2,11 +2,12 @@ package filetree
 
 import (
 	"errors"
+	"strings"
+	"testing"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/go-test/deep"
-	"strings"
-	"testing"
 )
 
 func dfsTestTree(t *testing.T) (*FileTree, map[string]*file.Reference) {
