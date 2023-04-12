@@ -8,10 +8,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-test/deep"
 	"github.com/sergi/go-diff/diffmatchpatch"
 
 	"github.com/anchore/go-testutils"
-	"github.com/go-test/deep"
 )
 
 var update = flag.Bool("update", false, "update the *.golden files for the oci manifest assembly test")

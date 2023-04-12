@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/scylladb/go-set/strset"
-
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/scylladb/go-set/strset"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestFileTree_AddPath(t *testing.T) {

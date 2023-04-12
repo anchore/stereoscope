@@ -3,12 +3,12 @@ package parsers
 import (
 	"fmt"
 
-	"github.com/anchore/stereoscope/pkg/image/docker"
+	"github.com/wagoodman/go-partybus"
+	"github.com/wagoodman/go-progress"
 
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/wagoodman/go-partybus"
-	"github.com/wagoodman/go-progress"
+	"github.com/anchore/stereoscope/pkg/image/docker"
 )
 
 type ErrBadPayload struct {

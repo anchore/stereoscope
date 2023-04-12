@@ -5,9 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-test/deep"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-	"github.com/go-test/deep"
 )
 
 func dfsTestTree(t *testing.T) (*FileTree, map[string]*file.Reference) {

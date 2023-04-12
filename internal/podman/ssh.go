@@ -12,11 +12,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/docker/pkg/homedir"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 type sshClientConfig struct {

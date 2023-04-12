@@ -9,16 +9,17 @@ import (
 	"os"
 	"path"
 
-	"github.com/anchore/stereoscope/internal/bus"
-	"github.com/anchore/stereoscope/internal/log"
-	"github.com/anchore/stereoscope/pkg/event"
-	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/filetree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sylabs/squashfs"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
+
+	"github.com/anchore/stereoscope/internal/bus"
+	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/event"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
 const SingularitySquashFSLayer = "application/vnd.sylabs.sif.layer.v1.squashfs"

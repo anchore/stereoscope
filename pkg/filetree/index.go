@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/anchore/stereoscope/internal/log"
-
-	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/becheran/wildmatch-go"
 	"github.com/scylladb/go-set/strset"
+
+	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/file"
 )
 
 type Index interface {

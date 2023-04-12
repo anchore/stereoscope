@@ -1,8 +1,9 @@
 package image
 
 import (
-	"github.com/anchore/stereoscope/internal/log"
 	"github.com/google/go-containerregistry/pkg/authn"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 // RegistryCredentials contains any information necessary to authenticate against an OCI-distribution-compliant
