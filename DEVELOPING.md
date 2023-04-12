@@ -12,7 +12,7 @@ After cloning the following step can help you get setup:
 1. run `make bootstrap` to download go mod dependencies, create the `/.tmp` dir, and download helper utilities.
 2. run `make help` to view the selection of developer commands in the Makefile
 
-The main make tasks for common static analysis and testing are `lint`, `lint-fix`, `unit`, and `integration`.
+The main make tasks for common static analysis and testing are `lint`, `format`, `lint-fix`, `unit`, and `integration`.
 
 See `make help` for all the current make tasks.
 
