@@ -5,12 +5,12 @@ import (
 	"path"
 	"sort"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/tree/node"
-
-	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/bmatcuk/doublestar/v4"
 )
 
 // Searcher is a facade for searching a file tree with optional indexing support.

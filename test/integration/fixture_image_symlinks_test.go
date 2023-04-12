@@ -5,15 +5,16 @@ package integration
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"io"
 	"testing"
+
+	"github.com/scylladb/go-set"
+	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	"github.com/scylladb/go-set"
 )
 
 type linkFetchConfig struct {

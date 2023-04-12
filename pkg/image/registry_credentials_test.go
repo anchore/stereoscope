@@ -3,9 +3,8 @@ package image
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRegistryCredentials_Authenticator(t *testing.T) {

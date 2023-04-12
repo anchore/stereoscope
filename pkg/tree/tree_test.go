@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/anchore/stereoscope/pkg/tree/node"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
 type testNode struct {

@@ -10,15 +10,16 @@ import (
 	"strings"
 	"testing"
 
+	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/scylladb/go-set"
+	"github.com/stretchr/testify/require"
+
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/sif"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/scylladb/go-set"
-	"github.com/stretchr/testify/require"
 )
 
 // Common layer metadata for OCI / Docker / Podman. MediaType will be filled in during test.

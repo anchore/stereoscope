@@ -3,12 +3,14 @@ package integration
 import (
 	"context"
 	"fmt"
-	"github.com/anchore/stereoscope"
-	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/anchore/stereoscope"
+	"github.com/anchore/stereoscope/pkg/image"
 )
 
 func TestPlatformSelection(t *testing.T) {

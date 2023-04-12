@@ -7,15 +7,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/scylladb/go-set/strset"
-
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/scylladb/go-set/iset"
+	"github.com/scylladb/go-set/strset"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/tree"
 	"github.com/anchore/stereoscope/pkg/tree/node"
-	"github.com/bmatcuk/doublestar/v4"
 )
 
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")

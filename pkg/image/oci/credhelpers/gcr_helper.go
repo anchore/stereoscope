@@ -6,6 +6,7 @@ import (
 	"github.com/GoogleCloudPlatform/docker-credential-gcr/config"
 	"github.com/GoogleCloudPlatform/docker-credential-gcr/credhelper"
 	"github.com/GoogleCloudPlatform/docker-credential-gcr/store"
+
 	"github.com/anchore/stereoscope/pkg/image"
 )
 

@@ -1,11 +1,13 @@
 package stereoscope
 
 import (
-	"github.com/anchore/stereoscope/pkg/image"
+	"testing"
+
 	"github.com/scylladb/go-set/i8set"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
+
+	"github.com/anchore/stereoscope/pkg/image"
 )
 
 func Test_setPlatform(t *testing.T) {

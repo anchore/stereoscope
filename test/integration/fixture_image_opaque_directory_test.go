@@ -1,10 +1,11 @@
 package integration
 
 import (
+	"testing"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	"testing"
 )
 
 func TestImage_SquashedTree_OpaqueDirectoryExistsInFileCatalog(t *testing.T) {

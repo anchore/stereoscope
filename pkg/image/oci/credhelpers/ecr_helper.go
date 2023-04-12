@@ -1,8 +1,9 @@
 package credhelpers
 
 import (
-	"github.com/anchore/stereoscope/pkg/image"
 	ecr "github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
+
+	"github.com/anchore/stereoscope/pkg/image"
 )
 
 type ECRHelper struct {
