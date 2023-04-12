@@ -2,12 +2,13 @@ TEMP_DIR = ./.tmp
 
 # Command templates #################################
 LINT_CMD = $(TEMP_DIR)/golangci-lint run --tests=false --config .golangci.yaml
+GOIMPORTS_CMD := $(TEMP_DIR)/gosimports -local github.com/anchore
 
 # Tool versions #################################
-GOLANGCILINT_VERSION := v1.51.0
-GOSIMPORTS_VERSION := v0.3.5
+GOLANGCILINT_VERSION := v1.52.2
+GOSIMPORTS_VERSION := v0.3.8
 BOUNCER_VERSION := v0.4.0
-CHRONICLE_VERSION := v0.5.1
+CHRONICLE_VERSION := v0.6.0
 
 # Formatting variables #################################
 BOLD := $(shell tput -T linux bold)
@@ -91,16 +92,30 @@ static-analysis: check-licenses lint
 .PHONY: lint
 lint: ## Run gofmt + golangci lint checks
 	$(call title,Running linters)
+	# ensure there are no go fmt differences
 	@printf "files with gofmt issues: [$(shell gofmt -l -s .)]\n"
 	@test -z "$(shell gofmt -l -s .)"
+
+	# run all golangci-lint rules
 	$(LINT_CMD)
+	@[ -z "$(shell $(GOIMPORTS_CMD) -d .)" ] || (echo "goimports needs to be fixed" && false)
+
+	# go tooling does not play well with certain filename characters, ensure the common cases don't result in future "go get" failures
+	$(eval MALFORMED_FILENAMES := $(shell find . | grep -v tar-cache | grep -e ':'))
+	@bash -c "[[ '$(MALFORMED_FILENAMES)' == '' ]] || (printf '\nfound unsupported filename characters:\n$(MALFORMED_FILENAMES)\n\n' && false)"
+
+
+.PHONY: format
+format: ## Auto-format all source code
+	$(call title,Running formatters)
+	gofmt -w -s .
+	$(GOIMPORTS_CMD) -w .
+	go mod tidy
 
 .PHONY: lint-fix
-lint-fix: ## Auto-format all source code + run golangci lint fixers
+lint-fix: format  ## Auto-format all source code + run golangci lint fixers
 	$(call title,Running lint fixers)
-	gofmt -w -s .
 	$(LINT_CMD) --fix
-	go mod tidy
 
 .PHONY: check-licenses
 check-licenses:
