@@ -3,8 +3,9 @@ package oci
 import (
 	"testing"
 
-	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/anchore/stereoscope/pkg/file"
 )
 
 func Test_NewProviderFromPath(t *testing.T) {

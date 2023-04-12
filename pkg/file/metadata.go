@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/anchore/stereoscope/internal/log"
-
 	"github.com/sylabs/squashfs"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 // Metadata represents all file metadata of interest (used today for in-tar file resolution).

@@ -3,11 +3,11 @@ package docker
 import (
 	"encoding/base64"
 	"encoding/json"
-	"github.com/stretchr/testify/require"
 	"testing"
 
 	configTypes "github.com/docker/cli/cli/config/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEncodeCredentials(t *testing.T) {

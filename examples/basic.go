@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/anchore/go-logger"
 	"github.com/anchore/go-logger/adapter/logrus"
-
-	"os"
-
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"

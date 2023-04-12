@@ -1,11 +1,11 @@
 package integration
 
 import (
-	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/image"
 )
 

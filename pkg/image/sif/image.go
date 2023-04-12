@@ -7,11 +7,12 @@ import (
 	"io"
 	"os"
 
-	"github.com/anchore/stereoscope/pkg/image"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sylabs/sif/v2/pkg/sif"
+
+	"github.com/anchore/stereoscope/pkg/image"
 )
 
 const SingularityMediaType = "application/vnd.sylabs.sif.layer.v1.sif"

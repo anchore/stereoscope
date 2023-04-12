@@ -7,9 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 )
 
 // basic interface assertion

@@ -1,8 +1,9 @@
 package image
 
 import (
-	"github.com/anchore/stereoscope/internal/log"
 	"github.com/google/go-containerregistry/pkg/authn"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 // RegistryOptions for the OCI registry provider.
