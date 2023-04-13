@@ -4,7 +4,9 @@
 package filetree
 
 import (
+	"io/fs"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -13,6 +15,20 @@ import (
 
 	"github.com/anchore/stereoscope/pkg/file"
 )
+
+type mockFileInfo struct {
+	name    string
+	size    int64
+	mode    fs.FileMode
+	modTime time.Time
+}
+
+func (fi mockFileInfo) Name() string       { return fi.name }
+func (fi mockFileInfo) Size() int64        { return fi.size }
+func (fi mockFileInfo) Mode() fs.FileMode  { return fi.mode }
+func (fi mockFileInfo) ModTime() time.Time { return fi.modTime }
+func (fi mockFileInfo) IsDir() bool        { return fi.mode.IsDir() }
+func (fi mockFileInfo) Sys() any           { return nil }
 
 func commonIndexFixture(t *testing.T) Index {
 	t.Helper()
@@ -24,7 +40,7 @@ func commonIndexFixture(t *testing.T) Index {
 		ref, err := tree.AddDir(path)
 		require.NoError(t, err, "failed to add DIR reference to index")
 		require.NotNil(t, ref, "failed to add DIR reference to index (nil ref")
-		idx.Add(*ref, file.Metadata{Path: string(path), Type: file.TypeDirectory, IsDir: true})
+		idx.Add(*ref, file.Metadata{FileInfo: mockFileInfo{mode: fs.ModeDir}, Path: string(path), Type: file.TypeDirectory})
 	}
 
 	addFile := func(path file.Path) {
@@ -38,7 +54,7 @@ func commonIndexFixture(t *testing.T) Index {
 		ref, err := tree.AddSymLink(from, to)
 		require.NoError(t, err, "failed to add LINK reference to index")
 		require.NotNil(t, ref, "failed to add LINK reference to index (nil ref")
-		idx.Add(*ref, file.Metadata{Path: string(from), LinkDestination: string(to), Type: file.TypeSymLink})
+		idx.Add(*ref, file.Metadata{FileInfo: mockFileInfo{mode: fs.ModeSymlink}, Path: string(from), LinkDestination: string(to), Type: file.TypeSymLink})
 	}
 
 	//  mkdir -p path/branch.d/one
@@ -202,42 +218,52 @@ func TestFileCatalog_GetByFileType(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path"},
 					Metadata: file.Metadata{
-						Path:  "/path",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: mockFileInfo{
+							mode: fs.ModeDir,
+						},
+						Path: "/path",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
 
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: mockFileInfo{
+							mode: fs.ModeDir,
+						},
+						Path: "/path/branch.d",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/one"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d/one",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: mockFileInfo{
+							mode: fs.ModeDir,
+						},
+						Path: "/path/branch.d/one",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d/two"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d/two",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: mockFileInfo{
+							mode: fs.ModeDir,
+						},
+						Path: "/path/branch.d/two",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
 					Reference: file.Reference{RealPath: "/path/common"},
 					Metadata: file.Metadata{
-						Path:  "/path/common",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: mockFileInfo{
+							mode: fs.ModeDir,
+						},
+						Path: "/path/common",
+						Type: file.TypeDirectory,
 					},
 				},
 			},
@@ -299,7 +325,7 @@ func TestFileCatalog_GetByFileType(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -355,9 +381,11 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: mockFileInfo{
+							mode: fs.ModeDir,
+						},
+						Path: "/path/branch.d",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
@@ -453,7 +481,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -496,9 +524,11 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: mockFileInfo{
+							mode: fs.ModeDir,
+						},
+						Path: "/path/branch.d",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
@@ -544,7 +574,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -595,9 +625,11 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: mockFileInfo{
+							mode: fs.ModeDir,
+						},
+						Path: "/path/branch.d",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
@@ -643,7 +675,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -733,7 +765,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}

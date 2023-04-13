@@ -57,12 +57,12 @@ func TestMetadataFromTar(t *testing.T) {
 	tests := []struct {
 		name     string
 		fixture  string
-		expected Metadata
+		expected expected
 	}{
 		{
 			name:    "path/branch/two/file-2.txt",
 			fixture: "fixture-1",
-			expected: Metadata{
+			expected: expected{
 				Path:            "/path/branch/two/file-2.txt",
 				LinkDestination: "",
 				Size:            12,
@@ -72,15 +72,13 @@ func TestMetadataFromTar(t *testing.T) {
 				IsDir:           false,
 				Mode:            0x1ed,
 				MIMEType:        "application/octet-stream",
-				ModTime:         time.Date(2019, time.September, 16, 0, 0, 0, 0, time.UTC),
-				AccessTime:      time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-				ChangeTime:      time.Time{},
+				ModTime:         time.Date(2019, time.September, 16, 0, 0, 0, 0, time.Local),
 			},
 		},
 		{
 			name:    "path/branch/two/",
 			fixture: "fixture-1",
-			expected: Metadata{
+			expected: expected{
 				Path:            "/path/branch/two",
 				LinkDestination: "",
 				Size:            0,
@@ -90,9 +88,7 @@ func TestMetadataFromTar(t *testing.T) {
 				IsDir:           true,
 				Mode:            0x800001ed,
 				MIMEType:        "",
-				ModTime:         time.Date(2019, time.September, 16, 0, 0, 0, 0, time.UTC),
-				AccessTime:      time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-				ChangeTime:      time.Time{},
+				ModTime:         time.Date(2019, time.September, 16, 0, 0, 0, 0, time.Local),
 			},
 		},
 	}
@@ -101,7 +97,7 @@ func TestMetadataFromTar(t *testing.T) {
 			f := getTarFixture(t, test.fixture)
 			metadata, err := MetadataFromTar(f, test.name)
 			assert.NoError(t, err)
-			assert.Equal(t, test.expected, metadata)
+			test.expected.assertEqual(t, metadata)
 		})
 	}
 }

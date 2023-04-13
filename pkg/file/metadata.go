@@ -3,48 +3,38 @@ package file
 import (
 	"archive/tar"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
-	"time"
 
 	"github.com/sylabs/squashfs"
 
 	"github.com/anchore/stereoscope/internal/log"
 )
 
-// Metadata represents all file metadata of interest (used today for in-tar file resolution).
+// Metadata represents all file metadata of interest.
 type Metadata struct {
+	fs.FileInfo
+
 	// Path is the absolute path representation to the file
 	Path string
 	// LinkDestination is populated only for hardlinks / symlinks, can be an absolute or relative
 	LinkDestination string
-	// Size of the file in bytes
-	Size       int64
-	UserID     int
-	GroupID    int
-	Type       Type
-	IsDir      bool
-	Mode       os.FileMode
-	MIMEType   string
-	ModTime    time.Time
-	AccessTime time.Time
-	ChangeTime time.Time
+	UserID          int
+	GroupID         int
+	Type            Type
+	MIMEType        string
 }
 
 func NewMetadata(header tar.Header, content io.Reader) Metadata {
 	return Metadata{
+		FileInfo:        header.FileInfo(),
 		Path:            path.Clean(DirSeparator + header.Name),
 		Type:            TypeFromTarType(header.Typeflag),
 		LinkDestination: header.Linkname,
-		Size:            header.FileInfo().Size(),
-		Mode:            header.FileInfo().Mode(),
 		UserID:          header.Uid,
 		GroupID:         header.Gid,
-		IsDir:           header.FileInfo().IsDir(),
-		ModTime:         header.ModTime.UTC(),
-		AccessTime:      header.AccessTime.UTC(),
-		ChangeTime:      header.ChangeTime.UTC(),
 		MIMEType:        MIMEType(content),
 	}
 }
@@ -81,12 +71,11 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 	}
 
 	md := Metadata{
+		FileInfo:        fi,
 		Path:            filepath.Clean(filepath.Join("/", path)),
 		LinkDestination: f.SymlinkPath(),
-		Size:            fi.Size(),
-		IsDir:           f.IsDir(),
-		Mode:            fi.Mode(),
-		ModTime:         fi.ModTime().UTC(),
+		UserID:          -1,
+		GroupID:         -1,
 		Type:            ty,
 	}
 
@@ -120,15 +109,12 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 	}
 
 	return Metadata{
-		Path: path,
-		Mode: info.Mode(),
-		Type: ty,
+		FileInfo: info,
+		Path:     path,
+		Type:     ty,
 		// unsupported across platforms
 		UserID:   uid,
 		GroupID:  gid,
-		Size:     info.Size(),
 		MIMEType: mimeType,
-		IsDir:    info.IsDir(),
-		ModTime:  info.ModTime().UTC(),
 	}
 }
