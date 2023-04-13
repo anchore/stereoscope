@@ -48,11 +48,12 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	transport := prepareTlsTransPort(p.registryOptions)
-
 	options := prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)
 
-	options = append(options, remote.WithTransport(transport))
+	transport, err := prepareTlsTransPort(p.registryOptions)
+	if err == nil {
+		options = append(options, remote.WithTransport(transport))
+	}
 
 	descriptor, err := remote.Get(ref, options...)
 	if err != nil {
@@ -135,7 +136,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	return options
 }
 
-func prepareTlsTransPort(registryOptions image.RegistryOptions) *http.Transport {
+func prepareTlsTransPort(registryOptions image.RegistryOptions) (*http.Transport, error) {
 	options := tlsconfig.Options{
 		CAFile:   registryOptions.CAFile,
 		CertFile: registryOptions.ClientCert,
@@ -144,10 +145,10 @@ func prepareTlsTransPort(registryOptions image.RegistryOptions) *http.Transport 
 
 	config, err := tlsconfig.Client(options)
 	if err != nil {
-		return remote.DefaultTransport
+		return nil, err
 	}
 
 	return &http.Transport{
 		TLSClientConfig: config,
-	}
+	}, nil
 }
