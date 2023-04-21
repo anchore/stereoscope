@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/awslabs/amazon-ecr-credential-helper/ecr-login"
+	acr "github.com/chrismellard/docker-credential-acr-env/pkg/credhelper"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/authn/github"
 	"github.com/google/go-containerregistry/pkg/name"
 	containerregistryV1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -123,7 +127,14 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	default:
 		// use the Keychain specified from a docker config file.
 		log.Debugf("no registry credentials configured, using the default keychain")
-		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		keychain := authn.NewMultiKeychain(
+			authn.DefaultKeychain,
+			google.Keychain,
+			github.Keychain,
+			authn.NewKeychainFromHelper(ecr.NewECRHelper()),
+			authn.NewKeychainFromHelper(acr.NewACRCredentialsHelper()),
+		)
+		options = append(options, remote.WithAuthFromKeychain(keychain))
 	}
 
 	return options
