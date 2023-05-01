@@ -8,6 +8,7 @@ import (
 
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/image/containerd"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 )
 
@@ -47,6 +48,24 @@ func ParsePullDockerImage(e partybus.Event) (string, *docker.PullStatus, error) 
 	}
 
 	pullStatus, ok := e.Value.(*docker.PullStatus)
+	if !ok {
+		return "", nil, newPayloadErr(e.Type, "Value", e.Value)
+	}
+
+	return imgName, pullStatus, nil
+}
+
+func ParsePullContainerdImage(e partybus.Event) (string, *containerd.PullStatus, error) {
+	if err := checkEventType(e.Type, event.PullContainerdImage); err != nil {
+		return "", nil, err
+	}
+
+	imgName, ok := e.Source.(string)
+	if !ok {
+		return "", nil, newPayloadErr(e.Type, "Source", e.Source)
+	}
+
+	pullStatus, ok := e.Value.(*containerd.PullStatus)
 	if !ok {
 		return "", nil, newPayloadErr(e.Type, "Value", e.Value)
 	}

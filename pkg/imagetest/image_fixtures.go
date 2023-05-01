@@ -29,6 +29,8 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 
 	var location string
 	switch sourceObj {
+	case image.ContainerdDaemonSource:
+		location = LoadFixtureImageIntoContainerd(t, name)
 	case image.DockerTarballSource:
 		location = GetFixtureImageTarPath(t, name)
 	case image.DockerDaemonSource:
@@ -61,7 +63,7 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 	request := PrepareFixtureImage(t, source, name)
 
-	i, err := stereoscope.GetImage(context.TODO(), request)
+	i, err := stereoscope.GetImage(context.TODO(), request, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, i.Cleanup())
@@ -111,7 +113,7 @@ func skopeoCopyDockerArchiveToPath(t testing.TB, dockerArchivePath, destination 
 func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
 	request := fmt.Sprintf("docker-archive:%s", tarPath)
 
-	i, err := stereoscope.GetImage(context.TODO(), request)
+	i, err := stereoscope.GetImage(context.TODO(), request, "")
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -135,6 +137,10 @@ func LoadFixtureImageIntoDocker(t testing.TB, name string) string {
 
 func LoadFixtureImageIntoPodman(t testing.TB, name string) string {
 	return loadFixtureInContainerEngine(t, name, isImageInPodman, buildPodmanImage)
+}
+
+func LoadFixtureImageIntoContainerd(t testing.TB, name string) string {
+	return loadFixtureInContainerEngine(t, name, isImageInContainerd, buildContainerdImage)
 }
 
 func loadFixtureInContainerEngine(t testing.TB, name string,
@@ -205,6 +211,13 @@ func isImageInPodman(imageName string) bool {
 	return err == nil
 }
 
+func isImageInContainerd(imageName string) bool {
+	cmd := exec.Command("ctr", "image", "inspect", "|", "grep", imageName)
+	cmd.Env = os.Environ()
+	err := cmd.Run()
+	return err == nil
+}
+
 func buildDockerImage(t testing.TB, contextDir, name, tag string) {
 	t.Logf("Build docker image: name=%q tag=%q", name, tag)
 	fullTag := fmt.Sprintf("%s:%s", name, tag)
@@ -230,6 +243,23 @@ func buildPodmanImage(t testing.TB, contextDir, name, tag string) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	require.NoError(t, cmd.Run(), "could not build podman image (shell out)")
+}
+
+func buildContainerdImage(t testing.TB, contextDir, name, tag string) {
+	fullTag := fmt.Sprintf("%s:%s", name, tag)
+	tempFile := fmt.Sprintf("/tmp/%s.tar.gz", fullTag)
+	buildDockerImage(t, contextDir, name, tag)
+
+	err := saveImage(t, fullTag, tempFile)
+	require.NoError(t, err, "could not save docker image (shell out)")
+	cmd := exec.Command("ctr", "image", "import", tempFile)
+	cmd.Env = os.Environ()
+	cmd.Dir = contextDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	require.NoError(t, cmd.Run(), "could not import docker image to containerd (shell out)")
+	require.NoError(t, os.Remove(tempFile), "could not remove saved docker image")
 }
 
 func saveImage(t testing.TB, image, path string) error {

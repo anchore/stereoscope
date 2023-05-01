@@ -45,6 +45,10 @@ func TestImageSymlinks(t *testing.T) {
 			source: "podman",
 		},
 		{
+			name:   "FromContainerd",
+			source: "containerd",
+		},
+		{
 			name:   "FromOciTarball",
 			source: "oci-archive",
 		},

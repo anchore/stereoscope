@@ -33,7 +33,7 @@ func main() {
 	//    ./path/to.tar
 	//
 	// This will catalog the file metadata and resolve all squash trees
-	image, err := stereoscope.GetImage(ctx, os.Args[1])
+	image, err := stereoscope.GetImage(ctx, os.Args[1], "")
 	if err != nil {
 		panic(err)
 	}

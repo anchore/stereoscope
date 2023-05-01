@@ -76,6 +76,18 @@ func TestPlatformSelection(t *testing.T) {
 			os:             "linux",
 			expectedDigest: "sha256:1c35c441208254cb7c3844ba95a96485388cef9ccc0646d562c7fc026e04c807",
 		},
+		{
+			source:         image.ContainerdDaemonSource,
+			architecture:   "arm64",
+			os:             "linux",
+			expectedDigest: "sha256:19d689bc58fd64da6a46d46512ea965a12b6bfb5b030400e21bc0a04c4ff155e",
+		},
+		{
+			source:         image.ContainerdDaemonSource,
+			architecture:   "amd64",
+			os:             "linux",
+			expectedDigest: "sha256:1c35c441208254cb7c3844ba95a96485388cef9ccc0646d562c7fc026e04c807",
+		},
 	}
 
 	for _, tt := range tests {
@@ -85,7 +97,7 @@ func TestPlatformSelection(t *testing.T) {
 				tt.expectedErr = require.NoError
 			}
 			platformOpt := stereoscope.WithPlatform(platform)
-			img, err := stereoscope.GetImageFromSource(context.TODO(), imageName, tt.source, platformOpt)
+			img, err := stereoscope.GetImageFromSource(context.TODO(), imageName, tt.source, "", platformOpt)
 			tt.expectedErr(t, err)
 			require.NotNil(t, img)
 
@@ -115,7 +127,7 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			img, err := stereoscope.GetImageFromSource(context.TODO(), imageStrWithDigest, tt.source)
+			img, err := stereoscope.GetImageFromSource(context.TODO(), imageStrWithDigest, tt.source, "")
 			assert.NoError(t, err)
 			assertArchAndOs(t, img, "linux", "s390x")
 		})
@@ -123,7 +135,7 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 }
 
 func TestDefaultPlatformWithOciRegistry(t *testing.T) {
-	img, err := stereoscope.GetImageFromSource(context.TODO(), "busybox:1.31", image.OciRegistrySource)
+	img, err := stereoscope.GetImageFromSource(context.TODO(), "busybox:1.31", image.OciRegistrySource, "")
 	require.NoError(t, err)
 	assertArchAndOs(t, img, "linux", runtime.GOARCH)
 }

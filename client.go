@@ -9,11 +9,13 @@ import (
 
 	"github.com/anchore/go-logger"
 	"github.com/anchore/stereoscope/internal/bus"
+	containerdClient "github.com/anchore/stereoscope/internal/containerd"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/image/containerd"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/image/sif"
@@ -68,7 +70,7 @@ func WithPlatform(platform string) Option {
 }
 
 // GetImageFromSource returns an image from the explicitly provided source.
-func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
+func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, containerdAddress string, options ...Option) (*image.Image, error) {
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
 	var cfg config
@@ -81,7 +83,7 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		}
 	}
 
-	provider, err := selectImageProvider(imgStr, source, cfg)
+	provider, err := selectImageProvider(imgStr, source, cfg, containerdAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -99,36 +101,49 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	return img, nil
 }
 
-func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, error) {
+func getDaemonSource(imgStr string, source image.Source, platform *image.Platform, containerdAddress string, tempDirGenerator *file.TempDirGenerator) (image.Provider, error) {
+	switch source {
+	case image.ContainerdDaemonSource:
+		c, err := containerdClient.GetClient(containerdAddress)
+		if err != nil {
+			return nil, err
+		}
+		return containerd.NewProviderFromDaemon(imgStr, tempDirGenerator, c, platform)
+	case image.DockerDaemonSource:
+		c, err := dockerClient.GetClient()
+		if err != nil {
+			return nil, err
+		}
+		return docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, platform)
+	case image.PodmanDaemonSource:
+		c, err := podman.GetClient()
+		if err != nil {
+			return nil, err
+		}
+		return docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, platform)
+	default:
+		return nil, fmt.Errorf("unable to determine daemon source")
+	}
+}
+
+func selectImageProvider(imgStr string, source image.Source, cfg config, containerdAddress string) (image.Provider, error) {
 	var provider image.Provider
+	var err error
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
 	platformSelectionUnsupported := fmt.Errorf("specified platform=%q however image source=%q does not support selecting platform", cfg.Platform.String(), source.String())
 
 	switch source {
+	case image.ContainerdDaemonSource, image.DockerDaemonSource, image.PodmanDaemonSource:
+		provider, err = getDaemonSource(imgStr, source, cfg.Platform, containerdAddress, tempDirGenerator)
+		if err != nil {
+			return nil, err
+		}
 	case image.DockerTarballSource:
 		if cfg.Platform != nil {
 			return nil, platformSelectionUnsupported
 		}
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, tempDirGenerator)
-	case image.DockerDaemonSource:
-		c, err := dockerClient.GetClient()
-		if err != nil {
-			return nil, err
-		}
-		provider, err = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
-		if err != nil {
-			return nil, err
-		}
-	case image.PodmanDaemonSource:
-		c, err := podman.GetClient()
-		if err != nil {
-			return nil, err
-		}
-		provider, err = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
-		if err != nil {
-			return nil, err
-		}
 	case image.OciDirectorySource:
 		if cfg.Platform != nil {
 			return nil, platformSelectionUnsupported
@@ -170,12 +185,12 @@ func defaultPlatformIfNil(cfg *config) {
 
 // GetImage parses the user provided image string and provides an image object;
 // note: the source where the image should be referenced from is automatically inferred.
-func GetImage(ctx context.Context, userStr string, options ...Option) (*image.Image, error) {
+func GetImage(ctx context.Context, userStr string, containerdAddress string, options ...Option) (*image.Image, error) {
 	source, imgStr, err := image.DetectSource(userStr)
 	if err != nil {
 		return nil, err
 	}
-	return GetImageFromSource(ctx, imgStr, source, options...)
+	return GetImageFromSource(ctx, imgStr, source, containerdAddress, options...)
 }
 
 func SetLogger(logger logger.Logger) {
