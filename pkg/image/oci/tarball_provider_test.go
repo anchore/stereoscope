@@ -14,7 +14,7 @@ func Test_NewProviderFromTarball(t *testing.T) {
 	generator := file.TempDirGenerator{}
 
 	//WHEN
-	provider := NewProviderFromTarball(path, &generator)
+	provider := NewProviderFromTarball(path, &generator, nil)
 
 	//THEN
 	assert.NotNil(t, provider.path)
@@ -23,7 +23,7 @@ func Test_NewProviderFromTarball(t *testing.T) {
 
 func Test_TarballProvide(t *testing.T) {
 	//GIVEN
-	provider := NewProviderFromTarball("test-fixtures/file.tar", file.NewTempDirGenerator("tempDir"))
+	provider := NewProviderFromTarball("test-fixtures/file.tar", file.NewTempDirGenerator("tempDir"), nil)
 
 	//WHEN
 	image, err := provider.Provide(nil)
@@ -35,7 +35,7 @@ func Test_TarballProvide(t *testing.T) {
 
 func Test_TarballProvide_Fails(t *testing.T) {
 	//GIVEN
-	provider := NewProviderFromTarball("", file.NewTempDirGenerator("tempDir"))
+	provider := NewProviderFromTarball("", file.NewTempDirGenerator("tempDir"), nil)
 
 	//WHEN
 	image, err := provider.Provide(nil)

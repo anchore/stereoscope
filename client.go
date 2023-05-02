@@ -104,6 +104,42 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	return img, nil
 }
 
+// GetImageIndexFromSource returns an image index from the explicitly provided source.
+func GetImageIndexFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Index, error) {
+	log.Debugf("image index: source=%+v location=%+v", source, imgStr)
+
+	var cfg config
+	for _, option := range options {
+		if option == nil {
+			continue
+		}
+		if err := option(&cfg); err != nil {
+			return nil, fmt.Errorf("unable to parse option: %w", err)
+		}
+	}
+
+	provider, cleanup, err := selectImageProvider(imgStr, source, cfg)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var indexProvider image.IndexProvider
+	var ok bool
+	if indexProvider, ok = provider.(image.IndexProvider); !ok {
+		return nil, fmt.Errorf("provider doesn't support image indexes")
+	}
+
+	index, err := indexProvider.ProvideIndex(ctx, cfg.AdditionalMetadata...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to use %s source: %w", source, err)
+	}
+
+	return index, nil
+}
+
 // nolint:funlen
 func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, func(), error) {
 	var provider image.Provider
@@ -168,15 +204,9 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 			return nil, cleanup, err
 		}
 	case image.OciDirectorySource:
-		if cfg.Platform != nil {
-			return nil, cleanup, platformSelectionUnsupported
-		}
-		provider = oci.NewProviderFromPath(imgStr, tempDirGenerator)
+		provider = oci.NewProviderFromPath(imgStr, tempDirGenerator, cfg.Platform)
 	case image.OciTarballSource:
-		if cfg.Platform != nil {
-			return nil, cleanup, platformSelectionUnsupported
-		}
-		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
+		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator, cfg.Platform)
 	case image.OciRegistrySource:
 		defaultPlatformIfNil(&cfg)
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
@@ -214,6 +244,16 @@ func GetImage(ctx context.Context, userStr string, options ...Option) (*image.Im
 		return nil, err
 	}
 	return GetImageFromSource(ctx, imgStr, source, options...)
+}
+
+// GetImageIndex parses the user provided image string and provides an index object;
+// note: the source where the image should be referenced from is automatically inferred.
+func GetImageIndex(ctx context.Context, userStr string, options ...Option) (*image.Index, error) {
+	source, imgStr, err := image.DetectSource(userStr)
+	if err != nil {
+		return nil, err
+	}
+	return GetImageIndexFromSource(ctx, imgStr, source, options...)
 }
 
 func SetLogger(logger logger.Logger) {
