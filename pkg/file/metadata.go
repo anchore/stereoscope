@@ -7,11 +7,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/sylabs/squashfs"
 
 	"github.com/anchore/stereoscope/internal/log"
 )
+
+var _ fs.FileInfo = (*ManualInfo)(nil)
 
 // Metadata represents all file metadata of interest.
 type Metadata struct {
@@ -25,6 +28,38 @@ type Metadata struct {
 	GroupID         int
 	Type            Type
 	MIMEType        string
+}
+
+type ManualInfo struct {
+	NameValue    string
+	SizeValue    int64
+	ModeValue    fs.FileMode
+	ModTimeValue time.Time
+	SysValue     any
+}
+
+func (m ManualInfo) Name() string {
+	return m.NameValue
+}
+
+func (m ManualInfo) Size() int64 {
+	return m.SizeValue
+}
+
+func (m ManualInfo) Mode() fs.FileMode {
+	return m.ModeValue
+}
+
+func (m ManualInfo) ModTime() time.Time {
+	return m.ModTimeValue
+}
+
+func (m ManualInfo) IsDir() bool {
+	return m.ModeValue.IsDir()
+}
+
+func (m ManualInfo) Sys() any {
+	return m.SysValue
 }
 
 func NewMetadata(header tar.Header, content io.Reader) Metadata {
@@ -117,4 +152,18 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 		GroupID:  gid,
 		MIMEType: mimeType,
 	}
+}
+
+func (m Metadata) Equal(other Metadata) bool {
+	return m.Path == other.Path &&
+		m.LinkDestination == other.LinkDestination &&
+		m.UserID == other.UserID &&
+		m.GroupID == other.GroupID &&
+		m.Type == other.Type &&
+		m.MIMEType == other.MIMEType &&
+		m.FileInfo.Name() == other.FileInfo.Name() &&
+		m.FileInfo.IsDir() == other.FileInfo.IsDir() &&
+		m.FileInfo.Mode() == other.FileInfo.Mode() &&
+		m.FileInfo.Size() == other.FileInfo.Size() &&
+		m.FileInfo.ModTime().UTC().Equal(other.FileInfo.ModTime().UTC())
 }

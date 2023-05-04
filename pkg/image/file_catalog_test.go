@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-test/deep"
 	"github.com/google/go-cmp/cmp"
@@ -37,27 +36,21 @@ var (
 	tarCachePath           = path.Join(fixturesPath, "tar-cache")
 )
 
-type mockFileInfo struct {
-	name    string
-	size    int64
-	mode    fs.FileMode
-	modTime time.Time
+func basicMetadataComparer(x, y file.Metadata) bool {
+	// override Metadata.Equal to ignore fields
+	return x.Path == y.Path &&
+		x.Type == y.Type &&
+		x.MIMEType == y.MIMEType &&
+		x.LinkDestination == y.LinkDestination
 }
-
-func (fi mockFileInfo) Name() string       { return fi.name }
-func (fi mockFileInfo) Size() int64        { return fi.size }
-func (fi mockFileInfo) Mode() fs.FileMode  { return fi.mode }
-func (fi mockFileInfo) ModTime() time.Time { return fi.modTime }
-func (fi mockFileInfo) IsDir() bool        { return fi.mode.IsDir() }
-func (fi mockFileInfo) Sys() any           { return nil }
 
 func TestFileCatalog_Add(t *testing.T) {
 	ref := file.NewFileReference("/somepath")
 
 	metadata := file.Metadata{
-		FileInfo: mockFileInfo{
-			size: 1,
-			mode: fs.ModeDir | 5,
+		FileInfo: file.ManualInfo{
+			SizeValue: 1,
+			ModeValue: fs.ModeDir | 5,
 		},
 		Path:            "a",
 		LinkDestination: "c",
@@ -278,8 +271,8 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						FileInfo: mockFileInfo{
-							mode: fs.ModeDir,
+						FileInfo: file.ManualInfo{
+							ModeValue: fs.ModeDir,
 						},
 						Path: "/path/branch.d",
 						Type: file.TypeDirectory,
@@ -378,7 +371,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
+				cmp.Comparer(basicMetadataComparer),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -432,8 +425,8 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						FileInfo: mockFileInfo{
-							mode: fs.ModeDir,
+						FileInfo: file.ManualInfo{
+							ModeValue: fs.ModeDir,
 						},
 						Path: "/path/branch.d",
 						Type: file.TypeDirectory,
@@ -482,7 +475,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
+				cmp.Comparer(basicMetadataComparer),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -544,8 +537,8 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						FileInfo: mockFileInfo{
-							mode: fs.ModeDir,
+						FileInfo: file.ManualInfo{
+							ModeValue: fs.ModeDir,
 						},
 						Path: "/path/branch.d",
 						Type: file.TypeDirectory,
@@ -594,7 +587,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
+				cmp.Comparer(basicMetadataComparer),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -695,7 +688,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "FileInfo", "UserID", "GroupID"),
+				cmp.Comparer(basicMetadataComparer),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
