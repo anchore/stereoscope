@@ -3,6 +3,7 @@ package file
 import (
 	"archive/tar"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -13,38 +14,62 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 )
 
-// Metadata represents all file metadata of interest (used today for in-tar file resolution).
+var _ fs.FileInfo = (*ManualInfo)(nil)
+
+// Metadata represents all file metadata of interest.
 type Metadata struct {
+	fs.FileInfo
+
 	// Path is the absolute path representation to the file
 	Path string
 	// LinkDestination is populated only for hardlinks / symlinks, can be an absolute or relative
 	LinkDestination string
-	// Size of the file in bytes
-	Size       int64
-	UserID     int
-	GroupID    int
-	Type       Type
-	IsDir      bool
-	Mode       os.FileMode
-	MIMEType   string
-	ModTime    time.Time
-	AccessTime time.Time
-	ChangeTime time.Time
+	UserID          int
+	GroupID         int
+	Type            Type
+	MIMEType        string
+}
+
+type ManualInfo struct {
+	NameValue    string
+	SizeValue    int64
+	ModeValue    fs.FileMode
+	ModTimeValue time.Time
+	SysValue     any
+}
+
+func (m ManualInfo) Name() string {
+	return m.NameValue
+}
+
+func (m ManualInfo) Size() int64 {
+	return m.SizeValue
+}
+
+func (m ManualInfo) Mode() fs.FileMode {
+	return m.ModeValue
+}
+
+func (m ManualInfo) ModTime() time.Time {
+	return m.ModTimeValue
+}
+
+func (m ManualInfo) IsDir() bool {
+	return m.ModeValue.IsDir()
+}
+
+func (m ManualInfo) Sys() any {
+	return m.SysValue
 }
 
 func NewMetadata(header tar.Header, content io.Reader) Metadata {
 	return Metadata{
+		FileInfo:        header.FileInfo(),
 		Path:            path.Clean(DirSeparator + header.Name),
 		Type:            TypeFromTarType(header.Typeflag),
 		LinkDestination: header.Linkname,
-		Size:            header.FileInfo().Size(),
-		Mode:            header.FileInfo().Mode(),
 		UserID:          header.Uid,
 		GroupID:         header.Gid,
-		IsDir:           header.FileInfo().IsDir(),
-		ModTime:         header.ModTime.UTC(),
-		AccessTime:      header.AccessTime.UTC(),
-		ChangeTime:      header.ChangeTime.UTC(),
 		MIMEType:        MIMEType(content),
 	}
 }
@@ -81,12 +106,11 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 	}
 
 	md := Metadata{
+		FileInfo:        fi,
 		Path:            filepath.Clean(filepath.Join("/", path)),
 		LinkDestination: f.SymlinkPath(),
-		Size:            fi.Size(),
-		IsDir:           f.IsDir(),
-		Mode:            fi.Mode(),
-		ModTime:         fi.ModTime().UTC(),
+		UserID:          -1,
+		GroupID:         -1,
 		Type:            ty,
 	}
 
@@ -120,15 +144,26 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 	}
 
 	return Metadata{
-		Path: path,
-		Mode: info.Mode(),
-		Type: ty,
+		FileInfo: info,
+		Path:     path,
+		Type:     ty,
 		// unsupported across platforms
 		UserID:   uid,
 		GroupID:  gid,
-		Size:     info.Size(),
 		MIMEType: mimeType,
-		IsDir:    info.IsDir(),
-		ModTime:  info.ModTime().UTC(),
 	}
+}
+
+func (m Metadata) Equal(other Metadata) bool {
+	return m.Path == other.Path &&
+		m.LinkDestination == other.LinkDestination &&
+		m.UserID == other.UserID &&
+		m.GroupID == other.GroupID &&
+		m.Type == other.Type &&
+		m.MIMEType == other.MIMEType &&
+		m.FileInfo.Name() == other.FileInfo.Name() &&
+		m.FileInfo.IsDir() == other.FileInfo.IsDir() &&
+		m.FileInfo.Mode() == other.FileInfo.Mode() &&
+		m.FileInfo.Size() == other.FileInfo.Size() &&
+		m.FileInfo.ModTime().UTC().Equal(other.FileInfo.ModTime().UTC())
 }

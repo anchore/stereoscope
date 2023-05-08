@@ -65,16 +65,16 @@ func TestMetadataFromTar(t *testing.T) {
 			expected: Metadata{
 				Path:            "/path/branch/two/file-2.txt",
 				LinkDestination: "",
-				Size:            12,
 				UserID:          1337,
 				GroupID:         5432,
 				Type:            TypeRegular,
-				IsDir:           false,
-				Mode:            0x1ed,
 				MIMEType:        "application/octet-stream",
-				ModTime:         time.Date(2019, time.September, 16, 0, 0, 0, 0, time.UTC),
-				AccessTime:      time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-				ChangeTime:      time.Time{},
+				FileInfo: ManualInfo{
+					NameValue:    "file-2.txt",
+					SizeValue:    12,
+					ModeValue:    0x1ed,
+					ModTimeValue: time.Date(2019, time.September, 16, 0, 0, 0, 0, time.UTC),
+				},
 			},
 		},
 		{
@@ -83,16 +83,16 @@ func TestMetadataFromTar(t *testing.T) {
 			expected: Metadata{
 				Path:            "/path/branch/two",
 				LinkDestination: "",
-				Size:            0,
 				UserID:          1337,
 				GroupID:         5432,
 				Type:            TypeDirectory,
-				IsDir:           true,
-				Mode:            0x800001ed,
 				MIMEType:        "",
-				ModTime:         time.Date(2019, time.September, 16, 0, 0, 0, 0, time.UTC),
-				AccessTime:      time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC),
-				ChangeTime:      time.Time{},
+				FileInfo: ManualInfo{
+					NameValue:    "two",
+					SizeValue:    0,
+					ModeValue:    0x800001ed,
+					ModTimeValue: time.Date(2019, time.September, 16, 0, 0, 0, 0, time.UTC),
+				},
 			},
 		},
 	}
@@ -101,7 +101,7 @@ func TestMetadataFromTar(t *testing.T) {
 			f := getTarFixture(t, test.fixture)
 			metadata, err := MetadataFromTar(f, test.name)
 			assert.NoError(t, err)
-			assert.Equal(t, test.expected, metadata)
+			assertMetadataEqual(t, test.expected, metadata)
 		})
 	}
 }

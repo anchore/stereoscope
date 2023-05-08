@@ -236,7 +236,7 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		}
 
 		if size != nil {
-			*(size) += metadata.Size
+			*(size) += metadata.Size()
 		}
 		fileCatalog.addImageReferences(ref.ID(), layerRef, index.Open)
 
@@ -273,7 +273,7 @@ func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		}
 
 		if size != nil {
-			*(size) += metadata.Size
+			*(size) += metadata.Size()
 		}
 		fileCatalog.addImageReferences(fileReference.ID(), layerRef, func() io.ReadCloser {
 			r, err := fsys.Open(path)

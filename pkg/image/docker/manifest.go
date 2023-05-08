@@ -107,7 +107,7 @@ func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to find layer tar: %w", err)
 		}
-		layerSizes[idx] = layerMetadata.Size
+		layerSizes[idx] = layerMetadata.Size()
 	}
 
 	theManifest, err := assembleOCIManifest(configContents, layerSizes)
