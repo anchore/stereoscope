@@ -321,7 +321,7 @@ func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) error {
 	if err != nil {
 		inspectResult, _, err = p.client.ImageInspectWithRaw(ctx, p.imageID)
 		if err == nil {
-			p.imageStr = inspectResult.RepoTags[0]
+			p.imageStr = strings.TrimSuffix(p.imageStr, ":latest")
 		}
 	}
 	if err != nil {
