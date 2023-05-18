@@ -32,6 +32,7 @@ import (
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.
 type DaemonImageProvider struct {
 	imageStr  string
+	imageID   string
 	tmpDirGen *file.TempDirGenerator
 	client    client.APIClient
 	platform  *image.Platform
@@ -39,6 +40,7 @@ type DaemonImageProvider struct {
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
 func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c client.APIClient, platform *image.Platform) (*DaemonImageProvider, error) {
+	var imageId string
 	ref, err := name.ParseReference(imgStr, name.WithDefaultRegistry(""))
 	if err != nil {
 		return nil, err
@@ -46,9 +48,11 @@ func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c cl
 	tag, ok := ref.(name.Tag)
 	if ok {
 		imgStr = tag.Name()
+		imageId = tag.String()
 	}
 	return &DaemonImageProvider{
 		imageStr:  imgStr,
+		imageID:   imageId,
 		tmpDirGen: tmpDirGen,
 		client:    c,
 		platform:  platform,
@@ -315,6 +319,12 @@ func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) error {
 	// check if the image exists locally
 	inspectResult, _, err := p.client.ImageInspectWithRaw(ctx, p.imageStr)
 	if err != nil {
+		inspectResult, _, err = p.client.ImageInspectWithRaw(ctx, p.imageID)
+		if err == nil {
+			p.imageStr = inspectResult.RepoTags[0]
+		}
+	}
+	if err != nil {
 		if client.IsErrNotFound(err) {
 			if err = p.pull(ctx); err != nil {
 				return err
@@ -324,7 +334,7 @@ func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) error {
 		}
 	} else {
 		// looks like the image exists, but if the platform doesn't match what the user specified, we may need to
-		// pull the image again with the correct platofmr specifier, which will override the local tag.
+		// pull the image again with the correct platform specifier, which will override the local tag.
 		if err := p.validatePlatform(inspectResult); err != nil {
 			if err = p.pull(ctx); err != nil {
 				return err
