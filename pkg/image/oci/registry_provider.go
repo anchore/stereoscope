@@ -34,6 +34,20 @@ func NewProviderFromRegistry(imgStr string, tmpDirGen *file.TempDirGenerator, re
 	}
 }
 
+func (p *RegistryImageProvider) ProvideIndex(ctx context.Context, userMetadata ...image.AdditionalMetadata) (containerregistryV1.ImageIndex, error) {
+	log.Debugf("pulling index directly from registry image=%q", p.imageStr)
+	ref, err := name.ParseReference(p.imageStr, prepareReferenceOptions(p.registryOptions)...)
+	if err != nil {
+		return nil, err
+	}
+
+	index, err := remote.Index(ref, prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)...)
+	if err != nil {
+		return nil, err
+	}
+	return index, nil
+}
+
 // Provide an image object that represents the cached docker image tar fetched a registry.
 func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
@@ -48,6 +62,19 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
+	// TODO: change platform logic here.
+
+	// TODO: download index, and then do:
+	// specific platform requested: do that
+	// no specific platform requested:
+	// if image is multi-arch:
+	// try to match host, specify host platform on call to lib
+	// if not multi-arch, pull the single arch regardless.
+	// probably call https://github.com/google/go-containerregistry/blob/e61c5190e39a37cd78c8c6d71f50a709a9d7eab4/pkg/v1/remote/index.go#L47
+	// if arch requested, pull that or fail if unavailable.
+	// if multi-arch index, and host arch available, pull that
+	// if multi-arch index, and host arch not available, error and say "ambiguous request"; enumerate available architectures
+	// if single-arch image, pull that image, but log debug
 	descriptor, err := remote.Get(ref, prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)

@@ -103,15 +103,12 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 	var provider image.Provider
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
 
-	if err := setPlatform(source, &cfg, runtime.GOARCH); err != nil {
-		return nil, err
-	}
-
 	switch source {
 	case image.DockerTarballSource:
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.DockerDaemonSource:
+		// TODO: only specify platform if --platform was passed
 		c, err := dockerClient.GetClient()
 		if err != nil {
 			return nil, err
@@ -121,6 +118,7 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 			return nil, err
 		}
 	case image.PodmanDaemonSource:
+		// TODO: only specify platform if --platform was passed
 		c, err := podman.GetClient()
 		if err != nil {
 			return nil, err
@@ -134,6 +132,16 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 	case image.OciTarballSource:
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
+		// TODO: download manifest, and then do:
+		// specific platform requested: do that
+		// no specific platform requested:
+		// if image is multi-arch:
+		// try to match host, specify host platform on call to lib
+		// if not multi-arch, pull the single arch regardless.
+
+		if err := setPlatform(source, &cfg, runtime.GOARCH); err != nil {
+			return nil, err
+		}
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
 	case image.SingularitySource:
 		provider = sif.NewProviderFromPath(imgStr, tempDirGenerator)
@@ -177,6 +185,32 @@ func GetImage(ctx context.Context, userStr string, options ...Option) (*image.Im
 		return nil, err
 	}
 	return GetImageFromSource(ctx, imgStr, source, options...)
+}
+
+func GetImageIndex(ctx context.Context, userStr string, options ...Option) ([]byte, error) {
+	log.Debugf("userStr is %q", userStr)
+	_, imgStr, err := image.DetectSource(userStr)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfg config
+	for _, option := range options {
+		if option == nil {
+			continue
+		}
+		if err := option(&cfg); err != nil {
+			return nil, fmt.Errorf("unable to parse option: %w", err)
+		}
+	}
+	log.Debugf("image str is %s", imgStr)
+	tempDirGenerator := rootTempDirGenerator.NewGenerator()
+	provider := oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
+	index, err := provider.ProvideIndex(ctx, cfg.AdditionalMetadata...)
+	if err != nil {
+		return nil, err
+	}
+	return index.RawManifest()
 }
 
 func SetLogger(logger logger.Logger) {
