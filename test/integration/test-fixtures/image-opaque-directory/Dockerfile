@@ -1,4 +1,4 @@
-FROM centos:7
+FROM --platform=linux/amd64 centos:7
 
 RUN curl -sLO https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.rpm
 RUN rpm -i amazon-corretto-11-x64-linux-jdk.rpm
