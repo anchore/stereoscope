@@ -44,3 +44,54 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 	assert.Equal(t, "index.docker.io/"+ref, img.Metadata.RepoDigests[0])
 	assert.Equal(t, []byte(rawManifest), img.Metadata.RawManifest)
 }
+
+func TestOciRegistryArchHandling(t *testing.T) {
+	// possible platforms are at
+	// https://github.com/docker/cli/blob/1f6a1a438c4ae426e446f17848114e58072af2bb/cli/command/manifest/util.go#L22
+	tests := []struct {
+		name    string
+		wantErr bool
+		userStr string
+		options []stereoscope.Option
+	}{
+		{
+			name:    "arch requested, arch available",
+			userStr: "registry:alpine:3.18.0",
+			options: []stereoscope.Option{
+				stereoscope.WithPlatform("linux/amd64"),
+			},
+		},
+		{
+			name:    "arch requested, arch unavailable",
+			wantErr: true,
+			options: []stereoscope.Option{
+				stereoscope.WithPlatform("linux/mips64"),
+			},
+		},
+		{
+			name:    "multi-arch index, no arch requested, host arch available",
+			userStr: "registry:alpine:3.18.0",
+		},
+		{
+			name:    "multi-arch index, no arch requested, host arch unavailable",
+			wantErr: true,
+			// TODO: this is a really hard one
+			// maybe make some test images?
+		},
+		{
+			name:    "single arch index",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := stereoscope.GetImage(context.TODO(), tt.userStr)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
