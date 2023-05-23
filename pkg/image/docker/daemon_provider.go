@@ -40,7 +40,7 @@ type DaemonImageProvider struct {
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
 func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c client.APIClient, platform *image.Platform) (*DaemonImageProvider, error) {
-	var imageId string
+	var imageID string
 	ref, err := name.ParseReference(imgStr, name.WithDefaultRegistry(""))
 	if err != nil {
 		return nil, err
@@ -48,11 +48,11 @@ func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c cl
 	tag, ok := ref.(name.Tag)
 	if ok {
 		imgStr = tag.Name()
-		imageId = tag.String()
+		imageID = tag.String()
 	}
 	return &DaemonImageProvider{
 		imageStr:  imgStr,
-		imageID:   imageId,
+		imageID:   imageID,
 		tmpDirGen: tmpDirGen,
 		client:    c,
 		platform:  platform,
