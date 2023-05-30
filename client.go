@@ -3,6 +3,7 @@ package stereoscope
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 
 	"github.com/wagoodman/go-partybus"
@@ -210,6 +211,11 @@ func GetImageIndex(ctx context.Context, userStr string, options ...Option) ([]by
 	if err != nil {
 		return nil, err
 	}
+	m, err := index.IndexManifest()
+	for _, man := range m.Manifests {
+		fmt.Fprintf(os.Stderr, "manifest was: %+v", man)
+	}
+
 	return index.RawManifest()
 }
 

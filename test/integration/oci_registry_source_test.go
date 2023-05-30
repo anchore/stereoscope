@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -49,10 +50,11 @@ func TestOciRegistryArchHandling(t *testing.T) {
 	// possible platforms are at
 	// https://github.com/docker/cli/blob/1f6a1a438c4ae426e446f17848114e58072af2bb/cli/command/manifest/util.go#L22
 	tests := []struct {
-		name    string
-		wantErr bool
-		userStr string
-		options []stereoscope.Option
+		name     string
+		wantErr  bool
+		userStr  string
+		options  []stereoscope.Option
+		wantArch string
 	}{
 		{
 			name:    "arch requested, arch available",
@@ -63,35 +65,56 @@ func TestOciRegistryArchHandling(t *testing.T) {
 		},
 		{
 			name:    "arch requested, arch unavailable",
+			userStr: "registry:alpine:3.18.0",
 			wantErr: true,
 			options: []stereoscope.Option{
 				stereoscope.WithPlatform("linux/mips64"),
 			},
 		},
 		{
-			name:    "multi-arch index, no arch requested, host arch available",
-			userStr: "registry:alpine:3.18.0",
+			name:     "multi-arch index, no arch requested, host arch available",
+			userStr:  "registry:alpine:3.18.0",
+			wantArch: runtime.GOARCH,
 		},
 		{
 			name:    "multi-arch index, no arch requested, host arch unavailable",
 			wantErr: true,
+			userStr: fmt.Sprintf("registry:%s", getMultiArchImageNotContainingHostArch()),
 			// TODO: this is a really hard one
 			// maybe make some test images?
 		},
 		{
 			name:    "single arch index",
 			wantErr: false,
+			userStr: fmt.Sprintf("registry:%s", getSingleArchImageNotMatchingHostArch()),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := stereoscope.GetImage(context.TODO(), tt.userStr)
+			img, err := stereoscope.GetImage(context.TODO(), tt.userStr, tt.options...)
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
 			}
+			if tt.wantArch != "" {
+				assert.Equal(t, tt.wantArch, img.Metadata.Architecture)
+			}
+			if img != nil {
+				t.Logf("%s", img.Metadata.Architecture)
+			}
 		})
 	}
+}
+
+func getSingleArchImageNotMatchingHostArch() string {
+	if runtime.GOARCH != "amd64" {
+		return "rancher/busybox:1.31.1"
+	}
+	return ""
+}
+
+func getMultiArchImageNotContainingHostArch() string {
+	return ""
 }

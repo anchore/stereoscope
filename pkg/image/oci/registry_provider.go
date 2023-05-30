@@ -50,6 +50,7 @@ func (p *RegistryImageProvider) ProvideIndex(ctx context.Context, userMetadata .
 
 // Provide an image object that represents the cached docker image tar fetched a registry.
 func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
+	// TODO: at this point, do I know whether platform was requested? I don't think so.
 	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
 
 	imageTempDir, err := p.tmpDirGen.NewDirectory("oci-registry-image")
@@ -109,6 +110,26 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 	metadata = append(metadata, userMetadata...)
 
 	return image.New(img, p.tmpDirGen, imageTempDir, metadata...), nil
+}
+
+func (p *RegistryImageProvider) archIsAvailable(arch string, ref name.Reference, options []remote.Option) (bool, error) {
+	index, err := remote.Index(ref, options...)
+	if err != nil {
+		return false, err
+	}
+	manifest, err := index.IndexManifest()
+	if err != nil {
+		return false, err
+	}
+	for _, m := range manifest.Manifests {
+		if m.Platform == nil {
+			continue
+		}
+		if m.Platform.Architecture == arch {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
