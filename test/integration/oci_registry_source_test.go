@@ -109,6 +109,8 @@ func TestOciRegistryArchHandling(t *testing.T) {
 }
 
 func getSingleArchImageNotMatchingHostArch() string {
+	// TODO: publish test images to anchore/test_images
+	// and use those
 	if runtime.GOARCH != "amd64" {
 		return "rancher/busybox:1.31.1"
 	}
@@ -116,5 +118,10 @@ func getSingleArchImageNotMatchingHostArch() string {
 }
 
 func getMultiArchImageNotContainingHostArch() string {
-	return ""
+	// TODO: publish test images to anchore/test_images
+	// and use those
+	if runtime.GOARCH == "arm64" {
+		return "localhost:5001/learn-multi-arch:no-arm"
+	}
+	return "localhost:5001/learn-multi-arch:no-amd64"
 }
