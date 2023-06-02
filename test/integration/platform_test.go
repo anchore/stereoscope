@@ -89,3 +89,31 @@ func TestPlatformSelection(t *testing.T) {
 		})
 	}
 }
+
+func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
+	// busybox:1.31 on linux/s390x
+	// Test assumes that the host running these tests _isn't_ linux/s390x, but the behavior
+	// should be the same regardless.
+	imageStrWithDigest := "busybox:1.31@sha256:91c15b1ba6f408a648be60f8c047ef79058f26fa640025f374281f31c8704387"
+	tests := []struct {
+		name   string
+		source image.Source
+	}{
+		{
+			name:   "docker",
+			source: image.DockerDaemonSource,
+		},
+		{
+			name:   "registry",
+			source: image.OciRegistrySource,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			img, err := stereoscope.GetImageFromSource(context.TODO(), imageStrWithDigest, tt.source, stereoscope.WithPlatform("linux/s390x"))
+			assert.NoError(t, err)
+			assert.Equal(t, "s390x", img.Metadata.Architecture)
+			assert.Equal(t, "linux", img.Metadata.OS)
+		})
+	}
+}
