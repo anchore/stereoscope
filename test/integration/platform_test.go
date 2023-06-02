@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -30,6 +31,12 @@ func TestPlatformSelection(t *testing.T) {
 		},
 		{
 			source:         image.OciRegistrySource,
+			architecture:   "s390x",
+			os:             "linux",
+			expectedDigest: "sha256:91c15b1ba6f408a648be60f8c047ef79058f26fa640025f374281f31c8704387", // from generated manifest
+		},
+		{
+			source:         image.OciRegistrySource,
 			architecture:   "amd64",
 			os:             "linux",
 			expectedDigest: "sha256:95cf004f559831017cdf4628aaf1bb30133677be8702a8c5f2994629f637a209", // direct from repo manifest
@@ -45,6 +52,12 @@ func TestPlatformSelection(t *testing.T) {
 			architecture:   "amd64",
 			os:             "linux",
 			expectedDigest: "sha256:79d3cb76a5a8ba402af164ace87bd0f3e0759979f94caf7247745126359711da", // from generated manifest
+		},
+		{
+			source:         image.DockerDaemonSource,
+			architecture:   "s390x",
+			os:             "linux",
+			expectedDigest: "sha256:91c15b1ba6f408a648be60f8c047ef79058f26fa640025f374281f31c8704387", // from generated manifest
 		},
 		{
 			source:         image.PodmanDaemonSource,
@@ -71,8 +84,10 @@ func TestPlatformSelection(t *testing.T) {
 			tt.expectedErr(t, err)
 			require.NotNil(t, img)
 
-			assert.Equal(t, tt.os, img.Metadata.OS)
-			assert.Equal(t, tt.architecture, img.Metadata.Architecture)
+			// TODO: decode image config and test
+			// assert.Equal(t, tt.os, img.Metadata.OS)
+			// assert.Equal(t, tt.architecture, img.Metadata.Architecture)
+			assertArchAndOs(t, img, tt.architecture, tt.os)
 			found := false
 			if img.Metadata.ManifestDigest == tt.expectedDigest {
 				found = true
@@ -110,10 +125,22 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			img, err := stereoscope.GetImageFromSource(context.TODO(), imageStrWithDigest, tt.source, stereoscope.WithPlatform("linux/s390x"))
+			img, err := stereoscope.GetImageFromSource(context.TODO(), imageStrWithDigest, tt.source)
 			assert.NoError(t, err)
-			assert.Equal(t, "s390x", img.Metadata.Architecture)
-			assert.Equal(t, "linux", img.Metadata.OS)
+			// TODO: these tests are wrong
+			assertArchAndOs(t, img, "s390x", "linux")
 		})
 	}
+}
+
+func assertArchAndOs(t *testing.T, img *image.Image, architecture string, os string) {
+	type platform struct {
+		Architecture string `json:"architecture"`
+		Os           string `json:"os"`
+	}
+	var got platform
+	err := json.Unmarshal(img.Metadata.RawConfig, &got)
+	require.NoError(t, err)
+	assert.Equal(t, os, got.Os)
+	assert.Equal(t, architecture, got.Architecture)
 }
