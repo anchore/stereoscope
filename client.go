@@ -102,13 +102,13 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, error) {
 	var provider image.Provider
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
-
-	if err := setPlatform(source, &cfg, runtime.GOARCH); err != nil {
-		return nil, err
-	}
+	platformSelectionUnsupported := fmt.Errorf("specified platform=%q however image source=%q does not support selecting platform", cfg.Platform.String(), source.String())
 
 	switch source {
 	case image.DockerTarballSource:
+		if cfg.Platform != nil {
+			return nil, platformSelectionUnsupported
+		}
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.DockerDaemonSource:
@@ -130,12 +130,22 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 			return nil, err
 		}
 	case image.OciDirectorySource:
+		if cfg.Platform != nil {
+			return nil, platformSelectionUnsupported
+		}
 		provider = oci.NewProviderFromPath(imgStr, tempDirGenerator)
 	case image.OciTarballSource:
+		if cfg.Platform != nil {
+			return nil, platformSelectionUnsupported
+		}
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
+		defaultPlatformIfNil(&cfg)
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
 	case image.SingularitySource:
+		if cfg.Platform != nil {
+			return nil, platformSelectionUnsupported
+		}
 		provider = sif.NewProviderFromPath(imgStr, tempDirGenerator)
 	default:
 		return nil, fmt.Errorf("unable to determine image source")
@@ -143,30 +153,19 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 	return provider, nil
 }
 
-func setPlatform(source image.Source, cfg *config, defaultArch string) error {
-	// we should override the platform based on the host architecture if the user did not specify a platform
-	// see https://github.com/anchore/stereoscope/issues/149 for more details
-	defaultPlatform, err := image.NewPlatform(defaultArch)
-	if err != nil {
-		log.WithFields("error", err).Warnf("unable to set default platform to %q", runtime.GOARCH)
-		defaultPlatform = nil
-	}
-
-	switch source {
-	case image.DockerTarballSource, image.OciDirectorySource, image.OciTarballSource, image.SingularitySource:
-		if cfg.Platform != nil {
-			return fmt.Errorf("specified platform=%q however image source=%q does not support selecting platform", cfg.Platform.String(), source.String())
+// defaultPlatformIfNil sets the platform to use the host's architecture
+// if no platform was specified. The OCI registry provider uses "linux/amd64"
+// as a hard-coded default platform, which has surprised customers
+// running stereoscope on non-amd64 hosts. If platform is already
+// set on the config, or the code can't generate a matching platform,
+// do nothing.
+func defaultPlatformIfNil(cfg *config) {
+	if cfg.Platform == nil {
+		p, err := image.NewPlatform(fmt.Sprintf("linux/%s", runtime.GOARCH))
+		if err == nil {
+			cfg.Platform = p
 		}
-
-	case image.DockerDaemonSource, image.PodmanDaemonSource, image.OciRegistrySource:
-		if cfg.Platform == nil {
-			cfg.Platform = defaultPlatform
-		}
-
-	default:
-		return fmt.Errorf("unable to determine image source to select platform")
 	}
-	return nil
 }
 
 // GetImage parses the user provided image string and provides an image object;
