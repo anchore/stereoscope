@@ -153,6 +153,12 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 	return provider, nil
 }
 
+// defaultPlatformIfNil sets the platfrom to use the host's architecture
+// if no platform was specified. The OCI registry provider uses "linux/amd64"
+// as a hard-coded default platform, which has surprised customers
+// running stereoscope on non-amd64 hosts. If platform is already
+// set on the config, or the code can't generate a matching platform,
+// do nothing.
 func defaultPlatformIfNil(cfg *config) {
 	if cfg.Platform == nil {
 		p, err := image.NewPlatform(fmt.Sprintf("linux/%s", runtime.GOARCH))
