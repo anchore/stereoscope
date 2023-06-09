@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -131,6 +132,12 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 			assertArchAndOs(t, img, "s390x", "linux")
 		})
 	}
+}
+
+func TestDefaultPlatformWithOciRegistry(t *testing.T) {
+	img, err := stereoscope.GetImageFromSource(context.TODO(), "busybox:1.31", image.OciRegistrySource)
+	require.NoError(t, err)
+	assertArchAndOs(t, img, runtime.GOARCH, "linux")
 }
 
 func assertArchAndOs(t *testing.T, img *image.Image, architecture string, os string) {

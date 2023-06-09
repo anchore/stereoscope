@@ -3,6 +3,7 @@ package stereoscope
 import (
 	"context"
 	"fmt"
+	"runtime"
 
 	"github.com/wagoodman/go-partybus"
 
@@ -139,6 +140,7 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		}
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
+		defaultPlatformIfNil(&cfg)
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
 	case image.SingularitySource:
 		if cfg.Platform != nil {
@@ -149,6 +151,15 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		return nil, fmt.Errorf("unable to determine image source")
 	}
 	return provider, nil
+}
+
+func defaultPlatformIfNil(cfg *config) {
+	if cfg.Platform == nil {
+		p, err := image.NewPlatform(fmt.Sprintf("linux/%s", runtime.GOARCH))
+		if err == nil {
+			cfg.Platform = p
+		}
+	}
 }
 
 // GetImage parses the user provided image string and provides an image object;
