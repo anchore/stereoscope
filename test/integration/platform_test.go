@@ -85,10 +85,7 @@ func TestPlatformSelection(t *testing.T) {
 			tt.expectedErr(t, err)
 			require.NotNil(t, img)
 
-			// TODO: decode image config and test
-			// assert.Equal(t, tt.os, img.Metadata.OS)
-			// assert.Equal(t, tt.architecture, img.Metadata.Architecture)
-			assertArchAndOs(t, img, tt.architecture, tt.os)
+			assertArchAndOs(t, img, tt.os, tt.architecture)
 			found := false
 			if img.Metadata.ManifestDigest == tt.expectedDigest {
 				found = true
@@ -107,7 +104,7 @@ func TestPlatformSelection(t *testing.T) {
 }
 
 func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
-	// busybox:1.31 on linux/s390x
+	// This digest is busybox:1.31 on linux/s390x
 	// Test assumes that the host running these tests _isn't_ linux/s390x, but the behavior
 	// should be the same regardless.
 	imageStrWithDigest := "busybox:1.31@sha256:91c15b1ba6f408a648be60f8c047ef79058f26fa640025f374281f31c8704387"
@@ -128,8 +125,7 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			img, err := stereoscope.GetImageFromSource(context.TODO(), imageStrWithDigest, tt.source)
 			assert.NoError(t, err)
-			// TODO: these tests are wrong
-			assertArchAndOs(t, img, "s390x", "linux")
+			assertArchAndOs(t, img, "linux", "s390x")
 		})
 	}
 }
@@ -137,10 +133,10 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 func TestDefaultPlatformWithOciRegistry(t *testing.T) {
 	img, err := stereoscope.GetImageFromSource(context.TODO(), "busybox:1.31", image.OciRegistrySource)
 	require.NoError(t, err)
-	assertArchAndOs(t, img, runtime.GOARCH, "linux")
+	assertArchAndOs(t, img, "linux", runtime.GOARCH)
 }
 
-func assertArchAndOs(t *testing.T, img *image.Image, architecture string, os string) {
+func assertArchAndOs(t *testing.T, img *image.Image, os string, architecture string) {
 	type platform struct {
 		Architecture string `json:"architecture"`
 		Os           string `json:"os"`
