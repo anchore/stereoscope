@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/anchore/stereoscope/internal/log"
 	"github.com/pkg/errors"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 const perFileReadLimit = 2 * GB
@@ -108,7 +109,7 @@ func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
 			if entry.Header.Size > 0 {
 				content = reader
 			}
-			m := NewMetadata(entry.Header, entry.Sequence, content)
+			m := NewMetadata(entry.Header, content)
 			metadata = &m
 			return ErrTarStopIteration
 		}

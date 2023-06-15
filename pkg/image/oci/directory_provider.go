@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/go-containerregistry/pkg/v1/layout"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/google/go-containerregistry/pkg/v1/layout"
 )
 
 // DirectoryImageProvider is an image.Provider for an OCI image (V1) for an existing tar on disk (from a buildah push <img> oci:<img> command).
@@ -69,5 +70,5 @@ func (p *DirectoryImageProvider) Provide(_ context.Context, userMetadata ...imag
 		return nil, err
 	}
 
-	return image.NewImage(img, contentTempDir, metadata...), nil
+	return image.New(img, p.tmpDirGen, contentTempDir, metadata...), nil
 }

@@ -8,9 +8,9 @@ import (
 
 // Tree represents a simple Tree data structure.
 type Tree struct {
-	nodes    map[node.ID]node.Node
-	children map[node.ID]map[node.ID]node.Node
-	parent   map[node.ID]node.Node
+	nodes    map[node.ID]node.Node             // {node-id: node}
+	children map[node.ID]map[node.ID]node.Node // {parent-id: {child-id: child-node}
+	parent   map[node.ID]node.Node             // {child-id: parent-node}
 }
 
 // NewTree returns an instance of a Tree.

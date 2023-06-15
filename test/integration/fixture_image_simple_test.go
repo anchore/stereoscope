@@ -7,9 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 	"testing"
+
+	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/scylladb/go-set"
+	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -17,9 +20,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/sif"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/scylladb/go-set"
-	"github.com/stretchr/testify/require"
 )
 
 // Common layer metadata for OCI / Docker / Podman. MediaType will be filled in during test.
@@ -179,11 +179,11 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 		b.Run(c.source, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for _, ref := range paths {
-					f, err := img.FileCatalog.Get(ref)
+					f, err := img.FileCatalog.Open(ref)
 					if err != nil {
 						b.Fatalf("unable to read: %+v", err)
 					}
-					_, err = ioutil.ReadAll(f.Contents())
+					_, err = io.ReadAll(f)
 				}
 			}
 		})
@@ -193,6 +193,7 @@ func BenchmarkSimpleImage_FetchSquashedContents(b *testing.B) {
 func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues testCase) {
 	t.Helper()
 	t.Log("Asserting metadata...")
+
 	if i.Metadata.MediaType != expectedValues.imageMediaType {
 		t.Errorf("unexpected image media type: %+v", i.Metadata.MediaType)
 	}
@@ -228,21 +229,23 @@ func assertImageSimpleMetadata(t *testing.T, i *image.Image, expectedValues test
 }
 
 func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
+	t.Helper()
 	t.Log("Asserting squashed trees...")
-	one := filetree.NewFileTree()
+
+	one := filetree.New()
 	one.AddFile("/somefile-1.txt")
 
-	two := filetree.NewFileTree()
+	two := filetree.New()
 	two.AddFile("/somefile-1.txt")
 	two.AddFile("/somefile-2.txt")
 
-	three := filetree.NewFileTree()
+	three := filetree.New()
 	three.AddFile("/somefile-1.txt")
 	three.AddFile("/somefile-2.txt")
 	three.AddFile("/really/.wh..wh..opq")
 	three.AddFile("/really/nested/file-3.txt")
 
-	expectedTrees := map[uint]*filetree.FileTree{
+	expectedTrees := map[uint]filetree.Reader{
 		0: one,
 		1: two,
 		2: three,
@@ -256,7 +259,7 @@ func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 
 	compareLayerSquashTrees(t, expectedTrees, i, ignorePaths)
 
-	squashed := filetree.NewFileTree()
+	squashed := filetree.New()
 	squashed.AddFile("/somefile-1.txt")
 	squashed.AddFile("/somefile-2.txt")
 	squashed.AddFile("/really/nested/file-3.txt")
@@ -265,18 +268,20 @@ func assertImageSimpleSquashedTrees(t *testing.T, i *image.Image) {
 }
 
 func assertImageSimpleTrees(t *testing.T, i *image.Image) {
+	t.Helper()
 	t.Log("Asserting trees...")
-	one := filetree.NewFileTree()
+
+	one := filetree.New()
 	one.AddFile("/somefile-1.txt")
 
-	two := filetree.NewFileTree()
+	two := filetree.New()
 	two.AddFile("/somefile-2.txt")
 
-	three := filetree.NewFileTree()
+	three := filetree.New()
 	three.AddFile("/really/.wh..wh..opq")
 	three.AddFile("/really/nested/file-3.txt")
 
-	expectedTrees := map[uint]*filetree.FileTree{
+	expectedTrees := map[uint]filetree.Reader{
 		0: one,
 		1: two,
 		2: three,
@@ -292,6 +297,7 @@ func assertImageSimpleTrees(t *testing.T, i *image.Image) {
 }
 
 func assertImageSimpleContents(t *testing.T, i *image.Image) {
+	t.Helper()
 	t.Log("Asserting contents...")
 
 	expectedContents := map[string]string{
@@ -302,7 +308,7 @@ func assertImageSimpleContents(t *testing.T, i *image.Image) {
 
 	actualContents := make(map[string]io.Reader)
 	for path := range expectedContents {
-		reader, err := i.FileContentsFromSquash(file.Path(path))
+		reader, err := i.OpenPathFromSquash(file.Path(path))
 		if err != nil {
 			t.Fatal("unable to fetch multiple contents", err)
 		}
@@ -318,7 +324,7 @@ func assertImageSimpleContents(t *testing.T, i *image.Image) {
 		if !ok {
 			t.Errorf("extra path found: %+v", path)
 		}
-		b, err := ioutil.ReadAll(actual)
+		b, err := io.ReadAll(actual)
 		if err != nil {
 			t.Errorf("failed to read %+v : %+v", path, err)
 		}

@@ -1,10 +1,11 @@
 package integration
 
 import (
+	"testing"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	"testing"
 )
 
 func TestImage_SquashedTree_OpaqueDirectoryExistsInFileCatalog(t *testing.T) {
@@ -17,7 +18,7 @@ func TestImage_SquashedTree_OpaqueDirectoryExistsInFileCatalog(t *testing.T) {
 		t.Fatalf("unable to get file=%q : %+v", path, err)
 	}
 
-	_, err = image.FileCatalog.Get(*ref)
+	_, err = image.FileCatalog.Get(*ref.Reference)
 	if err != nil {
 		t.Fatal(err)
 	}

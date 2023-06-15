@@ -3,9 +3,8 @@ package image
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRegistryCredentials_Authenticator(t *testing.T) {
@@ -23,6 +22,19 @@ func TestRegistryCredentials_Authenticator(t *testing.T) {
 			credentials: RegistryCredentials{
 				Username: exampleUsername,
 				Password: examplePassword,
+			},
+			authenticatorAssertion: basicAuth(authn.Basic{
+				Username: exampleUsername,
+				Password: examplePassword,
+			}),
+		},
+		{
+			name: "basic auth with authn.Authenticator",
+			credentials: RegistryCredentials{
+				Authenticator: &authn.Basic{
+					Username: exampleUsername,
+					Password: examplePassword,
+				},
 			},
 			authenticatorAssertion: basicAuth(authn.Basic{
 				Username: exampleUsername,

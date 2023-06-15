@@ -1,13 +1,6 @@
 package file
 
-import (
-	"fmt"
-)
-
-var nextID = 0
-
-// ID is used for file tree manipulation to uniquely identify tree nodes.
-type ID uint64
+import "fmt"
 
 // Reference represents a unique file. This is useful when path is not good enough (i.e. you have the same file path for two files in two different container image layers, and you need to be able to distinguish them apart)
 type Reference struct {

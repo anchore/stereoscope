@@ -6,9 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sylabs/sif/v2/pkg/sif"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/sylabs/sif/v2/pkg/sif"
 )
 
 func TestSingularityImageProvider_Provide(t *testing.T) {

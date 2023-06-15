@@ -10,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anchore/stereoscope/internal/docker"
-	"github.com/anchore/stereoscope/internal/podman"
-	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/mitchellh/go-homedir"
 	"github.com/spf13/afero"
 	"github.com/sylabs/sif/v2/pkg/sif"
+
+	"github.com/anchore/stereoscope/internal/docker"
+	"github.com/anchore/stereoscope/internal/podman"
+	"github.com/anchore/stereoscope/pkg/file"
 )
 
 const (

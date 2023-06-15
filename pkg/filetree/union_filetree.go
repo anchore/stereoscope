@@ -3,28 +3,28 @@ package filetree
 import "fmt"
 
 type UnionFileTree struct {
-	trees []*FileTree
+	trees []ReadWriter
 }
 
 func NewUnionFileTree() *UnionFileTree {
 	return &UnionFileTree{
-		trees: make([]*FileTree, 0),
+		trees: make([]ReadWriter, 0),
 	}
 }
 
-func (u *UnionFileTree) PushTree(t *FileTree) {
+func (u *UnionFileTree) PushTree(t ReadWriter) {
 	u.trees = append(u.trees, t)
 }
 
-func (u *UnionFileTree) Squash() (*FileTree, error) {
+func (u *UnionFileTree) Squash() (ReadWriter, error) {
 	switch len(u.trees) {
 	case 0:
-		return NewFileTree(), nil
+		return New(), nil
 	case 1:
 		return u.trees[0].Copy()
 	}
 
-	var squashedTree *FileTree
+	var squashedTree ReadWriter
 	var err error
 	for layerIdx, refTree := range u.trees {
 		if layerIdx == 0 {
@@ -35,7 +35,7 @@ func (u *UnionFileTree) Squash() (*FileTree, error) {
 			continue
 		}
 
-		if err = squashedTree.merge(refTree); err != nil {
+		if err = squashedTree.Merge(refTree); err != nil {
 			return nil, fmt.Errorf("unable to squash layer=%d : %w", layerIdx, err)
 		}
 	}

@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
+
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
 var ErrMultipleManifests = fmt.Errorf("cannot process multiple docker manifests")
@@ -82,5 +83,5 @@ func (p *TarballImageProvider) Provide(_ context.Context, userMetadata ...image.
 		return nil, err
 	}
 
-	return image.NewImage(img, contentTempDir, metadata...), nil
+	return image.New(img, p.tmpDirGen, contentTempDir, metadata...), nil
 }

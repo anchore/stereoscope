@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/anchore/go-logger"
 	"github.com/anchore/go-logger/adapter/logrus"
-
-	"io/ioutil"
-	"os"
-
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
@@ -90,12 +88,12 @@ func main() {
 	//////////////////////////////////////////////////////////////////
 	// Fetch file contents from the (squashed) image
 	filePath := file.Path("/etc/group")
-	contentReader, err := image.FileContentsFromSquash(filePath)
+	contentReader, err := image.OpenPathFromSquash(filePath)
 	if err != nil {
 		panic(err)
 	}
 
-	content, err := ioutil.ReadAll(contentReader)
+	content, err := io.ReadAll(contentReader)
 	if err != nil {
 		panic(err)
 	}

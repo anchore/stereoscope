@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/anchore/stereoscope/internal/log"
-	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	containerregistryV1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+
+	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/image"
 )
 
 // RegistryImageProvider is an image.Provider capable of fetching and representing a container image fetched from a remote registry (described by the OCI distribution spec).
@@ -80,7 +81,7 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 	// apply user-supplied metadata last to override any default behavior
 	metadata = append(metadata, userMetadata...)
 
-	return image.NewImage(img, imageTempDir, metadata...), nil
+	return image.New(img, p.tmpDirGen, imageTempDir, metadata...), nil
 }
 
 func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
@@ -96,7 +97,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 
 	if registryOptions.InsecureSkipTLSVerify {
 		t := &http.Transport{
-			// nolint: gosec
+			//nolint: gosec
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
 		options = append(options, remote.WithTransport(t))
@@ -111,11 +112,15 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	}
 
 	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
-	// If no explicit authenticator can be found, then fallback to the keychain.
+	// If no explicit authenticator can be found, check if explicit Keychain has
+	// been provided, and if not, then fallback to the default keychain.
 	authenticator := registryOptions.Authenticator(ref.Context().RegistryStr())
-	if authenticator != nil {
+	switch {
+	case authenticator != nil:
 		options = append(options, remote.WithAuth(authenticator))
-	} else {
+	case registryOptions.Keychain != nil:
+		options = append(options, remote.WithAuthFromKeychain(registryOptions.Keychain))
+	default:
 		// use the Keychain specified from a docker config file.
 		log.Debugf("no registry credentials configured, using the default keychain")
 		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))

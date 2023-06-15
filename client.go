@@ -3,9 +3,11 @@ package stereoscope
 import (
 	"context"
 	"fmt"
+	"runtime"
+
+	"github.com/wagoodman/go-partybus"
 
 	"github.com/anchore/go-logger"
-
 	"github.com/anchore/stereoscope/internal/bus"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
@@ -15,7 +17,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/image/sif"
-	"github.com/wagoodman/go-partybus"
 )
 
 var rootTempDirGenerator = file.NewTempDirGenerator("stereoscope")
@@ -139,6 +140,7 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		}
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
+		defaultPlatformIfNil(&cfg)
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
 	case image.SingularitySource:
 		if cfg.Platform != nil {
@@ -146,9 +148,24 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		}
 		provider = sif.NewProviderFromPath(imgStr, tempDirGenerator)
 	default:
-		return nil, fmt.Errorf("unable determine image source")
+		return nil, fmt.Errorf("unable to determine image source")
 	}
 	return provider, nil
+}
+
+// defaultPlatformIfNil sets the platform to use the host's architecture
+// if no platform was specified. The OCI registry provider uses "linux/amd64"
+// as a hard-coded default platform, which has surprised customers
+// running stereoscope on non-amd64 hosts. If platform is already
+// set on the config, or the code can't generate a matching platform,
+// do nothing.
+func defaultPlatformIfNil(cfg *config) {
+	if cfg.Platform == nil {
+		p, err := image.NewPlatform(fmt.Sprintf("linux/%s", runtime.GOARCH))
+		if err == nil {
+			cfg.Platform = p
+		}
+	}
 }
 
 // GetImage parses the user provided image string and provides an image object;
@@ -169,8 +186,8 @@ func SetBus(b *partybus.Bus) {
 	bus.SetPublisher(b)
 }
 
-// Cleanup deletes all directories created by stereoscope calls. Note: please use image.Image.Cleanup() over this
-// function when possible.
+// Cleanup deletes all directories created by stereoscope calls.
+// Deprecated: please use image.Image.Cleanup() over this.
 func Cleanup() {
 	if err := rootTempDirGenerator.Cleanup(); err != nil {
 		log.Errorf("failed to cleanup tempdir root: %w", err)

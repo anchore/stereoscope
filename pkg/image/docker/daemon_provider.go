@@ -14,11 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anchore/stereoscope/internal/bus"
-	"github.com/anchore/stereoscope/internal/log"
-	"github.com/anchore/stereoscope/pkg/event"
-	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/docker/cli/cli/config"
 	configTypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
@@ -26,6 +21,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
+
+	"github.com/anchore/stereoscope/internal/bus"
+	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/event"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/image"
 )
 
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the docker daemon API.

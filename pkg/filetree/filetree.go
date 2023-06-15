@@ -4,19 +4,23 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"path/filepath"
+	"sort"
 	"strings"
 
-	"github.com/anchore/stereoscope/internal"
+	"github.com/bmatcuk/doublestar/v4"
+	"github.com/scylladb/go-set/iset"
+	"github.com/scylladb/go-set/strset"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/tree"
 	"github.com/anchore/stereoscope/pkg/tree/node"
-	"github.com/bmatcuk/doublestar/v4"
 )
 
 var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the FileTree")
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
+var ErrLinkResolutionDepth = errors.New("maximum link resolution stack depth exceeded")
+var maxLinkResolutionDepth = 100
 
 // FileTree represents a file/directory Tree
 type FileTree struct {
@@ -24,7 +28,13 @@ type FileTree struct {
 }
 
 // NewFileTree creates a new FileTree instance.
+// Deprecated: use New() instead.
 func NewFileTree() *FileTree {
+	return New()
+}
+
+// New creates a new FileTree instance.
+func New() *FileTree {
 	t := tree.NewTree()
 
 	// Initialize FileTree with a root "/" Node
@@ -36,8 +46,8 @@ func NewFileTree() *FileTree {
 }
 
 // Copy returns a Copy of the current FileTree.
-func (t *FileTree) Copy() (*FileTree, error) {
-	ct := NewFileTree()
+func (t *FileTree) Copy() (ReadWriter, error) {
+	ct := New()
 	ct.tree = t.tree.Copy()
 	return ct, nil
 }
@@ -45,18 +55,18 @@ func (t *FileTree) Copy() (*FileTree, error) {
 // AllFiles returns all files within the FileTree (defaults to regular files only, but you can provide one or more allow types).
 func (t *FileTree) AllFiles(types ...file.Type) []file.Reference {
 	if len(types) == 0 {
-		types = []file.Type{file.TypeReg}
+		types = []file.Type{file.TypeRegular}
 	}
 
-	typeSet := internal.NewStringSet()
+	typeSet := iset.New()
 	for _, t := range types {
-		typeSet.Add(string(t))
+		typeSet.Add(int(t))
 	}
 
 	var files []file.Reference
 	for _, n := range t.tree.Nodes() {
 		f := n.(*filenode.FileNode)
-		if typeSet.Contains(string(f.FileType)) && f.Reference != nil {
+		if typeSet.Has(int(f.FileType)) && f.Reference != nil {
 			files = append(files, *f.Reference)
 		}
 	}
@@ -75,7 +85,7 @@ func (t *FileTree) AllRealPaths() []file.Path {
 }
 
 func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
-	n, err := t.node(dir, linkResolutionStrategy{
+	fna, err := t.node(dir, linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
@@ -83,16 +93,16 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 		return nil, err
 	}
 
-	if n == nil {
+	if !fna.HasFileNode() {
 		return nil, nil
 	}
 
-	if n.FileType != file.TypeDir {
+	if fna.FileNode.FileType != file.TypeDirectory {
 		return nil, nil
 	}
 
 	var listing []file.Path
-	children := t.tree.Children(n)
+	children := t.tree.Children(fna.FileNode)
 	for _, child := range children {
 		if child == nil {
 			continue
@@ -106,13 +116,25 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 			return nil, err
 		}
 
-		listing = append(listing, file.Path(path.Join(string(dir), fn.RealPath.Basename())))
+		listing = append(listing, file.Path(path.Join(string(dir), fn.FileNode.RealPath.Basename())))
 	}
 	return listing, nil
 }
 
 // File fetches a file.Reference for the given path. Returns nil if the path does not exist in the FileTree.
-func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, *file.Reference, error) {
+func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, *file.Resolution, error) {
+	currentNode, err := t.file(path, options...)
+	if err != nil {
+		return false, nil, err
+	}
+	if currentNode.HasFileNode() {
+		return true, currentNode.FileResolution(), err
+	}
+	return false, nil, err
+}
+
+// file fetches a file.Reference for the given path. Returns nil if the path does not exist in the FileTree.
+func (t *FileTree) file(path file.Path, options ...LinkResolutionOption) (*nodeAccess, error) {
 	userStrategy := newLinkResolutionStrategy(options...)
 	// For:             /some/path/here
 	// Where:           /some/path -> /other/place
@@ -131,13 +153,12 @@ func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, 
 	//
 	// Therefore we can safely lookup the path first without worrying about symlink resolution yet... if there is a
 	// hit, return it! If not, fallback to symlink resolution.
-
 	currentNode, err := t.node(path, linkResolutionStrategy{})
 	if err != nil {
-		return false, nil, err
+		return nil, err
 	}
-	if currentNode != nil && (!currentNode.IsLink() || currentNode.IsLink() && !userStrategy.FollowBasenameLinks) {
-		return true, currentNode.Reference, nil
+	if currentNode.HasFileNode() && (!currentNode.FileNode.IsLink() || currentNode.FileNode.IsLink() && !userStrategy.FollowBasenameLinks) {
+		return currentNode, nil
 	}
 
 	// symlink resolution!... within the context of container images (which is outside of the responsibility of this object)
@@ -148,59 +169,97 @@ func (t *FileTree) File(path file.Path, options ...LinkResolutionOption) (bool, 
 		FollowBasenameLinks:          userStrategy.FollowBasenameLinks,
 		DoNotFollowDeadBasenameLinks: userStrategy.DoNotFollowDeadBasenameLinks,
 	})
-	if currentNode != nil {
-		return true, currentNode.Reference, err
+	if currentNode.HasFileNode() {
+		return currentNode, err
 	}
-	return false, nil, err
+	return nil, err
 }
 
-func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*filenode.FileNode, error) {
+func newResolutions(nodePath []nodeAccess) []file.Resolution {
+	var refPath []file.Resolution
+	for i, n := range nodePath {
+		if i == len(nodePath)-1 && n.FileNode != nil {
+			// this is already on the parent Access object (unless it is a dead link)
+			break
+		}
+		access := file.Resolution{
+			RequestPath: n.RequestPath,
+		}
+		if n.FileNode != nil {
+			access.Reference = n.FileNode.Reference
+		}
+
+		refPath = append(refPath, access)
+	}
+	return refPath
+}
+
+func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAccess, error) {
 	normalizedPath := p.Normalize()
 	nodeID := filenode.IDByPath(normalizedPath)
 	if !strategy.FollowLinks() {
 		n := t.tree.Node(nodeID)
 		if n == nil {
-			return nil, nil
+			return &nodeAccess{
+				RequestPath: normalizedPath,
+				FileNode:    nil,
+			}, nil
 		}
-		return n.(*filenode.FileNode), nil
+		return &nodeAccess{
+			RequestPath: normalizedPath,
+			FileNode:    n.(*filenode.FileNode),
+		}, nil
 	}
 
-	var currentNode *filenode.FileNode
+	var currentNode *nodeAccess
 	var err error
 	if strategy.FollowAncestorLinks {
-		currentNode, err = t.resolveAncestorLinks(normalizedPath, nil)
+		currentNode, err = t.resolveAncestorLinks(normalizedPath, nil, maxLinkResolutionDepth)
 		if err != nil {
+			if currentNode != nil {
+				currentNode.RequestPath = normalizedPath
+			}
 			return currentNode, err
 		}
 	} else {
 		n := t.tree.Node(nodeID)
 		if n != nil {
-			currentNode = n.(*filenode.FileNode)
+			currentNode = &nodeAccess{
+				RequestPath: normalizedPath,
+				FileNode:    n.(*filenode.FileNode),
+			}
 		}
 	}
 
 	// link resolution has come up with nothing, return what we have so far
-	if currentNode == nil {
+	if !currentNode.HasFileNode() {
+		if currentNode != nil {
+			currentNode.RequestPath = normalizedPath
+		}
 		return currentNode, nil
 	}
 
 	if strategy.FollowBasenameLinks {
-		currentNode, err = t.resolveNodeLinks(currentNode, !strategy.DoNotFollowDeadBasenameLinks, nil)
+		currentNode, err = t.resolveNodeLinks(currentNode, !strategy.DoNotFollowDeadBasenameLinks, nil, maxLinkResolutionDepth)
 	}
+	if currentNode != nil {
+		currentNode.RequestPath = normalizedPath
+	}
+
 	return currentNode, err
 }
 
 // return FileNode of the basename in the given path (no resolution is done at or past the basename). Note: it is
 // assumed that the given path has already been normalized.
-func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths internal.Set) (*filenode.FileNode, error) {
+func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPaths file.PathCountSet, maxLinkDepth int) (*nodeAccess, error) {
 	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
 	// use it, otherwise, continue with ancestor resolution
-	currentNode, err := t.node(path, linkResolutionStrategy{})
+	currentNodeAccess, err := t.node(path, linkResolutionStrategy{})
 	if err != nil {
 		return nil, err
 	}
-	if currentNode != nil {
-		return currentNode, nil
+	if currentNodeAccess.HasFileNode() {
+		return currentNodeAccess, nil
 	}
 
 	var pathParts = strings.Split(string(path), file.DirSeparator)
@@ -219,101 +278,111 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, attemptedPaths internal.
 		currentPathStr = string(currentPath)
 
 		// fetch the Node with NO link resolution strategy
-		currentNode, err = t.node(currentPath, linkResolutionStrategy{})
+		currentNodeAccess, err = t.node(currentPath, linkResolutionStrategy{})
 		if err != nil {
 			// should never occur
 			return nil, err
 		}
 
-		if currentNode == nil {
+		if !currentNodeAccess.HasFileNode() {
 			// we've reached a point where the given path that has never been observed. This can happen for one reason:
 			// 1. the current path is really invalid and we should return NIL indicating that it cannot be resolved.
 			// 2. the current path is a link? no, this isn't possible since we are iterating through constituent paths
 			//      in order, so we are guaranteed to hit parent links in which we should adjust the search path accordingly.
-			return nil, nil
+			return currentNodeAccess, nil
 		}
 
 		// keep track of what we've resolved to so far...
-		currentPath = currentNode.RealPath
+		currentPath = currentNodeAccess.FileNode.RealPath
 
 		// this is positively a path, however, there is no information about this Node. This may be OK since we
 		// allow for adding children before parents (and even don't require the parent to ever be added --which is
 		// potentially valid given the underlying messy data [tar headers]). In this case we keep building the path
 		// (which we've already done at this point) and continue.
-		if currentNode.Reference == nil {
+		if currentNodeAccess.FileNode.Reference == nil {
 			continue
 		}
 
 		// by this point we definitely have a file reference, if this is a link (and not the basename) resolve any
 		// links until the next Node is resolved (or not).
 		isLastPart := idx == len(pathParts)-1
-		if !isLastPart && currentNode.IsLink() {
-			currentNode, err = t.resolveNodeLinks(currentNode, true, attemptedPaths)
+		if !isLastPart && currentNodeAccess.FileNode.IsLink() {
+			currentNodeAccess, err = t.resolveNodeLinks(currentNodeAccess, true, currentlyResolvingLinkPaths, maxLinkDepth)
 			if err != nil {
 				// only expected to happen on cycles
-				return currentNode, err
+				return currentNodeAccess, err
 			}
-			if currentNode != nil {
-				currentPath = currentNode.RealPath
+			if currentNodeAccess.HasFileNode() {
+				currentPath = currentNodeAccess.FileNode.RealPath
 			}
 			currentPathStr = string(currentPath)
 		}
 	}
 	// by this point we have processed all constituent paths; there were no un-added paths and the path is guaranteed
 	// to have followed link resolution.
-	return currentNode, nil
+	return currentNodeAccess, nil
 }
 
-// followNode takes the given FileNode and resolves all links at the base of the real path for the node (this implies
+// resolveNodeLinks takes the given FileNode and resolves all links at the base of the real path for the node (this implies
 // that NO ancestors are considered).
-func (t *FileTree) resolveNodeLinks(n *filenode.FileNode, followDeadBasenameLinks bool, attemptedPaths internal.Set) (*filenode.FileNode, error) {
+// nolint: funlen
+func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, currentlyResolvingLinkPaths file.PathCountSet, maxLinkDepth int) (*nodeAccess, error) {
 	if n == nil {
 		return nil, fmt.Errorf("cannot resolve links with nil Node given")
 	}
 
-	// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing nodes that do not exist
-	if attemptedPaths == nil {
-		attemptedPaths = internal.NewStringSet()
+	// we need to short-circuit link resolution that never resolves (cycles) due to a cycle referencing nodes that do not exist.
+	// this represents current link resolution requests that are in progress. This set is pruned once the resolution
+	// has been completed.
+	if currentlyResolvingLinkPaths == nil {
+		currentlyResolvingLinkPaths = file.NewPathCountSet()
 	}
 
 	// note: this assumes that callers are passing paths in which the constituent parts are NOT symlinks
-	var lastNode *filenode.FileNode
+	var lastNode *nodeAccess
+	var nodePath []nodeAccess
+	var nextPath file.Path
+	currentNodeAccess := n
 
-	currentNode := n
-
-	// keep resolving links until a regular file or directory is found
-	alreadySeen := internal.NewStringSet()
+	// keep resolving links until a regular file or directory is found.
+	// Note: this is NOT redundant relative to the 'currentlyResolvingLinkPaths' set. This set is used to short-circuit
+	// real paths that have been revisited through potentially different links (or really anyway).
+	realPathsVisited := strset.New()
 	var err error
 	for {
+		// we need to short-circuit link resolution that never resolves (depth) due to a cycle referencing
+		// maxLinkDepth is counted across all calls to resolveAncestorLinks and resolveNodeLinks
+		maxLinkDepth--
+		if maxLinkDepth < 1 {
+			return nil, ErrLinkResolutionDepth
+		}
+
+		nodePath = append(nodePath, *currentNodeAccess)
+
 		// if there is no next path, return this reference (dead link)
-		if currentNode == nil {
+		if !currentNodeAccess.HasFileNode() {
+			// the last path we tried to resolve is a dead link, persist the original path as the failed request
+			if len(nodePath) > 0 {
+				nodePath[len(nodePath)-1].RequestPath = nextPath
+			}
 			break
 		}
 
-		if alreadySeen.Contains(string(currentNode.RealPath)) {
+		if realPathsVisited.Has(string(currentNodeAccess.FileNode.RealPath)) {
 			return nil, ErrLinkCycleDetected
 		}
 
-		if !currentNode.IsLink() {
+		if !currentNodeAccess.FileNode.IsLink() {
 			// no resolution and there is no next link (pseudo dead link)... return what you found
 			// any content fetches will fail, but that's ok
 			break
 		}
 
 		// prepare for the next iteration
-		alreadySeen.Add(string(currentNode.RealPath))
+		// already seen is important for the context of this loop
+		realPathsVisited.Add(string(currentNodeAccess.FileNode.RealPath))
 
-		var nextPath file.Path
-		if currentNode.LinkPath.IsAbsolutePath() {
-			// use links with absolute paths blindly
-			nextPath = currentNode.LinkPath
-		} else {
-			// resolve relative link paths
-			var parentDir string
-			parentDir, _ = filepath.Split(string(currentNode.RealPath))
-			// assemble relative link path by normalizing: "/cur/dir/../file1.txt" --> "/cur/file1.txt"
-			nextPath = file.Path(path.Clean(path.Join(parentDir, string(currentNode.LinkPath))))
-		}
+		nextPath = currentNodeAccess.FileNode.RenderLinkDestination()
 
 		// no more links to follow
 		if string(nextPath) == "" {
@@ -321,32 +390,44 @@ func (t *FileTree) resolveNodeLinks(n *filenode.FileNode, followDeadBasenameLink
 		}
 
 		// preserve the current Node for the next loop (in case we shouldn't follow a potentially dead link)
-		lastNode = currentNode
+		lastNode = currentNodeAccess
 
 		// break any cycles with non-existent paths (before attempting to look the path up again)
-		if attemptedPaths.Contains(string(nextPath)) {
+		if currentlyResolvingLinkPaths.Contains(nextPath) {
 			return nil, ErrLinkCycleDetected
 		}
 
 		// get the next Node (based on the next path)
-		attemptedPaths.Add(string(nextPath))
-		currentNode, err = t.resolveAncestorLinks(nextPath, attemptedPaths)
+		// attempted paths maintains state across calls to resolveAncestorLinks
+		currentlyResolvingLinkPaths.Add(nextPath)
+		currentNodeAccess, err = t.resolveAncestorLinks(nextPath, currentlyResolvingLinkPaths, maxLinkDepth)
 		if err != nil {
+			if currentNodeAccess != nil {
+				currentNodeAccess.LeafLinkResolution = append(currentNodeAccess.LeafLinkResolution, nodePath...)
+			}
+
 			// only expected to occur upon cycle detection
-			return currentNode, err
+			return currentNodeAccess, err
 		}
+		currentlyResolvingLinkPaths.Remove(nextPath)
 	}
 
-	if currentNode == nil && !followDeadBasenameLinks {
+	if !currentNodeAccess.HasFileNode() && !followDeadBasenameLinks {
+		if lastNode != nil {
+			lastNode.LeafLinkResolution = append(lastNode.LeafLinkResolution, nodePath...)
+		}
 		return lastNode, nil
 	}
 
-	return currentNode, nil
+	if currentNodeAccess != nil {
+		currentNodeAccess.LeafLinkResolution = append(currentNodeAccess.LeafLinkResolution, nodePath...)
+	}
+	return currentNodeAccess, nil
 }
 
 // FilesByGlob fetches zero to many file.References for the given glob pattern (considers symlinks).
-func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([]GlobResult, error) {
-	results := make([]GlobResult, 0)
+func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([]file.Resolution, error) {
+	var results []file.Resolution
 
 	if len(query) == 0 {
 		return nil, fmt.Errorf("no glob pattern given")
@@ -379,7 +460,7 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 		if !path.IsAbs(match) {
 			matchPath = file.Path(path.Join("/", match))
 		}
-		fn, err := t.node(matchPath, linkResolutionStrategy{
+		fna, err := t.node(matchPath, linkResolutionStrategy{
 			FollowAncestorLinks:          true,
 			FollowBasenameLinks:          true,
 			DoNotFollowDeadBasenameLinks: doNotFollowDeadBasenameLinks,
@@ -388,19 +469,19 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 			return nil, err
 		}
 		// the Node must exist and should not be a directory
-		if fn != nil && fn.FileType != file.TypeDir {
-			result := GlobResult{
-				MatchPath: matchPath,
-				RealPath:  fn.RealPath,
-				// we should not be given a link Node UNLESS it is dead
-				IsDeadLink: fn.IsLink(),
+		if fna.HasFileNode() && fna.FileNode.FileType != file.TypeDirectory {
+			result := file.NewResolution(
+				matchPath,
+				fna.FileNode.Reference,
+				newResolutions(fna.LeafLinkResolution),
+			)
+			if result != nil {
+				results = append(results, *result)
 			}
-			if fn.Reference != nil {
-				result.Reference = *fn.Reference
-			}
-			results = append(results, result)
 		}
 	}
+
+	sort.Sort(file.Resolutions(results))
 
 	return results, nil
 }
@@ -410,20 +491,20 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 // hardlink resolution is performed on the given path --which implies that the given path MUST be a real path (have no
 // links in constituent paths)
 func (t *FileTree) AddFile(realPath file.Path) (*file.Reference, error) {
-	fn, err := t.node(realPath, linkResolutionStrategy{})
+	fna, err := t.node(realPath, linkResolutionStrategy{})
 	if err != nil {
 		return nil, err
 	}
-	if fn != nil {
+	if fna.HasFileNode() {
 		// this path already exists
-		if fn.FileType != file.TypeReg {
+		if fna.FileNode.FileType != file.TypeRegular {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a regular file", realPath)
 		}
 		// this is a regular file, provide a new or existing file.Reference
-		if fn.Reference == nil {
-			fn.Reference = file.NewFileReference(realPath)
+		if fna.FileNode.Reference == nil {
+			fna.FileNode.Reference = file.NewFileReference(realPath)
 		}
-		return fn.Reference, nil
+		return fna.FileNode.Reference, nil
 	}
 
 	// this is a new path... add the new Node + parents
@@ -438,20 +519,20 @@ func (t *FileTree) AddFile(realPath file.Path) (*file.Reference, error) {
 // link path captured and returned. Note: NO symlink or hardlink resolution is performed on the given path --which
 // implies that the given path MUST be a real path (have no links in constituent paths)
 func (t *FileTree) AddSymLink(realPath file.Path, linkPath file.Path) (*file.Reference, error) {
-	fn, err := t.node(realPath, linkResolutionStrategy{})
+	fna, err := t.node(realPath, linkResolutionStrategy{})
 	if err != nil {
 		return nil, err
 	}
-	if fn != nil {
+	if fna.HasFileNode() {
 		// this path already exists
-		if fn.FileType != file.TypeSymlink {
+		if fna.FileNode.FileType != file.TypeSymLink {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a symlink file", realPath)
 		}
 		// this is a symlink file, provide a new or existing file.Reference
-		if fn.Reference == nil {
-			fn.Reference = file.NewFileReference(realPath)
+		if fna.FileNode.Reference == nil {
+			fna.FileNode.Reference = file.NewFileReference(realPath)
 		}
-		return fn.Reference, nil
+		return fna.FileNode.Reference, nil
 	}
 
 	// this is a new path... add the new Node + parents
@@ -466,20 +547,20 @@ func (t *FileTree) AddSymLink(realPath file.Path, linkPath file.Path) (*file.Ref
 // path captured and returned. Note: NO symlink or hardlink resolution is performed on the given path --which
 // implies that the given path MUST be a real path (have no links in constituent paths)
 func (t *FileTree) AddHardLink(realPath file.Path, linkPath file.Path) (*file.Reference, error) {
-	fn, err := t.node(realPath, linkResolutionStrategy{})
+	fna, err := t.node(realPath, linkResolutionStrategy{})
 	if err != nil {
 		return nil, err
 	}
-	if fn != nil {
+	if fna.HasFileNode() {
 		// this path already exists
-		if fn.FileType != file.TypeHardLink {
+		if fna.FileNode.FileType != file.TypeHardLink {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a symlink file", realPath)
 		}
 		// this is a symlink file, provide a new or existing file.Reference
-		if fn.Reference == nil {
-			fn.Reference = file.NewFileReference(realPath)
+		if fna.FileNode.Reference == nil {
+			fna.FileNode.Reference = file.NewFileReference(realPath)
 		}
-		return fn.Reference, nil
+		return fna.FileNode.Reference, nil
 	}
 
 	// this is a new path... add the new Node + parents
@@ -497,20 +578,20 @@ func (t *FileTree) AddHardLink(realPath file.Path, linkPath file.Path) (*file.Re
 // Note: NO symlink or hardlink resolution is performed on the given path --which implies that the given path MUST
 // be a real path (have no links in constituent paths)
 func (t *FileTree) AddDir(realPath file.Path) (*file.Reference, error) {
-	fn, err := t.node(realPath, linkResolutionStrategy{})
+	fna, err := t.node(realPath, linkResolutionStrategy{})
 	if err != nil {
 		return nil, err
 	}
-	if fn != nil {
+	if fna.HasFileNode() {
 		// this path already exists
-		if fn.FileType != file.TypeDir {
+		if fna.FileNode.FileType != file.TypeDirectory {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a symlink file", realPath)
 		}
-		// this is a symlink file, provide a new or existing file.Reference
-		if fn.Reference == nil {
-			fn.Reference = file.NewFileReference(realPath)
+		// this is a directory, provide a new or existing file.Reference
+		if fna.FileNode.Reference == nil {
+			fna.FileNode.Reference = file.NewFileReference(realPath)
 		}
-		return fn.Reference, nil
+		return fna.FileNode.Reference, nil
 	}
 
 	// this is a new path... add the new Node + parents
@@ -532,22 +613,22 @@ func (t *FileTree) addParentPaths(realPath file.Path) error {
 		return fmt.Errorf("unable to determine parent path while adding path=%q: %w", realPath, err)
 	}
 
-	fn, err := t.node(parentPath, linkResolutionStrategy{})
+	fna, err := t.node(parentPath, linkResolutionStrategy{})
 	if err != nil {
 		return err
 	}
 
-	if fn == nil {
+	if !fna.HasFileNode() {
 		// add parents of the Node until an existent parent is found it's important to do this in reverse order
 		// to ensure we are checking the fewest amount of parents possible.
 		var pathsToAdd []file.Path
 		parentPaths := realPath.ConstituentPaths()
 		for idx := len(parentPaths) - 1; idx >= 0; idx-- {
-			fn, err := t.node(parentPaths[idx], linkResolutionStrategy{})
+			resolvedFna, err := t.node(parentPaths[idx], linkResolutionStrategy{})
 			if err != nil {
 				return err
 			}
-			if fn != nil {
+			if resolvedFna.HasFileNode() {
 				break
 			}
 			pathsToAdd = append(pathsToAdd, parentPaths[idx])
@@ -584,11 +665,11 @@ func (t *FileTree) setFileNode(fn *filenode.FileNode) error {
 	if err != nil {
 		return err
 	}
-	if parentNode == nil {
+	if !parentNode.HasFileNode() {
 		return fmt.Errorf("unable to find parent path=%q while adding path=%q", parentPath, fn.RealPath)
 	}
 
-	return t.tree.AddChild(parentNode, fn)
+	return t.tree.AddChild(parentNode.FileNode, fn)
 }
 
 // RemovePath deletes the file.Reference from the FileTree by the given path. If the basename of the given path
@@ -599,18 +680,18 @@ func (t *FileTree) RemovePath(path file.Path) error {
 		return ErrRemovingRoot
 	}
 
-	fn, err := t.node(path, linkResolutionStrategy{
+	fna, err := t.node(path, linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: false,
 	})
 	if err != nil {
 		return err
 	}
-	if fn == nil {
+	if !fna.HasFileNode() {
 		return nil
 	}
 
-	_, err = t.tree.RemoveNode(fn)
+	_, err = t.tree.RemoveNode(fna.FileNode)
 	if err != nil {
 		return err
 	}
@@ -621,18 +702,18 @@ func (t *FileTree) RemovePath(path file.Path) error {
 // basename is a symlink, then the symlink is followed before resolving children. If the path does not exist, this is a
 // nop.
 func (t *FileTree) RemoveChildPaths(path file.Path) error {
-	fn, err := t.node(path, linkResolutionStrategy{
+	fna, err := t.node(path, linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
 	if err != nil {
 		return err
 	}
-	if fn == nil {
+	if !fna.HasFileNode() {
 		// can't remove child paths for Node that doesn't exist!
 		return nil
 	}
-	for _, child := range t.tree.Children(fn) {
+	for _, child := range t.tree.Children(fna.FileNode) {
 		_, err := t.tree.RemoveNode(child)
 		if err != nil {
 			return err
@@ -641,31 +722,31 @@ func (t *FileTree) RemoveChildPaths(path file.Path) error {
 	return nil
 }
 
-// Reader returns a tree.Reader useful for Tree traversal.
-func (t *FileTree) Reader() tree.Reader {
+// TreeReader returns a tree.Reader useful for Tree traversal.
+func (t *FileTree) TreeReader() tree.Reader {
 	return t.tree
 }
 
 // PathDiff shows the path differences between two trees (useful for testing)
 func (t *FileTree) PathDiff(other *FileTree) (extra, missing []file.Path) {
-	ourPaths := internal.NewStringSet()
+	ourPaths := strset.New()
 	for _, fn := range t.tree.Nodes() {
 		ourPaths.Add(string(fn.ID()))
 	}
 
-	theirPaths := internal.NewStringSet()
+	theirPaths := strset.New()
 	for _, fn := range other.tree.Nodes() {
 		theirPaths.Add(string(fn.ID()))
 	}
 
 	for _, fn := range other.tree.Nodes() {
-		if !ourPaths.Contains(string(fn.ID())) {
+		if !ourPaths.Has(string(fn.ID())) {
 			extra = append(extra, file.Path(fn.ID()))
 		}
 	}
 
 	for _, fn := range t.tree.Nodes() {
-		if !theirPaths.Contains(string(fn.ID())) {
+		if !theirPaths.Has(string(fn.ID())) {
 			missing = append(missing, file.Path(fn.ID()))
 		}
 	}
@@ -698,11 +779,12 @@ func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error, cond
 	return NewDepthFirstPathWalker(t, fn, conditions).WalkAll()
 }
 
-// merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
+// Merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
 // are path conflicts. This is the basis function for squashing (where the current Tree is the bottom Tree and the
 // given Tree is the top Tree).
-// nolint:gocognit,funlen
-func (t *FileTree) merge(upper *FileTree) error {
+//
+//nolint:gocognit,funlen
+func (t *FileTree) Merge(upper Reader) error {
 	conditions := tree.WalkConditions{
 		ShouldContinueBranch: func(n node.Node) bool {
 			p := file.Path(n.ID())
@@ -720,22 +802,22 @@ func (t *FileTree) merge(upper *FileTree) error {
 		}
 		upperNode := n.(*filenode.FileNode)
 		// opaque directories must be processed first
-		if upper.hasOpaqueDirectory(upperNode.RealPath) {
+		if hasOpaqueDirectory(upper, upperNode.RealPath) {
 			err := t.RemoveChildPaths(upperNode.RealPath)
 			if err != nil {
-				return fmt.Errorf("filetree merge failed to remove child paths (upperPath=%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to remove child paths (upperPath=%s): %w", upperNode.RealPath, err)
 			}
 		}
 
 		if upperNode.RealPath.IsWhiteout() {
 			lowerPath, err := upperNode.RealPath.UnWhiteoutPath()
 			if err != nil {
-				return fmt.Errorf("filetree merge failed to find original upperPath for whiteout (upperPath=%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to find original upperPath for whiteout (upperPath=%s): %w", upperNode.RealPath, err)
 			}
 
 			err = t.RemovePath(lowerPath)
 			if err != nil {
-				return fmt.Errorf("filetree merge failed to remove upperPath (upperPath=%s): %w", lowerPath, err)
+				return fmt.Errorf("filetree Merge failed to remove upperPath (upperPath=%s): %w", lowerPath, err)
 			}
 
 			return nil
@@ -746,9 +828,9 @@ func (t *FileTree) merge(upper *FileTree) error {
 			FollowBasenameLinks: false,
 		})
 		if err != nil {
-			return fmt.Errorf("filetree merge failed when looking for path=%q : %w", upperNode.RealPath, err)
+			return fmt.Errorf("filetree Merge failed when looking for path=%q : %w", upperNode.RealPath, err)
 		}
-		if lowerNode == nil {
+		if !lowerNode.HasFileNode() {
 			// there is no existing Node... add parents and prepare to set
 			if err := t.addParentPaths(upperNode.RealPath); err != nil {
 				return fmt.Errorf("could not add parent paths to lower: %w", err)
@@ -758,21 +840,21 @@ func (t *FileTree) merge(upper *FileTree) error {
 		nodeCopy := *upperNode
 
 		// keep original file references if the upper tree does not have them (only for the same file types)
-		if lowerNode != nil && lowerNode.Reference != nil && upperNode.Reference == nil && upperNode.FileType == lowerNode.FileType {
-			nodeCopy.Reference = lowerNode.Reference
+		if lowerNode.HasFileNode() && lowerNode.FileNode.Reference != nil && upperNode.Reference == nil && upperNode.FileType == lowerNode.FileNode.FileType {
+			nodeCopy.Reference = lowerNode.FileNode.Reference
 		}
 
-		if lowerNode != nil && upperNode.FileType != file.TypeDir && lowerNode.FileType == file.TypeDir {
+		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory && lowerNode.FileNode.FileType == file.TypeDirectory {
 			// NOTE: both upperNode and lowerNode paths are the same, and does not have an effect
 			// on removal of child paths
 			err := t.RemoveChildPaths(upperNode.RealPath)
 			if err != nil {
-				return fmt.Errorf("filetree merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
 			}
 		}
 		// graft a copy of the upper Node with potential lower information into the lower tree
 		if err := t.setFileNode(&nodeCopy); err != nil {
-			return fmt.Errorf("filetree merge failed to set file Node (Node=%+v): %w", nodeCopy, err)
+			return fmt.Errorf("filetree Merge failed to set file Node (Node=%+v): %w", nodeCopy, err)
 		}
 
 		return nil
@@ -781,10 +863,10 @@ func (t *FileTree) merge(upper *FileTree) error {
 	// we are using the tree walker instead of the path walker to only look at an resolve merging of real files
 	// with no consideration to virtual paths (paths that are valid in the filetree because constituent paths
 	// contain symlinks).
-	return tree.NewDepthFirstWalkerWithConditions(upper.Reader(), visitor, conditions).WalkAll()
+	return tree.NewDepthFirstWalkerWithConditions(upper.TreeReader(), visitor, conditions).WalkAll()
 }
 
-func (t *FileTree) hasOpaqueDirectory(directoryPath file.Path) bool {
+func hasOpaqueDirectory(t Reader, directoryPath file.Path) bool {
 	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
 	return t.HasPath(opaqueWhiteoutChild)
 }

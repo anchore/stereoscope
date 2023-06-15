@@ -1,15 +1,19 @@
 package image
 
 import (
-	"github.com/anchore/stereoscope/internal/log"
 	"github.com/google/go-containerregistry/pkg/authn"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 // RegistryOptions for the OCI registry provider.
+// If no specific Credential is found in the RegistryCredentials, will check
+// for Keychain, and barring that will use Default Keychain.
 type RegistryOptions struct {
 	InsecureSkipTLSVerify bool
 	InsecureUseHTTP       bool
 	Credentials           []RegistryCredentials
+	Keychain              authn.Keychain
 	Platform              string
 }
 

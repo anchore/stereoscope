@@ -8,21 +8,134 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/go-test/deep"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func assertMetadataEqual(t *testing.T, expected, actual Metadata) {
+	if !assert.True(t, expected.Equal(actual)) {
+		assert.Equal(t, expected.Path, actual.Path, "mismatched path")
+		assert.Equal(t, expected.Type, actual.Type, "mismatched type")
+		assert.Equal(t, expected.LinkDestination, actual.LinkDestination, "mismatched link destination")
+		assert.Equal(t, expected.Name(), actual.Name(), "mismatched name")
+		assert.Equal(t, expected.Size(), actual.Size(), "mismatched size")
+		assert.Equal(t, expected.Mode(), actual.Mode(), "mismatched mode")
+		assert.Equal(t, expected.UserID, actual.UserID, "mismatched user id")
+		assert.Equal(t, expected.GroupID, actual.GroupID, "mismatched group id")
+		assert.Equal(t, expected.IsDir(), actual.IsDir(), "mismatched is dir")
+		assert.Equal(t, expected.MIMEType, actual.MIMEType, "mismatched mime type")
+		exMod := expected.FileInfo.ModTime()
+		acMod := actual.FileInfo.ModTime()
+		if !assert.True(t, exMod.UTC().Equal(acMod.UTC()), "mismatched mod time (UTC)") {
+			assert.Equal(t, exMod, acMod, "mod time details")
+		}
+	}
+}
 
 func TestFileMetadataFromTar(t *testing.T) {
 	tarReader := getTarFixture(t, "fixture-1")
 
-	expected := []Metadata{
-		{Path: "/path", TarSequence: 0, TarHeaderName: "path/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch", TarSequence: 1, TarHeaderName: "path/branch/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/one", TarSequence: 2, TarHeaderName: "path/branch/one/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o700, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/one/file-1.txt", TarSequence: 3, TarHeaderName: "path/branch/one/file-1.txt", TypeFlag: 48, Linkname: "", Size: 11, Mode: 0o700, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
-		{Path: "/path/branch/two", TarSequence: 4, TarHeaderName: "path/branch/two/", TypeFlag: 53, Linkname: "", Size: 0, Mode: os.ModeDir | 0o755, UserID: 1337, GroupID: 5432, IsDir: true, MIMEType: ""},
-		{Path: "/path/branch/two/file-2.txt", TarSequence: 5, TarHeaderName: "path/branch/two/file-2.txt", TypeFlag: 48, Linkname: "", Size: 12, Mode: 0o755, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
-		{Path: "/path/file-3.txt", TarSequence: 6, TarHeaderName: "path/file-3.txt", TypeFlag: 48, Linkname: "", Size: 11, Mode: 0o664, UserID: 1337, GroupID: 5432, IsDir: false, MIMEType: "text/plain"},
+	ex := []Metadata{
+		{
+			Path:            "/path",
+			Type:            TypeDirectory,
+			LinkDestination: "",
+			UserID:          1337,
+			GroupID:         5432,
+			MIMEType:        "",
+			FileInfo: ManualInfo{
+				NameValue:    "path",
+				SizeValue:    0,
+				ModeValue:    os.ModeDir | 0o755,
+				ModTimeValue: time.Time{},
+			},
+		},
+		{
+			Path:            "/path/branch",
+			Type:            TypeDirectory,
+			LinkDestination: "",
+			UserID:          1337,
+			GroupID:         5432,
+			MIMEType:        "",
+			FileInfo: ManualInfo{
+				NameValue:    "branch",
+				SizeValue:    0,
+				ModeValue:    os.ModeDir | 0o755,
+				ModTimeValue: time.Time{},
+			},
+		},
+		{
+			Path:            "/path/branch/one",
+			Type:            TypeDirectory,
+			LinkDestination: "",
+			UserID:          1337,
+			GroupID:         5432,
+			MIMEType:        "",
+			FileInfo: ManualInfo{
+				NameValue:    "one",
+				SizeValue:    0,
+				ModeValue:    os.ModeDir | 0o700,
+				ModTimeValue: time.Time{},
+			},
+		},
+		{
+			Path:            "/path/branch/one/file-1.txt",
+			Type:            TypeRegular,
+			LinkDestination: "",
+			UserID:          1337,
+			GroupID:         5432,
+			MIMEType:        "text/plain",
+			FileInfo: ManualInfo{
+				NameValue:    "file-1.txt",
+				SizeValue:    11,
+				ModeValue:    0o700,
+				ModTimeValue: time.Time{},
+			},
+		},
+		{
+			Path:            "/path/branch/two",
+			Type:            TypeDirectory,
+			LinkDestination: "",
+			UserID:          1337,
+			GroupID:         5432,
+			MIMEType:        "",
+			FileInfo: ManualInfo{
+				NameValue:    "two",
+				SizeValue:    0,
+				ModeValue:    os.ModeDir | 0o755,
+				ModTimeValue: time.Time{},
+			},
+		},
+		{
+			Path:            "/path/branch/two/file-2.txt",
+			Type:            TypeRegular,
+			LinkDestination: "",
+			UserID:          1337,
+			GroupID:         5432,
+			MIMEType:        "text/plain",
+			FileInfo: ManualInfo{
+				NameValue:    "file-2.txt",
+				SizeValue:    12,
+				ModeValue:    0o755,
+				ModTimeValue: time.Time{},
+			},
+		},
+		{
+			Path:            "/path/file-3.txt",
+			Type:            TypeRegular,
+			LinkDestination: "",
+			UserID:          1337,
+			GroupID:         5432,
+			MIMEType:        "text/plain",
+			FileInfo: ManualInfo{
+				NameValue:    "file-3.txt",
+				SizeValue:    11,
+				ModeValue:    0o664,
+				ModTimeValue: time.Time{},
+			},
+		},
 	}
 
 	var actual []Metadata
@@ -31,7 +144,10 @@ func TestFileMetadataFromTar(t *testing.T) {
 		if strings.HasSuffix(entry.Header.Name, ".txt") {
 			contents = strings.NewReader("#!/usr/bin/env bash\necho 'awesome script'")
 		}
-		actual = append(actual, NewMetadata(entry.Header, entry.Sequence, contents))
+
+		entry.Header.ModTime = time.Time{}
+
+		actual = append(actual, NewMetadata(entry.Header, contents))
 		return nil
 	}
 
@@ -39,7 +155,48 @@ func TestFileMetadataFromTar(t *testing.T) {
 		t.Fatalf("unable to iterate through tar: %+v", err)
 	}
 
-	for _, d := range deep.Equal(expected, actual) {
-		t.Errorf("diff: %s", d)
+	assert.Equal(t, len(ex), len(actual))
+	for i, e := range ex {
+		assertMetadataEqual(t, e, actual[i])
+	}
+}
+
+func TestFileMetadataFromPath(t *testing.T) {
+
+	tests := []struct {
+		path             string
+		expectedType     Type
+		expectedMIMEType string
+	}{
+		{
+			path:             "test-fixtures/symlinks-simple/readme",
+			expectedType:     TypeRegular,
+			expectedMIMEType: "text/plain",
+		},
+		{
+			path:             "test-fixtures/symlinks-simple/link_to_new_readme",
+			expectedType:     TypeSymLink,
+			expectedMIMEType: "",
+		},
+		{
+			path:             "test-fixtures/symlinks-simple/link_to_link_to_new_readme",
+			expectedType:     TypeSymLink,
+			expectedMIMEType: "",
+		},
+		{
+			path:             "test-fixtures/symlinks-simple",
+			expectedType:     TypeDirectory,
+			expectedMIMEType: "",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			info, err := os.Lstat(test.path)
+			require.NoError(t, err)
+
+			actual := NewMetadataFromPath(test.path, info)
+			assert.Equal(t, test.expectedMIMEType, actual.MIMEType, "unexpected MIME type for %s", test.path)
+			assert.Equal(t, test.expectedType, actual.Type, "unexpected type for %s", test.path)
+		})
 	}
 }

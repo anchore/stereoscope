@@ -7,9 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 )
 
 // basic interface assertion
@@ -18,13 +17,6 @@ var _ fs.ReadDirFile = (*fileAdapter)(nil)
 var _ fs.FS = (*osAdapter)(nil)
 var _ fs.FileInfo = (*fileinfoAdapter)(nil)
 var _ fs.DirEntry = (*fileinfoAdapter)(nil)
-
-type GlobResult struct {
-	MatchPath  file.Path
-	RealPath   file.Path
-	IsDeadLink bool
-	Reference  file.Reference
-}
 
 // fileAdapter is an object meant to implement the doublestar.File for getting Lstat results for an entire directory.
 type fileAdapter struct {
@@ -52,14 +44,16 @@ func isInPathResolutionLoop(path string, ft *FileTree) (bool, error) {
 	allPathSet := file.NewPathSet()
 	allPaths := file.Path(path).AllPaths()
 	for _, p := range allPaths {
-		fn, err := ft.node(p, linkResolutionStrategy{
+		fna, err := ft.node(p, linkResolutionStrategy{
 			FollowAncestorLinks: true,
 			FollowBasenameLinks: true,
 		})
 		if err != nil {
 			return false, err
 		}
-		allPathSet.Add(file.Path(fn.ID()))
+		if fna.HasFileNode() {
+			allPathSet.Add(file.Path(fna.FileNode.ID()))
+		}
 	}
 	// we want to allow for getting children out of the first iteration of a infinite path, but NOT allowing
 	// beyond the second iteration down an infinite path.
@@ -93,23 +87,23 @@ func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 		return nil, os.ErrInvalid
 	}
 	var ret = make([]fs.DirEntry, 0)
-	fn, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
+	fna, err := f.filetree.node(file.Path(f.name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
 	if err != nil {
 		return ret, err
 	}
-	if fn == nil {
+	if !fna.HasFileNode() {
 		return ret, nil
 	}
 
-	isInPathResolutionLoop, err := isInPathResolutionLoop(f.name, f.filetree)
-	if err != nil || isInPathResolutionLoop {
+	isInLoop, err := isInPathResolutionLoop(f.name, f.filetree)
+	if err != nil || isInLoop {
 		return ret, err
 	}
 
-	for idx, child := range f.filetree.tree.Children(fn) {
+	for idx, child := range f.filetree.tree.Children(fna.FileNode) {
 		if idx == n && n != -1 {
 			break
 		}
@@ -132,23 +126,23 @@ type osAdapter struct {
 
 func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 	var ret = make([]fs.DirEntry, 0)
-	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
 	if err != nil {
 		return ret, err
 	}
-	if fn == nil {
+	if !fna.HasFileNode() {
 		return ret, nil
 	}
 
-	isInPathResolutionLoop, err := isInPathResolutionLoop(name, a.filetree)
-	if err != nil || isInPathResolutionLoop {
+	isInLoop, err := isInPathResolutionLoop(name, a.filetree)
+	if err != nil || isInLoop {
 		return ret, err
 	}
 
-	for _, child := range a.filetree.tree.Children(fn) {
+	for _, child := range a.filetree.tree.Children(fna.FileNode) {
 		requestPath := path.Join(name, filepath.Base(string(child.ID())))
 		r, err := a.Lstat(requestPath)
 		if err == nil {
@@ -164,7 +158,7 @@ func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 // Lstat returns a FileInfo describing the named file. If the file is a symbolic link, the returned
 // FileInfo describes the symbolic link. Lstat makes no attempt to follow the link.
 func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
-	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		// Lstat by definition requires that basename symlinks are not followed
 		FollowBasenameLinks:          false,
@@ -173,13 +167,13 @@ func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}
-	if fn == nil {
+	if !fna.HasFileNode() {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
 
 	return &fileinfoAdapter{
 		VirtualPath: file.Path(name),
-		Node:        *fn,
+		Node:        *fna.FileNode,
 	}, nil
 }
 
@@ -194,7 +188,7 @@ func (a *osAdapter) Open(name string) (fs.File, error) {
 
 // Stat returns a FileInfo describing the named file.
 func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
-	fn, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
+	fna, err := a.filetree.node(file.Path(name), linkResolutionStrategy{
 		FollowAncestorLinks:          true,
 		FollowBasenameLinks:          true,
 		DoNotFollowDeadBasenameLinks: a.doNotFollowDeadBasenameLinks,
@@ -202,12 +196,12 @@ func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
 	if err != nil {
 		return &fileinfoAdapter{}, err
 	}
-	if fn == nil {
+	if !fna.HasFileNode() {
 		return &fileinfoAdapter{}, os.ErrNotExist
 	}
 	return &fileinfoAdapter{
 		VirtualPath: file.Path(name),
-		Node:        *fn,
+		Node:        *fna.FileNode,
 	}, nil
 }
 
@@ -248,7 +242,7 @@ func (a *fileinfoAdapter) Mode() os.FileMode {
 	// the underlying implementation for symlinks and hardlinks share the same semantics in the tree implementation
 	// (meaning resolution is required) where as in a real file system this is taken care of by the driver
 	// by making the file point to the same inode as another --making the indirection transparent to applications.
-	if a.Node.FileType == file.TypeSymlink || a.Node.FileType == file.TypeHardLink {
+	if a.Node.FileType == file.TypeSymLink || a.Node.FileType == file.TypeHardLink {
 		mode |= os.ModeSymlink
 	}
 	return mode
@@ -261,7 +255,7 @@ func (a *fileinfoAdapter) ModTime() time.Time {
 
 // IsDir is an abbreviation for Mode().IsDir().
 func (a *fileinfoAdapter) IsDir() bool {
-	return a.Node.FileType == file.TypeDir
+	return a.Node.FileType == file.TypeDirectory
 }
 
 // Sys contains underlying data source (nothing in this case).

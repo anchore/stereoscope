@@ -1,21 +1,21 @@
 package integration
 
 import (
-	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/image"
 )
 
-func compareLayerSquashTrees(t *testing.T, expected map[uint]*filetree.FileTree, i *image.Image, ignorePaths []file.Path) {
+func compareLayerSquashTrees(t *testing.T, expected map[uint]filetree.Reader, i *image.Image, ignorePaths []file.Path) {
 	t.Helper()
 	if len(expected) != len(i.Layers) {
 		t.Fatalf("mismatched layers (%d!=%d)", len(expected), len(i.Layers))
 	}
 
-	var actual = make([]*filetree.FileTree, 0)
+	var actual = make([]filetree.Reader, 0)
 	for _, l := range i.Layers {
 		actual = append(actual, l.SquashedTree)
 	}
@@ -23,13 +23,13 @@ func compareLayerSquashTrees(t *testing.T, expected map[uint]*filetree.FileTree,
 	compareTrees(t, expected, actual, ignorePaths)
 }
 
-func compareLayerTrees(t *testing.T, expected map[uint]*filetree.FileTree, i *image.Image, ignorePaths []file.Path) {
+func compareLayerTrees(t *testing.T, expected map[uint]filetree.Reader, i *image.Image, ignorePaths []file.Path) {
 	t.Helper()
 	if len(expected) != len(i.Layers) {
 		t.Fatalf("mismatched layers (%d!=%d)", len(expected), len(i.Layers))
 	}
 
-	var actual = make([]*filetree.FileTree, 0)
+	var actual = make([]filetree.Reader, 0)
 	for _, l := range i.Layers {
 		actual = append(actual, l.Tree)
 	}
@@ -37,13 +37,13 @@ func compareLayerTrees(t *testing.T, expected map[uint]*filetree.FileTree, i *im
 	compareTrees(t, expected, actual, ignorePaths)
 }
 
-func compareTrees(t *testing.T, expected map[uint]*filetree.FileTree, actual []*filetree.FileTree, ignorePaths []file.Path) {
+func compareTrees(t *testing.T, expected map[uint]filetree.Reader, actual []filetree.Reader, ignorePaths []file.Path) {
 	t.Helper()
 
-	for idx, expected := range expected {
-		actual := actual[idx]
-		if !expected.Equal(actual) {
-			extra, missing := expected.PathDiff(actual)
+	for idx, e := range expected {
+		a := actual[idx]
+		if !e.(*filetree.FileTree).Equal(a.(*filetree.FileTree)) {
+			extra, missing := e.(*filetree.FileTree).PathDiff(a.(*filetree.FileTree))
 			nonIgnoredPaths := 0
 
 			for _, p := range extra {
@@ -82,11 +82,11 @@ func compareTrees(t *testing.T, expected map[uint]*filetree.FileTree, actual []*
 	}
 }
 
-func compareSquashTree(t *testing.T, expected *filetree.FileTree, i *image.Image) {
+func compareSquashTree(t *testing.T, expected filetree.Reader, i *image.Image) {
 	t.Helper()
 
 	actual := i.SquashedTree()
-	if !expected.Equal(actual) {
+	if !expected.(*filetree.FileTree).Equal(actual.(*filetree.FileTree)) {
 		t.Log("Walking expected squashed tree:")
 		err := expected.Walk(func(p file.Path, _ filenode.FileNode) error {
 			t.Log("   ", p)
@@ -105,7 +105,7 @@ func compareSquashTree(t *testing.T, expected *filetree.FileTree, i *image.Image
 			t.Fatalf("failed to walk tree: %+v", err)
 		}
 
-		extra, missing := expected.PathDiff(actual)
+		extra, missing := expected.(*filetree.FileTree).PathDiff(actual.(*filetree.FileTree))
 		t.Errorf("path differences: extra=%+v missing=%+v", extra, missing)
 		t.Errorf("mismatched squashed trees")
 	}

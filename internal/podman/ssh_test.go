@@ -4,7 +4,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -67,7 +66,7 @@ func TestGetSigners(t *testing.T) {
 
 	for _, tt := range testdata.PEMEncryptedKeys {
 		t.Run(tt.Name, func(t *testing.T) {
-			kf, err := ioutil.TempFile(os.TempDir(), "key-"+tt.Name)
+			kf, err := os.CreateTemp(os.TempDir(), "key-"+tt.Name)
 			assert.NoError(t, err)
 
 			s, err := kf.Write(tt.PEMBytes)

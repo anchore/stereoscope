@@ -4,10 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/anchore/stereoscope"
-	"github.com/anchore/stereoscope/pkg/imagetest"
 	"github.com/scylladb/go-set/strset"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/anchore/stereoscope"
+	"github.com/anchore/stereoscope/pkg/imagetest"
 )
 
 func TestContentMIMETypeDetection(t *testing.T) {
@@ -24,7 +25,7 @@ func TestContentMIMETypeDetection(t *testing.T) {
 	}
 
 	for mimeType, paths := range pathsByMIMEType {
-		refs, err := img.FilesByMIMETypeFromSquash(mimeType)
+		refs, err := img.SquashedSearchContext.SearchByMIMEType(mimeType)
 		assert.NoError(t, err)
 		assert.NotZero(t, len(refs), "found no refs for type=%q", mimeType)
 		for _, ref := range refs {

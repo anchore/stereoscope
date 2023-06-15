@@ -5,14 +5,16 @@ package integration
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"testing"
+
+	"github.com/scylladb/go-set"
+	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	"github.com/scylladb/go-set"
 )
 
 type linkFetchConfig struct {
@@ -92,58 +94,45 @@ func assertMatch(t *testing.T, i *image.Image, cfg linkFetchConfig, expectedReso
 	if actualResolve.ID() != expectedResolve.ID() {
 		var exLayer = -1
 		var acLayer = -1
-		var exType byte
-		var acType byte
+		var exType file.Type
+		var acType file.Type
 
 		eM, err := i.FileCatalog.Get(*expectedResolve)
 		if err == nil {
-			exLayer = int(eM.Layer.Metadata.Index)
-			exType = eM.Metadata.TypeFlag
+			exLayer = int(i.FileCatalog.Layer(*expectedResolve).Metadata.Index)
+			exType = eM.Metadata.Type
 		}
 
 		aM, err := i.FileCatalog.Get(*actualResolve)
 		if err == nil {
-			acLayer = int(aM.Layer.Metadata.Index)
-			acType = aM.Metadata.TypeFlag
+			acLayer = int(i.FileCatalog.Layer(*actualResolve).Metadata.Index)
+			acType = aM.Metadata.Type
 		}
 
-		t.Fatalf("mismatched link resolution link=%+v: '%+v (layer=%d type=%+v)'!='%+v (layer=%d type=%+v linkName=%s)'", cfg.linkPath, expectedResolve, exLayer, exType, actualResolve, acLayer, acType, aM.Metadata.Linkname)
+		t.Fatalf("mismatched link resolution link=%+v: <%+v (layer=%d type=%+v)> != <%+v (layer=%d type=%+v linkName=%s)>", cfg.linkPath, expectedResolve, exLayer, exType, actualResolve, acLayer, acType, aM.Metadata.LinkDestination)
 	}
 }
 
 func fetchRefs(t *testing.T, i *image.Image, cfg linkFetchConfig) (*file.Reference, *file.Reference) {
 	_, link, err := i.Layers[cfg.linkLayer].Tree.File(file.Path(cfg.linkPath), cfg.linkOptions...)
-	if err != nil {
-		t.Fatalf("unable to get link: %+v", err)
-	}
-	if link == nil {
-		t.Fatalf("missing expected link: %s", cfg.linkPath)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, link)
 
 	_, expectedResolve, err := i.Layers[cfg.resolveLayer].Tree.File(file.Path(cfg.expectedPath), cfg.linkOptions...)
-	if err != nil {
-		t.Fatalf("unable to get resolved link: %+v", err)
-	}
-	if expectedResolve == nil {
-		t.Fatalf("missing expected path: %s", expectedResolve)
-	}
+	require.NoError(t, err)
+	require.NotNil(t, expectedResolve)
 
-	actualResolve, err := i.ResolveLinkByLayerSquash(*link, cfg.perspectiveLayer, cfg.linkOptions...)
-	if err != nil {
-		t.Fatalf("failed to resolve link=%+v: %+v", link, err)
-	}
-	return expectedResolve, actualResolve
+	actualResolve, err := i.ResolveLinkByLayerSquash(*link.Reference, cfg.perspectiveLayer, cfg.linkOptions...)
+	require.NoError(t, err)
+	return expectedResolve.Reference, actualResolve.Reference
 }
 
 func fetchContents(t *testing.T, i *image.Image, cfg linkFetchConfig) string {
-	contents, err := i.Layers[cfg.perspectiveLayer].FileContentsFromSquash(file.Path(cfg.linkPath))
-	if err != nil {
-		t.Fatalf("could not fetch contents of %+v: %+v", cfg.linkPath, err)
-	}
-	b, err := ioutil.ReadAll(contents)
-	if err != nil {
-		t.Fatalf("unable to fetch contents for %+v : %+v", cfg, err)
-	}
+	contents, err := i.Layers[cfg.perspectiveLayer].OpenPathFromSquash(file.Path(cfg.linkPath))
+	require.NoError(t, err)
+
+	b, err := io.ReadAll(contents)
+	require.NoError(t, err)
 	return string(b)
 }
 

@@ -7,7 +7,6 @@ linters:
   enable:
     - asciicheck
     - bodyclose
-    - deadcode
     - depguard
     - dogsled
     - dupl
@@ -27,33 +26,33 @@ linters:
     - ineffassign
     - misspell
     - nakedret
-    - nolintlint
     - revive
-    - rowserrcheck
     - staticcheck
-    - structcheck
     - stylecheck
     - typecheck
     - unconvert
     - unparam
     - unused
-    - varcheck
     - whitespace
 
 # do not enable...
+#    - deadcode     # The owner seems to have abandoned the linter. Replaced by "unused".
 #    - gochecknoglobals
 #    - gochecknoinits    # this is too aggressive
 #    - godot
 #    - godox
 #    - goerr113
-#    - golint      # deprecated
-#    - gomnd       # this is too aggressive
-#    - interfacer  # this is a good idea, but is no longer supported and is prone to false positives
-#    - lll         # without a way to specify per-line exception cases, this is not usable
-#    - maligned    # this is an excellent linter, but tricky to optimize and we are not sensitive to memory layout optimizations
+#    - golint       # deprecated
+#    - gomnd        # this is too aggressive
+#    - interfacer   # this is a good idea, but is no longer supported and is prone to false positives
+#    - lll          # without a way to specify per-line exception cases, this is not usable
+#    - maligned     # this is an excellent linter, but tricky to optimize and we are not sensitive to memory layout optimizations
 #    - nestif
-#    - prealloc    # following this rule isn't consistently a good idea, as it sometimes forces unnecessary allocations that result in less idiomatic code
-#    - scopelint   # deprecated
+#    - nolintlint   # as of go1.19 this conflicts with the behavior of gofmt, which is a deal-breaker (lint-fix will still fail when running lint)
+#    - prealloc     # following this rule isn't consistently a good idea, as it sometimes forces unnecessary allocations that result in less idiomatic code
+#    - rowserrcheck # not in a repo with sql, so this is not useful
+#    - scopelint    # deprecated
+#    - structcheck  # The owner seems to have abandoned the linter. Replaced by "unused".
 #    - testpackage
-#    - wsl         # this doens't have an auto-fixer yet and is pretty noisy (https://github.com/bombsimon/wsl/issues/90)
-
+#    - varcheck     # The owner seems to have abandoned the linter. Replaced by "unused".
+#    - wsl          # this doens't have an auto-fixer yet and is pretty noisy (https://github.com/bombsimon/wsl/issues/90)

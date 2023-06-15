@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
-	"github.com/anchore/stereoscope/internal/log"
-	"github.com/anchore/stereoscope/pkg/file"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/file"
 )
 
 type dockerManifest struct {
@@ -62,7 +62,7 @@ func extractManifest(tarPath string) (*dockerManifest, error) {
 		return nil, err
 	}
 
-	contents, err := ioutil.ReadAll(manifestReader)
+	contents, err := io.ReadAll(manifestReader)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read manifest.json: %w", err)
 	}
@@ -92,7 +92,7 @@ func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest
 		return nil, nil, fmt.Errorf("unable to find docker config: %w", err)
 	}
 
-	configContents, err := ioutil.ReadAll(configReader)
+	configContents, err := io.ReadAll(configReader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to read docker config: %w", err)
 	}
@@ -107,7 +107,7 @@ func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to find layer tar: %w", err)
 		}
-		layerSizes[idx] = layerMetadata.Size
+		layerSizes[idx] = layerMetadata.Size()
 	}
 
 	theManifest, err := assembleOCIManifest(configContents, layerSizes)

@@ -1,8 +1,16 @@
-TEMPDIR = ./.tmp
-RESULTSDIR = test/results
-COVER_REPORT = $(RESULTSDIR)/unit-coverage-details.txt
-COVER_TOTAL = $(RESULTSDIR)/unit-coverage-summary.txt
-LINTCMD = $(TEMPDIR)/golangci-lint run --tests=false --config .golangci.yaml
+TEMP_DIR = ./.tmp
+
+# Command templates #################################
+LINT_CMD = $(TEMP_DIR)/golangci-lint run --tests=false --config .golangci.yaml
+GOIMPORTS_CMD := $(TEMP_DIR)/gosimports -local github.com/anchore
+
+# Tool versions #################################
+GOLANGCILINT_VERSION := v1.52.2
+GOSIMPORTS_VERSION := v0.3.8
+BOUNCER_VERSION := v0.4.0
+CHRONICLE_VERSION := v0.6.0
+
+# Formatting variables #################################
 BOLD := $(shell tput -T linux bold)
 PURPLE := $(shell tput -T linux setaf 5)
 GREEN := $(shell tput -T linux setaf 2)
@@ -11,57 +19,72 @@ RED := $(shell tput -T linux setaf 1)
 RESET := $(shell tput -T linux sgr0)
 TITLE := $(BOLD)$(PURPLE)
 SUCCESS := $(BOLD)$(GREEN)
-# the quality gate lower threshold for unit test total % coverage (by function statements)
-COVERAGE_THRESHOLD := 48
 
-ifeq "$(strip $(VERSION))" ""
-    override VERSION = $(shell git describe --always --tags --dirty)
+# Test variables #################################
+COVERAGE_THRESHOLD := 55  # the quality gate lower threshold for unit test total % coverage (by function statements)
+
+## Build variables #################################
+SNAPSHOT_DIR := ./snapshot
+VERSION := $(shell git describe --dirty --always --tags)
+
+ifndef VERSION
+	$(error VERSION is not set)
 endif
 
-ifndef TEMPDIR
-    $(error TEMPDIR is not set)
-endif
-
-ifndef REF_NAME
-	REF_NAME = $(VERSION)
+ifndef TEMP_DIR
+    $(error TEMP_DIR is not set)
 endif
 
 define title
     @printf '$(TITLE)$(1)$(RESET)\n'
 endef
 
+define safe_rm_rf
+	bash -c 'test -z "$(1)" && false || rm -rf $(1)'
+endef
+
+define safe_rm_rf_children
+	bash -c 'test -z "$(1)" && false || rm -rf $(1)/*'
+endef
+
 .PHONY: all
-all: static-analysis test ## Run all checks (linting, all tests, and dependencies license checks)
+all: static-analysis test ## Run all linux-based checks (linting, license check, unit, integration, and linux compare tests)
 	@printf '$(SUCCESS)All checks pass!$(RESET)\n'
 
-.PHONY: test
-test: unit integration benchmark ## Run all levels of test
+.PHONY: static-analysis
+static-analysis: check-go-mod-tidy lint check-licenses ## Run all static analysis checks
 
-.PHONY: help
-help:
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(BOLD)$(CYAN)%-25s$(RESET)%s\n", $$1, $$2}'
+.PHONY: test
+test: unit integration benchmark  ## Run all tests (currently unit and integrations)
+
+
+## Bootstrapping targets #################################
 
 .PHONY: ci-bootstrap
 ci-bootstrap: bootstrap
-	sudo apt install -y bc
 	curl -sLO https://github.com/sylabs/singularity/releases/download/v3.10.0/singularity-ce_3.10.0-focal_amd64.deb && sudo apt-get install -y -f ./singularity-ce_3.10.0-focal_amd64.deb
 
-$(RESULTSDIR):
-	mkdir -p $(RESULTSDIR)
+.PHONY: bootstrap
+bootstrap: $(TEMP_DIR) bootstrap-go bootstrap-tools ## Download and install all tooling dependencies (+ prep tooling in the ./tmp dir)
+	$(call title,Bootstrapping dependencies)
 
-.PHONY: boostrap
-bootstrap: $(RESULTSDIR) ## Download and install all project dependencies (+ prep tooling in the ./tmp dir)
-	$(call title,Downloading dependencies)
-	@pwd
-	# prep temp dirs
-	mkdir -p $(TEMPDIR)
-	mkdir -p $(RESULTSDIR)
-	# install go dependencies
+.PHONY: bootstrap-tools
+bootstrap-tools: $(TEMP_DIR)
+	GO111MODULE=off GOBIN=$(realpath $(TEMP_DIR)) go get -u golang.org/x/perf/cmd/benchstat
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(TEMP_DIR)/ $(GOLANGCILINT_VERSION)
+	curl -sSfL https://raw.githubusercontent.com/wagoodman/go-bouncer/master/bouncer.sh | sh -s -- -b $(TEMP_DIR)/ $(BOUNCER_VERSION)
+	curl -sSfL https://raw.githubusercontent.com/anchore/chronicle/main/install.sh | sh -s -- -b $(TEMP_DIR)/ $(CHRONICLE_VERSION)
+	# the only difference between goimports and gosimports is that gosimports removes extra whitespace between import blocks (see https://github.com/golang/go/issues/20818)
+	GOBIN="$(realpath $(TEMP_DIR))" go install github.com/rinchsan/gosimports/cmd/gosimports@$(GOSIMPORTS_VERSION)
+
+.PHONY: bootstrap-go
+bootstrap-go:
 	go mod download
-	# install utilities
-	[ -f "$(TEMPDIR)/benchstat" ] || GO111MODULE=off GOBIN=$(shell realpath $(TEMPDIR)) go get -u golang.org/x/perf/cmd/benchstat
-	[ -f "$(TEMPDIR)/golangci" ] || curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(TEMPDIR)/ v1.47.2
-	[ -f "$(TEMPDIR)/bouncer" ] || curl -sSfL https://raw.githubusercontent.com/wagoodman/go-bouncer/master/bouncer.sh | sh -s -- -b $(TEMPDIR)/ v0.4.0
+
+$(TEMP_DIR):
+	mkdir -p $(TEMP_DIR)
+
+## Static analysis targets #################################
 
 .PHONY: static-analysis
 static-analysis: check-licenses lint
@@ -69,42 +92,71 @@ static-analysis: check-licenses lint
 .PHONY: lint
 lint: ## Run gofmt + golangci lint checks
 	$(call title,Running linters)
+	# ensure there are no go fmt differences
 	@printf "files with gofmt issues: [$(shell gofmt -l -s .)]\n"
 	@test -z "$(shell gofmt -l -s .)"
-	$(LINTCMD)
+
+	# run all golangci-lint rules
+	$(LINT_CMD)
+	@[ -z "$(shell $(GOIMPORTS_CMD) -d .)" ] || (echo "goimports needs to be fixed" && false)
+
+	# go tooling does not play well with certain filename characters, ensure the common cases don't result in future "go get" failures
+	$(eval MALFORMED_FILENAMES := $(shell find . | grep -v tar-cache | grep -e ':'))
+	@bash -c "[[ '$(MALFORMED_FILENAMES)' == '' ]] || (printf '\nfound unsupported filename characters:\n$(MALFORMED_FILENAMES)\n\n' && false)"
+
+
+.PHONY: format
+format: ## Auto-format all source code
+	$(call title,Running formatters)
+	gofmt -w -s .
+	$(GOIMPORTS_CMD) -w .
+	go mod tidy
 
 .PHONY: lint-fix
-lint-fix: ## Auto-format all source code + run golangci lint fixers
+lint-fix: format  ## Auto-format all source code + run golangci lint fixers
 	$(call title,Running lint fixers)
-	gofmt -w -s .
-	$(LINTCMD) --fix
-	go mod tidy
+	$(LINT_CMD) --fix
 
 .PHONY: check-licenses
 check-licenses:
 	$(call title,Validating licenses for go dependencies)
-	$(TEMPDIR)/bouncer check
+	$(TEMP_DIR)/bouncer check
+
+check-go-mod-tidy:
+	@ .github/scripts/go-mod-tidy-check.sh && echo "go.mod and go.sum are tidy!"
+
+## Testing targets #################################
 
 .PHONY: unit
-unit: $(RESULTSDIR) ## Run unit tests (with coverage)
+unit: $(TEMP_DIR) ## Run unit tests (with coverage)
 	$(call title,Running unit tests)
-	go test --race -coverprofile $(COVER_REPORT) $(shell go list ./... | grep -v anchore/stereoscope/test/integration)
-	@go tool cover -func $(COVER_REPORT) | grep total |  awk '{print substr($$3, 1, length($$3)-1)}' > $(COVER_TOTAL)
-	@echo "Coverage: $$(cat $(COVER_TOTAL))"
-	@if [ $$(echo "$$(cat $(COVER_TOTAL)) >= $(COVERAGE_THRESHOLD)" | bc -l) -ne 1 ]; then echo "$(RED)$(BOLD)Failed coverage quality gate (> $(COVERAGE_THRESHOLD)%)$(RESET)" && false; fi
+	go test -coverprofile $(TEMP_DIR)/unit-coverage-details.txt $(shell go list ./... | grep -v anchore/stereoscope/test)
+	@.github/scripts/coverage.py $(COVERAGE_THRESHOLD) $(TEMP_DIR)/unit-coverage-details.txt
+
+
+.PHONY: integration
+integration: integration-tools ## Run integration tests
+	$(call title,Running integration tests)
+	go test -v ./test/integration
+
+## Benchmark test targets #################################
+
 
 .PHONY: benchmark
-benchmark: $(RESULTSDIR) ## Run benchmark tests and compare against the baseline (if available)
+benchmark: $(TEMP_DIR) ## Run benchmark tests and compare against the baseline (if available)
 	$(call title,Running benchmark tests)
-	go test -cpu 2 -p 1 -run=^Benchmark -bench=. -count=5 -benchmem ./... | tee $(RESULTSDIR)/benchmark-$(REF_NAME).txt
-	(test -s $(RESULTSDIR)/benchmark-main.txt && \
-		$(TEMPDIR)/benchstat $(RESULTSDIR)/benchmark-main.txt $(RESULTSDIR)/benchmark-$(REF_NAME).txt || \
-		$(TEMPDIR)/benchstat $(RESULTSDIR)/benchmark-$(REF_NAME).txt) \
-			| tee $(RESULTSDIR)/benchstat.txt
+	go test -cpu 2 -p 1 -run=^Benchmark -bench=. -count=5 -benchmem ./... | tee $(TEMP_DIR)/benchmark-$(VERSION).txt
+	(test -s $(TEMP_DIR)/benchmark-main.txt && \
+		$(TEMP_DIR)/benchstat $(TEMP_DIR)/benchmark-main.txt $(TEMP_DIR)/benchmark-$(VERSION).txt || \
+		$(TEMP_DIR)/benchstat $(TEMP_DIR)/benchmark-$(VERSION).txt) \
+			| tee $(TEMP_DIR)/benchstat.txt
+
 
 .PHONY: show-benchstat
 show-benchstat:
-	@cat $(RESULTSDIR)/benchstat.txt
+	@cat $(TEMP_DIR)/benchstat.txt
+
+## Test-fixture-related targets #################################
 
 # note: this is used by CI to determine if the integration test fixture cache (docker image tars) should be busted
 .PHONY: integration-fingerprint
@@ -127,11 +179,30 @@ integration-tools-load:
 integration-tools-save:
 	@cd test/integration/tools && make save-cache
 
-.PHONY: integration
-integration: integration-tools ## Run integration tests
-	$(call title,Running integration tests)
-	go test -v ./test/integration
+## Build-related targets #################################
+
+.PHONY: snapshot
+snapshot: clean-snapshot ## Build the binary
+	$(call title,Build compatability test)
+	@.github/scripts/build.sh $(SNAPSHOT_DIR)
+
+## Cleanup targets #################################
+
+.PHONY: clean
+clean: clear-test-cache clean-snapshot ## Delete all generated artifacts
+	$(call safe_rm_rf_children,$(TEMP_DIR))
+
+.PHONY: clean-snapshot
+clean-snapshot: ## Delete all snapshot builds
+	$(call safe_rm_rf,$(SNAPSHOT_DIR))
 
 .PHONY: clear-test-cache
 clear-test-cache: ## Delete all test cache (built docker image tars)
 	find . -type f -wholename "**/test-fixtures/cache/*.tar" -delete
+
+
+## Halp! #################################
+
+.PHONY: help
+help:  ## Display this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "$(BOLD)$(CYAN)%-25s$(RESET)%s\n", $$1, $$2}'

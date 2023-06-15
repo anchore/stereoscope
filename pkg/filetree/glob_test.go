@@ -4,13 +4,14 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/go-test/deep"
+
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-	"github.com/go-test/deep"
 )
 
 func TestFileInfoAdapter(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	tr.AddFile("/home/thing.txt")
 	tr.AddDir("/home/wagoodman")
 	tr.AddSymLink("/home/thing", "./thing.txt")
@@ -23,21 +24,21 @@ func TestFileInfoAdapter(t *testing.T) {
 			VirtualPath: "/home/thing.txt",
 			Node: filenode.FileNode{
 				RealPath: "/home/thing.txt",
-				FileType: file.TypeReg,
+				FileType: file.TypeRegular,
 			},
 		},
 		"/home/wagoodman": {
 			VirtualPath: "/home/wagoodman",
 			Node: filenode.FileNode{
 				RealPath: "/home/wagoodman",
-				FileType: file.TypeDir,
+				FileType: file.TypeDirectory,
 			},
 		},
 		"/home/thing": {
 			VirtualPath: "/home/thing",
 			Node: filenode.FileNode{
 				RealPath: "/home/thing",
-				FileType: file.TypeSymlink,
+				FileType: file.TypeSymLink,
 				LinkPath: "./thing.txt",
 			},
 		},
@@ -118,7 +119,7 @@ func TestFileInfoAdapter(t *testing.T) {
 }
 
 func TestOsAdapter_PreventInfiniteLoop(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	tr.AddFile("/usr/bin/busybox")
 	tr.AddSymLink("/usr/bin/X11", ".")
 
@@ -167,7 +168,7 @@ func TestOsAdapter_PreventInfiniteLoop(t *testing.T) {
 }
 
 func TestFileInfoAdapter_PreventInfiniteLoop(t *testing.T) {
-	tr := NewFileTree()
+	tr := New()
 	tr.AddFile("/usr/bin/busybox")
 	tr.AddSymLink("/usr/bin/X11", ".")
 
@@ -240,20 +241,20 @@ func TestOSAdapter_ReadDir(t *testing.T) {
 			expected: []fileinfoAdapter{
 				{
 					VirtualPath: "/home/thing.txt",
-					Node:        filenode.FileNode{RealPath: "/home/thing.txt", FileType: 48},
+					Node:        filenode.FileNode{RealPath: "/home/thing.txt", FileType: file.TypeRegular},
 				},
 
 				{
 					VirtualPath: "/home/wagoodman",
-					Node:        filenode.FileNode{RealPath: "/home/wagoodman", FileType: 53},
+					Node:        filenode.FileNode{RealPath: "/home/wagoodman", FileType: file.TypeDirectory},
 				},
 				{
 					VirtualPath: "/home/thing",
-					Node:        filenode.FileNode{RealPath: "/home/thing", FileType: 50, LinkPath: "./thing.txt"},
+					Node:        filenode.FileNode{RealPath: "/home/thing", FileType: file.TypeSymLink, LinkPath: "./thing.txt"},
 				},
 				{
 					VirtualPath: "/home/place",
-					Node:        filenode.FileNode{RealPath: "/home/place", FileType: 49, LinkPath: "/somewhere-else"},
+					Node:        filenode.FileNode{RealPath: "/home/place", FileType: file.TypeHardLink, LinkPath: "/somewhere-else"},
 				},
 			},
 			shouldErr: false,
@@ -312,7 +313,7 @@ func TestOSAdapter_Lstat(t *testing.T) {
 				VirtualPath: "/home",
 				Node: filenode.FileNode{
 					RealPath: "/home",
-					FileType: file.TypeDir,
+					FileType: file.TypeDirectory,
 				},
 			},
 		},
@@ -324,7 +325,7 @@ func TestOSAdapter_Lstat(t *testing.T) {
 				VirtualPath: "/home/thing",
 				Node: filenode.FileNode{
 					RealPath: "/home/thing",
-					FileType: file.TypeSymlink,
+					FileType: file.TypeSymLink,
 					LinkPath: "./thing.txt",
 				},
 			},
@@ -400,7 +401,7 @@ func TestOSAdapter_Stat(t *testing.T) {
 				VirtualPath: "/home",
 				Node: filenode.FileNode{
 					RealPath: "/home",
-					FileType: file.TypeDir,
+					FileType: file.TypeDirectory,
 				},
 			},
 		},
@@ -413,7 +414,7 @@ func TestOSAdapter_Stat(t *testing.T) {
 				VirtualPath: "/home/thing",
 				Node: filenode.FileNode{
 					RealPath: "/home/thing.txt",
-					FileType: file.TypeReg,
+					FileType: file.TypeRegular,
 				},
 			},
 		},
@@ -470,7 +471,7 @@ func TestOSAdapter_Stat(t *testing.T) {
 }
 
 func newHelperTree() *FileTree {
-	tr := NewFileTree()
+	tr := New()
 	tr.AddFile("/home/thing.txt")
 	tr.AddDir("/home/wagoodman")
 	tr.AddSymLink("/home/thing", "./thing.txt")

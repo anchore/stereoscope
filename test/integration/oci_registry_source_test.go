@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestOciRegistrySourceMetadata(t *testing.T) {

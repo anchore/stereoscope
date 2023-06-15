@@ -9,11 +9,12 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/logrusorgru/aurora"
+	"github.com/stretchr/testify/require"
+
 	"github.com/anchore/go-testutils"
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/logrusorgru/aurora"
-	"github.com/stretchr/testify/require"
 )
 
 const (
