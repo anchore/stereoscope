@@ -1,6 +1,8 @@
 package file
 
-var nextID = 0 // note: this is governed by the reference constructor
+import "sync/atomic"
+
+var nextID atomic.Uint64 // note: this is governed by the reference constructor
 
 // ID is used for file tree manipulation to uniquely identify tree nodes.
 type ID uint64
