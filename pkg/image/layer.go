@@ -102,6 +102,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		types.OCIUncompressedLayer,
 		types.OCIRestrictedLayer,
 		types.OCIUncompressedRestrictedLayer,
+		types.OCILayerZStd,
 		types.DockerLayer,
 		types.DockerForeignLayer,
 		types.DockerUncompressedLayer:
