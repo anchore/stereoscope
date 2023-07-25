@@ -102,6 +102,7 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	return img, nil
 }
 
+// nolint:funlen
 func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, func(), error) {
 	var provider image.Provider
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
