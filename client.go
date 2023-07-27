@@ -81,7 +81,10 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		}
 	}
 
-	provider, err := selectImageProvider(imgStr, source, cfg)
+	provider, cleanup, err := selectImageProvider(imgStr, source, cfg)
+	if cleanup != nil {
+		defer cleanup()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -99,44 +102,61 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	return img, nil
 }
 
-func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, error) {
+// nolint:funlen
+func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, func(), error) {
 	var provider image.Provider
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
 	platformSelectionUnsupported := fmt.Errorf("specified platform=%q however image source=%q does not support selecting platform", cfg.Platform.String(), source.String())
 
+	cleanup := func() {}
+
 	switch source {
 	case image.DockerTarballSource:
 		if cfg.Platform != nil {
-			return nil, platformSelectionUnsupported
+			return nil, cleanup, platformSelectionUnsupported
 		}
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.DockerDaemonSource:
 		c, err := dockerClient.GetClient()
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
+
+		cleanup = func() {
+			if err := c.Close(); err != nil {
+				log.Errorf("unable to close docker client: %+v", err)
+			}
+		}
+
 		provider, err = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
 	case image.PodmanDaemonSource:
 		c, err := podman.GetClient()
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
+
+		cleanup = func() {
+			if err := c.Close(); err != nil {
+				log.Errorf("unable to close docker client: %+v", err)
+			}
+		}
+
 		provider, err = docker.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
 		if err != nil {
-			return nil, err
+			return nil, cleanup, err
 		}
 	case image.OciDirectorySource:
 		if cfg.Platform != nil {
-			return nil, platformSelectionUnsupported
+			return nil, cleanup, platformSelectionUnsupported
 		}
 		provider = oci.NewProviderFromPath(imgStr, tempDirGenerator)
 	case image.OciTarballSource:
 		if cfg.Platform != nil {
-			return nil, platformSelectionUnsupported
+			return nil, cleanup, platformSelectionUnsupported
 		}
 		provider = oci.NewProviderFromTarball(imgStr, tempDirGenerator)
 	case image.OciRegistrySource:
@@ -144,13 +164,13 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		provider = oci.NewProviderFromRegistry(imgStr, tempDirGenerator, cfg.Registry, cfg.Platform)
 	case image.SingularitySource:
 		if cfg.Platform != nil {
-			return nil, platformSelectionUnsupported
+			return nil, cleanup, platformSelectionUnsupported
 		}
 		provider = sif.NewProviderFromPath(imgStr, tempDirGenerator)
 	default:
-		return nil, fmt.Errorf("unable to determine image source")
+		return nil, cleanup, fmt.Errorf("unable to determine image source")
 	}
-	return provider, nil
+	return provider, cleanup, nil
 }
 
 // defaultPlatformIfNil sets the platform to use the host's architecture
