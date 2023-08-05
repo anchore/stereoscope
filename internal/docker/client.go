@@ -6,12 +6,37 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/client"
 )
 
 func GetClient() (*client.Client, error) {
-	var clientOpts = []client.Opt{
+	_, found := os.LookupEnv("DOCKER_HOST")
+	if !found {
+		log.Debugf("no explicit DOCKER_HOST defined")
+
+		log.Debugf("reading docker configuration: %s", configFileName)
+
+		cfg, err := loadConfig(configFileName)
+		if err == nil {
+			host, err := processConfig(os.Getenv(envOverrideContext), contextsDir, cfg)
+			if err != nil {
+				return nil, err
+			}
+			log.Debugf("using host from docker configuration: %s", host)
+
+			err = os.Setenv("DOCKER_HOST", host)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			log.Debugf("cant parse docker config, ignoring: %v", err)
+		}
+
+	}
+
+	clientOpts := []client.Opt{
 		client.FromEnv,
 		client.WithAPIVersionNegotiation(),
 	}

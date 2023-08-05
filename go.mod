@@ -87,6 +87,7 @@ require (
 require (
 	cloud.google.com/go/compute v1.19.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	github.com/fvbommel/sortorder v1.1.0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/kr/pretty v0.2.1 // indirect
 	golang.org/x/mod v0.10.0 // indirect
