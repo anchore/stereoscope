@@ -51,9 +51,7 @@ func loadConfig(filename string) (*configfile.ConfigFile, error) {
 	return cfg, err
 }
 
-func endpointFromConfig(cfg *configfile.ConfigFile) (string, error) {
-	ctx := resolveContextName(cfg)
-
+func endpointFromContext(ctx string) (string, error) {
 	st := store.New(config.ContextStoreDir(), store.Config{})
 
 	meta, err := st.GetMetadata(ctx)

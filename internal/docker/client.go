@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/client"
 )
@@ -15,8 +16,15 @@ import (
 func GetClient() (*client.Client, error) {
 	_, found := os.LookupEnv("DOCKER_HOST")
 	if !found {
+
+		log.Debugf("no explicit DOCKER_HOST defined")
+
+		log.Debugf("reading docker configuration: %s", configFileName)
+
 		cfg, err := loadConfig(configFileName)
 		if err != nil && errors.Is(err, fs.ErrNotExist) {
+			log.Debugf("no docker configuration found", configFileName)
+
 			err = nil
 		}
 
@@ -25,10 +33,16 @@ func GetClient() (*client.Client, error) {
 		}
 
 		if cfg != nil {
-			host, err := endpointFromConfig(cfg)
+			dockerContext := resolveContextName(cfg)
+
+			log.Debugf("current docker context: %s", dockerContext)
+
+			host, err := endpointFromContext(dockerContext)
 			if err != nil {
 				return nil, err
 			}
+
+			log.Debugf("using host from docker configuration: %s", host)
 
 			err = os.Setenv("DOCKER_HOST", host)
 			if err != nil {
