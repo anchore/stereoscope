@@ -1,7 +1,9 @@
 package docker
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"strings"
@@ -11,7 +13,32 @@ import (
 )
 
 func GetClient() (*client.Client, error) {
-	var clientOpts = []client.Opt{
+	_, found := os.LookupEnv("DOCKER_HOST")
+	if !found {
+		cfg, err := loadConfig(configFileName)
+		if err != nil && errors.Is(err, fs.ErrNotExist) {
+			err = nil
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("cant parse docker config: %w", err)
+		}
+
+		if cfg != nil {
+			host, err := endpointFromConfig(cfg)
+			if err != nil {
+				return nil, err
+			}
+
+			err = os.Setenv("DOCKER_HOST", host)
+			if err != nil {
+				return nil, err
+			}
+
+		}
+	}
+
+	clientOpts := []client.Opt{
 		client.FromEnv,
 		client.WithAPIVersionNegotiation(),
 	}
