@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/docker/cli/cli/config"
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/cli/cli/config/configfile"
 	"github.com/docker/cli/cli/context/store"
 	"github.com/docker/docker/pkg/homedir"
@@ -25,13 +25,23 @@ var (
 	configFileName = filepath.Join(configFileDir, "config.json")
 )
 
-func resolveContextName(config *configfile.ConfigFile) string {
-	if ctxName := os.Getenv(envOverrideContext); ctxName != "" {
-		return ctxName
+func processConfig(overrideContext, dir string, cfg *configfile.ConfigFile) (string, error) {
+	dockerContext := resolveContextName(overrideContext, cfg)
+
+	log.Debugf("current docker context: %s", dockerContext)
+
+	return endpointFromContext(dir, dockerContext)
+}
+
+func resolveContextName(contextOverride string, config *configfile.ConfigFile) string {
+	if contextOverride != "" {
+		return contextOverride
 	}
+
 	if config != nil && config.CurrentContext != "" {
 		return config.CurrentContext
 	}
+
 	return defaultContextName
 }
 
@@ -51,10 +61,10 @@ func loadConfig(filename string) (*configfile.ConfigFile, error) {
 	return cfg, err
 }
 
-func endpointFromContext(ctx string) (string, error) {
-	st := store.New(config.ContextStoreDir(), store.Config{})
+func endpointFromContext(dir, ctxName string) (string, error) {
+	st := store.New(dir, store.Config{})
 
-	meta, err := st.GetMetadata(ctx)
+	meta, err := st.GetMetadata(ctxName)
 	if err != nil {
 		return "", fmt.Errorf("cant get docker config metadata: %w", err)
 	}

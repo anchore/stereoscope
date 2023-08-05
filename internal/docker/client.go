@@ -1,9 +1,7 @@
 package docker
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"strings"
@@ -16,40 +14,26 @@ import (
 func GetClient() (*client.Client, error) {
 	_, found := os.LookupEnv("DOCKER_HOST")
 	if !found {
-
 		log.Debugf("no explicit DOCKER_HOST defined")
 
 		log.Debugf("reading docker configuration: %s", configFileName)
 
 		cfg, err := loadConfig(configFileName)
-		if err != nil && errors.Is(err, fs.ErrNotExist) {
-			log.Debugf("no docker configuration found", configFileName)
-
-			err = nil
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("cant parse docker config: %w", err)
-		}
-
-		if cfg != nil {
-			dockerContext := resolveContextName(cfg)
-
-			log.Debugf("current docker context: %s", dockerContext)
-
-			host, err := endpointFromContext(dockerContext)
+		if err == nil {
+			host, err := processConfig(os.Getenv(envOverrideContext), contextsDir, cfg)
 			if err != nil {
 				return nil, err
 			}
-
 			log.Debugf("using host from docker configuration: %s", host)
 
 			err = os.Setenv("DOCKER_HOST", host)
 			if err != nil {
 				return nil, err
 			}
-
+		} else {
+			log.Debugf("cant parse docker config, ignoring: %v", err)
 		}
+
 	}
 
 	clientOpts := []client.Opt{
