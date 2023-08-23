@@ -2,9 +2,16 @@ package integration
 
 import (
 	"bufio"
+	"context"
+	"github.com/anchore/stereoscope/internal/podman"
+	"github.com/docker/docker/client"
+	"github.com/stretchr/testify/assert"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +43,7 @@ func runAndShow(t *testing.T, cmd *exec.Cmd) {
 // This was commented out until we can confirm the new behavior of the github runner
 // tests started throwing "read: connection reset by peer" when connecting to ssh://root@localhost:2222/run/podman/podman.sock
 // we might need to think of another creative way to test this, but in the meantime it has been failing stereoscope builds
-/*
+
 func TestPodmanConnections(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -115,4 +122,3 @@ func TestPodmanConnections(t *testing.T) {
 		})
 	}
 }
-*/

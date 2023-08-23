@@ -1,4 +1,4 @@
-FROM quay.io/podman/stable
+FROM quay.io/podman/stable:v4.6.0
 
 EXPOSE 22
 
