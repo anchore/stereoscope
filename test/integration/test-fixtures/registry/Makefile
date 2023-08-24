@@ -44,6 +44,7 @@ $(CLIENT_CERT_FILE): $(CERTS_DIR)
 		-subj "/C=XX/ST=StateName/L=CityName/O=CompanyName/OU=CompanySectionName/CN=$(CN)"
 	openssl x509 -req \
 		-in $(CLIENT_CSR_FILE) \
+		-CAcreateserial \
 		-CA $(CA_CERT_FILE) \
 		-CAkey $(CA_KEY_FILE) \
 		-out $(CLIENT_CERT_FILE) \

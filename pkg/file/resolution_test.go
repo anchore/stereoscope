@@ -1,9 +1,10 @@
 package file
 
 import (
-	"github.com/stretchr/testify/assert"
 	"sort"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestResolution_Less(t *testing.T) {

@@ -6,12 +6,8 @@ package image
 import (
 	"crypto/sha256"
 	"fmt"
-	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -20,10 +16,15 @@ import (
 	"testing"
 
 	"github.com/go-test/deep"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
 const (
@@ -35,18 +36,27 @@ var (
 	tarCachePath           = path.Join(fixturesPath, "tar-cache")
 )
 
+func basicMetadataComparer(x, y file.Metadata) bool {
+	// override Metadata.Equal to ignore fields
+	return x.Path == y.Path &&
+		x.Type == y.Type &&
+		x.MIMEType == y.MIMEType &&
+		x.LinkDestination == y.LinkDestination
+}
+
 func TestFileCatalog_Add(t *testing.T) {
 	ref := file.NewFileReference("/somepath")
 
 	metadata := file.Metadata{
+		FileInfo: file.ManualInfo{
+			SizeValue: 1,
+			ModeValue: fs.ModeDir | 5,
+		},
 		Path:            "a",
 		LinkDestination: "c",
-		Size:            1,
 		UserID:          2,
 		GroupID:         3,
 		Type:            4,
-		IsDir:           true,
-		Mode:            5,
 	}
 
 	layer := &Layer{
@@ -261,9 +271,11 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: file.ManualInfo{
+							ModeValue: fs.ModeDir,
+						},
+						Path: "/path/branch.d",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
@@ -359,7 +371,7 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmp.Comparer(basicMetadataComparer),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -413,9 +425,11 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: file.ManualInfo{
+							ModeValue: fs.ModeDir,
+						},
+						Path: "/path/branch.d",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
@@ -461,7 +475,7 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmp.Comparer(basicMetadataComparer),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -523,9 +537,11 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 				{
 					Reference: file.Reference{RealPath: "/path/branch.d"},
 					Metadata: file.Metadata{
-						Path:  "/path/branch.d",
-						Type:  file.TypeDirectory,
-						IsDir: true,
+						FileInfo: file.ManualInfo{
+							ModeValue: fs.ModeDir,
+						},
+						Path: "/path/branch.d",
+						Type: file.TypeDirectory,
 					},
 				},
 				{
@@ -571,7 +587,7 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmp.Comparer(basicMetadataComparer),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}
@@ -672,7 +688,7 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
-				cmpopts.IgnoreFields(file.Metadata{}, "Mode", "GroupID", "UserID", "Size"),
+				cmp.Comparer(basicMetadataComparer),
 			); d != "" {
 				t.Errorf("diff: %s", d)
 			}

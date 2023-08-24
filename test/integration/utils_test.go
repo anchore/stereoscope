@@ -2,14 +2,15 @@ package integration
 
 import (
 	"bufio"
-	"github.com/anchore/stereoscope/pkg/filetree"
-	"github.com/anchore/stereoscope/pkg/filetree/filenode"
-	"github.com/stretchr/testify/require"
 	"io"
 	"os/exec"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/image"
 )
 

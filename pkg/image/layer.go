@@ -9,16 +9,17 @@ import (
 	"os"
 	"path"
 
-	"github.com/anchore/stereoscope/internal/bus"
-	"github.com/anchore/stereoscope/internal/log"
-	"github.com/anchore/stereoscope/pkg/event"
-	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/filetree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sylabs/squashfs"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
+
+	"github.com/anchore/stereoscope/internal/bus"
+	"github.com/anchore/stereoscope/internal/log"
+	"github.com/anchore/stereoscope/pkg/event"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
 const SingularitySquashFSLayer = "application/vnd.sylabs.sif.layer.v1.squashfs"
@@ -101,6 +102,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		types.OCIUncompressedLayer,
 		types.OCIRestrictedLayer,
 		types.OCIUncompressedRestrictedLayer,
+		types.OCILayerZStd,
 		types.DockerLayer,
 		types.DockerForeignLayer,
 		types.DockerUncompressedLayer:
@@ -235,7 +237,7 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		}
 
 		if size != nil {
-			*(size) += metadata.Size
+			*(size) += metadata.Size()
 		}
 		fileCatalog.addImageReferences(ref.ID(), layerRef, index.Open)
 
@@ -272,7 +274,7 @@ func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		}
 
 		if size != nil {
-			*(size) += metadata.Size
+			*(size) += metadata.Size()
 		}
 		fileCatalog.addImageReferences(fileReference.ID(), layerRef, func() io.ReadCloser {
 			r, err := fsys.Open(path)

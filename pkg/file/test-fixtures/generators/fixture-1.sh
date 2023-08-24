@@ -34,7 +34,7 @@ pushd /tmp/stereoscope
 
   # tar + owner
   # note: sort by name is important for test file header entry ordering
-  tar --sort=name --owner=1337 --group=5432 -cvf "/scratch/${FIXTURE_NAME}" path/
+  tar --sort=name --owner=1337 --group=5432 --mtime='UTC 2019-09-16'  -cvf "/scratch/${FIXTURE_NAME}" path/
 
 popd
 EOF

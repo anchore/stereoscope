@@ -2,8 +2,9 @@ package node
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestIDSet_Size(t *testing.T) {

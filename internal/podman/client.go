@@ -6,9 +6,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/anchore/stereoscope/internal/log"
 	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 var (

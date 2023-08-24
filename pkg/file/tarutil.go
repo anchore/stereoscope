@@ -7,8 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/anchore/stereoscope/internal/log"
 	"github.com/pkg/errors"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
 const perFileReadLimit = 2 * GB

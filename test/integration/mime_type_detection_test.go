@@ -2,11 +2,13 @@ package integration
 
 import (
 	"context"
-	"github.com/anchore/stereoscope"
-	"github.com/anchore/stereoscope/pkg/imagetest"
+	"testing"
+
 	"github.com/scylladb/go-set/strset"
 	"github.com/stretchr/testify/assert"
-	"testing"
+
+	"github.com/anchore/stereoscope"
+	"github.com/anchore/stereoscope/pkg/imagetest"
 )
 
 func TestContentMIMETypeDetection(t *testing.T) {

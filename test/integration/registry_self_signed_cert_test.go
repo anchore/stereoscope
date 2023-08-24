@@ -1,11 +1,12 @@
 package integration
 
 import (
-	"github.com/stretchr/testify/require"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestRegistrySelfSignedCert(t *testing.T) {

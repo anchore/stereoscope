@@ -3,11 +3,12 @@ package integration
 import (
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
 
-	"github.com/anchore/stereoscope"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/anchore/stereoscope"
 )
 
 func TestOciRegistrySourceMetadata(t *testing.T) {
