@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/docker/go-connections/tlsconfig"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	containerregistryV1 "github.com/google/go-containerregistry/pkg/v1"
@@ -48,7 +49,14 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	descriptor, err := remote.Get(ref, prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)...)
+	options := prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)
+
+	transport, err := prepareTLSTransPort(p.registryOptions)
+	if err == nil {
+		options = append(options, remote.WithTransport(transport))
+	}
+
+	descriptor, err := remote.Get(ref, options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
 	}
@@ -127,4 +135,21 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	}
 
 	return options
+}
+
+func prepareTLSTransPort(registryOptions image.RegistryOptions) (*http.Transport, error) {
+	options := tlsconfig.Options{
+		CAFile:   registryOptions.CAFile,
+		CertFile: registryOptions.ClientCert,
+		KeyFile:  registryOptions.ClientKey,
+	}
+
+	config, err := tlsconfig.Client(options)
+	if err != nil {
+		return nil, err
+	}
+
+	return &http.Transport{
+		TLSClientConfig: config,
+	}, nil
 }
