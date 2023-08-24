@@ -1,13 +1,44 @@
 package integration
 
 import (
+	"bufio"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
+	"github.com/stretchr/testify/require"
+	"io"
+	"os/exec"
 	"testing"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 )
+
+func runAndShow(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+
+	stderr, err := cmd.StderrPipe()
+	require.NoErrorf(t, err, "could not get stderr: +v", err)
+
+	stdout, err := cmd.StdoutPipe()
+	require.NoErrorf(t, err, "could not get stdout: +v", err)
+
+	err = cmd.Start()
+	require.NoErrorf(t, err, "failed to start cmd: %+v", err)
+
+	show := func(label string, reader io.ReadCloser) {
+		scanner := bufio.NewScanner(reader)
+		scanner.Split(bufio.ScanLines)
+		for scanner.Scan() {
+			t.Logf("%s: %s", label, scanner.Text())
+		}
+	}
+
+	show("out", stdout)
+	show("err", stderr)
+
+	err = cmd.Wait()
+	require.NoErrorf(t, err, "cmd failed: %+v", err)
+}
 
 func compareLayerSquashTrees(t *testing.T, expected map[uint]filetree.Reader, i *image.Image, ignorePaths []file.Path) {
 	t.Helper()

@@ -1,0 +1,50 @@
+version: '3'
+services:
+  registry:
+    hostname: registry.null
+    networks:
+      - backbone
+    restart: always
+    image: registry:2
+    ports:
+      - "5000:5000"
+    environment:
+      REGISTRY_HTTP_TLS_CERTIFICATE: /certs/server.crt
+      REGISTRY_HTTP_TLS_KEY: /certs/server.key
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
+    volumes:
+      - registry-data:/var/lib/registry
+      - ./config/certs:/certs
+      - ./config/auth:/auth
+
+  loader:
+    networks:
+      - backbone
+    image: localhost:5000/loader:latest
+    build: loader
+    depends_on:
+      - registry
+    command: make load
+    volumes:
+      - ./Makefile:/Makefile
+
+  runner:
+    networks:
+      - backbone
+    image: ubuntu:20.04
+    depends_on:
+      - registry
+    command: /bin/run-test
+    volumes:
+      - ./bin/run-test:/bin/run-test
+      - ./config/certs:/certs
+
+volumes:
+  registry-data:
+
+networks:
+  backbone:
+    driver: bridge
+    internal: true

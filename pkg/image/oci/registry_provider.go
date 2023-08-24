@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/docker/go-connections/tlsconfig"
 	"net/http"
+
+	"github.com/docker/go-connections/tlsconfig"
 
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -50,7 +51,7 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 
 	options := prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)
 
-	transport, err := prepareTlsTransPort(p.registryOptions)
+	transport, err := prepareTLSTransPort(p.registryOptions)
 	if err == nil {
 		options = append(options, remote.WithTransport(transport))
 	}
@@ -136,7 +137,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	return options
 }
 
-func prepareTlsTransPort(registryOptions image.RegistryOptions) (*http.Transport, error) {
+func prepareTLSTransPort(registryOptions image.RegistryOptions) (*http.Transport, error) {
 	options := tlsconfig.Options{
 		CAFile:   registryOptions.CAFile,
 		CertFile: registryOptions.ClientCert,

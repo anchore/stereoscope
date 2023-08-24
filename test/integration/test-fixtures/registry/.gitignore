@@ -1,0 +1,4 @@
+config
+bin
+*.tar.gz
+*.tar
