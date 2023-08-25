@@ -3,7 +3,9 @@ package image
 import (
 	"testing"
 
+	"github.com/docker/go-connections/tlsconfig"
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestRegistryOptions_Authenticator(t *testing.T) {
@@ -11,7 +13,9 @@ func TestRegistryOptions_Authenticator(t *testing.T) {
 		name                   string
 		registry               string
 		input                  RegistryOptions
+		tlsInsecureSkipVerify  bool
 		authenticatorAssertion func(t *testing.T, actual authn.Authenticator)
+		wantTlsOptions         *tlsconfig.Options
 	}{
 		{
 			name:     "basicAuth credentials match registry",
@@ -154,11 +158,39 @@ func TestRegistryOptions_Authenticator(t *testing.T) {
 				Token: "JRR",
 			}),
 		},
+		{
+			name:                  "mtls setup",
+			registry:              "localhost:5000",
+			tlsInsecureSkipVerify: true,
+			input: RegistryOptions{
+				Credentials: []RegistryCredentials{
+					{
+						Authority:  "localhost:5000",
+						Username:   "username",
+						Password:   "tOpsYKrets",
+						CAFile:     "ca.crt",
+						ClientCert: "client.crt",
+						ClientKey:  "client.key",
+					},
+				},
+			},
+			authenticatorAssertion: basicAuth(authn.Basic{
+				Username: "username",
+				Password: "tOpsYKrets",
+			}),
+			wantTlsOptions: &tlsconfig.Options{
+				CAFile:             "ca.crt",
+				CertFile:           "client.crt",
+				KeyFile:            "client.key",
+				InsecureSkipVerify: true,
+			},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			actualAuth := test.input.Authenticator(test.registry)
+			actualAuth, tlsOptions := test.input.Authenticator(test.registry, test.tlsInsecureSkipVerify)
+			assert.Equal(t, test.wantTlsOptions, tlsOptions)
 			test.authenticatorAssertion(t, actualAuth)
 		})
 	}

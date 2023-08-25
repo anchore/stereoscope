@@ -1,6 +1,7 @@
 package image
 
 import (
+	"github.com/docker/go-connections/tlsconfig"
 	"github.com/google/go-containerregistry/pkg/authn"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -15,14 +16,11 @@ type RegistryOptions struct {
 	Credentials           []RegistryCredentials
 	Keychain              authn.Keychain
 	Platform              string
-	CAFile                string
-	ClientCert            string
-	ClientKey             string
 }
 
 // Authenticator returns an object capable of authenticating against the given registry. If no credentials match the
 // given registry, or there is partial information configured, then nil is returned.
-func (r RegistryOptions) Authenticator(registry string) authn.Authenticator {
+func (r RegistryOptions) Authenticator(registry string, insecureSkipTLSVerify bool) (authn.Authenticator, *tlsconfig.Options) {
 	for idx, credentials := range r.Credentials {
 		if !credentials.canBeUsedWithRegistry(registry) {
 			continue
@@ -34,8 +32,19 @@ func (r RegistryOptions) Authenticator(registry string) authn.Authenticator {
 		}
 
 		log.Debugf("using registry credentials from config index %d", idx)
-		return authenticator
+
+		var options *tlsconfig.Options
+		if insecureSkipTLSVerify || credentials.CAFile != "" || credentials.ClientCert != "" || credentials.ClientKey != "" {
+			options = &tlsconfig.Options{
+				InsecureSkipVerify: insecureSkipTLSVerify,
+				CAFile:             credentials.CAFile,
+				CertFile:           credentials.ClientCert,
+				KeyFile:            credentials.ClientKey,
+			}
+		}
+
+		return authenticator, options
 	}
 
-	return nil
+	return nil, nil
 }

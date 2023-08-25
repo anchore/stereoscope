@@ -19,14 +19,14 @@ func main() {
 			InsecureUseHTTP:       false,
 			Credentials: []image.RegistryCredentials{
 				{
-					Authority: "registry.null:5000",
-					Username:  "testuser",
-					Password:  "testpass",
+					Authority:  "registry.null:5000",
+					Username:   "testuser",
+					Password:   "testpass",
+					CAFile:     "/certs/server.crt",
+					ClientCert: "/certs/client.crt",
+					ClientKey:  "/certs/client.key",
 				},
 			},
-			CAFile:     "/certs/server.crt",
-			ClientCert: "/certs/client.crt",
-			ClientKey:  "/certs/client.key",
 		}),
 	)
 	if err != nil {
