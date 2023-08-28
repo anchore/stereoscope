@@ -163,12 +163,12 @@ func TestRegistryOptions_Authenticator(t *testing.T) {
 			registry:              "localhost:5000",
 			tlsInsecureSkipVerify: true,
 			input: RegistryOptions{
+				CAFileOrDir: "ca.crt",
 				Credentials: []RegistryCredentials{
 					{
 						Authority:  "localhost:5000",
 						Username:   "username",
 						Password:   "tOpsYKrets",
-						CAFile:     "ca.crt",
 						ClientCert: "client.crt",
 						ClientKey:  "client.key",
 					},
@@ -179,7 +179,7 @@ func TestRegistryOptions_Authenticator(t *testing.T) {
 				Password: "tOpsYKrets",
 			}),
 			wantTlsOptions: &tlsconfig.Options{
-				CAFile:             "ca.crt",
+				CAFile:             "", // note: we load this into the pool ourselves from in the tlsConfig
 				CertFile:           "client.crt",
 				KeyFile:            "client.key",
 				InsecureSkipVerify: true,
@@ -189,7 +189,7 @@ func TestRegistryOptions_Authenticator(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			actualAuth, tlsOptions := test.input.Authenticator(test.registry, test.tlsInsecureSkipVerify)
+			actualAuth, tlsOptions := test.input.PrepareAuthValues(test.registry, test.tlsInsecureSkipVerify)
 			assert.Equal(t, test.wantTlsOptions, tlsOptions)
 			test.authenticatorAssertion(t, actualAuth)
 		})

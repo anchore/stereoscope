@@ -17,12 +17,12 @@ func main() {
 		stereoscope.WithRegistryOptions(image.RegistryOptions{
 			InsecureSkipTLSVerify: false,
 			InsecureUseHTTP:       false,
+			CAFileOrDir:           "/certs/server.crt",
 			Credentials: []image.RegistryCredentials{
 				{
 					Authority:  "registry.null:5000",
 					Username:   "testuser",
 					Password:   "testpass",
-					CAFile:     "/certs/server.crt",
 					ClientCert: "/certs/client.crt",
 					ClientKey:  "/certs/client.key",
 				},

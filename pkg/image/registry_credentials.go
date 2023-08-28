@@ -19,8 +19,7 @@ type RegistryCredentials struct {
 	// k8schain to be passed through explicitly.
 	Authenticator authn.Authenticator
 
-	// TLS certificate material to connect to the registry
-	CAFile     string
+	// MTLS configuration
 	ClientCert string
 	ClientKey  string
 }

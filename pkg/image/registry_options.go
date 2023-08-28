@@ -16,11 +16,12 @@ type RegistryOptions struct {
 	Credentials           []RegistryCredentials
 	Keychain              authn.Keychain
 	Platform              string
+	CAFileOrDir           string
 }
 
-// Authenticator returns an object capable of authenticating against the given registry. If no credentials match the
-// given registry, or there is partial information configured, then nil is returned.
-func (r RegistryOptions) Authenticator(registry string, insecureSkipTLSVerify bool) (authn.Authenticator, *tlsconfig.Options) {
+// PrepareAuthValues selects the credentials used to authenticate with a registry. Returns an authn.Authenticator
+// object capable for handling high level credentials and a tlsconfig.Options object for handling TLS authentication.
+func (r RegistryOptions) PrepareAuthValues(registry string, insecureSkipTLSVerify bool) (authn.Authenticator, *tlsconfig.Options) {
 	for idx, credentials := range r.Credentials {
 		if !credentials.canBeUsedWithRegistry(registry) {
 			continue
@@ -34,10 +35,9 @@ func (r RegistryOptions) Authenticator(registry string, insecureSkipTLSVerify bo
 		log.Debugf("using registry credentials from config index %d", idx)
 
 		var options *tlsconfig.Options
-		if insecureSkipTLSVerify || credentials.CAFile != "" || credentials.ClientCert != "" || credentials.ClientKey != "" {
+		if insecureSkipTLSVerify || credentials.ClientCert != "" || credentials.ClientKey != "" {
 			options = &tlsconfig.Options{
 				InsecureSkipVerify: insecureSkipTLSVerify,
-				CAFile:             credentials.CAFile,
 				CertFile:           credentials.ClientCert,
 				KeyFile:            credentials.ClientKey,
 			}
