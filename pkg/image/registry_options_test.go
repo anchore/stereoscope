@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestRegistryOptions_Authenticator(t *testing.T) {
+func TestRegistryOptions_AuthenticationOptions(t *testing.T) {
 	tests := []struct {
 		name                   string
 		registry               string
@@ -185,11 +185,42 @@ func TestRegistryOptions_Authenticator(t *testing.T) {
 				InsecureSkipVerify: true,
 			},
 		},
+		{
+			name:                  "always attempt mtls, but use basic auth with specific authority",
+			registry:              "localhost:5000",
+			tlsInsecureSkipVerify: true,
+			input: RegistryOptions{
+				CAFileOrDir: "ca.crt",
+				Credentials: []RegistryCredentials{
+					{
+						Authority:  "",
+						ClientCert: "client.crt",
+						ClientKey:  "client.key",
+					},
+					{
+						Authority: "localhost:5000",
+						Username:  "username",
+						Password:  "tOpsYKrets",
+					},
+				},
+			},
+			authenticatorAssertion: basicAuth(authn.Basic{
+				Username: "username",
+				Password: "tOpsYKrets",
+			}),
+			wantTlsOptions: &tlsconfig.Options{
+				CAFile:             "", // note: we load this into the pool ourselves from in the tlsConfig
+				CertFile:           "client.crt",
+				KeyFile:            "client.key",
+				InsecureSkipVerify: true,
+			},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			actualAuth, tlsOptions := test.input.PrepareAuthValues(test.registry, test.tlsInsecureSkipVerify)
+			actualAuth := test.input.Authenticator(test.registry)
+			tlsOptions := test.input.TLSOptions(test.registry, test.tlsInsecureSkipVerify)
 			assert.Equal(t, test.wantTlsOptions, tlsOptions)
 			test.authenticatorAssertion(t, actualAuth)
 		})

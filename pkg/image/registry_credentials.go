@@ -1,6 +1,7 @@
 package image
 
 import (
+	"github.com/docker/go-connections/tlsconfig"
 	"github.com/google/go-containerregistry/pkg/authn"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -63,4 +64,17 @@ func (c RegistryCredentials) canBeUsedWithRegistry(registry string) bool {
 // matches this "authority" value.
 func (c RegistryCredentials) hasAuthoritySpecified() bool {
 	return c.Authority != ""
+}
+
+// tlsOptions selects the tlsconfig.Options object for handling TLS authentication.
+func (c RegistryCredentials) tlsOptions(insecureSkipTLSVerify bool) *tlsconfig.Options {
+	if insecureSkipTLSVerify || c.ClientCert != "" || c.ClientKey != "" {
+		return &tlsconfig.Options{
+			InsecureSkipVerify: insecureSkipTLSVerify,
+			CertFile:           c.ClientCert,
+			KeyFile:            c.ClientKey,
+		}
+	}
+
+	return nil
 }

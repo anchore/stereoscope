@@ -110,13 +110,13 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		}))
 	}
 
+	registryName := ref.Context().RegistryStr()
+
 	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
 	// If no explicit authenticator can be found, check if explicit Keychain has been provided, and if not, then
 	// fallback to the default keychain. With the authenticator also comes the option to configure TLS transport.
-	authenticator, tlsOptions := registryOptions.PrepareAuthValues(
-		ref.Context().RegistryStr(),
-		registryOptions.InsecureSkipTLSVerify,
-	)
+	authenticator := registryOptions.Authenticator(registryName)
+	tlsOptions := registryOptions.TLSOptions(registryName, registryOptions.InsecureSkipTLSVerify)
 
 	switch {
 	case authenticator != nil:
@@ -125,7 +125,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		options = append(options, remote.WithAuthFromKeychain(registryOptions.Keychain))
 	default:
 		// use the Keychain specified from a docker config file.
-		log.Debugf("no registry credentials configured, using the default keychain")
+		log.Debugf("no registry credentials configured for %q, using the default keychain", registryName)
 		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
@@ -180,6 +180,7 @@ func getTLSConfig(registryOptions image.RegistryOptions, tlsOptions tlsconfig.Op
 		}
 
 		for _, certFile := range files {
+			log.Tracef("loading CA certificate from %q", certFile)
 			pem, err := os.ReadFile(certFile)
 			if err != nil {
 				return nil, fmt.Errorf("could not read CA certificate %q: %v", certFile, err)

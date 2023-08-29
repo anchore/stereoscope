@@ -19,32 +19,41 @@ type RegistryOptions struct {
 	CAFileOrDir           string
 }
 
-// PrepareAuthValues selects the credentials used to authenticate with a registry. Returns an authn.Authenticator
-// object capable for handling high level credentials and a tlsconfig.Options object for handling TLS authentication.
-func (r RegistryOptions) PrepareAuthValues(registry string, insecureSkipTLSVerify bool) (authn.Authenticator, *tlsconfig.Options) {
+// Authenticator selects the credentials used to authenticate with a registry. Returns an authn.Authenticator
+// object capable for handling high level credentials for the registry.
+func (r RegistryOptions) Authenticator(registry string) authn.Authenticator {
+	var authenticator authn.Authenticator
 	for idx, credentials := range r.Credentials {
 		if !credentials.canBeUsedWithRegistry(registry) {
 			continue
 		}
 
-		authenticator := credentials.authenticator()
-		if authenticator == nil {
+		authenticator = credentials.authenticator()
+
+		if authenticator != nil {
+			log.Tracef("using registry credentials from config index %d", idx)
+			break
+		}
+	}
+
+	return authenticator
+}
+
+// TLSOptions selects the tlsconfig.Options object for handling TLS authentication with a registry.
+func (r RegistryOptions) TLSOptions(registry string, insecureSkipTLSVerify bool) *tlsconfig.Options {
+	var options *tlsconfig.Options
+	for idx, credentials := range r.Credentials {
+		if !credentials.canBeUsedWithRegistry(registry) {
 			continue
 		}
 
-		log.Debugf("using registry credentials from config index %d", idx)
+		options = credentials.tlsOptions(insecureSkipTLSVerify)
 
-		var options *tlsconfig.Options
-		if insecureSkipTLSVerify || credentials.ClientCert != "" || credentials.ClientKey != "" {
-			options = &tlsconfig.Options{
-				InsecureSkipVerify: insecureSkipTLSVerify,
-				CertFile:           credentials.ClientCert,
-				KeyFile:            credentials.ClientKey,
-			}
+		if options != nil {
+			log.Tracef("using custom TLS options from config index %d", idx)
+			break
 		}
-
-		return authenticator, options
 	}
 
-	return nil, nil
+	return options
 }

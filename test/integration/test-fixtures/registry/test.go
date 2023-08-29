@@ -21,8 +21,8 @@ func main() {
 			Credentials: []image.RegistryCredentials{
 				{
 					Authority:  "registry.null:5000",
-					Username:   "testuser",
-					Password:   "testpass",
+					Username:   "testuser42",
+					Password:   "testpass42",
 					ClientCert: "/certs/client.crt",
 					ClientKey:  "/certs/client.key",
 				},
