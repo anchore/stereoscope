@@ -12,8 +12,8 @@ CLIENT_CERT_FILE = $(CERTS_DIR)/client.crt
 AUTH_FILE = $(CONFIG_DIR)/auth/htpasswd
 
 # registry credentials
-USERNAME = testuser
-PASSWORD = testpass
+USERNAME = testuser42
+PASSWORD = testpass42
 
 CN = registry.null
 REGISTRY_HOST = $(CN):5000
