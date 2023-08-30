@@ -3,15 +3,14 @@ package containerd
 import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
+	"os"
 )
 
-var (
-	defaultAddr = defaults.DefaultAddress
-)
-
-func GetClient(addr string) (*containerd.Client, error) {
-	if addr == "" {
-		addr = defaultAddr
+func GetClient() (*containerd.Client, error) {
+	addr := defaults.DefaultAddress
+	envAddr := os.Getenv("CONTAINERD_ADDRESS")
+	if envAddr != "" {
+		addr = envAddr
 	}
 
 	client, err := containerd.New(addr)

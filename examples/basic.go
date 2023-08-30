@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/anchore/stereoscope/internal/log"
 	"io"
 	"os"
 
@@ -28,12 +29,16 @@ func main() {
 	}
 	stereoscope.SetLogger(lctx)
 
+	opts := []stereoscope.Option{
+		stereoscope.WithContainerdAddress(containerdAddress()),
+	}
+
 	/////////////////////////////////////////////////////////////////
 	// pass a path to an Docker save tar, docker image, or OCI directory/archive as an argument:
 	//    ./path/to.tar
 	//
 	// This will catalog the file metadata and resolve all squash trees
-	image, err := stereoscope.GetImage(ctx, os.Args[1], "")
+	image, err := stereoscope.GetImage(ctx, os.Args[1], opts...)
 	if err != nil {
 		panic(err)
 	}
@@ -99,4 +104,28 @@ func main() {
 
 	fmt.Printf("File content for: %+v\n", filePath)
 	fmt.Println(string(content))
+}
+
+func containerdAddress() string {
+	// get the following value
+	///proc/$(cat $XDG_RUNTIME_DIR/containerd-rootless/child_pid)/root/run/containerd/containerd.sock
+
+	xdg_runtime_dir := os.Getenv("XDG_RUNTIME_DIR")
+	if xdg_runtime_dir == "" {
+		log.Warn("no XDG_RUNTIME_DIR environment variable set")
+		return ""
+	}
+
+	childPidPath := fmt.Sprintf("%s/containerd-rootless/child_pid", xdg_runtime_dir)
+	childPid, err := os.ReadFile(childPidPath)
+	if err != nil {
+		log.Warnf("could not read child_pid file: %s", err)
+		return ""
+	}
+
+	containerdSockPath := fmt.Sprintf("/proc/%s/root/run/containerd/containerd.sock", childPid)
+
+	log.Infof("containerd address: %s", containerdSockPath)
+
+	return containerdSockPath
 }

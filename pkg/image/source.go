@@ -143,7 +143,7 @@ func detectSource(fs afero.Fs, userInput string) (Source, string, error) {
 // image reference (i.e. an image that can be _pulled_), UnknownSource is
 // returned. Otherwise, if the Docker daemon is available, DockerDaemonSource is
 // returned, and if not, OciRegistrySource is returned.
-func DetermineDefaultImagePullSource(userInput string, containerdAddress string) Source {
+func DetermineDefaultImagePullSource(userInput string) Source {
 	if !isRegistryReference(userInput) {
 		return UnknownSource
 	}
@@ -173,7 +173,7 @@ func DetermineDefaultImagePullSource(userInput string, containerdAddress string)
 		}
 	}
 
-	cd, err := containerd.GetClient(containerdAddress)
+	cd, err := containerd.GetClient()
 	if err == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

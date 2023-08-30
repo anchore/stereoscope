@@ -70,7 +70,7 @@ func WithPlatform(platform string) Option {
 }
 
 // GetImageFromSource returns an image from the explicitly provided source.
-func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, containerdAddress string, options ...Option) (*image.Image, error) {
+func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
 	var cfg config
@@ -83,7 +83,7 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		}
 	}
 
-	provider, err := selectImageProvider(imgStr, source, cfg, containerdAddress)
+	provider, err := selectImageProvider(imgStr, source, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -101,10 +101,10 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	return img, nil
 }
 
-func getDaemonSource(imgStr string, source image.Source, platform *image.Platform, containerdAddress string, tempDirGenerator *file.TempDirGenerator) (image.Provider, error) {
+func getDaemonSource(imgStr string, source image.Source, platform *image.Platform, tempDirGenerator *file.TempDirGenerator) (image.Provider, error) {
 	switch source {
 	case image.ContainerdDaemonSource:
-		c, err := containerdClient.GetClient(containerdAddress)
+		c, err := containerdClient.GetClient()
 		if err != nil {
 			return nil, err
 		}
@@ -126,7 +126,7 @@ func getDaemonSource(imgStr string, source image.Source, platform *image.Platfor
 	}
 }
 
-func selectImageProvider(imgStr string, source image.Source, cfg config, containerdAddress string) (image.Provider, error) {
+func selectImageProvider(imgStr string, source image.Source, cfg config) (image.Provider, error) {
 	var provider image.Provider
 	var err error
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
@@ -134,7 +134,7 @@ func selectImageProvider(imgStr string, source image.Source, cfg config, contain
 
 	switch source {
 	case image.ContainerdDaemonSource, image.DockerDaemonSource, image.PodmanDaemonSource:
-		provider, err = getDaemonSource(imgStr, source, cfg.Platform, containerdAddress, tempDirGenerator)
+		provider, err = getDaemonSource(imgStr, source, cfg.Platform, tempDirGenerator)
 		if err != nil {
 			return nil, err
 		}
@@ -190,7 +190,7 @@ func GetImage(ctx context.Context, userStr string, containerdAddress string, opt
 	if err != nil {
 		return nil, err
 	}
-	return GetImageFromSource(ctx, imgStr, source, containerdAddress, options...)
+	return GetImageFromSource(ctx, imgStr, source, options...)
 }
 
 func SetLogger(logger logger.Logger) {
