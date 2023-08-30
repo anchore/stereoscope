@@ -10,10 +10,9 @@ type Reference struct {
 
 // NewFileReference creates a new unique file reference for the given path.
 func NewFileReference(path Path) *Reference {
-	nextID++
 	return &Reference{
 		RealPath: path,
-		id:       ID(nextID),
+		id:       ID(nextID.Add(1)),
 	}
 }
 

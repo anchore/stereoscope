@@ -3,9 +3,14 @@ package oci
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
+	"github.com/bmatcuk/doublestar/v4"
+	"github.com/docker/go-connections/tlsconfig"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	containerregistryV1 "github.com/google/go-containerregistry/pkg/v1"
@@ -48,7 +53,9 @@ func (p *RegistryImageProvider) Provide(ctx context.Context, userMetadata ...ima
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	descriptor, err := remote.Get(ref, prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)...)
+	options := prepareRemoteOptions(ctx, ref, p.registryOptions, p.platform)
+
+	descriptor, err := remote.Get(ref, options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
 	}
@@ -95,14 +102,6 @@ func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Optio
 func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform) (options []remote.Option) {
 	options = append(options, remote.WithContext(ctx))
 
-	if registryOptions.InsecureSkipTLSVerify {
-		t := &http.Transport{
-			//nolint: gosec
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-		options = append(options, remote.WithTransport(t))
-	}
-
 	if p != nil {
 		options = append(options, remote.WithPlatform(containerregistryV1.Platform{
 			Architecture: p.Architecture,
@@ -111,10 +110,14 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		}))
 	}
 
+	registryName := ref.Context().RegistryStr()
+
 	// note: the authn.Authenticator and authn.Keychain options are mutually exclusive, only one may be provided.
-	// If no explicit authenticator can be found, check if explicit Keychain has
-	// been provided, and if not, then fallback to the default keychain.
-	authenticator := registryOptions.Authenticator(ref.Context().RegistryStr())
+	// If no explicit authenticator can be found, check if explicit Keychain has been provided, and if not, then
+	// fallback to the default keychain. With the authenticator also comes the option to configure TLS transport.
+	authenticator := registryOptions.Authenticator(registryName)
+	tlsOptions := registryOptions.TLSOptions(registryName, registryOptions.InsecureSkipTLSVerify)
+
 	switch {
 	case authenticator != nil:
 		options = append(options, remote.WithAuth(authenticator))
@@ -122,9 +125,73 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		options = append(options, remote.WithAuthFromKeychain(registryOptions.Keychain))
 	default:
 		// use the Keychain specified from a docker config file.
-		log.Debugf("no registry credentials configured, using the default keychain")
+		log.Debugf("no registry credentials configured for %q, using the default keychain", registryName)
 		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
 	}
 
+	if tlsOptions != nil {
+		tlsConfig, err := getTLSConfig(registryOptions, *tlsOptions)
+		if err != nil {
+			log.Warn("unable to configure TLS transport: %w", err)
+		} else {
+			options = append(options, remote.WithTransport(&http.Transport{
+				TLSClientConfig: tlsConfig,
+			}))
+		}
+	}
+
 	return options
+}
+
+func getTLSConfig(registryOptions image.RegistryOptions, tlsOptions tlsconfig.Options) (*tls.Config, error) {
+	// note: tlsOptions allows for CAFile, however, this doesn't allow us to provide possibly multiple CA certs
+	// to the underlying root pool. In order to support this we need to do the work to load the certs ourselves.
+	tlsConfig, err := tlsconfig.Client(tlsOptions)
+	if err != nil {
+		return nil, fmt.Errorf("unable to configure TLS client config: %w", err)
+	}
+
+	if !registryOptions.InsecureSkipTLSVerify && registryOptions.CAFileOrDir != "" {
+		fi, err := os.Stat(registryOptions.CAFileOrDir)
+		if err != nil {
+			return nil, fmt.Errorf("unable to stat %q: %w", registryOptions.CAFileOrDir, err)
+		}
+		// load all the files in the directory as CA certs
+		rootCAs := tlsConfig.RootCAs
+		if rootCAs == nil {
+			rootCAs, err = tlsconfig.SystemCertPool()
+			if err != nil {
+				log.Warnf("unable to load system cert pool: %w", err)
+				rootCAs = x509.NewCertPool()
+			}
+		}
+
+		var files []string
+		if fi.IsDir() {
+			// glob all *.crt, *.pem, and *.cert files in the directory
+			var err error
+
+			files, err = doublestar.Glob(os.DirFS("."), filepath.Join(registryOptions.CAFileOrDir, "*.{crt,pem,cert}"))
+			if err != nil {
+				return nil, fmt.Errorf("unable to find certs in %q: %w", registryOptions.CAFileOrDir, err)
+			}
+		} else {
+			files = []string{registryOptions.CAFileOrDir}
+		}
+
+		for _, certFile := range files {
+			log.Tracef("loading CA certificate from %q", certFile)
+			pem, err := os.ReadFile(certFile)
+			if err != nil {
+				return nil, fmt.Errorf("could not read CA certificate %q: %v", certFile, err)
+			}
+			if !rootCAs.AppendCertsFromPEM(pem) {
+				return nil, fmt.Errorf("failed to append certificates from PEM file: %q", certFile)
+			}
+		}
+
+		tlsConfig.RootCAs = rootCAs
+	}
+
+	return tlsConfig, nil
 }

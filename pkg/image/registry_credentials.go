@@ -7,16 +7,21 @@ import (
 )
 
 // RegistryCredentials contains any information necessary to authenticate against an OCI-distribution-compliant
-// registry (either with basic auth, or bearer token, or ggcr authenticator
-// implementation). Note: only valid for the OCI registry provider.
+// registry (either with basic auth, or bearer token, or ggcr authenticator implementation).
+// Note: only valid for the OCI registry provider.
 type RegistryCredentials struct {
 	Authority string
 	Username  string
 	Password  string
 	Token     string
+
 	// Explicitly pass in the Authenticator, allowing for things like
 	// k8schain to be passed through explicitly.
 	Authenticator authn.Authenticator
+
+	// MTLS configuration
+	ClientCert string
+	ClientKey  string
 }
 
 // authenticator returns an authn.Authenticator for the given credentials.
