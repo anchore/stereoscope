@@ -69,6 +69,9 @@ jobs:
           systemctl --user enable --now podman.socket
           sudo systemctl start podman.socket
 
+      - name: Setup containerd
+        uses: crazy-max/ghaction-setup-containerd@v2
+
       - name: Setup tmate session
         if: ${{ github.event.inputs.run-tmate == 'true' }}
         uses: mxschmitt/action-tmate@v3
