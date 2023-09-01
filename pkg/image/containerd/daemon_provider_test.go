@@ -43,7 +43,7 @@ func TestNewProviderFromDaemon_imageParsing(t *testing.T) {
 			if tt.wantErr == nil {
 				tt.wantErr = require.NoError
 			}
-			got, err := NewProviderFromDaemon(tt.image, nil, nil, nil)
+			got, err := NewProviderFromDaemon(tt.image, nil, nil, nil, "")
 			tt.wantErr(t, err)
 			if err != nil {
 				return

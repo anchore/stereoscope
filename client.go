@@ -3,19 +3,19 @@ package stereoscope
 import (
 	"context"
 	"fmt"
-	containerdClient "github.com/anchore/stereoscope/internal/containerd"
-	"github.com/anchore/stereoscope/pkg/image/containerd"
 	"runtime"
 
 	"github.com/wagoodman/go-partybus"
 
 	"github.com/anchore/go-logger"
 	"github.com/anchore/stereoscope/internal/bus"
+	containerdClient "github.com/anchore/stereoscope/internal/containerd"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/image/containerd"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/image/sif"
@@ -131,7 +131,7 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 			}
 		}
 
-		provider, err = containerd.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform)
+		provider, err = containerd.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform, containerdClient.Namespace())
 		if err != nil {
 			return nil, cleanup, err
 		}

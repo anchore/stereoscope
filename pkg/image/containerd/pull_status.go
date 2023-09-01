@@ -23,17 +23,19 @@ const (
 	StatusExists      StatusInfoStatus = "exists"
 )
 
+type LayerID string
+
 type PullStatus struct {
 	state    apiState
-	layers   []string
-	progress map[string]*progress.Manual
+	layers   []LayerID
+	progress map[LayerID]*progress.Manual
 	lock     *sync.RWMutex
 }
 
 func newPullStatus(client *containerd.Client, ongoing *jobs) *PullStatus {
 	return &PullStatus{
 		state:    newAPIState(client, ongoing),
-		progress: make(map[string]*progress.Manual),
+		progress: make(map[LayerID]*progress.Manual),
 		lock:     &sync.RWMutex{},
 	}
 }
@@ -43,22 +45,26 @@ func (ps *PullStatus) Complete() bool {
 	return done
 }
 
-func (ps *PullStatus) Layers() []string {
+func (ps *PullStatus) Layers() []LayerID {
 	ordered, _ := ps.state.current()
 
-	var layers []string
+	var layers []LayerID
 	for _, status := range ordered {
-		layers = append(layers, status.Ref)
+		layers = append(layers, LayerID(status.Ref))
 	}
 
 	return layers
 }
 
-func (ps *PullStatus) Current(layer string) progress.Progressable {
+func (ps *PullStatus) Current(layer LayerID) progress.Progressable {
 	ps.state.lock.RLock()
 	defer ps.state.lock.RUnlock()
 
-	return ps.progress[layer]
+	p := ps.progress[layer]
+	if p == nil {
+		return progress.NewManual(-1)
+	}
+	return p
 }
 
 func (s *apiState) current() ([]statusInfo, bool) {
@@ -95,8 +101,9 @@ func (ps *PullStatus) update(ctx context.Context) {
 	defer ps.lock.Unlock()
 
 	ps.layers = nil
+
 	for _, status := range ordered {
-		layer := status.Ref
+		layer := LayerID(status.Ref)
 		if status.Status == "" {
 			continue
 		}

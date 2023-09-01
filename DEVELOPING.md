@@ -7,6 +7,8 @@ In order to test and develop in this repo you will need the following dependenci
 - docker
 - make
 - podman (for benchmark and integration tests only)
+- containerd (for integration tests only)
+- skopeo (for integration tests only)
 
 After cloning the following step can help you get setup:
 1. run `make bootstrap` to download go mod dependencies, create the `/.tmp` dir, and download helper utilities.

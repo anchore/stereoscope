@@ -6,6 +6,7 @@ package integration
 import (
 	"fmt"
 	"io"
+	"runtime"
 	"testing"
 
 	"github.com/scylladb/go-set"
@@ -70,6 +71,15 @@ func TestImageSymlinks(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			if runtime.GOOS != "linux" {
+				switch c.source {
+				case "containerd":
+					t.Skip("containerd is only supported on linux")
+				case "podman":
+					t.Skip("podman is only supported on linux")
+				}
+			}
+
 			i := imagetest.GetFixtureImage(t, c.source, "image-symlinks")
 
 			if c.source == "singularity" {

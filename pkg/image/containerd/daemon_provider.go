@@ -3,10 +3,12 @@ package containerd
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/images"
@@ -18,6 +20,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/wagoodman/go-partybus"
+	"github.com/wagoodman/go-progress"
 
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
@@ -27,20 +30,23 @@ import (
 	sdocker "github.com/anchore/stereoscope/pkg/image/docker"
 )
 
-var (
-	defaultNamespace = namespaces.Default
-)
-
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the containerd daemon API.
 type DaemonImageProvider struct {
 	imageStr  string
 	tmpDirGen *file.TempDirGenerator
 	client    *containerd.Client
 	platform  *image.Platform
+	namespace string
+}
+
+type daemonProvideProgress struct {
+	EstimateProgress *progress.TimedProgress
+	ExportProgress   *progress.Manual
+	Stage            *progress.Stage
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *containerd.Client, platform *image.Platform) (*DaemonImageProvider, error) {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *containerd.Client, platform *image.Platform, namespace string) (*DaemonImageProvider, error) {
 	ref, err := name.ParseReference(imgStr, name.WithDefaultRegistry(""))
 	if err != nil {
 		return nil, err
@@ -50,11 +56,16 @@ func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *c
 		imgStr = tag.Name()
 	}
 
+	if namespace == "" {
+		namespace = namespaces.Default
+	}
+
 	return &DaemonImageProvider{
 		imageStr:  imgStr,
 		tmpDirGen: tmpDirGen,
 		client:    c,
 		platform:  platform,
+		namespace: namespace,
 	}, nil
 }
 
@@ -134,23 +145,24 @@ func (p *DaemonImageProvider) pullOptions(ctx context.Context) []containerd.Remo
 
 // Provide an image object that represents the cached docker image tar fetched from a containerd daemon.
 func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
-	ctx = namespaces.WithNamespace(ctx, defaultNamespace)
-	image, err := p.pullImageIfMissing(ctx)
+	ctx = namespaces.WithNamespace(ctx, p.namespace)
+
+	img, err := p.pullImageIfMissing(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := p.validatePlatform(*image); err != nil {
+	if err := p.validatePlatform(*img); err != nil {
 		return nil, err
 	}
 
-	tarFileName, err := p.saveImage(ctx, *image)
+	tarFileName, err := p.saveImage(ctx, *img)
 	if err != nil {
 		return nil, err
 	}
 
 	// use the existing tarball provider to process what was pulled from the containerd daemon
-	return sdocker.NewProviderFromTarball(tarFileName, p.tmpDirGen).Provide(ctx, withMetadata(*image, userMetadata)...)
+	return sdocker.NewProviderFromTarball(tarFileName, p.tmpDirGen).Provide(ctx, withMetadata(*img, userMetadata)...)
 }
 
 func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) (*containerd.Image, error) {
@@ -229,6 +241,20 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, img containerd.Imag
 		archive.WithPlatform(platforms.DefaultStrict()),
 	}
 
+	providerProgress, err := p.trackSaveProgress(ctx, img)
+	if err != nil {
+		return "", err
+	}
+	if err == nil {
+		defer func() {
+			// NOTE: progress trackers should complete at the end of this function
+			// whether the function errors or succeeds.
+			providerProgress.EstimateProgress.SetCompleted()
+			providerProgress.ExportProgress.SetCompleted()
+		}()
+		providerProgress.Stage.Current = "requesting image from containerd"
+	}
+
 	// containerd export (save) does not return till fully complete
 	err = p.client.Export(ctx, tempTarFile, exportOpts...)
 	if err != nil {
@@ -238,17 +264,57 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, img containerd.Imag
 	return tempTarFile.Name(), nil
 }
 
+func (p *DaemonImageProvider) trackSaveProgress(ctx context.Context, img containerd.Image) (*daemonProvideProgress, error) {
+	// fetch the expected image size to estimate and measure progress
+	size, err := img.Size(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get image size: %w", err)
+	}
+
+	// docker image save clocks in at ~30MB/sec on my laptop... mileage may vary, of course :shrug:
+	mb := math.Pow(2, 20)
+	sec := float64(size) / (mb * 30)
+	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
+
+	estimateSaveProgress := progress.NewTimedProgress(approxSaveTime)
+	exportProgress := progress.NewManual(1)
+	aggregateProgress := progress.NewAggregator(progress.DefaultStrategy, estimateSaveProgress, exportProgress)
+
+	// let consumers know of a monitorable event (image save + copy stages)
+	stage := &progress.Stage{}
+
+	bus.Publish(partybus.Event{
+		Type:   event.FetchImage,
+		Source: p.imageStr,
+		Value: progress.StagedProgressable(&struct {
+			progress.Stager
+			progress.Progressable
+		}{
+			Stager:       progress.Stager(stage),
+			Progressable: aggregateProgress,
+		}),
+	})
+
+	return &daemonProvideProgress{
+		EstimateProgress: estimateSaveProgress,
+		ExportProgress:   exportProgress,
+		Stage:            stage,
+	}, nil
+}
+
 func withMetadata(img containerd.Image, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
-	tags := []string{}
+	var tags []string
 	for k, v := range img.Labels() {
 		tags = append(tags, fmt.Sprintf("%s:%s", k, v))
+	}
+	if len(tags) > 0 {
+		metadata = append(metadata, image.WithTags(tags...))
 	}
 
 	platform := img.Target().Platform
 
 	if platform != nil {
 		metadata = append(metadata,
-			image.WithTags(tags...),
 			image.WithArchitecture(platform.Architecture, platform.Variant),
 			image.WithOS(platform.OS),
 		)

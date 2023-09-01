@@ -1,9 +1,11 @@
 package containerd
 
 import (
+	"os"
+
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
-	"os"
+	"github.com/containerd/containerd/namespaces"
 )
 
 func GetClient() (*containerd.Client, error) {
@@ -18,4 +20,13 @@ func GetClient() (*containerd.Client, error) {
 		return nil, err
 	}
 	return client, nil
+}
+
+func Namespace() string {
+	namespace := os.Getenv("CONTAINERD_NAMESPACE")
+	if namespace == "" {
+		namespace = namespaces.Default
+	}
+
+	return namespace
 }

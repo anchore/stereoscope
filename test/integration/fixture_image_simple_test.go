@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -119,6 +120,15 @@ func TestSimpleImage(t *testing.T) {
 
 	for _, c := range simpleImageTestCases {
 		t.Run(c.source, func(t *testing.T) {
+			if runtime.GOOS != "linux" {
+				switch c.source {
+				case "containerd":
+					t.Skip("containerd is only supported on linux")
+				case "podman":
+					t.Skip("podman is only supported on linux")
+				}
+			}
+
 			i := imagetest.GetFixtureImage(t, c.source, "image-simple")
 
 			assertImageSimpleMetadata(t, i, c)
@@ -150,7 +160,7 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 			var bi *image.Image
 			for i := 0; i < b.N; i++ {
 
-				bi, err = stereoscope.GetImage(context.TODO(), request, "")
+				bi, err = stereoscope.GetImage(context.TODO(), request)
 				b.Cleanup(func() {
 					require.NoError(b, bi.Cleanup())
 				})

@@ -63,7 +63,7 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 	request := PrepareFixtureImage(t, source, name)
 
-	i, err := stereoscope.GetImage(context.TODO(), request, "")
+	i, err := stereoscope.GetImage(context.TODO(), request)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, i.Cleanup())
@@ -113,7 +113,7 @@ func skopeoCopyDockerArchiveToPath(t testing.TB, dockerArchivePath, destination 
 func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
 	request := fmt.Sprintf("docker-archive:%s", tarPath)
 
-	i, err := stereoscope.GetImage(context.TODO(), request, "")
+	i, err := stereoscope.GetImage(context.TODO(), request)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

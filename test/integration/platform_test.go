@@ -93,11 +93,19 @@ func TestPlatformSelection(t *testing.T) {
 	for _, tt := range tests {
 		platform := fmt.Sprintf("%s/%s", tt.os, tt.architecture)
 		t.Run(fmt.Sprintf("%s/%s", tt.source.String(), platform), func(t *testing.T) {
+			if runtime.GOOS != "linux" {
+				switch tt.source {
+				case image.ContainerdDaemonSource:
+					t.Skip("containerd is only supported on linux")
+				case image.PodmanDaemonSource:
+					t.Skip("podman is only supported on linux")
+				}
+			}
 			if tt.expectedErr == nil {
 				tt.expectedErr = require.NoError
 			}
 			platformOpt := stereoscope.WithPlatform(platform)
-			img, err := stereoscope.GetImageFromSource(context.TODO(), imageName, tt.source, "", platformOpt)
+			img, err := stereoscope.GetImageFromSource(context.TODO(), imageName, tt.source, platformOpt)
 			tt.expectedErr(t, err)
 			require.NotNil(t, img)
 
@@ -127,7 +135,7 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			img, err := stereoscope.GetImageFromSource(context.TODO(), imageStrWithDigest, tt.source, "")
+			img, err := stereoscope.GetImageFromSource(context.TODO(), imageStrWithDigest, tt.source)
 			assert.NoError(t, err)
 			assertArchAndOs(t, img, "linux", "s390x")
 		})
@@ -135,7 +143,7 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 }
 
 func TestDefaultPlatformWithOciRegistry(t *testing.T) {
-	img, err := stereoscope.GetImageFromSource(context.TODO(), "busybox:1.31", image.OciRegistrySource, "")
+	img, err := stereoscope.GetImageFromSource(context.TODO(), "busybox:1.31", image.OciRegistrySource)
 	require.NoError(t, err)
 	assertArchAndOs(t, img, "linux", runtime.GOARCH)
 }
