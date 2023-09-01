@@ -241,19 +241,15 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, img containerd.Imag
 		archive.WithPlatform(platforms.DefaultStrict()),
 	}
 
-	providerProgress, err := p.trackSaveProgress(ctx, img)
-	if err != nil {
-		return "", err
-	}
-	if err == nil {
-		defer func() {
-			// NOTE: progress trackers should complete at the end of this function
-			// whether the function errors or succeeds.
-			providerProgress.EstimateProgress.SetCompleted()
-			providerProgress.ExportProgress.SetCompleted()
-		}()
-		providerProgress.Stage.Current = "requesting image from containerd"
-	}
+	providerProgress := p.trackSaveProgress(ctx, img)
+	defer func() {
+		// NOTE: progress trackers should complete at the end of this function
+		// whether the function errors or succeeds.
+		providerProgress.EstimateProgress.SetCompleted()
+		providerProgress.ExportProgress.SetCompleted()
+	}()
+
+	providerProgress.Stage.Current = "requesting image from containerd"
 
 	// containerd export (save) does not return till fully complete
 	err = p.client.Export(ctx, tempTarFile, exportOpts...)
@@ -264,7 +260,7 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, img containerd.Imag
 	return tempTarFile.Name(), nil
 }
 
-func (p *DaemonImageProvider) trackSaveProgress(ctx context.Context, img containerd.Image) (*daemonProvideProgress, error) {
+func (p *DaemonImageProvider) trackSaveProgress(ctx context.Context, img containerd.Image) *daemonProvideProgress {
 	mb := math.Pow(2, 20)
 
 	// fetch the expected image size to estimate and measure progress
@@ -301,7 +297,7 @@ func (p *DaemonImageProvider) trackSaveProgress(ctx context.Context, img contain
 		EstimateProgress: estimateSaveProgress,
 		ExportProgress:   exportProgress,
 		Stage:            stage,
-	}, nil
+	}
 }
 
 func withMetadata(img containerd.Image, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
