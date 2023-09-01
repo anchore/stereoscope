@@ -69,6 +69,11 @@ jobs:
           systemctl --user enable --now podman.socket
           sudo systemctl enable --now podman.socket
           sudo systemctl start podman.socket
+          sleep 1
+          
+          # simple test to make sure the daemon is up and running
+          podman images ls
+          sudo podman images ls
 
       - name: Setup containerd
         uses: crazy-max/ghaction-setup-containerd@v2
