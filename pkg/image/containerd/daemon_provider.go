@@ -258,7 +258,7 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, img containerd.Imag
 	// containerd export (save) does not return till fully complete
 	err = p.client.Export(ctx, tempTarFile, exportOpts...)
 	if err != nil {
-		return "", fmt.Errorf("unable to save image tar: %w", err)
+		return "", fmt.Errorf("unable to save image tar for image=%q: %w", img.Name(), err)
 	}
 
 	return tempTarFile.Name(), nil
