@@ -104,7 +104,8 @@ jobs:
 
       - name: Run integration tests
         # why sudo? containerd in the pipeline is only accessible to root (/var/run/containerd/containerd.sock)
-        run: sudo make integration
+        # -E to preserve the environment (thus use the same go root, etc)
+        run: sudo -E make integration
 
   Build-Snapshot-Artifacts:
     name: "Build snapshot artifacts"
