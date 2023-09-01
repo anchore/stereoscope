@@ -67,6 +67,7 @@ jobs:
           export XDG_RUNTIME_DIR=/run/user/$UID
           mkdir -p $HOME/.config/systemd/user
           systemctl --user enable --now podman.socket
+          sudo systemctl enable --now podman.socket
           sudo systemctl start podman.socket
 
       - name: Setup containerd

@@ -265,14 +265,16 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, img containerd.Imag
 }
 
 func (p *DaemonImageProvider) trackSaveProgress(ctx context.Context, img containerd.Image) (*daemonProvideProgress, error) {
+	mb := math.Pow(2, 20)
+
 	// fetch the expected image size to estimate and measure progress
 	size, err := img.Size(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get image size: %w", err)
+		log.WithFields("error", err).Trace("unable to fetch image size from containerd, progress will not be tracked")
+		size = int64(50 * mb)
 	}
 
 	// docker image save clocks in at ~30MB/sec on my laptop... mileage may vary, of course :shrug:
-	mb := math.Pow(2, 20)
 	sec := float64(size) / (mb * 30)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
 

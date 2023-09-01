@@ -76,6 +76,14 @@ var simpleImageTestCases = []testCase{
 		size:           65,
 	},
 	{
+		source:         "containerd",
+		imageMediaType: v1Types.DockerManifestSchema2,
+		layerMediaType: v1Types.DockerLayer,
+		layers:         simpleImageLayers,
+		tagCount:       2,
+		size:           65,
+	},
+	{
 		source:         "oci-archive",
 		imageMediaType: v1Types.OCIManifestSchema1,
 		layerMediaType: v1Types.OCILayer,
