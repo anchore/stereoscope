@@ -103,7 +103,8 @@ jobs:
         run: make integration-tools-load
 
       - name: Run integration tests
-        run: make integration
+        # why sudo? containerd in the pipeline is only accessible to root (/var/run/containerd/containerd.sock)
+        run: sudo make integration
 
   Build-Snapshot-Artifacts:
     name: "Build snapshot artifacts"
