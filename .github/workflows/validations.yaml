@@ -20,7 +20,7 @@ jobs:
 
   Static-Analysis:
     name: "Static analysis"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v3
 
@@ -32,7 +32,7 @@ jobs:
 
   Unit-Test:
     name: "Unit tests"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 
@@ -49,7 +49,7 @@ jobs:
 
   Integration-Test:
     name: "Integration tests"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 
@@ -115,7 +115,7 @@ jobs:
 
   Build-Snapshot-Artifacts:
     name: "Build snapshot artifacts"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 
