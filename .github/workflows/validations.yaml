@@ -55,6 +55,9 @@ jobs:
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
+        with:
+          # needed for rootless containerd
+          bootstrap-apt-packages: "rootlesskit"
 
       - name: Enable systemd for podman socket activation
         run: |
@@ -77,6 +80,24 @@ jobs:
 
       - name: Setup containerd
         uses: crazy-max/ghaction-setup-containerd@v2
+
+      - name: Configure rootless containerd
+        run: |
+          set -x
+          
+          mkdir ~/.local/bin
+          pushd ~/.local/bin
+          curl -O https://raw.githubusercontent.com/containerd/nerdctl/v1.5.0/extras/rootless/containerd-rootless.sh
+          curl -O https://raw.githubusercontent.com/containerd/nerdctl/v1.5.0/extras/rootless/containerd-rootless-setuptool.sh
+          chmod 755 containerd-rootless.sh containerd-rootless-setuptool.sh
+          popd
+          
+          containerd-rootless-setuptool.sh install
+          sleep 1
+          
+          # simple test to make sure the daemon is up and running
+          ctr image ls
+          sudo ctr image ls
 
       - name: Setup tmate session
         if: ${{ github.event.inputs.run-tmate == 'true' }}
