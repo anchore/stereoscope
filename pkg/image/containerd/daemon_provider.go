@@ -71,7 +71,12 @@ func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *c
 
 // pull a containerd image
 func (p *DaemonImageProvider) pull(ctx context.Context) (containerd.Image, error) {
-	log.Debugf("pulling containerd image=%q", p.imageStr)
+	var platformStr string
+	if p.platform != nil {
+		platformStr = p.platform.String()
+	}
+
+	log.WithFields("image", p.imageStr, "platform", platformStr).Debug("pulling containerd")
 
 	ongoing := newJobs(p.imageStr)
 
@@ -92,6 +97,9 @@ func (p *DaemonImageProvider) pull(ctx context.Context) (containerd.Image, error
 
 	options := p.pullOptions(ctx)
 	options = append(options, containerd.WithImageHandler(h))
+	if platformStr != "" {
+		options = append(options, containerd.WithPlatform(platformStr))
+	}
 
 	resp, err := p.client.Pull(ctx, p.imageStr, options...)
 	if err != nil {
@@ -171,7 +179,6 @@ func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) (*containe
 	// check if the image exists locally
 	img, err := p.client.GetImage(ctx, p.imageStr)
 	if err != nil {
-		//TODO: include platform in pulling the image
 		pulledImaged, err := p.pull(ctx)
 		if err != nil {
 			return nil, err
@@ -182,7 +189,6 @@ func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) (*containe
 	// looks like the image exists, but the platform doesn't match what the user specified, so we need to
 	// pull the image again with the correct platform specifier, which will override the local tag.
 	if err := p.validatePlatform(img); err != nil {
-		//TODO: include platform in pulling the image
 		pulledImaged, err := p.pull(ctx)
 		if err != nil {
 			return nil, err
@@ -270,8 +276,8 @@ func (p *DaemonImageProvider) trackSaveProgress(ctx context.Context, img contain
 		size = int64(50 * mb)
 	}
 
-	// docker image save clocks in at ~30MB/sec on my laptop... mileage may vary, of course :shrug:
-	sec := float64(size) / (mb * 30)
+	// docker image save clocks in at ~40MB/sec on my laptop... mileage may vary, of course :shrug:
+	sec := float64(size) / (mb * 40)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
 
 	estimateSaveProgress := progress.NewTimedProgress(approxSaveTime)
