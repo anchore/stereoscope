@@ -95,9 +95,6 @@ jobs:
           containerd-rootless-setuptool.sh install
           sleep 1
           
-          export CONTAINERD_ADDRESS=/proc/$(cat $XDG_RUNTIME_DIR/containerd-rootless/child_pid)/root/run/containerd/containerd.sock
-          CONTAINERD_ADDRESS=$CONTAINERD_ADDRESS >> $GITHUB_ENV
-          
           # simple test to make sure the daemon is up and running
           ctr image ls
           sudo ctr image ls

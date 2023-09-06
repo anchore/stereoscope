@@ -84,6 +84,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
+require github.com/adrg/xdg v0.4.0
+
 require (
 	cloud.google.com/go/compute v1.19.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
