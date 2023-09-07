@@ -9,6 +9,7 @@ import (
 	"github.com/adrg/xdg"
 	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
+	"github.com/spf13/afero"
 
 	"github.com/anchore/stereoscope/internal/log"
 )
@@ -25,7 +26,7 @@ func ClientOverSSH() (*client.Client, error) {
 		client.WithAPIVersionNegotiation(),
 	}
 
-	host, identity := getSSHAddress(configPaths)
+	host, identity := getSSHAddress(afero.NewOsFs(), configPaths)
 
 	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
 		host = v
@@ -73,7 +74,7 @@ func ClientOverUnixSocket() (*client.Client, error) {
 		client.WithAPIVersionNegotiation(),
 	}
 
-	addr, err := getContainerHostAddress(configPaths, xdg.RuntimeDir, defaultSocketPath)
+	addr, err := getContainerHostAddress(afero.NewOsFs(), configPaths, xdg.RuntimeDir, defaultSocketPath)
 	if err != nil {
 		return nil, err
 	}
@@ -92,12 +93,12 @@ func ClientOverUnixSocket() (*client.Client, error) {
 	return c, err
 }
 
-func getContainerHostAddress(configPaths []string, xdgRuntimeDir, defaultSocketPath string) (string, error) {
+func getContainerHostAddress(fs afero.Fs, configPaths []string, xdgRuntimeDir, defaultSocketPath string) (string, error) {
 	var addr string
 	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
 		addr = v
 	} else {
-		addr = getUnixSocketAddressFromConfig(configPaths)
+		addr = getUnixSocketAddressFromConfig(fs, configPaths)
 	}
 
 	if addr != "" {
@@ -115,7 +116,7 @@ func getContainerHostAddress(configPaths []string, xdgRuntimeDir, defaultSocketP
 
 	for _, candidate := range candidateAddresses {
 		log.WithFields("path", candidate).Trace("trying podman socket")
-		_, err := os.Stat(candidate)
+		_, err := fs.Stat(candidate)
 		if err == nil {
 			addr = fmt.Sprintf("unix://%s", candidate)
 			break

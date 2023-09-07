@@ -1,13 +1,13 @@
 package podman
 
 import (
+	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/pelletier/go-toml"
+	"github.com/spf13/afero"
 )
 
 var (
@@ -40,8 +40,8 @@ type serviceDestination struct {
 	Identity string `toml:"identity"`
 }
 
-func findUnixAddressFromFile(path string) string {
-	cc, err := parseContainerConfig(path)
+func findUnixAddressFromFile(fs afero.Fs, path string) string {
+	cc, err := parseContainerConfig(fs, path)
 	if err != nil {
 		return ""
 	}
@@ -73,8 +73,8 @@ func findDestinationOfType(cc containersConfig, ty string) *serviceDestination {
 	return nil
 }
 
-func findSSHConnectionInfoFromFile(path string) (string, string) {
-	cc, err := parseContainerConfig(path)
+func findSSHConnectionInfoFromFile(fs afero.Fs, path string) (string, string) {
+	cc, err := parseContainerConfig(fs, path)
 	if err != nil {
 		return "", ""
 	}
@@ -103,10 +103,14 @@ func findUnixAddress(cc containersConfig) string {
 }
 
 func parseUnixAddress(uri string) string {
-	if strings.HasPrefix(uri, "unix://") {
-		return uri
+	u, err := url.Parse(uri)
+	if err != nil {
+		return ""
 	}
 
+	if u.Scheme == "unix" {
+		return fmt.Sprintf("unix://%s", u.Path)
+	}
 	return ""
 }
 
@@ -119,8 +123,8 @@ func isScheme(uri, scheme string) bool {
 	return u.Scheme == scheme
 }
 
-func parseContainerConfig(path string) (*containersConfig, error) {
-	configBytes, err := os.ReadFile(path)
+func parseContainerConfig(fs afero.Fs, path string) (*containersConfig, error) {
+	configBytes, err := afero.ReadFile(fs, path)
 	if err != nil {
 		return nil, err
 	}
@@ -132,9 +136,9 @@ func parseContainerConfig(path string) (*containersConfig, error) {
 	return &cc, nil
 }
 
-func getUnixSocketAddressFromConfig(paths []string) (address string) {
+func getUnixSocketAddressFromConfig(fs afero.Fs, paths []string) (address string) {
 	for _, p := range paths {
-		if a := findUnixAddressFromFile(p); a != "" {
+		if a := findUnixAddressFromFile(fs, p); a != "" {
 			// overwriting here is intentional, as a way to
 			// prioritize different config files
 			address = a
@@ -144,9 +148,9 @@ func getUnixSocketAddressFromConfig(paths []string) (address string) {
 	return
 }
 
-func getSSHAddress(paths []string) (address, identity string) {
+func getSSHAddress(fs afero.Fs, paths []string) (address, identity string) {
 	for _, p := range paths {
-		a, id := findSSHConnectionInfoFromFile(p)
+		a, id := findSSHConnectionInfoFromFile(fs, p)
 		// overwriting here is intentional, as a way to
 		// prioritize different config files
 		if a != "" && id != "" {

@@ -1,9 +1,9 @@
 package podman
 
 import (
-	"path/filepath"
 	"testing"
 
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -133,7 +133,6 @@ func Test_findSSHConnectionInfo(t *testing.T) {
 }
 
 func Test_configPrecedence(t *testing.T) {
-	root := "test-fixtures"
 
 	type args struct {
 		paths []string
@@ -147,7 +146,7 @@ func Test_configPrecedence(t *testing.T) {
 		{
 			name: "low precedence",
 			args: args{paths: []string{
-				filepath.Join(root, "conf1.conf"),
+				"conf1.conf",
 			}},
 			wantUnixAddress: "unix:///low/precedence/1234/podman/podman.sock",
 			wantSSHAddress:  "ssh://core@localhost:45983/low/precedence/1234/podman/podman.sock",
@@ -155,8 +154,8 @@ func Test_configPrecedence(t *testing.T) {
 		{
 			name: "medium precedence",
 			args: args{paths: []string{
-				filepath.Join(root, "conf1.conf"),
-				filepath.Join(root, "conf2.conf"),
+				"conf1.conf",
+				"conf2.conf",
 			}},
 			wantUnixAddress: "unix:///medium/precedence/1234/podman/podman.sock",
 			wantSSHAddress:  "ssh://core@localhost:45983/medium/precedence/1234/podman/podman.sock",
@@ -164,9 +163,9 @@ func Test_configPrecedence(t *testing.T) {
 		{
 			name: "high precedence",
 			args: args{paths: []string{
-				filepath.Join(root, "conf1.conf"),
-				filepath.Join(root, "conf2.conf"),
-				filepath.Join(root, "conf3.conf"),
+				"conf1.conf",
+				"conf2.conf",
+				"conf3.conf",
 			}},
 			wantUnixAddress: "unix:///high/precedence/1234/podman/podman.sock",
 			wantSSHAddress:  "ssh://core@localhost:45983/high/precedence/1234/podman/podman.sock",
@@ -174,9 +173,9 @@ func Test_configPrecedence(t *testing.T) {
 		{
 			name: "order of paths sets precedence",
 			args: args{paths: []string{
-				filepath.Join(root, "conf3.conf"),
-				filepath.Join(root, "conf1.conf"),
-				filepath.Join(root, "conf2.conf"),
+				"conf3.conf",
+				"conf1.conf",
+				"conf2.conf",
 			}},
 			wantUnixAddress: "unix:///medium/precedence/1234/podman/podman.sock",
 			wantSSHAddress:  "ssh://core@localhost:45983/medium/precedence/1234/podman/podman.sock",
@@ -184,7 +183,12 @@ func Test_configPrecedence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.wantUnixAddress, getUnixSocketAddressFromConfig(tt.args.paths), "getUnixSocketAddressFromConfig(%v)", tt.args.paths)
+			fs := afero.NewBasePathFs(afero.NewOsFs(), "test-fixtures")
+			assert.Equalf(t,
+				tt.wantUnixAddress,
+				getUnixSocketAddressFromConfig(fs, tt.args.paths),
+				"getUnixSocketAddressFromConfig(%v)", tt.args.paths,
+			)
 		})
 	}
 }
