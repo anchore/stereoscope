@@ -184,7 +184,7 @@ func Test_configPrecedence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.wantUnixAddress, getUnixSocketAddress(tt.args.paths), "getUnixSocketAddress(%v)", tt.args.paths)
+			assert.Equalf(t, tt.wantUnixAddress, getUnixSocketAddressFromConfig(tt.args.paths), "getUnixSocketAddressFromConfig(%v)", tt.args.paths)
 		})
 	}
 }

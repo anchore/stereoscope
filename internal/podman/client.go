@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/adrg/xdg"
 	"github.com/docker/docker/client"
 	"github.com/pkg/errors"
 
@@ -16,6 +17,8 @@ var (
 	ErrNoSocketAddress = errors.New("no socket address")
 	ErrNoHostAddress   = errors.New("no host address")
 )
+
+const defaultSocketPath = "/run/podman/podman.sock"
 
 func ClientOverSSH() (*client.Client, error) {
 	var clientOpts = []client.Opt{
@@ -70,29 +73,16 @@ func ClientOverUnixSocket() (*client.Client, error) {
 		client.WithAPIVersionNegotiation(),
 	}
 
-	addr := getUnixSocketAddress(configPaths)
-	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
-		addr = v
-	}
-
-	if addr == "" { // in some cases there might not be any config file
-		// we can try guessing; podman CLI does that
-		socketPath := fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
-		log.Debugf("no socket address was found. Trying default address: %s", socketPath)
-		_, err := os.Stat(socketPath)
-		if err != nil {
-			log.Debugf("looking for socket file: %v", err)
-			return nil, ErrNoSocketAddress
-		}
-
-		addr = fmt.Sprintf("unix://%s", socketPath)
+	addr, err := getContainerHostAddress(configPaths, xdg.RuntimeDir, defaultSocketPath)
+	if err != nil {
+		return nil, err
 	}
 
 	clientOpts = append(clientOpts, client.WithHost(addr))
 
 	c, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating local client for podman: %w", err)
+		return nil, fmt.Errorf("failed to create podman client: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
@@ -102,11 +92,49 @@ func ClientOverUnixSocket() (*client.Client, error) {
 	return c, err
 }
 
+func getContainerHostAddress(configPaths []string, xdgRuntimeDir, defaultSocketPath string) (string, error) {
+	var addr string
+	if v, found := os.LookupEnv("CONTAINER_HOST"); found && v != "" {
+		addr = v
+	} else {
+		addr = getUnixSocketAddressFromConfig(configPaths)
+	}
+
+	if addr != "" {
+		return addr, nil
+	}
+
+	// in some cases there might not be any config file, in which case we can try guessing (the same way the podman CLI does)
+	candidateAddresses := []string{
+		// default rootless address for the podman-system-service
+		fmt.Sprintf("%s/podman/podman.sock", xdgRuntimeDir),
+
+		// typically accessible to only root, but last ditch effort
+		defaultSocketPath,
+	}
+
+	for _, candidate := range candidateAddresses {
+		log.WithFields("path", candidate).Trace("trying podman socket")
+		_, err := os.Stat(candidate)
+		if err == nil {
+			addr = fmt.Sprintf("unix://%s", candidate)
+			break
+		}
+	}
+
+	if addr == "" {
+		return "", ErrNoSocketAddress
+	}
+
+	return addr, nil
+}
+
 func GetClient() (*client.Client, error) {
 	c, err := ClientOverUnixSocket()
 	if err == nil {
 		return c, nil
 	}
+	log.WithFields("error", err).Trace("unable to connect to podman via unix socket")
 
 	return ClientOverSSH()
 }

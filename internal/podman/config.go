@@ -1,13 +1,29 @@
 package podman
 
 import (
-	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/docker/docker/pkg/homedir"
+	"github.com/adrg/xdg"
 	"github.com/pelletier/go-toml"
+)
+
+var (
+	// configFile is the default dir + container config used by podman.
+	configFile = filepath.Join("containers", "containers.conf")
+
+	// configPaths holds a list of config files, they are sorted from
+	// the least to the most relevant during reading.
+	configPaths = []string{
+		// holds the default containers config path
+		filepath.Join("usr", "share", configFile),
+		// holds the default config path overridden by the root user
+		filepath.Join("etc", configFile),
+		// holds the container config path overridden by the rootless user
+		filepath.Join(xdg.Home, ".config", configFile),
+	}
 )
 
 type containersConfig struct {
@@ -87,14 +103,10 @@ func findUnixAddress(cc containersConfig) string {
 }
 
 func parseUnixAddress(uri string) string {
-	u, err := url.Parse(uri)
-	if err != nil {
-		return ""
+	if strings.HasPrefix(uri, "unix://") {
+		return uri
 	}
 
-	if u.Scheme == "unix" {
-		return fmt.Sprintf("unix://%s", u.Path)
-	}
 	return ""
 }
 
@@ -120,23 +132,7 @@ func parseContainerConfig(path string) (*containersConfig, error) {
 	return &cc, nil
 }
 
-var (
-	// configFile is the default dir + container config used by podman.
-	configFile = filepath.Join("containers", "containers.conf")
-
-	// configPaths holds a list of config files, they are sorted from
-	// the least to the most relevant during reading.
-	configPaths = []string{
-		// holds the default containers config path
-		filepath.Join("usr", "share", configFile),
-		// holds the default config path overridden by the root user
-		filepath.Join("etc", configFile),
-		// holds the container config path overridden by the rootless user
-		filepath.Join(homedir.Get(), ".config", configFile),
-	}
-)
-
-func getUnixSocketAddress(paths []string) (address string) {
+func getUnixSocketAddressFromConfig(paths []string) (address string) {
 	for _, p := range paths {
 		if a := findUnixAddressFromFile(p); a != "" {
 			// overwriting here is intentional, as a way to
