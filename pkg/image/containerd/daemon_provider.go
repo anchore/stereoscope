@@ -101,6 +101,8 @@ func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (c
 		platformStr = p.platform.String()
 	}
 
+	// note: if not platform is provided then containerd will default to linux/amd64 automatically. We don't override
+	// this behavior here and intentionally show that the value is blank in the log.
 	log.WithFields("image", resolvedImage, "platform", platformStr).Debug("pulling containerd")
 
 	ongoing := newJobs(resolvedImage)
@@ -379,14 +381,12 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, resolvedImage strin
 		size = int64(50 * mb)
 	}
 
-	if p.platform != nil {
-		platformObj, err := platforms.Parse(p.platform.String())
-		if err != nil {
-			return "", fmt.Errorf("unable to parse platform: %w", err)
-		}
-		// important: we require OnlyStrict() to ensure that when arm64 is provided that other arm variants are NOT selected
-		exportOpts = append(exportOpts, archive.WithPlatform(platforms.OnlyStrict(platformObj)))
+	platformComparer, err := exportPlatformComparer(p.platform)
+	if err != nil {
+		return "", err
 	}
+
+	exportOpts = append(exportOpts, archive.WithPlatform(platformComparer))
 
 	providerProgress := p.trackSaveProgress(size)
 	defer func() {
@@ -405,6 +405,23 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, resolvedImage strin
 	}
 
 	return tempTarFile.Name(), nil
+}
+
+func exportPlatformComparer(platform *image.Platform) (platforms.MatchComparer, error) {
+	// it is important to only export a single architecture. Default to linux/amd64. Without specifying a specific
+	// architecture then the export may include multiple architectures (if the tag points to a manifest list)
+	platformStr := "linux/amd64"
+	if platform != nil {
+		platformStr = platform.String()
+	}
+
+	platformObj, err := platforms.Parse(platformStr)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse platform: %w", err)
+	}
+
+	// important: we require OnlyStrict() to ensure that when arm64 is provided that other arm variants are NOT selected
+	return platforms.OnlyStrict(platformObj), nil
 }
 
 func (p *DaemonImageProvider) trackSaveProgress(size int64) *daemonProvideProgress {
