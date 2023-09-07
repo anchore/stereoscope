@@ -1,9 +1,20 @@
 package integration
 
-// This was commented out until we can confirm the new behavior of the github runner
-// tests started throwing "read: connection reset by peer" when connecting to ssh://root@localhost:2222/run/podman/podman.sock
-// we might need to think of another creative way to test this, but in the meantime it has been failing stereoscope builds
-/*
+import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/docker/docker/client"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/anchore/stereoscope/internal/podman"
+)
+
 func TestPodmanConnections(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -19,39 +30,46 @@ func TestPodmanConnections(t *testing.T) {
 				require.NoErrorf(t, err, "unable to get cwd: %+v", err)
 
 				fixturesPath := filepath.Join(cwd, "test-fixtures", "podman")
-				makeTask := filepath.Join(fixturesPath, "Makefile")
-				t.Logf("Generating Fixture from 'make %s'", makeTask)
 
 				cmd := exec.Command("make")
 				cmd.Dir = fixturesPath
 				runAndShow(t, cmd)
 
-				err = os.Setenv("CONTAINER_HOST", "ssh://root@localhost:2222/run/podman/podman.sock")
-				assert.NoError(t, err)
+				t.Setenv("CONTAINER_HOST", "ssh://root@localhost:2222/run/podman/podman.sock")
 
 				keyPath := filepath.Join(fixturesPath, "ssh", "id_ed25519")
-				err = os.Setenv("CONTAINER_SSHKEY", keyPath)
-				assert.NoError(t, err)
+				t.Setenv("CONTAINER_SSHKEY", keyPath)
+
 				t.Logf("ssh key %s", keyPath)
 
-				time.Sleep(time.Second) // TODO: sync so test starts when docker is ready
+				start := time.Now()
+				attempt := 1
+				for {
+					time.Sleep(time.Second * 2)
+
+					t.Logf("waiting for podman to be ready (attempt %d)", attempt)
+					if time.Since(start) > time.Second*30 {
+						t.Fatal("timed out waiting for sshd to start")
+					}
+					cmd = exec.Command("make", "status")
+					cmd.Dir = fixturesPath
+					if err = runAndShowPassive(t, cmd); err == nil {
+						t.Log("podman is ready")
+						break
+					}
+
+					attempt++
+				}
+
 			},
 			cleanup: func() {
 				cwd, err := os.Getwd()
 				assert.NoErrorf(t, err, "unable to get cwd: %+v", err)
-				err = os.Unsetenv("CONTAINER_HOST")
-				assert.NoError(t, err)
-				err = os.Unsetenv("CONTAINER_SSHKEY")
-				assert.NoError(t, err)
 
-				// TODO stop podman-ssh
 				fixturesPath := filepath.Join(cwd, "test-fixtures", "podman")
-				makeTask := filepath.Join(fixturesPath, "Makefile")
-				t.Logf("Generating Fixture from 'make %s'", makeTask)
 
 				cmd := exec.Command("make", "stop")
 				cmd.Dir = fixturesPath
-
 				runAndShow(t, cmd)
 			},
 		},
@@ -82,4 +100,3 @@ func TestPodmanConnections(t *testing.T) {
 		})
 	}
 }
-*/
