@@ -88,7 +88,10 @@ func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image
 	}
 
 	// use the existing tarball provider to process what was pulled from the containerd daemon
-	return sdocker.NewProviderFromTarball(tarFileName, p.tmpDirGen).Provide(ctx, withMetadata(resolvedPlatform, userMetadata)...)
+	return sdocker.NewProviderFromTarball(tarFileName, p.tmpDirGen).
+		Provide(ctx,
+			withMetadata(resolvedPlatform, userMetadata, p.imageStr)...,
+		)
 }
 
 // pull a containerd image
@@ -435,14 +438,17 @@ func (p *DaemonImageProvider) trackSaveProgress(size int64) *daemonProvideProgre
 	}
 }
 
-func withMetadata(platform *platforms.Platform, userMetadata []image.AdditionalMetadata) (metadata []image.AdditionalMetadata) {
-	// TODO: there might be a way to fetch tags for the image
-
+func withMetadata(platform *platforms.Platform, userMetadata []image.AdditionalMetadata, ref string) (metadata []image.AdditionalMetadata) {
 	if platform != nil {
 		metadata = append(metadata,
 			image.WithArchitecture(platform.Architecture, platform.Variant),
 			image.WithOS(platform.OS),
 		)
+	}
+
+	if strings.Contains(ref, ":") {
+		// remove digest from ref
+		metadata = append(metadata, image.WithTags(strings.Split(ref, "@")[0]))
 	}
 
 	// apply user-supplied metadata last to override any default behavior

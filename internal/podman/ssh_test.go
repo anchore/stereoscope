@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
@@ -16,8 +17,8 @@ import (
 
 func TestNewSSHConfig(t *testing.T) {
 	paths := []string{
-		"./test-fixtures/containers.conf",
-		"./test-fixtures/empty.conf",
+		"containers.conf",
+		"empty.conf",
 	}
 
 	const (
@@ -25,7 +26,8 @@ func TestNewSSHConfig(t *testing.T) {
 		sshKeyPath = "/home/jonas/.ssh/podman-machine-default"
 	)
 
-	address, identity := getSSHAddress(paths)
+	fs := afero.NewBasePathFs(afero.NewOsFs(), "test-fixtures")
+	address, identity := getSSHAddress(fs, paths)
 	assert.Equal(t, sshAddress, address)
 	assert.Equal(t, sshKeyPath, identity)
 
@@ -44,10 +46,11 @@ func TestNewSSHConfig(t *testing.T) {
 
 func TestEmptySSHConfig(t *testing.T) {
 	paths := []string{
-		"./test-fixtures/empty.conf",
+		"empty.conf",
 	}
 
-	address, identity := getSSHAddress(paths)
+	fs := afero.NewBasePathFs(afero.NewOsFs(), "test-fixtures")
+	address, identity := getSSHAddress(fs, paths)
 	conf, err := newSSHConf(address, identity, "")
 	assert.Error(t, err)
 	assert.Nil(t, conf)

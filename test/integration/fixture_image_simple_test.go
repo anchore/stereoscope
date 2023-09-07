@@ -80,7 +80,7 @@ var simpleImageTestCases = []testCase{
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
 		layers:         simpleImageLayers,
-		tagCount:       1, // currently only the provided tag is supported, not supplemental tags
+		tagCount:       2,
 		size:           65,
 	},
 	{

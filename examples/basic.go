@@ -21,7 +21,7 @@ func main() {
 
 	lctx, err := logrus.New(logrus.Config{
 		EnableConsole: true,
-		Level:         logger.DebugLevel,
+		Level:         logger.TraceLevel,
 	})
 	if err != nil {
 		panic(err)

@@ -3,11 +3,27 @@ package podman
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 
-	"github.com/docker/docker/pkg/homedir"
+	"github.com/adrg/xdg"
 	"github.com/pelletier/go-toml"
+	"github.com/spf13/afero"
+)
+
+var (
+	// configFile is the default dir + container config used by podman.
+	configFile = filepath.Join("containers", "containers.conf")
+
+	// configPaths holds a list of config files, they are sorted from
+	// the least to the most relevant during reading.
+	configPaths = []string{
+		// holds the default containers config path
+		filepath.Join("usr", "share", configFile),
+		// holds the default config path overridden by the root user
+		filepath.Join("etc", configFile),
+		// holds the container config path overridden by the rootless user
+		filepath.Join(xdg.Home, ".config", configFile),
+	}
 )
 
 type containersConfig struct {
@@ -24,8 +40,8 @@ type serviceDestination struct {
 	Identity string `toml:"identity"`
 }
 
-func findUnixAddressFromFile(path string) string {
-	cc, err := parseContainerConfig(path)
+func findUnixAddressFromFile(fs afero.Fs, path string) string {
+	cc, err := parseContainerConfig(fs, path)
 	if err != nil {
 		return ""
 	}
@@ -57,8 +73,8 @@ func findDestinationOfType(cc containersConfig, ty string) *serviceDestination {
 	return nil
 }
 
-func findSSHConnectionInfoFromFile(path string) (string, string) {
-	cc, err := parseContainerConfig(path)
+func findSSHConnectionInfoFromFile(fs afero.Fs, path string) (string, string) {
+	cc, err := parseContainerConfig(fs, path)
 	if err != nil {
 		return "", ""
 	}
@@ -107,8 +123,8 @@ func isScheme(uri, scheme string) bool {
 	return u.Scheme == scheme
 }
 
-func parseContainerConfig(path string) (*containersConfig, error) {
-	configBytes, err := os.ReadFile(path)
+func parseContainerConfig(fs afero.Fs, path string) (*containersConfig, error) {
+	configBytes, err := afero.ReadFile(fs, path)
 	if err != nil {
 		return nil, err
 	}
@@ -120,25 +136,9 @@ func parseContainerConfig(path string) (*containersConfig, error) {
 	return &cc, nil
 }
 
-var (
-	// configFile is the default dir + container config used by podman.
-	configFile = filepath.Join("containers", "containers.conf")
-
-	// configPaths holds a list of config files, they are sorted from
-	// the least to the most relevant during reading.
-	configPaths = []string{
-		// holds the default containers config path
-		filepath.Join("usr", "share", configFile),
-		// holds the default config path overridden by the root user
-		filepath.Join("etc", configFile),
-		// holds the container config path overridden by the rootless user
-		filepath.Join(homedir.Get(), ".config", configFile),
-	}
-)
-
-func getUnixSocketAddress(paths []string) (address string) {
+func getUnixSocketAddressFromConfig(fs afero.Fs, paths []string) (address string) {
 	for _, p := range paths {
-		if a := findUnixAddressFromFile(p); a != "" {
+		if a := findUnixAddressFromFile(fs, p); a != "" {
 			// overwriting here is intentional, as a way to
 			// prioritize different config files
 			address = a
@@ -148,9 +148,9 @@ func getUnixSocketAddress(paths []string) (address string) {
 	return
 }
 
-func getSSHAddress(paths []string) (address, identity string) {
+func getSSHAddress(fs afero.Fs, paths []string) (address, identity string) {
 	for _, p := range paths {
-		a, id := findSSHConnectionInfoFromFile(p)
+		a, id := findSSHConnectionInfoFromFile(fs, p)
 		// overwriting here is intentional, as a way to
 		// prioritize different config files
 		if a != "" && id != "" {
