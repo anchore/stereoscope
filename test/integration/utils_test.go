@@ -17,6 +17,13 @@ import (
 func runAndShow(t *testing.T, cmd *exec.Cmd) {
 	t.Helper()
 
+	err := runAndShowPassive(t, cmd)
+	require.NoErrorf(t, err, "cmd failed: %+v", err)
+}
+
+func runAndShowPassive(t *testing.T, cmd *exec.Cmd) error {
+	t.Helper()
+
 	stderr, err := cmd.StderrPipe()
 	require.NoErrorf(t, err, "could not get stderr: +v", err)
 
@@ -37,8 +44,7 @@ func runAndShow(t *testing.T, cmd *exec.Cmd) {
 	show("out", stdout)
 	show("err", stderr)
 
-	err = cmd.Wait()
-	require.NoErrorf(t, err, "cmd failed: %+v", err)
+	return cmd.Wait()
 }
 
 func compareLayerSquashTrees(t *testing.T, expected map[uint]filetree.Reader, i *image.Image, ignorePaths []file.Path) {
