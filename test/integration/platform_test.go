@@ -20,7 +20,7 @@ func TestPlatformSelection(t *testing.T) {
 	   $ docker image pull --platform $PLATFORM busybox:1.31
 	   $ docker image inspect busybox:1.31 | jq -r '.[0].Id'
 	*/
-	imageName := "busybox:1.31"
+	imageName := "docker.io/library/busybox:1.31"
 	tests := []struct {
 		source         image.Source
 		architecture   string

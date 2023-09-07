@@ -20,7 +20,7 @@ jobs:
 
   Static-Analysis:
     name: "Static analysis"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v3
 
@@ -32,7 +32,7 @@ jobs:
 
   Unit-Test:
     name: "Unit tests"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 
@@ -49,12 +49,15 @@ jobs:
 
   Integration-Test:
     name: "Integration tests"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
+        with:
+          # needed for rootless containerd
+          bootstrap-apt-packages: "rootlesskit"
 
       - name: Enable systemd for podman socket activation
         run: |
@@ -67,7 +70,36 @@ jobs:
           export XDG_RUNTIME_DIR=/run/user/$UID
           mkdir -p $HOME/.config/systemd/user
           systemctl --user enable --now podman.socket
+          sudo systemctl enable --now podman.socket
           sudo systemctl start podman.socket
+          sleep 1
+          
+          # simple test to make sure the daemon is up and running
+          podman images ls
+          sudo podman images ls
+
+      - name: Setup containerd
+        uses: crazy-max/ghaction-setup-containerd@v2
+
+      - name: Configure rootless containerd
+        run: |
+          set -x
+          
+          mkdir ~/.local/bin
+          pushd ~/.local/bin
+          curl -O https://raw.githubusercontent.com/containerd/nerdctl/v1.5.0/extras/rootless/containerd-rootless.sh
+          curl -O https://raw.githubusercontent.com/containerd/nerdctl/v1.5.0/extras/rootless/containerd-rootless-setuptool.sh
+          chmod 755 containerd-rootless.sh containerd-rootless-setuptool.sh
+          popd
+          
+          containerd-rootless-setuptool.sh install
+          sleep 1
+          
+          export CONTAINERD_ADDRESS=/proc/$(cat $XDG_RUNTIME_DIR/containerd-rootless/child_pid)/root/run/containerd/containerd.sock
+          
+          # simple test to make sure the daemon is up and running
+          ctr image ls
+          sudo ctr image ls
 
       - name: Setup tmate session
         if: ${{ github.event.inputs.run-tmate == 'true' }}
@@ -104,7 +136,7 @@ jobs:
 
   Build-Snapshot-Artifacts:
     name: "Build snapshot artifacts"
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v3
 

@@ -77,11 +77,20 @@ func ClientOverUnixSocket() (*client.Client, error) {
 
 	if addr == "" { // in some cases there might not be any config file
 		// we can try guessing; podman CLI does that
-		socketPath := fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
-		log.Debugf("no socket address was found. Trying default address: %s", socketPath)
+
+		var socketPath string
+		uid := os.Getuid()
+		switch uid {
+		case 0:
+			socketPath = "/run/podman/podman.sock"
+		default:
+			socketPath = fmt.Sprintf("/run/user/%d/podman/podman.sock", os.Getuid())
+		}
+
+		log.Debugf("no socket address was provided, trying default address: %s", socketPath)
 		_, err := os.Stat(socketPath)
 		if err != nil {
-			log.Debugf("looking for socket file: %v", err)
+			log.Debugf("unable to find socket file: %v", err)
 			return nil, ErrNoSocketAddress
 		}
 
@@ -92,7 +101,7 @@ func ClientOverUnixSocket() (*client.Client, error) {
 
 	c, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating local client for podman: %w", err)
+		return nil, fmt.Errorf("failed to create podman client: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
@@ -107,6 +116,7 @@ func GetClient() (*client.Client, error) {
 	if err == nil {
 		return c, nil
 	}
+	log.WithFields("error", err).Trace("unable to connect to podman via unix socket")
 
 	return ClientOverSSH()
 }

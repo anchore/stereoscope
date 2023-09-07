@@ -14,6 +14,7 @@ import (
 
 	"github.com/anchore/go-testutils"
 	"github.com/anchore/stereoscope"
+	"github.com/anchore/stereoscope/internal/containerd"
 	"github.com/anchore/stereoscope/pkg/image"
 )
 
@@ -253,7 +254,13 @@ func buildContainerdImage(t testing.TB, contextDir, name, tag string) {
 	err := saveImage(t, fullTag, tempFile)
 	require.NoError(t, err, "could not save docker image (shell out)")
 	cmd := exec.Command("ctr", "image", "import", tempFile)
-	cmd.Env = os.Environ()
+
+	env := os.Environ()
+	if os.Getenv("CONTAINERD_ADDRESS") == "" {
+		env = append(env, fmt.Sprintf("CONTAINERD_ADDRESS=%s", containerd.Address()))
+	}
+	cmd.Env = env
+
 	cmd.Dir = contextDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
