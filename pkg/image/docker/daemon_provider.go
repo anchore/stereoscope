@@ -62,7 +62,7 @@ func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c cl
 type daemonProvideProgress struct {
 	SaveProgress *progress.TimedProgress
 	CopyProgress *progress.Writer
-	Stage        *progress.Stage
+	Stage        *progress.AtomicStage
 }
 
 func (p *DaemonImageProvider) trackSaveProgress() (*daemonProvideProgress, error) {
@@ -86,7 +86,7 @@ func (p *DaemonImageProvider) trackSaveProgress() (*daemonProvideProgress, error
 	aggregateProgress := progress.NewAggregator(progress.NormalizeStrategy, estimateSaveProgress, copyProgress)
 
 	// let consumers know of a monitorable event (image save + copy stages)
-	stage := &progress.Stage{}
+	stage := progress.NewAtomicStage("")
 
 	bus.Publish(partybus.Event{
 		Type:   event.FetchImage,
@@ -111,7 +111,7 @@ func (p *DaemonImageProvider) trackSaveProgress() (*daemonProvideProgress, error
 func (p *DaemonImageProvider) pull(ctx context.Context) error {
 	log.Debugf("pulling docker image=%q", p.imageStr)
 
-	var status = newPullStatus()
+	status := newPullStatus()
 	defer func() {
 		status.complete = true
 	}()
@@ -156,7 +156,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context) error {
 }
 
 func (p *DaemonImageProvider) pullOptions() (types.ImagePullOptions, error) {
-	var options = types.ImagePullOptions{
+	options := types.ImagePullOptions{
 		Platform: p.platform.String(),
 	}
 
