@@ -283,7 +283,7 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context) (string, error) {
 		}
 	}()
 
-	providerProgress.Stage.Current = "requesting image from docker"
+	providerProgress.Stage.Set("requesting image from docker")
 	readCloser, err := p.client.ImageSave(ctx, []string{p.imageStr})
 	if err != nil {
 		return "", fmt.Errorf("unable to save image tar: %w", err)
@@ -304,7 +304,7 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context) (string, error) {
 
 	// save the image contents to the temp file
 	// note: this is the same image that will be used to querying image content during analysis
-	providerProgress.Stage.Current = "saving image to disk"
+	providerProgress.Stage.Set("saving image to disk")
 	nBytes, err := io.Copy(io.MultiWriter(tempTarFile, providerProgress.CopyProgress), readCloser)
 	if err != nil {
 		return "", fmt.Errorf("unable to save image to tar: %w", err)
