@@ -65,7 +65,7 @@ func getAddress(fs afero.Fs, xdgRuntimeDir, defaultSocketPath string) (string, e
 		log.WithFields("path", candidate).Trace("trying containerd socket")
 		_, err := fs.Stat(candidate)
 		if err == nil {
-			addr = fmt.Sprintf("unix://%s", candidate)
+			addr = candidate
 			break
 		}
 	}

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_getContainerHostAddress(t *testing.T) {
+func Test_getAddress(t *testing.T) {
 	type args struct {
 		containerHostEnvVar string
 		xdgRuntimeDir       string
@@ -23,11 +23,11 @@ func Test_getContainerHostAddress(t *testing.T) {
 		{
 			name: "env vars trump default socket values",
 			args: args{
-				containerHostEnvVar: "unix:///somewhere/containerd.sock",
+				containerHostEnvVar: "/somewhere/containerd.sock",
 				xdgRuntimeDir:       "/xdg-runtime",
 				defaultSocketPath:   "/default/containerd.sock",
 			},
-			want:    "unix:///somewhere/containerd.sock",
+			want:    "/somewhere/containerd.sock",
 			wantErr: assert.NoError,
 		},
 
@@ -38,7 +38,7 @@ func Test_getContainerHostAddress(t *testing.T) {
 				xdgRuntimeDir:       "/xdg-runtime",
 				defaultSocketPath:   "/default/containerd.sock",
 			},
-			want:    "unix:///proc/42/root/run/containerd/containerd.sock",
+			want:    "/proc/42/root/run/containerd/containerd.sock",
 			wantErr: assert.NoError,
 		},
 		{
@@ -48,7 +48,7 @@ func Test_getContainerHostAddress(t *testing.T) {
 				xdgRuntimeDir:       "does-not-exist",
 				defaultSocketPath:   "/default/containerd.sock",
 			},
-			want:    "unix:///default/containerd.sock",
+			want:    "/default/containerd.sock",
 			wantErr: assert.NoError,
 		},
 		{
@@ -58,7 +58,7 @@ func Test_getContainerHostAddress(t *testing.T) {
 				xdgRuntimeDir:       "/xdg-runtime-empty",
 				defaultSocketPath:   "/default/containerd.sock",
 			},
-			want:    "unix:///default/containerd.sock",
+			want:    "/default/containerd.sock",
 			wantErr: assert.NoError,
 		},
 		{
@@ -68,7 +68,7 @@ func Test_getContainerHostAddress(t *testing.T) {
 				xdgRuntimeDir:       "/xdg-runtime-stale",
 				defaultSocketPath:   "/default/containerd.sock",
 			},
-			want:    "unix:///default/containerd.sock",
+			want:    "/default/containerd.sock",
 			wantErr: assert.NoError,
 		},
 		{
