@@ -131,7 +131,7 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 			}
 		}
 
-		provider, err = containerd.NewProviderFromDaemon(imgStr, tempDirGenerator, c, cfg.Platform, containerdClient.Namespace())
+		provider, err = containerd.NewProviderFromDaemon(imgStr, tempDirGenerator, c, containerdClient.Namespace(), cfg.Registry, cfg.Platform)
 		if err != nil {
 			return nil, cleanup, err
 		}

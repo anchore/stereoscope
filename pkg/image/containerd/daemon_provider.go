@@ -7,7 +7,6 @@ import (
 	"math"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,18 +28,19 @@ import (
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	sdocker "github.com/anchore/stereoscope/pkg/image/docker"
+	stereoscopeDocker "github.com/anchore/stereoscope/pkg/image/docker"
 )
 
 var mb = math.Pow(2, 20)
 
 // DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the containerd daemon API.
 type DaemonImageProvider struct {
-	imageStr  string
-	tmpDirGen *file.TempDirGenerator
-	client    *containerd.Client
-	platform  *image.Platform
-	namespace string
+	imageStr        string
+	tmpDirGen       *file.TempDirGenerator
+	client          *containerd.Client
+	platform        *image.Platform
+	namespace       string
+	registryOptions image.RegistryOptions
 }
 
 type daemonProvideProgress struct {
@@ -50,7 +50,7 @@ type daemonProvideProgress struct {
 }
 
 // NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *containerd.Client, platform *image.Platform, namespace string) (*DaemonImageProvider, error) {
+func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *containerd.Client, namespace string, registryOptions image.RegistryOptions, platform *image.Platform) (*DaemonImageProvider, error) {
 	ref, err := name.ParseReference(imgStr, name.WithDefaultRegistry(""))
 	if err != nil {
 		return nil, err
@@ -65,11 +65,12 @@ func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *c
 	}
 
 	return &DaemonImageProvider{
-		imageStr:  imgStr,
-		tmpDirGen: tmpDirGen,
-		client:    c,
-		platform:  platform,
-		namespace: namespace,
+		imageStr:        imgStr,
+		tmpDirGen:       tmpDirGen,
+		client:          c,
+		platform:        platform,
+		namespace:       namespace,
+		registryOptions: registryOptions,
 	}, nil
 }
 
@@ -88,7 +89,7 @@ func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image
 	}
 
 	// use the existing tarball provider to process what was pulled from the containerd daemon
-	return sdocker.NewProviderFromTarball(tarFileName, p.tmpDirGen).
+	return stereoscopeDocker.NewProviderFromTarball(tarFileName, p.tmpDirGen).
 		Provide(ctx,
 			withMetadata(resolvedPlatform, userMetadata, p.imageStr)...,
 		)
@@ -122,7 +123,15 @@ func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (c
 		return nil, nil
 	})
 
-	options := p.pullOptions(ctx)
+	ref, err := name.ParseReference(p.imageStr, prepareReferenceOptions(p.registryOptions)...)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
+	}
+
+	options, err := p.pullOptions(ctx, ref)
+	if err != nil {
+		return nil, fmt.Errorf("unable to prepare pull options: %w", err)
+	}
 	options = append(options, containerd.WithImageHandler(h))
 	if platformStr != "" {
 		options = append(options, containerd.WithPlatform(platformStr))
@@ -137,46 +146,62 @@ func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (c
 	return resp, nil
 }
 
-func (p *DaemonImageProvider) pullOptions(ctx context.Context) []containerd.RemoteOpt {
+func (p *DaemonImageProvider) pullOptions(ctx context.Context, ref name.Reference) ([]containerd.RemoteOpt, error) {
 	var options = []containerd.RemoteOpt{
 		containerd.WithPlatform(p.platform.String()),
 	}
 
-	doptions := docker.ResolverOptions{
+	dockerOptions := docker.ResolverOptions{
 		Tracker: docker.NewInMemoryTracker(),
 	}
 
-	useRegAuth, err := strconv.ParseBool(os.Getenv("USE_REGISTRY_AUTH"))
+	if p.registryOptions.Keychain != nil {
+		log.Warn("keychain registry option provided but is not supported for containerd daemon image provider")
+	}
+
+	var hostOptions config.HostOptions
+
+	if len(p.registryOptions.Credentials) > 0 {
+		hostOptions.Credentials = func(host string) (string, string, error) {
+			// TODO: how should a bearer token be handled here?
+
+			auth := p.registryOptions.Authenticator(host)
+			if auth != nil {
+				cfg, err := auth.Authorization()
+				if err != nil {
+					return "", "", fmt.Errorf("unable to get credentials for host=%q: %w", host, err)
+				}
+				log.WithFields("registry", host).Trace("found credentials")
+				return cfg.Username, cfg.Password, nil
+			}
+			log.WithFields("registry", host).Trace("no credentials found")
+			return "", "", nil
+		}
+	}
+
+	switch p.registryOptions.InsecureUseHTTP {
+	case true:
+		hostOptions.DefaultScheme = "http"
+	default:
+		hostOptions.DefaultScheme = "https"
+	}
+
+	registryName := ref.Context().RegistryStr()
+
+	tlsConfig, err := p.registryOptions.TLSConfig(registryName)
 	if err != nil {
-		useRegAuth = false
+		return nil, fmt.Errorf("unable to get TLS config for registry=%q: %w", registryName, err)
 	}
 
-	if useRegAuth {
-		username := os.Getenv("CTR_REGISTRY_USERNAME")
-		secret := os.Getenv("CTR_REGISTRY_PASSWORD")
-		hostOptions := config.HostOptions{
-			Credentials: func(host string) (string, string, error) {
-				return username, secret, nil
-			},
-		}
-
-		regUseHTTP, err := strconv.ParseBool(os.Getenv("REGISTRY_USE_HTTP"))
-		if err != nil {
-			regUseHTTP = false
-		}
-
-		if regUseHTTP {
-			hostOptions.DefaultScheme = "http"
-		} else {
-			hostOptions.DefaultScheme = "https"
-		}
-
-		doptions.Hosts = config.ConfigureHosts(ctx, hostOptions)
+	if tlsConfig != nil {
+		hostOptions.DefaultTLS = tlsConfig
 	}
 
-	options = append(options, containerd.WithResolver(docker.NewResolver(doptions)))
+	dockerOptions.Hosts = config.ConfigureHosts(ctx, hostOptions)
 
-	return options
+	options = append(options, containerd.WithResolver(docker.NewResolver(dockerOptions)))
+
+	return options, nil
 }
 
 func (p *DaemonImageProvider) resolveImage(ctx context.Context, imageStr string) (string, *platforms.Platform, error) {
@@ -453,6 +478,14 @@ func (p *DaemonImageProvider) trackSaveProgress(size int64) *daemonProvideProgre
 		ExportProgress:   exportProgress,
 		Stage:            stage,
 	}
+}
+
+func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
+	var options []name.Option
+	if registryOptions.InsecureUseHTTP {
+		options = append(options, name.Insecure)
+	}
+	return options
 }
 
 func withMetadata(platform *platforms.Platform, userMetadata []image.AdditionalMetadata, ref string) (metadata []image.AdditionalMetadata) {

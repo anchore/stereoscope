@@ -37,7 +37,7 @@ const SchemeSeparator = ":"
 
 var sourceStr = [...]string{
 	"UnknownSource",
-	"ContainerdDaemonSource",
+	"ContainerdDaemon",
 	"DockerTarball",
 	"DockerDaemon",
 	"OciDirectory",

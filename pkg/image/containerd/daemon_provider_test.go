@@ -47,7 +47,7 @@ func TestNewProviderFromDaemon_imageParsing(t *testing.T) {
 			if tt.wantErr == nil {
 				tt.wantErr = require.NoError
 			}
-			got, err := NewProviderFromDaemon(tt.image, nil, nil, nil, "")
+			got, err := NewProviderFromDaemon(tt.image, nil, nil, "", image.RegistryOptions{}, nil)
 			tt.wantErr(t, err)
 			if err != nil {
 				return
@@ -60,9 +60,8 @@ func TestNewProviderFromDaemon_imageParsing(t *testing.T) {
 
 func Test_checkRegistryHostMissing(t *testing.T) {
 	tests := []struct {
-		image   string
-		want    string
-		wantErr require.ErrorAssertionFunc
+		image string
+		want  string
 	}{
 		{
 			image: "alpine:sometag",
@@ -91,9 +90,6 @@ func Test_checkRegistryHostMissing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.image, func(t *testing.T) {
-			if tt.wantErr == nil {
-				tt.wantErr = require.NoError
-			}
 			got := checkRegistryHostMissing(tt.image)
 			require.NotNil(t, got)
 			assert.Equal(t, tt.want, got)
