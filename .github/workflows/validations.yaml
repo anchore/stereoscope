@@ -22,7 +22,7 @@ jobs:
     name: "Static analysis"
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac #v4.0.0
 
     - name: Bootstrap environment
       uses: ./.github/actions/bootstrap
@@ -34,7 +34,7 @@ jobs:
     name: "Unit tests"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac #v4.0.0
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
@@ -51,7 +51,7 @@ jobs:
     name: "Integration tests"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 #v3.1.3
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
@@ -79,7 +79,7 @@ jobs:
           sudo podman images ls
 
       - name: Setup containerd
-        uses: crazy-max/ghaction-setup-containerd@v2
+        uses: crazy-max/ghaction-setup-containerd@60acbf31e6572da7b83a4ed6b428ed92a35ff4d7 #v3.0.0
 
       - name: Configure rootless containerd
         run: |
@@ -112,7 +112,7 @@ jobs:
         run: make integration-fingerprint
 
       - name: Restore integration test-fixture cache
-        uses: actions/cache@v2.1.3
+        uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 #v3.3.2
         with:
           path: ${{ github.workspace }}/test/integration/test-fixtures/cache
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/test-fixtures/cache.fingerprint') }}
@@ -122,7 +122,7 @@ jobs:
 
       - name: Restore integration tool cache
         id: integration-tool-cache
-        uses: actions/cache@v2.1.3
+        uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 #v3.3.2
         with:
           path: ${{ github.workspace }}/test/integration/tools/cache
           key: ${{ runner.os }}-integration-tools-cache-${{ hashFiles('test/integration/tools/cache.fingerprint') }}
@@ -138,7 +138,7 @@ jobs:
     name: "Build snapshot artifacts"
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac #v4.0.0
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
