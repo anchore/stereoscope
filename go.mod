@@ -58,7 +58,7 @@ require (
 	github.com/containerd/stargz-snapshotter/estargz v0.12.1 // indirect
 	github.com/containerd/ttrpc v1.2.1 // indirect
 	github.com/containerd/typeurl/v2 v2.1.0 // indirect
-	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
+	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	// docker/distribution for https://github.com/advisories/GHSA-qq97-vm5h-rrhg
 	github.com/docker/distribution v2.8.2+incompatible // indirect
