@@ -9,11 +9,13 @@ import (
 
 	"github.com/anchore/go-logger"
 	"github.com/anchore/stereoscope/internal/bus"
+	containerdClient "github.com/anchore/stereoscope/internal/containerd"
 	dockerClient "github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/image/containerd"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/image/sif"
@@ -117,6 +119,22 @@ func selectImageProvider(imgStr string, source image.Source, cfg config) (image.
 		}
 		// note: the imgStr is the path on disk to the tar file
 		provider = docker.NewProviderFromTarball(imgStr, tempDirGenerator)
+	case image.ContainerdDaemonSource:
+		c, err := containerdClient.GetClient()
+		if err != nil {
+			return nil, cleanup, err
+		}
+
+		cleanup = func() {
+			if err := c.Close(); err != nil {
+				log.Errorf("unable to close docker client: %+v", err)
+			}
+		}
+
+		provider, err = containerd.NewProviderFromDaemon(imgStr, tempDirGenerator, c, containerdClient.Namespace(), cfg.Registry, cfg.Platform)
+		if err != nil {
+			return nil, cleanup, err
+		}
 	case image.DockerDaemonSource:
 		c, err := dockerClient.GetClient()
 		if err != nil {

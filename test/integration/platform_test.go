@@ -20,7 +20,7 @@ func TestPlatformSelection(t *testing.T) {
 	   $ docker image pull --platform $PLATFORM busybox:1.31
 	   $ docker image inspect busybox:1.31 | jq -r '.[0].Id'
 	*/
-	imageName := "busybox:1.31"
+	imageName := "docker.io/library/busybox:1.31"
 	tests := []struct {
 		source         image.Source
 		architecture   string
@@ -76,11 +76,31 @@ func TestPlatformSelection(t *testing.T) {
 			os:             "linux",
 			expectedDigest: "sha256:1c35c441208254cb7c3844ba95a96485388cef9ccc0646d562c7fc026e04c807",
 		},
+		{
+			source:         image.ContainerdDaemonSource,
+			architecture:   "arm64",
+			os:             "linux",
+			expectedDigest: "sha256:19d689bc58fd64da6a46d46512ea965a12b6bfb5b030400e21bc0a04c4ff155e",
+		},
+		{
+			source:         image.ContainerdDaemonSource,
+			architecture:   "amd64",
+			os:             "linux",
+			expectedDigest: "sha256:1c35c441208254cb7c3844ba95a96485388cef9ccc0646d562c7fc026e04c807",
+		},
 	}
 
 	for _, tt := range tests {
 		platform := fmt.Sprintf("%s/%s", tt.os, tt.architecture)
 		t.Run(fmt.Sprintf("%s/%s", tt.source.String(), platform), func(t *testing.T) {
+			if runtime.GOOS != "linux" {
+				switch tt.source {
+				case image.ContainerdDaemonSource:
+					t.Skip("containerd is only supported on linux")
+				case image.PodmanDaemonSource:
+					t.Skip("podman is only supported on linux")
+				}
+			}
 			if tt.expectedErr == nil {
 				tt.expectedErr = require.NoError
 			}

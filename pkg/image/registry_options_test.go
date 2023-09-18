@@ -1,11 +1,14 @@
 package image
 
 import (
+	"crypto/x509"
+	"os"
 	"testing"
 
 	"github.com/docker/go-connections/tlsconfig"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRegistryOptions_AuthenticationOptions(t *testing.T) {
@@ -13,7 +16,6 @@ func TestRegistryOptions_AuthenticationOptions(t *testing.T) {
 		name                   string
 		registry               string
 		input                  RegistryOptions
-		tlsInsecureSkipVerify  bool
 		authenticatorAssertion func(t *testing.T, actual authn.Authenticator)
 		wantTlsOptions         *tlsconfig.Options
 	}{
@@ -24,6 +26,57 @@ func TestRegistryOptions_AuthenticationOptions(t *testing.T) {
 				Credentials: []RegistryCredentials{
 					{
 						Authority: "localhost:5000",
+						Username:  "username",
+						Password:  "tOpsYKrets",
+					},
+				},
+			},
+			authenticatorAssertion: basicAuth(authn.Basic{
+				Username: "username",
+				Password: "tOpsYKrets",
+			}),
+		},
+		{
+			name:     "docker.io can be matched as an authority",
+			registry: "docker.io",
+			input: RegistryOptions{
+				Credentials: []RegistryCredentials{
+					{
+						Authority: "docker.io",
+						Username:  "username",
+						Password:  "tOpsYKrets",
+					},
+				},
+			},
+			authenticatorAssertion: basicAuth(authn.Basic{
+				Username: "username",
+				Password: "tOpsYKrets",
+			}),
+		},
+		{
+			name:     "registry-1.docker.io can be matched as an authority alias for docker.io",
+			registry: "registry-1.docker.io",
+			input: RegistryOptions{
+				Credentials: []RegistryCredentials{
+					{
+						Authority: "docker.io",
+						Username:  "username",
+						Password:  "tOpsYKrets",
+					},
+				},
+			},
+			authenticatorAssertion: basicAuth(authn.Basic{
+				Username: "username",
+				Password: "tOpsYKrets",
+			}),
+		},
+		{
+			name:     "index.docker.io can be matched as an authority alias for docker.io",
+			registry: "index.docker.io",
+			input: RegistryOptions{
+				Credentials: []RegistryCredentials{
+					{
+						Authority: "index.docker.io",
 						Username:  "username",
 						Password:  "tOpsYKrets",
 					},
@@ -159,11 +212,11 @@ func TestRegistryOptions_AuthenticationOptions(t *testing.T) {
 			}),
 		},
 		{
-			name:                  "mtls setup",
-			registry:              "localhost:5000",
-			tlsInsecureSkipVerify: true,
+			name:     "mtls setup",
+			registry: "localhost:5000",
 			input: RegistryOptions{
-				CAFileOrDir: "ca.crt",
+				InsecureSkipTLSVerify: true,
+				CAFileOrDir:           "ca.crt",
 				Credentials: []RegistryCredentials{
 					{
 						Authority:  "localhost:5000",
@@ -186,11 +239,11 @@ func TestRegistryOptions_AuthenticationOptions(t *testing.T) {
 			},
 		},
 		{
-			name:                  "always attempt mtls, but use basic auth with specific authority",
-			registry:              "localhost:5000",
-			tlsInsecureSkipVerify: true,
+			name:     "always attempt mtls, but use basic auth with specific authority",
+			registry: "localhost:5000",
 			input: RegistryOptions{
-				CAFileOrDir: "ca.crt",
+				InsecureSkipTLSVerify: true,
+				CAFileOrDir:           "ca.crt",
 				Credentials: []RegistryCredentials{
 					{
 						Authority:  "",
@@ -216,11 +269,11 @@ func TestRegistryOptions_AuthenticationOptions(t *testing.T) {
 			},
 		},
 		{
-			name:                  "use tls options from most specific authority",
-			registry:              "localhost:5000",
-			tlsInsecureSkipVerify: true,
+			name:     "use tls options from most specific authority",
+			registry: "localhost:5000",
 			input: RegistryOptions{
-				CAFileOrDir: "ca.crt",
+				InsecureSkipTLSVerify: true,
+				CAFileOrDir:           "ca.crt",
 				Credentials: []RegistryCredentials{
 					{
 						Authority:  "",
@@ -260,7 +313,7 @@ func TestRegistryOptions_AuthenticationOptions(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			actualAuth := test.input.Authenticator(test.registry)
-			tlsOptions := test.input.TLSOptions(test.registry, test.tlsInsecureSkipVerify)
+			tlsOptions := test.input.tlsOptions(test.registry)
 			assert.Equal(t, test.wantTlsOptions, tlsOptions)
 			test.authenticatorAssertion(t, actualAuth)
 		})
@@ -427,6 +480,55 @@ func TestRegistryOptions_selectMostSpecificCredentials(t *testing.T) {
 				Credentials: tt.credentials,
 			}
 			assert.Equal(t, tt.want, r.selectMostSpecificCredentials(tt.registry))
+		})
+	}
+}
+
+func TestRegistryOptions_TLSConfig_rootCAs(t *testing.T) {
+	certFile := "test-fixtures/certs/server.crt"
+	systemCerts, err := tlsconfig.SystemCertPool()
+	require.NoError(t, err)
+
+	certPool := systemCerts.Clone()
+
+	pem, err := os.ReadFile(certFile)
+	require.NoError(t, err)
+	certPool.AppendCertsFromPEM(pem)
+
+	tests := []struct {
+		name            string
+		registryOptions RegistryOptions
+		want            *x509.CertPool
+		wantErr         assert.ErrorAssertionFunc
+	}{
+		{
+			name: "add single root cert",
+			registryOptions: RegistryOptions{
+				CAFileOrDir: certFile,
+			},
+			want: certPool,
+		},
+		{
+			name: "add root certs from dir",
+			registryOptions: RegistryOptions{
+				CAFileOrDir: "test-fixtures/certs",
+			},
+			want: certPool,
+		},
+		{
+			name: "skip TLS verify does not load certs", // just like the stdlib
+			registryOptions: RegistryOptions{
+				InsecureSkipTLSVerify: true,
+				CAFileOrDir:           certFile,
+			},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.registryOptions.TLSConfig("dont-care")
+			require.NoError(t, err)
+			assert.True(t, tt.want.Equal(got.RootCAs))
 		})
 	}
 }

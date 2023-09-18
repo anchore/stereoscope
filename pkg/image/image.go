@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -49,8 +50,16 @@ func WithTags(tags ...string) AdditionalMetadata {
 		for _, t := range image.Metadata.Tags {
 			existingTags.Add(t.String())
 		}
+
 		for _, t := range tags {
-			tagObj, err := name.NewTag(t)
+			// it is possible that we are given references that have both a tag and a digest (or only one)
+			// we should only be allowing tags (stripping off digests if they are present)
+			fields := strings.Split(t, "@")
+			withNoDigest := fields[0]
+			if !strings.Contains(withNoDigest, ":") {
+				continue
+			}
+			tagObj, err := name.NewTag(withNoDigest)
 			if err != nil {
 				log.Warnf("unable to parse additional image tag to add %q: %+v", t, err)
 				continue

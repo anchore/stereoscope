@@ -2,6 +2,7 @@ package image
 
 import (
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/scylladb/go-set/strset"
 
 	"github.com/anchore/stereoscope/internal/log"
 )
@@ -55,6 +56,16 @@ func (c RegistryCredentials) canBeUsedWithRegistry(registry string) bool {
 		return true
 	}
 
+	// the containerd code will normalize docker.io requests to registry-1.docker.io , however
+	// it might be that the user has configured docker.io specifically in the credentials.
+	// try again with the new host. The same can occur when asking for docker.io directly, containerd
+	// will transform this to index.docker.io.
+	if strset.New("registry-1.docker.io", "index.docker.io", "docker.io").Has(registry) {
+		// these are all the same in terms of auth
+		return true
+	}
+
+	// find an exact match
 	return registry == c.Authority
 }
 

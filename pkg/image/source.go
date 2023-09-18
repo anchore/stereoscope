@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/sylabs/sif/v2/pkg/sif"
 
+	"github.com/anchore/stereoscope/internal/containerd"
 	"github.com/anchore/stereoscope/internal/docker"
 	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -22,6 +23,7 @@ import (
 
 const (
 	UnknownSource Source = iota
+	ContainerdDaemonSource
 	DockerTarballSource
 	DockerDaemonSource
 	OciDirectorySource
@@ -35,6 +37,7 @@ const SchemeSeparator = ":"
 
 var sourceStr = [...]string{
 	"UnknownSource",
+	"ContainerdDaemon",
 	"DockerTarball",
 	"DockerDaemon",
 	"OciDirectory",
@@ -45,6 +48,7 @@ var sourceStr = [...]string{
 }
 
 var AllSources = []Source{
+	ContainerdDaemonSource,
 	DockerTarballSource,
 	DockerDaemonSource,
 	OciDirectorySource,
@@ -69,6 +73,8 @@ func isRegistryReference(imageSpec string) bool {
 func ParseSourceScheme(source string) Source {
 	source = strings.ToLower(source)
 	switch source {
+	case "containerd":
+		return ContainerdDaemonSource
 	case "docker-archive":
 		return DockerTarballSource
 	case "docker":
@@ -164,6 +170,18 @@ func DetermineDefaultImagePullSource(userInput string) Source {
 		if err == nil && pong.APIVersion != "" {
 			// the Docker daemon exists and is accessible
 			return PodmanDaemonSource
+		}
+	}
+
+	cd, err := containerd.GetClient()
+	if err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		pong, err := cd.Version(ctx)
+		if err == nil && pong.Version != "" {
+			// the Docker daemon exists and is accessible
+			return ContainerdDaemonSource
 		}
 	}
 
