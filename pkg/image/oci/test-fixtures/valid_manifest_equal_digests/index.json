@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 2,
+  "manifests": [
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:27280e6c2e98b6ec460a9c1a5f354d894037dac6a649535bcc4063eb1f555c15",
+      "size": 480,
+      "annotations": {
+        "io.containerd.image.name": "docker.io/anchore/app:latest",
+        "org.opencontainers.image.created": "2023-09-19T15:16:47Z",
+        "org.opencontainers.image.ref.name": "latest"
+      },
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    },
+    {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:27280e6c2e98b6ec460a9c1a5f354d894037dac6a649535bcc4063eb1f555c15",
+      "size": 480,
+      "annotations": {
+        "io.containerd.image.name": "docker.io/anchore/app:1.0.0",
+        "org.opencontainers.image.created": "2023-09-19T15:16:47Z",
+        "org.opencontainers.image.ref.name": "1.0.0"
+      },
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  ]
+}

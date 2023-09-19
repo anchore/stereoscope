@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -43,7 +44,13 @@ func (p *DirectoryImageProvider) Provide(_ context.Context, userMetadata ...imag
 
 	// for now, lets only support one image indexManifest (it is not clear how to handle multiple manifests)
 	if len(indexManifest.Manifests) != 1 {
-		return nil, fmt.Errorf("unexpected number of OCI directory manifests (found %d)", len(indexManifest.Manifests))
+		if len(indexManifest.Manifests) == 0 {
+			return nil, fmt.Errorf("unexpected number of OCI directory manifests (found %d)", len(indexManifest.Manifests))
+		}
+		// if all the manifests have the same digest, then we can treat this as a single image
+		if !checkManifestDigestsEqual(indexManifest.Manifests) {
+			return nil, fmt.Errorf("unexpected number of OCI directory manifests (found %d)", len(indexManifest.Manifests))
+		}
 	}
 
 	manifest := indexManifest.Manifests[0]
@@ -71,4 +78,16 @@ func (p *DirectoryImageProvider) Provide(_ context.Context, userMetadata ...imag
 	}
 
 	return image.New(img, p.tmpDirGen, contentTempDir, metadata...), nil
+}
+
+func checkManifestDigestsEqual(manifests []v1.Descriptor) bool {
+	if len(manifests) < 1 {
+		return false
+	}
+	for _, m := range manifests {
+		if m.Digest != manifests[0].Digest {
+			return false
+		}
+	}
+	return true
 }
