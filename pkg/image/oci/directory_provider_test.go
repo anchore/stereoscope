@@ -32,6 +32,7 @@ func Test_Directory_Provide(t *testing.T) {
 		{"reads invalid oci manifest", "test-fixtures/invalid_file", true},
 		{"reads valid oci manifest with no images", "test-fixtures/no_manifests", true},
 		{"reads a fully correct manifest", "test-fixtures/valid_manifest", false},
+		{"reads a fully correct manifest with equal digests", "test-fixtures/valid_manifest", false},
 	}
 
 	for _, tc := range tests {
