@@ -12,7 +12,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.0.2
 	github.com/containerd/containerd v1.7.8
 	github.com/docker/cli v23.0.3+incompatible
-	github.com/docker/docker v23.0.3+incompatible
+	github.com/docker/docker v24.0.7+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.5.9
