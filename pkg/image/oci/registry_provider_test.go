@@ -2,9 +2,12 @@ package oci
 
 import (
 	"context"
+	"net/http"
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/stretchr/testify/assert"
 
@@ -128,5 +131,19 @@ func Test_prepareReferenceOptions(t *testing.T) {
 				assert.Equal(t, e1, e2)
 			}
 		})
+	}
+}
+
+func Test_getTransport_haxProxyCfg(t *testing.T) {
+	defTransport := http.DefaultTransport.(*http.Transport)
+	transport := getTransport(nil)
+
+	assert.NotNil(t, transport.Proxy)
+	assert.NotNil(t, transport.DialContext)
+
+	if d := cmp.Diff(defTransport, transport,
+		cmpopts.IgnoreFields(http.Transport{}, "TLSClientConfig", "Proxy", "DialContext", "TLSNextProto"),
+		cmpopts.IgnoreUnexported(http.Transport{})); d != "" {
+		t.Errorf("unexpected proxy config (-want +got):\n%s", d)
 	}
 }

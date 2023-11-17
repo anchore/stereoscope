@@ -2,6 +2,7 @@ package oci
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 
@@ -126,11 +127,15 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	if err != nil {
 		log.Warn("unable to configure TLS transport: %w", err)
 	} else if tlsConfig != nil {
-		// use the default transport to inherit existing default options (such as proxy configuration)
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = tlsConfig
-		options = append(options, remote.WithTransport(transport))
+		options = append(options, remote.WithTransport(getTransport(tlsConfig)))
 	}
 
 	return options
+}
+
+func getTransport(tlsConfig *tls.Config) *http.Transport {
+	// use the default transport to inherit existing default options (including proxy options)
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = tlsConfig
+	return transport
 }
