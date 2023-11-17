@@ -126,9 +126,10 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	if err != nil {
 		log.Warn("unable to configure TLS transport: %w", err)
 	} else if tlsConfig != nil {
-		options = append(options, remote.WithTransport(&http.Transport{
-			TLSClientConfig: tlsConfig,
-		}))
+		// use the default transport to inherit existing default options (such as proxy configuration)
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = tlsConfig
+		options = append(options, remote.WithTransport(transport))
 	}
 
 	return options

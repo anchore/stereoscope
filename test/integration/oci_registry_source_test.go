@@ -44,3 +44,21 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 	assert.Equal(t, "index.docker.io/"+ref, img.Metadata.RepoDigests[0])
 	assert.Equal(t, []byte(rawManifest), img.Metadata.RawManifest)
 }
+
+func TestOciRegistry_Proxy(t *testing.T) {
+	// note: invalid proxy configuration
+	t.Setenv("https_proxy", "http://0.0.0.0:1234")
+
+	// a valid image...
+	digest := "sha256:a15790640a6690aa1730c38cf0a440e2aa44aaca9b0e8931a9f2b0d7cc90fd65"
+	imgStr := "anchore/test_images"
+	ref := fmt.Sprintf("%s@%s", imgStr, digest)
+
+	// note: this should FAIL!
+	img, err := stereoscope.GetImage(context.TODO(), "registry:"+ref)
+	require.ErrorContains(t, err, "proxyconnect tcp: dial tcp 0.0.0.0:1234: connect: connection refused")
+
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
+	})
+}
