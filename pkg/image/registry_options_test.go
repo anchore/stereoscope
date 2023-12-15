@@ -350,6 +350,12 @@ func TestRegistryOptions_selectMostSpecificCredentials(t *testing.T) {
 		Password:  "pass2",
 	}
 
+	dockerBasicAuth := RegistryCredentials{
+		Authority: "docker.io",
+		Username:  "user1",
+		Password:  "pass1",
+	}
+
 	tests := []struct {
 		name        string
 		credentials []RegistryCredentials
@@ -416,6 +422,27 @@ func TestRegistryOptions_selectMostSpecificCredentials(t *testing.T) {
 				otherBasicAuth1,
 			},
 			want: nil,
+		},
+		{
+			name:     "no matching credentials, docker requested",
+			registry: "docker.io",
+			credentials: []RegistryCredentials{
+				otherBasicAuth1,
+			},
+			want: nil,
+		},
+		{
+			name:     "docker requested by one alias, specified by another",
+			registry: "index.docker.io",
+			credentials: []RegistryCredentials{
+				dockerBasicAuth,
+			},
+			want: []credentialSelection{
+				{
+					credentials: dockerBasicAuth,
+					index:       0,
+				},
+			},
 		},
 		{
 			name:     "match unspecified authority and sort last (order preserved)",
