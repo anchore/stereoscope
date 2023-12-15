@@ -60,7 +60,8 @@ func (c RegistryCredentials) canBeUsedWithRegistry(registry string) bool {
 	// it might be that the user has configured docker.io specifically in the credentials.
 	// try again with the new host. The same can occur when asking for docker.io directly, containerd
 	// will transform this to index.docker.io.
-	if strset.New("registry-1.docker.io", "index.docker.io", "docker.io").Has(registry) {
+	dockerAliases := strset.New("registry-1.docker.io", "index.docker.io", "docker.io")
+	if dockerAliases.Has(c.Authority) && dockerAliases.Has(registry) {
 		// these are all the same in terms of auth
 		return true
 	}
