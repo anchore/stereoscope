@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/errdefs"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -69,14 +68,14 @@ func (p *Platform) String() string {
 func parse(specifier string) (*Platform, error) {
 	if strings.Contains(specifier, "*") {
 		// TODO(stevvooe): need to work out exact wildcard handling
-		return nil, errors.Wrapf(errdefs.ErrInvalidArgument, "%q: wildcards not yet supported", specifier)
+		return nil, fmt.Errorf("%q: wildcards not yet supported: %w", specifier, errdefs.ErrInvalidArgument)
 	}
 
 	parts := strings.Split(specifier, "/")
 
 	for _, part := range parts {
 		if !specifierRe.MatchString(part) {
-			return nil, errors.Wrapf(errdefs.ErrInvalidArgument, "%q is an invalid component of %q: platform specifier component must match %q", part, specifier, specifierRe.String())
+			return nil, fmt.Errorf("%q is an invalid component of %q: platform specifier component must match %q: %w", part, specifier, specifierRe.String(), errdefs.ErrInvalidArgument)
 		}
 	}
 
@@ -96,7 +95,7 @@ func parse(specifier string) (*Platform, error) {
 			return p, nil
 		}
 
-		return nil, errors.Wrapf(errdefs.ErrInvalidArgument, "%q: unknown operating system or architecture", specifier)
+		return nil, fmt.Errorf("%q: unknown operating system or architecture: %w", specifier, errdefs.ErrInvalidArgument)
 	case 2:
 		// In this case, we treat as a regular os/arch pair or architecture/variant pair.
 		var archGuess, variantGuess string
@@ -113,7 +112,7 @@ func parse(specifier string) (*Platform, error) {
 			return p, nil
 		}
 
-		return nil, errors.Wrapf(errdefs.ErrInvalidArgument, "%q: unknown operating system or architecture", specifier)
+		return nil, fmt.Errorf("%q: unknown operating system or architecture: %w", specifier, errdefs.ErrInvalidArgument)
 	case 3:
 		// we have a fully specified variant, this is rare
 		if osGuess := normalizeOS(parts[0]); isKnownOS(osGuess) {
@@ -128,10 +127,10 @@ func parse(specifier string) (*Platform, error) {
 			return p, nil
 		}
 
-		return nil, errors.Wrapf(errdefs.ErrInvalidArgument, "%q: unknown operating system or architecture", specifier)
+		return nil, fmt.Errorf("%q: unknown operating system or architecture: %w", specifier, errdefs.ErrInvalidArgument)
 	}
 
-	return nil, errors.Wrapf(errdefs.ErrInvalidArgument, "%q: cannot parse platform specifier", specifier)
+	return nil, fmt.Errorf("%q: cannot parse platform specifier: %w", specifier, errdefs.ErrInvalidArgument)
 }
 
 // These function are generated from https://golang.org/src/go/build/syslist.go.

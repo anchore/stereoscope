@@ -2,13 +2,13 @@ package file
 
 import (
 	"archive/tar"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/spf13/afero"
 
 	"github.com/anchore/stereoscope/internal/log"
