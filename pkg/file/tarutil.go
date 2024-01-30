@@ -2,12 +2,11 @@ package file
 
 import (
 	"archive/tar"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-
-	"github.com/pkg/errors"
 
 	"github.com/anchore/stereoscope/internal/log"
 )
