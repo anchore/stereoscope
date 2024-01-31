@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/spf13/afero"
 
 	"github.com/anchore/stereoscope/internal/log"
 )
@@ -124,40 +126,61 @@ func MetadataFromTar(reader io.ReadCloser, tarPath string) (Metadata, error) {
 	return *metadata, nil
 }
 
-// UntarToDirectory writes the contents of the given tar reader to the given destination
+// UntarToDirectory writes the contents of the given tar reader to the given destination. Note: this is meant to handle
+// archives for images (not image contents) thus intentionally does not handle links or any kinds of special files.
 func UntarToDirectory(reader io.Reader, dst string) error {
-	visitor := func(entry TarFileEntry) error {
-		target := filepath.Join(dst, entry.Header.Name)
+	return IterateTar(
+		reader,
+		tarVisitor{
+			fs:          afero.NewOsFs(),
+			destination: dst,
+		}.visit,
+	)
+}
 
-		switch entry.Header.Typeflag {
-		case tar.TypeDir:
-			if _, err := os.Stat(target); err != nil {
-				if err := os.MkdirAll(target, 0755); err != nil {
-					return err
-				}
-			}
+type tarVisitor struct {
+	fs          afero.Fs
+	destination string
+}
 
-		case tar.TypeReg:
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(entry.Header.Mode))
-			if err != nil {
-				return err
-			}
+func (v tarVisitor) visit(entry TarFileEntry) error {
+	target := filepath.Join(v.destination, entry.Header.Name)
 
-			// limit the reader on each file read to prevent decompression bomb attacks
-			numBytes, err := io.Copy(f, io.LimitReader(entry.Reader, perFileReadLimit))
-			if numBytes >= perFileReadLimit || errors.Is(err, io.EOF) {
-				return fmt.Errorf("zip read limit hit (potential decompression bomb attack)")
-			}
-			if err != nil {
-				return fmt.Errorf("unable to copy file: %w", err)
-			}
-
-			if err = f.Close(); err != nil {
-				log.Errorf("failed to close file during untar of path=%q: %w", f.Name(), err)
-			}
-		}
-		return nil
+	// we should not allow for any destination path to be outside of where we are unarchiving to
+	if !strings.HasPrefix(target, v.destination) {
+		return fmt.Errorf("potential path traversal attack with entry: %q", entry.Header.Name)
 	}
 
-	return IterateTar(reader, visitor)
+	switch entry.Header.Typeflag {
+	case tar.TypeSymlink, tar.TypeLink:
+		// we don't handle this is to prevent any potential traversal attacks
+		log.WithFields("path", entry.Header.Name).Trace("skipping symlink/link entry in image tar")
+
+	case tar.TypeDir:
+		if _, err := v.fs.Stat(target); err != nil {
+			if err := v.fs.MkdirAll(target, 0755); err != nil {
+				return err
+			}
+		}
+
+	case tar.TypeReg:
+		f, err := v.fs.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(entry.Header.Mode))
+		if err != nil {
+			return err
+		}
+
+		// limit the reader on each file read to prevent decompression bomb attacks
+		numBytes, err := io.Copy(f, io.LimitReader(entry.Reader, perFileReadLimit))
+		if numBytes >= perFileReadLimit || errors.Is(err, io.EOF) {
+			return fmt.Errorf("zip read limit hit (potential decompression bomb attack)")
+		}
+		if err != nil {
+			return fmt.Errorf("unable to copy file: %w", err)
+		}
+
+		if err = f.Close(); err != nil {
+			log.Errorf("failed to close file during untar of path=%q: %w", f.Name(), err)
+		}
+	}
+	return nil
 }
