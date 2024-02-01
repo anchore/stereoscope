@@ -19,7 +19,7 @@ func Test_newClient(t *testing.T) {
 		{
 			name:           "Test newClient with runtime specific path",
 			osCase:         "darwin",
-			expectedSocket: "Library/Containers/com.docker.docker/Data/docker.raw.soc",
+			expectedSocket: "Library/Containers/com.docker.docker/Data/docker.raw.sock",
 		},
 	}
 
@@ -36,7 +36,7 @@ func Test_newClient(t *testing.T) {
 			if daemonHost == "" {
 				t.Errorf("Error: daemonHost is empty")
 			}
-			if strings.Contains(daemonHost, c.expectedSocket) == false {
+			if strings.HasSuffix(daemonHost, c.expectedSocket) == false {
 				t.Errorf("Error: daemonHost is not  contain expectedSocket: %s:%s", daemonHost, c.expectedSocket)
 			}
 		})
