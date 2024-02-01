@@ -1,6 +1,10 @@
 package docker
 
 import (
+	"context"
+	"os/user"
+	"path/filepath"
+	"runtime"
 	"fmt"
 	"net/http"
 	"os"
@@ -48,10 +52,33 @@ func GetClient() (*client.Client, error) {
 		}
 	}
 
+	// This tries to create a docker client with the default options
 	dockerClient, err := client.NewClientWithOpts(clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed create docker client: %w", err)
+	if err == nil {
+		_, err = dockerClient.ServerVersion(context.Background())
+		if err == nil {
+			return dockerClient, nil // Successfully connected
+		}
 	}
 
-	return dockerClient, nil
+	// If on macOS and the default Unix socket didn't work, try the macOS-specific path
+	if runtime.GOOS == "darwin" {
+		user, err := user.Current()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current user: %w", err)
+		}
+
+		macOSSocketPath := filepath.Join(user.HomeDir, "Library/Containers/com.docker.docker/Data/docker.raw.sock")
+		dockerClient, err = client.NewClientWithOpts(client.WithHost("unix://" + macOSSocketPath))
+		if err == nil {
+			_, err = dockerClient.ServerVersion(context.Background())
+			if err == nil {
+				return dockerClient, nil // Successfully connected
+			}
+		}
+
+	}
+
+	// If both attempts failed
+	return nil, fmt.Errorf("failed to connect to Docker daemon. Ensure Docker is running and accessible")
 }
