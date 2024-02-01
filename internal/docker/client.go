@@ -21,7 +21,6 @@ func GetClient() (*client.Client, error) {
 	}
 
 	host := os.Getenv("DOCKER_HOST")
-
 	if strings.HasPrefix(host, "ssh") {
 		var (
 			helper *connhelper.ConnectionHelper
@@ -53,32 +52,45 @@ func GetClient() (*client.Client, error) {
 	}
 
 	// This tries to create a docker client with the default options
-	dockerClient, err := client.NewClientWithOpts(clientOpts...)
+	// If it fails, it tries to create a client with the runtime specific path
+	dockerClient, err := newClient("", clientOpts...)
 	if err == nil {
-		_, err = dockerClient.Ping(context.Background())
+		err := checkConnection(dockerClient)
 		if err == nil {
 			return dockerClient, nil // Successfully connected
 		}
 	}
 
-	// If on macOS and the default Unix socket didn't work, try the macOS-specific path
-	if runtime.GOOS == "darwin" {
-		user, err := user.Current()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get current user: %w", err)
-		}
-
-		macOSSocketPath := filepath.Join(user.HomeDir, "Library/Containers/com.docker.docker/Data/docker.raw.sock")
-		clientOpts = append(clientOpts, client.WithHost("unix://"+macOSSocketPath))
-		dockerClient, err = client.NewClientWithOpts(clientOpts...)
+	// If the client socket didn't work, try the GOOS specific path
+	// This is useful for macOS, where the default Unix socket for newer distributions of docker desktop is different
+	dockerClient, err = newClient(runtime.GOOS, clientOpts...)
+	if err == nil {
+		err := checkConnection(dockerClient)
 		if err == nil {
-			_, err := dockerClient.Ping(context.Background())
-			if err == nil {
-				return dockerClient, nil // Successfully connected
-			}
+			return dockerClient, nil // Successfully connected
 		}
 	}
 
 	// If both attempts failed
 	return nil, fmt.Errorf("failed to connect to Docker daemon. Ensure Docker is running and accessible")
+}
+
+func newClient(os string, opts ...client.Opt) (*client.Client, error) {
+	switch os {
+	case "darwin":
+		localUser, err := user.Current()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current user: %w", err)
+		}
+
+		macOSSocketPath := filepath.Join(localUser.HomeDir, "Library/Containers/com.docker.docker/Data/docker.raw.sock")
+		opts = append(opts, client.WithHost("unix://"+macOSSocketPath))
+	default:
+	}
+	return client.NewClientWithOpts(opts...)
+}
+
+func checkConnection(client *client.Client) error {
+	_, err := client.Ping(context.Background())
+	return err
 }
