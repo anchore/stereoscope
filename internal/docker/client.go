@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/client"
+	"github.com/mitchellh/go-homedir"
 )
 
 func GetClient() (*client.Client, error) {
@@ -78,12 +78,11 @@ func GetClient() (*client.Client, error) {
 func newClient(os string, opts ...client.Opt) (*client.Client, error) {
 	switch os {
 	case "darwin":
-		localUser, err := user.Current()
+		hDir, err := homedir.Dir()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current user: %w", err)
+			return nil, err
 		}
-
-		macOSSocketPath := filepath.Join(localUser.HomeDir, "Library/Containers/com.docker.docker/Data/docker.raw.sock")
+		macOSSocketPath := filepath.Join(hDir, "Library/Containers/com.docker.docker/Data/docker.raw.sock")
 		opts = append(opts, client.WithHost("unix://"+macOSSocketPath))
 	default:
 	}
