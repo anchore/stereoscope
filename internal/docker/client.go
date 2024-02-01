@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -51,23 +50,14 @@ func GetClient() (*client.Client, error) {
 		}
 	}
 
-	// This tries to create a docker client with the default options
-	// If it fails, it tries to create a client with the runtime specific path
-	dockerClient, err := newClient("", clientOpts...)
-	if err == nil {
-		err := checkConnection(dockerClient)
+	possibleSocketPaths := possibleSocketPaths(runtime.GOOS)
+	for _, socketPath := range possibleSocketPaths {
+		dockerClient, err := newClient(socketPath, clientOpts...)
 		if err == nil {
-			return dockerClient, nil // Successfully connected
-		}
-	}
-
-	// If the client socket didn't work, try the GOOS specific path
-	// This is useful for macOS, where the default Unix socket for newer distributions of docker desktop is different
-	dockerClient, err = newClient(runtime.GOOS, clientOpts...)
-	if err == nil {
-		err := checkConnection(dockerClient)
-		if err == nil {
-			return dockerClient, nil // Successfully connected
+			err := checkConnection(dockerClient)
+			if err == nil {
+				return dockerClient, nil // Successfully connected
+			}
 		}
 	}
 
@@ -75,21 +65,40 @@ func GetClient() (*client.Client, error) {
 	return nil, fmt.Errorf("failed to connect to Docker daemon. Ensure Docker is running and accessible")
 }
 
-func newClient(os string, opts ...client.Opt) (*client.Client, error) {
+func checkConnection(dockerClient *client.Client) error {
+	ctx := context.Background()
+	_, err := dockerClient.Ping(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to ping Docker daemon: %w", err)
+	}
+	return nil
+}
+
+/*
+Things I want to try
+- What is the default from the docker client library
+- What are known socket paths for a given OS
+*/
+func newClient(socket string, opts ...client.Opt) (*client.Client, error) {
+	if socket == "" {
+		return client.NewClientWithOpts(opts...)
+	}
+	opts = append(opts, client.WithHost(socket))
+	return client.NewClientWithOpts(opts...)
+}
+
+func possibleSocketPaths(os string) []string {
 	switch os {
 	case "darwin":
 		hDir, err := homedir.Dir()
 		if err != nil {
-			return nil, err
+			return nil
 		}
-		macOSSocketPath := filepath.Join(hDir, "Library/Containers/com.docker.docker/Data/docker.raw.sock")
-		opts = append(opts, client.WithHost("unix://"+macOSSocketPath))
+		return []string{
+			"", // try the client default first
+			fmt.Sprintf("unix://%s/Library/Containers/com.docker.docker/Data/docker.raw.sock", hDir),
+		}
 	default:
+		return []string{""} // try the client default first
 	}
-	return client.NewClientWithOpts(opts...)
-}
-
-func checkConnection(client *client.Client) error {
-	_, err := client.Ping(context.Background())
-	return err
 }
