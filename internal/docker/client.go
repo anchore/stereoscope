@@ -2,12 +2,12 @@ package docker
 
 import (
 	"context"
-	"os/user"
-	"path/filepath"
-	"runtime"
 	"fmt"
 	"net/http"
 	"os"
+	"os/user"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/docker/cli/cli/connhelper"
@@ -69,7 +69,7 @@ func GetClient() (*client.Client, error) {
 		}
 
 		macOSSocketPath := filepath.Join(user.HomeDir, "Library/Containers/com.docker.docker/Data/docker.raw.sock")
-		clientOpts = append(clientOpts, client.WithHost("unix://" + macOSSocketPath))
+		clientOpts = append(clientOpts, client.WithHost("unix://"+macOSSocketPath))
 		dockerClient, err = client.NewClientWithOpts(clientOpts...)
 		if err == nil {
 			_, err := dockerClient.Ping(context.Background())
