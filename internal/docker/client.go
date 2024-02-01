@@ -69,9 +69,10 @@ func GetClient() (*client.Client, error) {
 		}
 
 		macOSSocketPath := filepath.Join(user.HomeDir, "Library/Containers/com.docker.docker/Data/docker.raw.sock")
-		dockerClient, err = client.NewClientWithOpts(client.WithHost("unix://" + macOSSocketPath))
+		clientOpts = append(clientOpts, client.WithHost("unix://" + macOSSocketPath))
+		dockerClient, err = client.NewClientWithOpts(clientOpts...)
 		if err == nil {
-			_, err = dockerClient.ServerVersion(context.Background())
+			_, err := dockerClient.Ping(context.Background())
 			if err == nil {
 				return dockerClient, nil // Successfully connected
 			}
