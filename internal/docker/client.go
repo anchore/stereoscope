@@ -77,7 +77,6 @@ func GetClient() (*client.Client, error) {
 				return dockerClient, nil // Successfully connected
 			}
 		}
-
 	}
 
 	// If both attempts failed
