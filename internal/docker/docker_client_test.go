@@ -8,14 +8,12 @@ import (
 	"github.com/docker/docker/client"
 )
 
-// Write a test that asserts that we are not overwriting the DOCKER_HOST environment variable
-
 func Test_newClient(t *testing.T) {
 	cases := []struct {
 		name           string
 		providedSocket string
 		expectedSocket string
-		setEnv         func() func()
+		setEnv         func(t *testing.T)
 	}{
 		{
 			name:           "Test newClient returns the correct default location",
@@ -25,11 +23,8 @@ func Test_newClient(t *testing.T) {
 		{
 			name:           "Test newClient with runtime specific path",
 			providedSocket: "",
-			setEnv: func() func() {
+			setEnv: func(t *testing.T) {
 				os.Setenv("DOCKER_HOST", "unix:///var/CUSTOM/docker.sock")
-				return func() {
-					os.Unsetenv("DOCKER_HOST")
-				}
 
 			},
 			expectedSocket: "unix:///var/CUSTOM/docker.sock",
@@ -44,10 +39,8 @@ func Test_newClient(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if c.setEnv != nil {
-				unset := c.setEnv()
-				defer unset()
+				c.setEnv(t)
 			}
-
 			clientOpts := []client.Opt{
 				client.FromEnv,
 				client.WithAPIVersionNegotiation(),
