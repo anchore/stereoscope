@@ -55,7 +55,7 @@ func GetClient() (*client.Client, error) {
 	// This tries to create a docker client with the default options
 	dockerClient, err := client.NewClientWithOpts(clientOpts...)
 	if err == nil {
-		_, err = dockerClient.ServerVersion(context.Background())
+		_, err = dockerClient.Ping(context.Background())
 		if err == nil {
 			return dockerClient, nil // Successfully connected
 		}
