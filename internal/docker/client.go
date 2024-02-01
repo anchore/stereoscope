@@ -74,11 +74,6 @@ func checkConnection(dockerClient *client.Client) error {
 	return nil
 }
 
-/*
-Things I want to try
-- What is the default from the docker client library
-- What are known socket paths for a given OS
-*/
 func newClient(socket string, opts ...client.Opt) (*client.Client, error) {
 	if socket == "" {
 		return client.NewClientWithOpts(opts...)
