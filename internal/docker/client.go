@@ -1,13 +1,16 @@
 package docker
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/client"
+	"github.com/mitchellh/go-homedir"
 )
 
 func GetClient() (*client.Client, error) {
@@ -17,7 +20,6 @@ func GetClient() (*client.Client, error) {
 	}
 
 	host := os.Getenv("DOCKER_HOST")
-
 	if strings.HasPrefix(host, "ssh") {
 		var (
 			helper *connhelper.ConnectionHelper
@@ -48,10 +50,50 @@ func GetClient() (*client.Client, error) {
 		}
 	}
 
-	dockerClient, err := client.NewClientWithOpts(clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed create docker client: %w", err)
+	possibleSocketPaths := possibleSocketPaths(runtime.GOOS)
+	for _, socketPath := range possibleSocketPaths {
+		dockerClient, err := newClient(socketPath, clientOpts...)
+		if err == nil {
+			err := checkConnection(dockerClient)
+			if err == nil {
+				return dockerClient, nil // Successfully connected
+			}
+		}
 	}
 
-	return dockerClient, nil
+	// If both attempts failed
+	return nil, fmt.Errorf("failed to connect to Docker daemon. Ensure Docker is running and accessible")
+}
+
+func checkConnection(dockerClient *client.Client) error {
+	ctx := context.Background()
+	_, err := dockerClient.Ping(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to ping Docker daemon: %w", err)
+	}
+	return nil
+}
+
+func newClient(socket string, opts ...client.Opt) (*client.Client, error) {
+	if socket == "" {
+		return client.NewClientWithOpts(opts...)
+	}
+	opts = append(opts, client.WithHost(socket))
+	return client.NewClientWithOpts(opts...)
+}
+
+func possibleSocketPaths(os string) []string {
+	switch os {
+	case "darwin":
+		hDir, err := homedir.Dir()
+		if err != nil {
+			return nil
+		}
+		return []string{
+			"", // try the client default first
+			fmt.Sprintf("unix://%s/Library/Containers/com.docker.docker/Data/docker.raw.sock", hDir),
+		}
+	default:
+		return []string{""} // try the client default first
+	}
 }
