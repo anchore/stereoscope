@@ -87,7 +87,7 @@ func possibleSocketPaths(os string) []string {
 	case "darwin":
 		hDir, err := homedir.Dir()
 		if err != nil {
-			return nil
+			return []string{""}
 		}
 		return []string{
 			"", // try the client default first
