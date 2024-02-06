@@ -159,6 +159,19 @@ func New(image v1.Image, tmpDirGen *file.TempDirGenerator, contentCacheDir strin
 	return imgObj
 }
 
+func Read(image *Image) (*Image, error) {
+	if image == nil {
+		return nil, nil
+	}
+
+	err := image.Read()
+	if err != nil {
+		return nil, err
+	}
+
+	return image, nil
+}
+
 func (i *Image) IDs() []string {
 	var ids = make([]string, len(i.Metadata.Tags))
 	for idx, t := range i.Metadata.Tags {

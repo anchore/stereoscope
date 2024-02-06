@@ -24,6 +24,7 @@ import (
 	"github.com/wagoodman/go-progress"
 
 	"github.com/anchore/stereoscope/internal/bus"
+	containerdClient "github.com/anchore/stereoscope/internal/containerd"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -31,16 +32,33 @@ import (
 	stereoscopeDocker "github.com/anchore/stereoscope/pkg/image/docker"
 )
 
+const Daemon image.Source = image.ContainerdDaemonSource
+
+// NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory.
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, namespace string, registryOptions image.RegistryOptions, platform *image.Platform) image.Provider {
+	if namespace == "" {
+		namespace = namespaces.Default
+	}
+	return &daemonImageProvider{
+		tmpDirGen:       tmpDirGen,
+		platform:        platform,
+		namespace:       namespace,
+		registryOptions: registryOptions,
+	}
+}
+
 var mb = math.Pow(2, 20)
 
-// DaemonImageProvider is a image.Provider capable of fetching and representing a docker image from the containerd daemon API.
-type DaemonImageProvider struct {
-	imageStr        string
+// daemonImageProvider is an image.Provider capable of fetching and representing a docker image from the containerd daemon API
+type daemonImageProvider struct {
 	tmpDirGen       *file.TempDirGenerator
-	client          *containerd.Client
 	platform        *image.Platform
 	namespace       string
 	registryOptions image.RegistryOptions
+}
+
+func (p *daemonImageProvider) Name() string {
+	return Daemon
 }
 
 type daemonProvideProgress struct {
@@ -49,8 +67,7 @@ type daemonProvideProgress struct {
 	Stage            *progress.Stage
 }
 
-// NewProviderFromDaemon creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *containerd.Client, namespace string, registryOptions image.RegistryOptions, platform *image.Platform) (*DaemonImageProvider, error) {
+func (p *daemonImageProvider) Provide(ctx context.Context, imgStr string, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	ref, err := name.ParseReference(imgStr, name.WithDefaultRegistry(""))
 	if err != nil {
 		return nil, err
@@ -60,43 +77,47 @@ func NewProviderFromDaemon(imgStr string, tmpDirGen *file.TempDirGenerator, c *c
 		imgStr = tag.Name()
 	}
 
-	if namespace == "" {
-		namespace = namespaces.Default
-	}
-
-	return &DaemonImageProvider{
-		imageStr:        imgStr,
-		tmpDirGen:       tmpDirGen,
-		client:          c,
-		platform:        platform,
-		namespace:       namespace,
-		registryOptions: registryOptions,
-	}, nil
-}
-
-// Provide an image object that represents the cached docker image tar fetched from a containerd daemon.
-func (p *DaemonImageProvider) Provide(ctx context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
-	ctx = namespaces.WithNamespace(ctx, p.namespace)
-
-	resolvedImage, resolvedPlatform, err := p.pullImageIfMissing(ctx)
+	client, err := containerdClient.GetClient()
 	if err != nil {
 		return nil, err
 	}
 
-	tarFileName, err := p.saveImage(ctx, resolvedImage)
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Errorf("unable to close containerd client: %+v", err)
+		}
+	}()
+
+	c2, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	pong, err := client.Version(c2)
+	if pong.Version == "" {
+		return nil, fmt.Errorf("unable to get containerd API response: %w", err)
+	}
+
+	ctx = namespaces.WithNamespace(ctx, p.namespace)
+
+	resolvedImage, resolvedPlatform, err := p.pullImageIfMissing(ctx, client, imgStr)
+	if err != nil {
+		return nil, err
+	}
+
+	tarFileName, err := p.saveImage(ctx, client, resolvedImage)
 	if err != nil {
 		return nil, err
 	}
 
 	// use the existing tarball provider to process what was pulled from the containerd daemon
-	return stereoscopeDocker.NewProviderFromTarball(tarFileName, p.tmpDirGen).
+	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen).
 		Provide(ctx,
-			withMetadata(resolvedPlatform, userMetadata, p.imageStr)...,
+			tarFileName,
+			withMetadata(resolvedPlatform, userMetadata, imgStr)...,
 		)
 }
 
 // pull a containerd image
-func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (containerd.Image, error) {
+func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Client, imageStr, resolvedImage string) (containerd.Image, error) {
 	var platformStr string
 	if p.platform != nil {
 		platformStr = p.platform.String()
@@ -112,7 +133,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (c
 	bus.Publish(partybus.Event{
 		Type:   event.PullContainerdImage,
 		Source: resolvedImage,
-		Value:  newPullStatus(p.client, ongoing).start(ctx),
+		Value:  newPullStatus(client, ongoing).start(ctx),
 	})
 
 	h := images.HandlerFunc(func(ctx context.Context, desc ocispec.Descriptor) ([]ocispec.Descriptor, error) {
@@ -123,9 +144,9 @@ func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (c
 		return nil, nil
 	})
 
-	ref, err := name.ParseReference(p.imageStr, prepareReferenceOptions(p.registryOptions)...)
+	ref, err := name.ParseReference(imageStr, prepareReferenceOptions(p.registryOptions)...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
+		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", imageStr, err)
 	}
 
 	options, err := p.pullOptions(ctx, ref)
@@ -138,7 +159,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (c
 	}
 
 	// note: this will return an image object with the platform correctly set (if it exists)
-	resp, err := p.client.Pull(ctx, resolvedImage, options...)
+	resp, err := client.Pull(ctx, resolvedImage, options...)
 	if err != nil {
 		return nil, fmt.Errorf("pull failed: %w", err)
 	}
@@ -146,7 +167,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (c
 	return resp, nil
 }
 
-func (p *DaemonImageProvider) pullOptions(ctx context.Context, ref name.Reference) ([]containerd.RemoteOpt, error) {
+func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Reference) ([]containerd.RemoteOpt, error) {
 	var options = []containerd.RemoteOpt{
 		containerd.WithPlatform(p.platform.String()),
 	}
@@ -204,12 +225,12 @@ func (p *DaemonImageProvider) pullOptions(ctx context.Context, ref name.Referenc
 	return options, nil
 }
 
-func (p *DaemonImageProvider) resolveImage(ctx context.Context, imageStr string) (string, *platforms.Platform, error) {
+func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containerd.Client, imageStr string) (string, *platforms.Platform, error) {
 	// check if the image exists locally
 
 	// note: you can NEVER depend on the GetImage() call to return an object with a platform set (even if you specify
 	// a reference to a specific manifest via digest... not a digest for a manifest list!).
-	img, err := p.client.GetImage(ctx, imageStr)
+	img, err := client.GetImage(ctx, imageStr)
 	if err != nil {
 		// no image found
 		return imageStr, nil, err
@@ -221,12 +242,12 @@ func (p *DaemonImageProvider) resolveImage(ctx context.Context, imageStr string)
 	}
 
 	processManifest := func(imageStr string, manifestDesc ocispec.Descriptor) (string, *platforms.Platform, error) {
-		manifest, err := p.fetchManifest(ctx, manifestDesc)
+		manifest, err := p.fetchManifest(ctx, client, manifestDesc)
 		if err != nil {
 			return "", nil, err
 		}
 
-		platform, err := p.fetchPlatformFromConfig(ctx, manifest.Config)
+		platform, err := p.fetchPlatformFromConfig(ctx, client, manifest.Config)
 		if err != nil {
 			return "", nil, err
 		}
@@ -244,7 +265,7 @@ func (p *DaemonImageProvider) resolveImage(ctx context.Context, imageStr string)
 		img = nil
 
 		// let's find the digest for the manifest for the specific architecture we want
-		by, err := content.ReadBlob(ctx, p.client.ContentStore(), desc)
+		by, err := content.ReadBlob(ctx, client.ContentStore(), desc)
 		if err != nil {
 			return "", nil, fmt.Errorf("unable to fetch manifest list: %w", err)
 		}
@@ -275,7 +296,7 @@ func (p *DaemonImageProvider) resolveImage(ctx context.Context, imageStr string)
 	return "", nil, fmt.Errorf("unexpected mediaType for image: %q", desc.MediaType)
 }
 
-func (p *DaemonImageProvider) fetchManifest(ctx context.Context, desc ocispec.Descriptor) (*ocispec.Manifest, error) {
+func (p *daemonImageProvider) fetchManifest(ctx context.Context, client *containerd.Client, desc ocispec.Descriptor) (*ocispec.Manifest, error) {
 	switch desc.MediaType {
 	case images.MediaTypeDockerSchema2Manifest, ocispec.MediaTypeImageManifest:
 		// pass
@@ -283,7 +304,7 @@ func (p *DaemonImageProvider) fetchManifest(ctx context.Context, desc ocispec.De
 		return nil, fmt.Errorf("unexpected mediaType for image manifest: %q", desc.MediaType)
 	}
 
-	by, err := content.ReadBlob(ctx, p.client.ContentStore(), desc)
+	by, err := content.ReadBlob(ctx, client.ContentStore(), desc)
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch image manifest: %w", err)
 	}
@@ -296,7 +317,7 @@ func (p *DaemonImageProvider) fetchManifest(ctx context.Context, desc ocispec.De
 	return &manifest, nil
 }
 
-func (p *DaemonImageProvider) fetchPlatformFromConfig(ctx context.Context, desc ocispec.Descriptor) (*platforms.Platform, error) {
+func (p *daemonImageProvider) fetchPlatformFromConfig(ctx context.Context, client *containerd.Client, desc ocispec.Descriptor) (*platforms.Platform, error) {
 	switch desc.MediaType {
 	case images.MediaTypeDockerSchema2Config, ocispec.MediaTypeImageConfig:
 		// pass
@@ -304,7 +325,7 @@ func (p *DaemonImageProvider) fetchPlatformFromConfig(ctx context.Context, desc 
 		return nil, fmt.Errorf("unexpected mediaType for image config: %q", desc.MediaType)
 	}
 
-	by, err := content.ReadBlob(ctx, p.client.ContentStore(), desc)
+	by, err := content.ReadBlob(ctx, client.ContentStore(), desc)
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch image config: %w", err)
 	}
@@ -317,24 +338,23 @@ func (p *DaemonImageProvider) fetchPlatformFromConfig(ctx context.Context, desc 
 	return &cfg, nil
 }
 
-func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) (string, *platforms.Platform, error) {
-	p.imageStr = checkRegistryHostMissing(p.imageStr)
+func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *containerd.Client, imageStr string) (string, *platforms.Platform, error) {
+	imageStr = checkRegistryHostMissing(imageStr)
 
 	// try to get the image first before pulling
-	resolvedImage, resolvedPlatform, err := p.resolveImage(ctx, p.imageStr)
+	resolvedImage, resolvedPlatform, err := p.resolveImage(ctx, client, imageStr)
 
-	imageStr := resolvedImage
-	if imageStr == "" {
-		imageStr = p.imageStr
+	if resolvedImage != "" {
+		imageStr = resolvedImage
 	}
 
 	if err != nil {
-		_, err := p.pull(ctx, imageStr)
+		_, err := p.pull(ctx, client, imageStr, imageStr)
 		if err != nil {
 			return "", nil, err
 		}
 
-		resolvedImage, resolvedPlatform, err = p.resolveImage(ctx, imageStr)
+		resolvedImage, resolvedPlatform, err = p.resolveImage(ctx, client, imageStr)
 		if err != nil {
 			return "", nil, fmt.Errorf("unable to resolve image after pull: %w", err)
 		}
@@ -347,7 +367,7 @@ func (p *DaemonImageProvider) pullImageIfMissing(ctx context.Context) (string, *
 	return resolvedImage, resolvedPlatform, nil
 }
 
-func (p *DaemonImageProvider) validatePlatform(platform *platforms.Platform) error {
+func (p *daemonImageProvider) validatePlatform(platform *platforms.Platform) error {
 	if p.platform == nil {
 		return nil
 	}
@@ -372,7 +392,7 @@ func (p *DaemonImageProvider) validatePlatform(platform *platforms.Platform) err
 }
 
 // save the image from the containerd daemon to a tar file
-func (p *DaemonImageProvider) saveImage(ctx context.Context, resolvedImage string) (string, error) {
+func (p *daemonImageProvider) saveImage(ctx context.Context, client *containerd.Client, resolvedImage string) (string, error) {
 	imageTempDir, err := p.tmpDirGen.NewDirectory("containerd-daemon-image")
 	if err != nil {
 		return "", err
@@ -390,12 +410,12 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, resolvedImage strin
 		}
 	}()
 
-	is := p.client.ImageService()
+	is := client.ImageService()
 	exportOpts := []archive.ExportOpt{
 		archive.WithImage(is, resolvedImage),
 	}
 
-	img, err := p.client.GetImage(ctx, resolvedImage)
+	img, err := client.GetImage(ctx, resolvedImage)
 	if err != nil {
 		return "", fmt.Errorf("unable to fetch image from containerd: %w", err)
 	}
@@ -413,7 +433,7 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, resolvedImage strin
 
 	exportOpts = append(exportOpts, archive.WithPlatform(platformComparer))
 
-	providerProgress := p.trackSaveProgress(size)
+	providerProgress := p.trackSaveProgress(size, resolvedImage)
 	defer func() {
 		// NOTE: progress trackers should complete at the end of this function
 		// whether the function errors or succeeds.
@@ -424,7 +444,7 @@ func (p *DaemonImageProvider) saveImage(ctx context.Context, resolvedImage strin
 	providerProgress.Stage.Current = "requesting image from containerd"
 
 	// containerd export (save) does not return till fully complete
-	err = p.client.Export(ctx, tempTarFile, exportOpts...)
+	err = client.Export(ctx, tempTarFile, exportOpts...)
 	if err != nil {
 		return "", fmt.Errorf("unable to save image tar for image=%q: %w", img.Name(), err)
 	}
@@ -449,7 +469,7 @@ func exportPlatformComparer(platform *image.Platform) (platforms.MatchComparer, 
 	return platforms.OnlyStrict(platformObj), nil
 }
 
-func (p *DaemonImageProvider) trackSaveProgress(size int64) *daemonProvideProgress {
+func (p *daemonImageProvider) trackSaveProgress(size int64, imageStr string) *daemonProvideProgress {
 	// docker image save clocks in at ~40MB/sec on my laptop... mileage may vary, of course :shrug:
 	sec := float64(size) / (mb * 40)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
@@ -463,7 +483,7 @@ func (p *DaemonImageProvider) trackSaveProgress(size int64) *daemonProvideProgre
 
 	bus.Publish(partybus.Event{
 		Type:   event.FetchImage,
-		Source: p.imageStr,
+		Source: imageStr,
 		Value: progress.StagedProgressable(&struct {
 			progress.Stager
 			progress.Progressable

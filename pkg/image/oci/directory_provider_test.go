@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,14 +11,13 @@ import (
 
 func Test_NewProviderFromPath(t *testing.T) {
 	//GIVEN
-	path := "path"
 	generator := file.TempDirGenerator{}
+	defer generator.Cleanup()
 
 	//WHEN
-	provider := NewProviderFromPath(path, &generator)
+	provider := NewDirectoryProvider(&generator).(*directoryImageProvider)
 
 	//THEN
-	assert.NotNil(t, provider.path)
 	assert.NotNil(t, provider.tmpDirGen)
 }
 
@@ -35,11 +35,14 @@ func Test_Directory_Provide(t *testing.T) {
 		{"reads a fully correct manifest with equal digests", "test-fixtures/valid_manifest", false},
 	}
 
+	tmpDirGen := file.NewTempDirGenerator("tempDir")
+	defer tmpDirGen.Cleanup()
+
 	for _, tc := range tests {
-		provider := NewProviderFromPath(tc.path, file.NewTempDirGenerator("tempDir"))
+		provider := NewDirectoryProvider(tmpDirGen)
 		t.Run(tc.name, func(t *testing.T) {
 			//WHEN
-			image, err := provider.Provide(nil)
+			image, err := provider.Provide(context.TODO(), tc.path)
 
 			//THEN
 			if tc.expectedErr {

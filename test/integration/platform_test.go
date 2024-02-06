@@ -92,7 +92,7 @@ func TestPlatformSelection(t *testing.T) {
 
 	for _, tt := range tests {
 		platform := fmt.Sprintf("%s/%s", tt.os, tt.architecture)
-		t.Run(fmt.Sprintf("%s/%s", tt.source.String(), platform), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/%s", tt.source, platform), func(t *testing.T) {
 			if runtime.GOOS != "linux" {
 				switch tt.source {
 				case image.ContainerdDaemonSource:

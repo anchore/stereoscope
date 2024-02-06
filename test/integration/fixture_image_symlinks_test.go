@@ -9,9 +9,9 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/scylladb/go-set"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
@@ -63,11 +63,9 @@ func TestImageSymlinks(t *testing.T) {
 		},
 	}
 
-	expectedSet := set.NewIntSet()
-	for _, src := range image.AllSources {
-		expectedSet.Add(int(src))
-	}
-	expectedSet.Remove(int(image.OciRegistrySource))
+	expectedSet := stereoscope.ImageProviders(stereoscope.ImageProviderConfig{}).
+		Remove(image.OciRegistrySource).
+		Collect()
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -91,7 +89,7 @@ func TestImageSymlinks(t *testing.T) {
 		})
 	}
 
-	if len(cases) < expectedSet.Size() {
+	if len(cases) < len(expectedSet) {
 		t.Fatalf("probably missed a source during testing, double check that all image.sources are covered")
 	}
 
@@ -250,7 +248,7 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 	}
 }
 
-// Check symlinks in image after it has been squashed to a single layer (Singularity)
+// Check symlinks in image after it has been squashed to a single layer (SingularityID)
 func assertSquashedSymlinkLinkResolution(t *testing.T, i *image.Image) {
 	tests := []linkFetchConfig{
 		// # link with previous data

@@ -2,31 +2,54 @@ package oci
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 )
 
+func Test_RegistryProvider(t *testing.T) {
+	imageName := "my-image"
+	imageTag := "the-tag"
+
+	registryHost := makeRegistry(t)
+	pushRandomRegistryImage(t, registryHost, imageName, imageTag)
+
+	generator := file.TempDirGenerator{}
+	defer generator.Cleanup()
+
+	options := image.RegistryOptions{}
+	provider := NewRegistryProvider(&generator, options, nil)
+	img, err := provider.Provide(context.TODO(), fmt.Sprintf("%s/%s:%s", registryHost, imageName, imageTag))
+	assert.NoError(t, err)
+	assert.NotNil(t, img)
+}
+
 func Test_NewProviderFromRegistry(t *testing.T) {
 	//GIVEN
-	imageStr := "image"
 	generator := file.TempDirGenerator{}
+	defer generator.Cleanup()
 	options := image.RegistryOptions{}
 	platform := &image.Platform{}
 
 	//WHEN
-	provider := NewProviderFromRegistry(imageStr, &generator, options, platform)
+	provider := NewRegistryProvider(&generator, options, platform).(*registryImageProvider)
 
 	//THEN
-	assert.NotNil(t, provider.imageStr)
 	assert.NotNil(t, provider.tmpDirGen)
 	assert.NotNil(t, provider.registryOptions)
 	assert.NotNil(t, provider.platform)
@@ -36,6 +59,7 @@ func Test_Registry_Provide_FailsUnauthorized(t *testing.T) {
 	//GIVEN
 	imageStr := "image"
 	generator := file.TempDirGenerator{}
+	defer generator.Cleanup()
 	options := image.RegistryOptions{
 		InsecureSkipTLSVerify: true,
 		Credentials: []image.RegistryCredentials{
@@ -46,11 +70,11 @@ func Test_Registry_Provide_FailsUnauthorized(t *testing.T) {
 		},
 	}
 	platform := &image.Platform{}
-	provider := NewProviderFromRegistry(imageStr, &generator, options, platform)
+	provider := NewRegistryProvider(&generator, options, platform)
 	ctx := context.Background()
 
 	//WHEN
-	result, err := provider.Provide(ctx)
+	result, err := provider.Provide(ctx, imageStr)
 
 	//THEN
 	assert.Nil(t, result)
@@ -61,15 +85,16 @@ func Test_Registry_Provide_FailsImageMissingPlatform(t *testing.T) {
 	//GIVEN
 	imageStr := "docker.io/golang:1.18"
 	generator := file.TempDirGenerator{}
+	defer generator.Cleanup()
 	options := image.RegistryOptions{
 		InsecureSkipTLSVerify: true,
 	}
 	platform := &image.Platform{}
-	provider := NewProviderFromRegistry(imageStr, &generator, options, platform)
+	provider := NewRegistryProvider(&generator, options, platform)
 	ctx := context.Background()
 
 	//WHEN
-	result, err := provider.Provide(ctx)
+	result, err := provider.Provide(ctx, imageStr)
 
 	//THEN
 	assert.Nil(t, result)
@@ -78,8 +103,9 @@ func Test_Registry_Provide_FailsImageMissingPlatform(t *testing.T) {
 
 func Test_Registry_Provide(t *testing.T) {
 	//GIVEN
-	imageStr := "golang:1.18"
+	imageStr := "alpine:3.17"
 	generator := file.TempDirGenerator{}
+	defer generator.Cleanup()
 	options := image.RegistryOptions{
 		InsecureSkipTLSVerify: true,
 	}
@@ -87,11 +113,11 @@ func Test_Registry_Provide(t *testing.T) {
 		OS:           "linux",
 		Architecture: "amd64",
 	}
-	provider := NewProviderFromRegistry(imageStr, &generator, options, platform)
+	provider := NewRegistryProvider(&generator, options, platform)
 	ctx := context.Background()
 
 	//WHEN
-	result, err := provider.Provide(ctx)
+	result, err := provider.Provide(ctx, imageStr)
 
 	//THEN
 	assert.NotNil(t, result)
@@ -146,4 +172,34 @@ func Test_getTransport_haxProxyCfg(t *testing.T) {
 		cmpopts.IgnoreUnexported(http.Transport{})); d != "" {
 		t.Errorf("unexpected proxy config (-want +got):\n%s", d)
 	}
+}
+
+func pushRandomRegistryImage(t *testing.T, registryHost, repo, tag string) {
+	t.Helper()
+
+	repoTag := repo + ":" + tag
+
+	img, err := random.Image(1024, 2)
+	require.NoError(t, err)
+
+	opts := []name.Option{name.Insecure, name.WithDefaultRegistry(registryHost)}
+	ref, err := name.ParseReference(repoTag, opts...)
+	require.NoError(t, err)
+
+	remoteopts := []remote.Option{remote.WithUserAgent("syft-test-util")}
+	err = remote.Write(ref, img, remoteopts...)
+	require.NoError(t, err)
+
+	latestTag, err := name.NewTag(tag, opts...)
+	require.NoError(t, err)
+	err = remote.Tag(latestTag, img, remoteopts...)
+	require.NoError(t, err)
+}
+
+func makeRegistry(t *testing.T) (registryHost string) {
+	memoryBlobHandler := registry.NewInMemoryBlobHandler()
+	registryInstance := registry.New(registry.WithBlobHandler(memoryBlobHandler))
+	ts := httptest.NewServer(http.HandlerFunc(registryInstance.ServeHTTP))
+	t.Cleanup(ts.Close)
+	return strings.TrimPrefix(ts.URL, "http://")
 }

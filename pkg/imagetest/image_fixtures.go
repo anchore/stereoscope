@@ -26,10 +26,8 @@ const (
 func PrepareFixtureImage(t testing.TB, source, name string) string {
 	t.Helper()
 
-	sourceObj := image.ParseSourceScheme(source)
-
 	var location string
-	switch sourceObj {
+	switch source {
 	case image.ContainerdDaemonSource:
 		location = LoadFixtureImageIntoContainerd(t, name)
 	case image.DockerTarballSource:

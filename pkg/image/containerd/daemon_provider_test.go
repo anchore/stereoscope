@@ -47,7 +47,7 @@ func TestNewProviderFromDaemon_imageParsing(t *testing.T) {
 			if tt.wantErr == nil {
 				tt.wantErr = require.NoError
 			}
-			got, err := NewProviderFromDaemon(tt.image, nil, nil, "", image.RegistryOptions{}, nil)
+			got := NewDaemonProvider(nil, "", image.RegistryOptions{}, nil)
 			tt.wantErr(t, err)
 			if err != nil {
 				return
