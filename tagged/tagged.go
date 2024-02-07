@@ -114,6 +114,10 @@ func (t Values[T]) Join(taggedValues ...Value[T]) Values[T] {
 	return out
 }
 
+// since T in Value[T] is comparable, we can use == but this can panic if T is an interface and specific values are
+// used which implement the interface but are not comparable. to avoid panics, we check if both values are comparable.
+// additionally, if we wanted to use function references directly e.g. tagged.New(&package.Func), this function implements
+// a workaround to properly compare these types
 func isEqual[T any](a, b T) bool {
 	va := reflect.ValueOf(a)
 	vb := reflect.ValueOf(b)

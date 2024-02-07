@@ -248,7 +248,7 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 	}
 }
 
-// Check symlinks in image after it has been squashed to a single layer (SingularityID)
+// Check symlinks in image after it has been squashed to a single layer (Singularity)
 func assertSquashedSymlinkLinkResolution(t *testing.T, i *image.Image) {
 	tests := []linkFetchConfig{
 		// # link with previous data

@@ -35,12 +35,12 @@ func Test_Tagged(t *testing.T) {
 		{
 			name:     "nil keep",
 			keep:     nil,
-			expected: nil, // arr(1, 2, 3, 23, 4, 9),
+			expected: nil,
 		},
 		{
 			name:     "empty keep",
 			keep:     []string{},
-			expected: nil, // arr(1, 2, 3, 23, 4, 9),
+			expected: nil,
 		},
 		{
 			name:     "remove by tag",
