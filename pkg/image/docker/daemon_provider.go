@@ -236,7 +236,7 @@ func authURL(imageStr string, dockerhubWorkaround bool) (string, error) {
 func (p *daemonImageProvider) Provide(ctx context.Context, imageStr string, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
 	apiClient, err := p.newAPIClient()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s not available: %w", p.name, err)
 	}
 
 	defer func() {

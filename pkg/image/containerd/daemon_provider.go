@@ -75,7 +75,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context, imgStr string, userMe
 
 	client, err := containerdClient.GetClient()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("containerd not available: %w", err)
 	}
 
 	defer func() {
