@@ -35,9 +35,9 @@ func TestSingularityImageProvider_Provide(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := NewProviderFromPath(tt.path, file.NewTempDirGenerator(""))
+			p := NewArchiveProvider(file.NewTempDirGenerator(""))
 
-			i, err := p.Provide(context.Background(), tt.userMetadata...)
+			i, err := p.Provide(context.Background(), tt.path, tt.userMetadata...)
 			t.Cleanup(func() { _ = i.Cleanup() })
 
 			if got, want := err, tt.wantErr; !errors.Is(got, want) {
