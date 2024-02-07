@@ -21,7 +21,7 @@ func Test_NewProviderFromPath(t *testing.T) {
 	assert.NotNil(t, provider.tmpDirGen)
 }
 
-func Test_Directory_Provide(t *testing.T) {
+func Test_Directory_Provider(t *testing.T) {
 	//GIVEN
 	tests := []struct {
 		name        string
@@ -29,10 +29,10 @@ func Test_Directory_Provide(t *testing.T) {
 		expectedErr bool
 	}{
 		{"fails to read from path", "", true},
-		{"reads invalid oci manifest", "test-fixtures/invalid_file", true},
-		{"reads valid oci manifest with no images", "test-fixtures/no_manifests", true},
-		{"reads a fully correct manifest", "test-fixtures/valid_manifest", false},
-		{"reads a fully correct manifest with equal digests", "test-fixtures/valid_manifest", false},
+		{"fails to read invalid oci manifest", "test-fixtures/invalid_file", true},
+		{"fails to read valid oci manifest with no images", "test-fixtures/no_manifests", true},
+		{"fails to read an invalid oci directory", "test-fixtures/valid_manifest", true},
+		{"reads a valid oci directory", "test-fixtures/valid_oci_dir", false},
 	}
 
 	tmpDirGen := file.NewTempDirGenerator("tempDir")
@@ -42,7 +42,7 @@ func Test_Directory_Provide(t *testing.T) {
 		provider := NewDirectoryProvider(tmpDirGen)
 		t.Run(tc.name, func(t *testing.T) {
 			//WHEN
-			image, err := provider.Provide(context.TODO(), tc.path)
+			image, err := provider.Provide(context.Background(), tc.path)
 
 			//THEN
 			if tc.expectedErr {

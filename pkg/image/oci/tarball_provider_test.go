@@ -29,7 +29,7 @@ func Test_TarballProvide(t *testing.T) {
 	provider := NewArchiveProvider(generator)
 
 	//WHEN
-	image, err := provider.Provide(context.TODO(), "test-fixtures/file.tar")
+	image, err := provider.Provide(context.TODO(), "test-fixtures/basic_oci.tar")
 
 	//THEN
 	assert.NoError(t, err)

@@ -68,13 +68,9 @@ type daemonProvideProgress struct {
 }
 
 func (p *daemonImageProvider) Provide(ctx context.Context, imgStr string, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
-	ref, err := name.ParseReference(imgStr, name.WithDefaultRegistry(""))
+	imgStr, _, err := image.ParseReference(imgStr)
 	if err != nil {
 		return nil, err
-	}
-	tag, ok := ref.(name.Tag)
-	if ok {
-		imgStr = tag.Name()
 	}
 
 	client, err := containerdClient.GetClient()

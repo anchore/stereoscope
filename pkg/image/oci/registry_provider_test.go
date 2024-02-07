@@ -101,7 +101,7 @@ func Test_Registry_Provide_FailsImageMissingPlatform(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func Test_Registry_Provide(t *testing.T) {
+func Test_DockerMainRegistry_Provide(t *testing.T) {
 	//GIVEN
 	imageStr := "alpine:3.17"
 	generator := file.TempDirGenerator{}

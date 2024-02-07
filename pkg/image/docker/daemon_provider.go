@@ -253,15 +253,9 @@ func (p *daemonImageProvider) Provide(ctx context.Context, imageStr string, user
 		return nil, fmt.Errorf("unable to get %s API response: %w", p.name, err)
 	}
 
-	var originalRef string
-	ref, err := name.ParseReference(imageStr, name.WithDefaultRegistry(""))
+	imageStr, originalRef, err := image.ParseReference(imageStr)
 	if err != nil {
 		return nil, err
-	}
-	tag, ok := ref.(name.Tag)
-	if ok {
-		imageStr = tag.Name()
-		originalRef = tag.String() // blindly takes the original input passed into Tag
 	}
 
 	if err := p.pullImageIfMissing(ctx, apiClient, imageStr, originalRef); err != nil {
