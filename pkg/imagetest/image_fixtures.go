@@ -62,7 +62,7 @@ func PrepareFixtureImage(t testing.TB, source, name string) string {
 func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 	request := PrepareFixtureImage(t, source, name)
 
-	i, err := stereoscope.GetImageFromSource(context.TODO(), source, request)
+	i, err := stereoscope.GetImage(context.TODO(), request)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, i.Cleanup())
