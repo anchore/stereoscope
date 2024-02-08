@@ -65,6 +65,7 @@ type daemonProvideProgress struct {
 	Stage        *progress.AtomicStage
 }
 
+//nolint:staticcheck
 func (p *DaemonImageProvider) trackSaveProgress() (*daemonProvideProgress, error) {
 	// fetch the expected image size to estimate and measure progress
 	inspect, _, err := p.client.ImageInspectWithRaw(context.Background(), p.imageStr)
