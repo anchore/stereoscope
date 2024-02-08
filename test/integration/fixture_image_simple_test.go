@@ -79,7 +79,7 @@ var simpleImageTestCases = []testCase{
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
 		layers:         simpleImageLayers,
-		tagCount:       2,
+		tagCount:       1, // this uses a docker image save, which does not include the latest tag
 		size:           65,
 	},
 	{
@@ -127,8 +127,8 @@ func TestSimpleImage(t *testing.T) {
 		t.Run(c.source, func(t *testing.T) {
 			if runtime.GOOS != "linux" {
 				switch c.source {
-				case "containerd":
-					t.Skip("containerd is only supported on linux")
+				//case "containerd":
+				//	t.Skip("containerd is only supported on linux")
 				case "podman":
 					t.Skip("podman is only supported on linux")
 				}
