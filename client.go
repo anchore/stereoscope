@@ -46,13 +46,6 @@ func WithCredentials(credentials ...image.RegistryCredentials) Option {
 	}
 }
 
-func WithAdditionalMetadata(metadata ...image.AdditionalMetadata) Option {
-	return func(c *config) error {
-		c.AdditionalMetadata = append(c.AdditionalMetadata, metadata...)
-		return nil
-	}
-}
-
 func WithPlatform(platform string) Option {
 	return func(c *config) error {
 		p, err := image.NewPlatform(platform)
@@ -91,7 +84,6 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	providers := tagged.ValueSet[image.Provider]{}.Join(
 		ImageProviders(ImageProviderConfig{
 			Registry: cfg.Registry,
-			Platform: cfg.Platform,
 		})...,
 	)
 	source = strings.ToLower(strings.TrimSpace(source))
@@ -108,7 +100,7 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 
 	var errs []error
 	for _, provider := range providers.Collect() {
-		img, err := provider.Provide(ctx, imgStr, cfg.AdditionalMetadata...)
+		img, err := provider.Provide(ctx, imgStr, cfg.Platform)
 		if err != nil {
 			errs = append(errs, err)
 		}

@@ -11,8 +11,8 @@ import (
 
 const Daemon image.Source = image.PodmanDaemonSource
 
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, platform *image.Platform) image.Provider {
-	return docker.NewAPIClientProvider(Daemon, tmpDirGen, platform, func() (client.APIClient, error) {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator) image.Provider {
+	return docker.NewAPIClientProvider(Daemon, tmpDirGen, func() (client.APIClient, error) {
 		return podman.GetClient()
 	})
 }

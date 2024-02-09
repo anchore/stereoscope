@@ -37,7 +37,7 @@ func TestSingularityImageProvider_Provide(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewArchiveProvider(file.NewTempDirGenerator(""))
 
-			i, err := p.Provide(context.Background(), tt.path, tt.userMetadata...)
+			i, err := p.Provide(context.Background(), tt.path, nil)
 			t.Cleanup(func() { _ = i.Cleanup() })
 
 			if got, want := err, tt.wantErr; !errors.Is(got, want) {

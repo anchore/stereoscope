@@ -42,7 +42,7 @@ func Test_Directory_Provider(t *testing.T) {
 		provider := NewDirectoryProvider(tmpDirGen)
 		t.Run(tc.name, func(t *testing.T) {
 			//WHEN
-			image, err := provider.Provide(context.Background(), tc.path)
+			image, err := provider.Provide(context.Background(), tc.path, nil)
 
 			//THEN
 			if tc.expectedErr {

@@ -29,7 +29,7 @@ func (p *singularityImageProvider) Name() string {
 }
 
 // Provide returns an Image that represents a Singularity Image Format (SIF) image.
-func (p *singularityImageProvider) Provide(_ context.Context, path string, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
+func (p *singularityImageProvider) Provide(_ context.Context, path string, _ *image.Platform) (*image.Image, error) {
 	// We need to map the SIF to a GGCR v1.Image. Start with an implementation of the GGCR
 	// partial.UncompressedImageCore interface.
 	si, err := newSIFImage(path)
@@ -54,7 +54,6 @@ func (p *singularityImageProvider) Provide(_ context.Context, path string, userM
 		image.WithOS("linux"),
 		image.WithArchitecture(si.arch, ""),
 	}
-	metadata = append(metadata, userMetadata...)
 
 	return image.Read(image.New(ui, p.tmpDirGen, contentCacheDir, metadata...))
 }

@@ -20,11 +20,10 @@ import (
 const Registry image.Source = image.OciRegistrySource
 
 // NewRegistryProvider creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, platform *image.Platform) image.Provider {
+func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions) image.Provider {
 	return &registryImageProvider{
 		tmpDirGen:       tmpDirGen,
 		registryOptions: registryOptions,
-		platform:        platform,
 	}
 }
 
@@ -32,7 +31,6 @@ func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image
 type registryImageProvider struct {
 	tmpDirGen       *file.TempDirGenerator
 	registryOptions image.RegistryOptions
-	platform        *image.Platform
 }
 
 func (p *registryImageProvider) Name() string {
@@ -40,7 +38,7 @@ func (p *registryImageProvider) Name() string {
 }
 
 // Provide an image object that represents the cached docker image tar fetched a registry.
-func (p *registryImageProvider) Provide(ctx context.Context, imageStr string, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
+func (p *registryImageProvider) Provide(ctx context.Context, imageStr string, platform *image.Platform) (*image.Image, error) {
 	log.Debugf("pulling image info directly from registry image=%q", imageStr)
 
 	imageTempDir, err := p.tmpDirGen.NewDirectory("oci-registry-image")
@@ -53,7 +51,7 @@ func (p *registryImageProvider) Provide(ctx context.Context, imageStr string, us
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", imageStr, err)
 	}
 
-	platform := defaultPlatformIfNil(p.platform)
+	platform = defaultPlatformIfNil(platform)
 
 	options := prepareRemoteOptions(ctx, ref, p.registryOptions, platform)
 
@@ -86,9 +84,6 @@ func (p *registryImageProvider) Provide(ctx context.Context, imageStr string, us
 			image.WithOS(platform.OS),
 		)
 	}
-
-	// apply user-supplied metadata last to override any default behavior
-	metadata = append(metadata, userMetadata...)
 
 	return image.Read(image.New(img, p.tmpDirGen, imageTempDir, metadata...))
 }

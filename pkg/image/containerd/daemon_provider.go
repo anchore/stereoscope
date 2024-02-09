@@ -35,13 +35,12 @@ import (
 const Daemon image.Source = image.ContainerdDaemonSource
 
 // NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, namespace string, registryOptions image.RegistryOptions, platform *image.Platform) image.Provider {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, namespace string, registryOptions image.RegistryOptions) image.Provider {
 	if namespace == "" {
 		namespace = namespaces.Default
 	}
 	return &daemonImageProvider{
 		tmpDirGen:       tmpDirGen,
-		platform:        platform,
 		namespace:       namespace,
 		registryOptions: registryOptions,
 	}
@@ -52,7 +51,6 @@ var mb = math.Pow(2, 20)
 // daemonImageProvider is an image.Provider capable of fetching and representing a docker image from the containerd daemon API
 type daemonImageProvider struct {
 	tmpDirGen       *file.TempDirGenerator
-	platform        *image.Platform
 	namespace       string
 	registryOptions image.RegistryOptions
 }
@@ -67,7 +65,7 @@ type daemonProvideProgress struct {
 	Stage            *progress.Stage
 }
 
-func (p *daemonImageProvider) Provide(ctx context.Context, imgStr string, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
+func (p *daemonImageProvider) Provide(ctx context.Context, imgStr string, platform *image.Platform) (*image.Image, error) {
 	imgStr, _, err := image.ParseReference(imgStr)
 	if err != nil {
 		return nil, err
@@ -94,34 +92,26 @@ func (p *daemonImageProvider) Provide(ctx context.Context, imgStr string, userMe
 
 	ctx = namespaces.WithNamespace(ctx, p.namespace)
 
-	resolvedImage, resolvedPlatform, err := p.pullImageIfMissing(ctx, client, imgStr)
+	resolvedImage, resolvedPlatform, err := p.pullImageIfMissing(ctx, client, imgStr, platform)
 	if err != nil {
 		return nil, err
 	}
 
-	tarFileName, err := p.saveImage(ctx, client, resolvedImage)
+	tarFileName, err := p.saveImage(ctx, client, resolvedImage, platform)
 	if err != nil {
 		return nil, err
 	}
 
 	// use the existing tarball provider to process what was pulled from the containerd daemon
-	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen).
-		Provide(ctx,
-			tarFileName,
-			withMetadata(resolvedPlatform, userMetadata, imgStr)...,
-		)
+	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, withMetadata(resolvedPlatform, imgStr)...).
+		Provide(ctx, tarFileName, nil)
 }
 
 // pull a containerd image
-func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Client, imageStr, resolvedImage string) (containerd.Image, error) {
-	var platformStr string
-	if p.platform != nil {
-		platformStr = p.platform.String()
-	}
-
+func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Client, imageStr, resolvedImage string, platform *image.Platform) (containerd.Image, error) {
 	// note: if not platform is provided then containerd will default to linux/amd64 automatically. We don't override
 	// this behavior here and intentionally show that the value is blank in the log.
-	log.WithFields("image", resolvedImage, "platform", platformStr).Debug("pulling containerd")
+	log.WithFields("image", resolvedImage, "platform", platform.String()).Debug("pulling containerd")
 
 	ongoing := newJobs(resolvedImage)
 
@@ -145,14 +135,11 @@ func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Clien
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", imageStr, err)
 	}
 
-	options, err := p.pullOptions(ctx, ref)
+	options, err := p.pullOptions(ctx, ref, platform)
 	if err != nil {
 		return nil, fmt.Errorf("unable to prepare pull options: %w", err)
 	}
 	options = append(options, containerd.WithImageHandler(h))
-	if platformStr != "" {
-		options = append(options, containerd.WithPlatform(platformStr))
-	}
 
 	// note: this will return an image object with the platform correctly set (if it exists)
 	resp, err := client.Pull(ctx, resolvedImage, options...)
@@ -163,9 +150,9 @@ func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Clien
 	return resp, nil
 }
 
-func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Reference) ([]containerd.RemoteOpt, error) {
+func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Reference, platform *image.Platform) ([]containerd.RemoteOpt, error) {
 	var options = []containerd.RemoteOpt{
-		containerd.WithPlatform(p.platform.String()),
+		containerd.WithPlatform(platform.String()),
 	}
 
 	dockerOptions := docker.ResolverOptions{
@@ -221,7 +208,7 @@ func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Referenc
 	return options, nil
 }
 
-func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containerd.Client, imageStr string) (string, *platforms.Platform, error) {
+func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containerd.Client, imageStr string, platform *image.Platform) (string, *platforms.Platform, error) {
 	// check if the image exists locally
 
 	// note: you can NEVER depend on the GetImage() call to return an object with a platform set (even if you specify
@@ -232,7 +219,7 @@ func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containe
 		return imageStr, nil, err
 	}
 
-	if p.platform == nil {
+	if platform == nil {
 		// the user is not asking for a platform-specific request -- return what containerd returns
 		return imageStr, nil, nil
 	}
@@ -271,7 +258,7 @@ func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containe
 			return "", nil, fmt.Errorf("unable to unmarshal manifest list: %w", err)
 		}
 
-		platformObj, err := platforms.Parse(p.platform.String())
+		platformObj, err := platforms.Parse(platform.String())
 		if err != nil {
 			return "", nil, fmt.Errorf("unable to parse platform: %w", err)
 		}
@@ -286,7 +273,7 @@ func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containe
 		}
 
 		// no manifest found for the platform we want
-		return imageStr, nil, fmt.Errorf("no manifest found in manifest list for platform %q", p.platform.String())
+		return imageStr, nil, fmt.Errorf("no manifest found in manifest list for platform %q", platform.String())
 	}
 
 	return "", nil, fmt.Errorf("unexpected mediaType for image: %q", desc.MediaType)
@@ -334,37 +321,37 @@ func (p *daemonImageProvider) fetchPlatformFromConfig(ctx context.Context, clien
 	return &cfg, nil
 }
 
-func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *containerd.Client, imageStr string) (string, *platforms.Platform, error) {
+func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *containerd.Client, imageStr string, platform *image.Platform) (string, *platforms.Platform, error) {
 	imageStr = checkRegistryHostMissing(imageStr)
 
 	// try to get the image first before pulling
-	resolvedImage, resolvedPlatform, err := p.resolveImage(ctx, client, imageStr)
+	resolvedImage, resolvedPlatform, err := p.resolveImage(ctx, client, imageStr, platform)
 
 	if resolvedImage != "" {
 		imageStr = resolvedImage
 	}
 
 	if err != nil {
-		_, err := p.pull(ctx, client, imageStr, imageStr)
+		_, err := p.pull(ctx, client, imageStr, imageStr, platform)
 		if err != nil {
 			return "", nil, err
 		}
 
-		resolvedImage, resolvedPlatform, err = p.resolveImage(ctx, client, imageStr)
+		resolvedImage, resolvedPlatform, err = p.resolveImage(ctx, client, imageStr, platform)
 		if err != nil {
 			return "", nil, fmt.Errorf("unable to resolve image after pull: %w", err)
 		}
 	}
 
-	if err := p.validatePlatform(resolvedPlatform); err != nil {
+	if err := validatePlatform(platform, resolvedPlatform); err != nil {
 		return "", nil, fmt.Errorf("platform validation failed: %w", err)
 	}
 
 	return resolvedImage, resolvedPlatform, nil
 }
 
-func (p *daemonImageProvider) validatePlatform(platform *platforms.Platform) error {
-	if p.platform == nil {
+func validatePlatform(expectedPlatform *image.Platform, platform *platforms.Platform) error {
+	if expectedPlatform == nil {
 		return nil
 	}
 
@@ -372,23 +359,23 @@ func (p *daemonImageProvider) validatePlatform(platform *platforms.Platform) err
 		return fmt.Errorf("image has no platform information (might be a manifest list)")
 	}
 
-	if platform.OS != p.platform.OS {
-		return fmt.Errorf("image has unexpected OS %q, which differs from the user specified PS %q", platform.OS, p.platform.OS)
+	if platform.OS != expectedPlatform.OS {
+		return fmt.Errorf("image has unexpected OS %q, which differs from the user specified PS %q", platform.OS, expectedPlatform.OS)
 	}
 
-	if platform.Architecture != p.platform.Architecture {
-		return fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", platform.Architecture, p.platform.Architecture)
+	if platform.Architecture != expectedPlatform.Architecture {
+		return fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", platform.Architecture, expectedPlatform.Architecture)
 	}
 
-	if platform.Variant != p.platform.Variant {
-		return fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", platform.Variant, p.platform.Variant)
+	if platform.Variant != expectedPlatform.Variant {
+		return fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", platform.Variant, expectedPlatform.Variant)
 	}
 
 	return nil
 }
 
 // save the image from the containerd daemon to a tar file
-func (p *daemonImageProvider) saveImage(ctx context.Context, client *containerd.Client, resolvedImage string) (string, error) {
+func (p *daemonImageProvider) saveImage(ctx context.Context, client *containerd.Client, resolvedImage string, platform *image.Platform) (string, error) {
 	imageTempDir, err := p.tmpDirGen.NewDirectory("containerd-daemon-image")
 	if err != nil {
 		return "", err
@@ -422,7 +409,7 @@ func (p *daemonImageProvider) saveImage(ctx context.Context, client *containerd.
 		size = int64(50 * mb)
 	}
 
-	platformComparer, err := exportPlatformComparer(p.platform)
+	platformComparer, err := exportPlatformComparer(platform)
 	if err != nil {
 		return "", err
 	}
@@ -504,7 +491,7 @@ func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Optio
 	return options
 }
 
-func withMetadata(platform *platforms.Platform, userMetadata []image.AdditionalMetadata, ref string) (metadata []image.AdditionalMetadata) {
+func withMetadata(platform *platforms.Platform, ref string) (metadata []image.AdditionalMetadata) {
 	if platform != nil {
 		metadata = append(metadata,
 			image.WithArchitecture(platform.Architecture, platform.Variant),
@@ -516,9 +503,6 @@ func withMetadata(platform *platforms.Platform, userMetadata []image.AdditionalM
 		// remove digest from ref
 		metadata = append(metadata, image.WithTags(strings.Split(ref, "@")[0]))
 	}
-
-	// apply user-supplied metadata last to override any default behavior
-	metadata = append(metadata, userMetadata...)
 	return metadata
 }
 

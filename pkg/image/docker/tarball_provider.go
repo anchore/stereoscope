@@ -16,9 +16,10 @@ import (
 const Archive image.Source = image.DockerTarballSource
 
 // NewArchiveProvider creates a new provider able to resolve docker tarball archives
-func NewArchiveProvider(tmpDirGen *file.TempDirGenerator) image.Provider {
+func NewArchiveProvider(tmpDirGen *file.TempDirGenerator, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	return &tarballImageProvider{
-		tmpDirGen: tmpDirGen,
+		tmpDirGen:          tmpDirGen,
+		additionalMetadata: additionalMetadata,
 	}
 }
 
@@ -26,7 +27,8 @@ var ErrMultipleManifests = fmt.Errorf("cannot process multiple docker manifests"
 
 // tarballImageProvider is a image.Provider for a docker image (V2) for an existing tar on disk (the output from a "docker image save ..." command).
 type tarballImageProvider struct {
-	tmpDirGen *file.TempDirGenerator
+	tmpDirGen          *file.TempDirGenerator
+	additionalMetadata []image.AdditionalMetadata
 }
 
 func (p *tarballImageProvider) Name() string {
@@ -34,7 +36,7 @@ func (p *tarballImageProvider) Name() string {
 }
 
 // Provide an image object that represents the docker image tar at the configured location on disk.
-func (p *tarballImageProvider) Provide(_ context.Context, path string, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
+func (p *tarballImageProvider) Provide(_ context.Context, path string, _ *image.Platform) (*image.Image, error) {
 	img, err := tarball.ImageFromPath(path, nil)
 	if err != nil {
 		// raise a more controlled error for when there are multiple images within the given tar (from https://github.com/anchore/grype/issues/215)
@@ -80,7 +82,7 @@ func (p *tarballImageProvider) Provide(_ context.Context, path string, userMetad
 	}
 
 	// apply user-supplied metadata last to override any default behavior
-	metadata = append(metadata, userMetadata...)
+	metadata = append(metadata, p.additionalMetadata...)
 
 	contentTempDir, err := p.tmpDirGen.NewDirectory("docker-tarball-image")
 	if err != nil {

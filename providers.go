@@ -22,7 +22,6 @@ const (
 // ImageProviderConfig is the uber-configuration containing all configuration needed by stereoscope image providers
 type ImageProviderConfig struct {
 	Registry image.RegistryOptions
-	Platform *image.Platform
 }
 
 func ImageProviders(cfg ImageProviderConfig) []tagged.Value[image.Provider] {
@@ -36,12 +35,12 @@ func ImageProviders(cfg ImageProviderConfig) []tagged.Value[image.Provider] {
 		taggedProvider(sif.NewArchiveProvider(tempDirGenerator), FileTag),
 
 		// daemon providers
-		taggedProvider(docker.NewDaemonProvider(tempDirGenerator, cfg.Platform), DaemonTag, PullTag),
-		taggedProvider(podman.NewDaemonProvider(tempDirGenerator, cfg.Platform), DaemonTag, PullTag),
-		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, containerdClient.Namespace(), cfg.Registry, cfg.Platform), DaemonTag, PullTag),
+		taggedProvider(docker.NewDaemonProvider(tempDirGenerator), DaemonTag, PullTag),
+		taggedProvider(podman.NewDaemonProvider(tempDirGenerator), DaemonTag, PullTag),
+		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, containerdClient.Namespace(), cfg.Registry), DaemonTag, PullTag),
 
 		// registry providers
-		taggedProvider(oci.NewRegistryProvider(tempDirGenerator, cfg.Registry, cfg.Platform), RegistryTag, PullTag),
+		taggedProvider(oci.NewRegistryProvider(tempDirGenerator, cfg.Registry), RegistryTag, PullTag),
 	}
 }
 

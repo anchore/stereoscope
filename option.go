@@ -9,9 +9,8 @@ import (
 type Option func(*config) error
 
 type config struct {
-	Registry           image.RegistryOptions
-	AdditionalMetadata []image.AdditionalMetadata
-	Platform           *image.Platform
+	Registry image.RegistryOptions
+	Platform *image.Platform
 }
 
 func applyOptions(cfg *config, options ...Option) error {
