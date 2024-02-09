@@ -1,6 +1,7 @@
 package stereoscope
 
 import (
+	"slices"
 	"strings"
 )
 
@@ -11,7 +12,6 @@ import (
 // in the user input text is not necessary and should be avoided due to some ambiguity this introduces
 func ExtractSchemeSource(userInput string, sources ...string) (source, newInput string) {
 	const SchemeSeparator = ":"
-
 	parts := strings.SplitN(userInput, SchemeSeparator, 2)
 	if len(parts) < 2 {
 		return "", userInput
@@ -19,11 +19,9 @@ func ExtractSchemeSource(userInput string, sources ...string) (source, newInput 
 	// the user may have provided a source hint (or this is a split from a path or docker image reference, we aren't certain yet)
 	sourceHint := parts[0]
 	sourceHint = strings.TrimSpace(strings.ToLower(sourceHint))
-	// validate the hint against the possible tags
-	for _, source = range sources {
-		if source == sourceHint {
-			return source, parts[1]
-		}
+	// check the hint against the possible tags
+	if slices.Contains(sources, sourceHint) {
+		return sourceHint, parts[1]
 	}
 	// did not have any matching tags, scheme is not a valid provider scheme
 	return "", userInput

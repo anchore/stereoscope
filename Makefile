@@ -5,7 +5,7 @@ LINT_CMD = $(TEMP_DIR)/golangci-lint run --tests=false --config .golangci.yaml
 GOIMPORTS_CMD := $(TEMP_DIR)/gosimports -local github.com/anchore
 
 # Tool versions #################################
-GOLANGCILINT_VERSION := v1.52.2
+GOLANGCILINT_VERSION := v1.56.0
 GOSIMPORTS_VERSION := v0.3.8
 BOUNCER_VERSION := v0.4.0
 CHRONICLE_VERSION := v0.6.0

@@ -3,6 +3,7 @@ package tagged
 import (
 	"fmt"
 	"reflect"
+	"slices"
 )
 
 // Value holds an arbitrary value with associated tags
@@ -117,14 +118,10 @@ func (t ValueSet[T]) Join(taggedValues ...Value[T]) ValueSet[T] {
 // Tags returns the unique set of tags from all entries
 func (t ValueSet[T]) Tags() (tags []string) {
 	for _, entry := range t {
-	nextTag:
 		for _, tag := range entry.Tags {
-			for _, existing := range tags {
-				if tag == existing {
-					continue nextTag
-				}
+			if !slices.Contains(tags, tag) {
+				tags = append(tags, tag)
 			}
-			tags = append(tags, tag)
 		}
 	}
 	return tags
