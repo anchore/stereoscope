@@ -25,10 +25,10 @@ type ImageProviderConfig struct {
 	Platform *image.Platform
 }
 
-func ImageProviders(cfg ImageProviderConfig) tagged.Values[image.Provider] {
+func ImageProviders(cfg ImageProviderConfig) []tagged.Value[image.Provider] {
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
 
-	return tagged.Values[image.Provider]{
+	return []tagged.Value[image.Provider]{
 		// file providers
 		taggedProvider(docker.NewArchiveProvider(tempDirGenerator), FileTag),
 		taggedProvider(oci.NewArchiveProvider(tempDirGenerator), FileTag),

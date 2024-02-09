@@ -2,8 +2,6 @@ package stereoscope
 
 import (
 	"strings"
-
-	"github.com/anchore/stereoscope/tagged"
 )
 
 // ExtractSchemeSource parses a string with any colon-delimited prefix and validates it against the set
@@ -11,7 +9,7 @@ import (
 //
 // NOTE: since it is now possible to select which providers to use, using schemes
 // in the user input text is not necessary and should be avoided due to some ambiguity this introduces
-func ExtractSchemeSource[T comparable](schemeTags tagged.Values[T], userInput string) (scheme, newInput string) {
+func ExtractSchemeSource(userInput string, sources ...string) (source, newInput string) {
 	const SchemeSeparator = ":"
 
 	parts := strings.SplitN(userInput, SchemeSeparator, 2)
@@ -22,10 +20,11 @@ func ExtractSchemeSource[T comparable](schemeTags tagged.Values[T], userInput st
 	sourceHint := parts[0]
 	sourceHint = strings.TrimSpace(strings.ToLower(sourceHint))
 	// validate the hint against the possible tags
-	if !schemeTags.HasTag(sourceHint) {
-		// did not have any matching tags, scheme is not a valid provider scheme
-		return "", userInput
+	for _, source = range sources {
+		if source == sourceHint {
+			return source, parts[1]
+		}
 	}
-
-	return sourceHint, parts[1]
+	// did not have any matching tags, scheme is not a valid provider scheme
+	return "", userInput
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/tagged"
 )
 
 var rootTempDirGenerator = file.NewTempDirGenerator("stereoscope")
@@ -80,14 +81,16 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	}
 
 	// select image provider
-	providers := ImageProviders(ImageProviderConfig{
-		Registry: cfg.Registry,
-		Platform: cfg.Platform,
-	})
+	providers := tagged.ValueSet[image.Provider]{}.Join(
+		ImageProviders(ImageProviderConfig{
+			Registry: cfg.Registry,
+			Platform: cfg.Platform,
+		})...,
+	)
 	source = strings.ToLower(strings.TrimSpace(source))
 	if source == "" {
 		// if no source is explicitly specified, look for a known scheme like docker:
-		source, imgStr = ExtractSchemeSource(providers, imgStr)
+		source, imgStr = ExtractSchemeSource(imgStr, providers.Tags()...)
 	}
 	if source != "" {
 		providers = providers.Select(source)
