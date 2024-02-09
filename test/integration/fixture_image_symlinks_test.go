@@ -16,6 +16,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/imagetest"
+	"github.com/anchore/stereoscope/tagged"
 )
 
 type linkFetchConfig struct {
@@ -63,7 +64,8 @@ func TestImageSymlinks(t *testing.T) {
 		},
 	}
 
-	expectedSet := stereoscope.ImageProviders(stereoscope.ImageProviderConfig{}).
+	expectedSet := tagged.ValueSet[image.Provider]{}.
+		Join(stereoscope.ImageProviders(stereoscope.ImageProviderConfig{})...).
 		Remove(image.OciRegistrySource).
 		Collect()
 

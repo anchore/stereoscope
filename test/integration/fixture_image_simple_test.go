@@ -20,6 +20,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/sif"
 	"github.com/anchore/stereoscope/pkg/imagetest"
+	"github.com/anchore/stereoscope/tagged"
 )
 
 // Common layer metadata for OCI / Docker / Podman. MediaType will be filled in during test.
@@ -119,7 +120,8 @@ type testCase struct {
 }
 
 func TestSimpleImage(t *testing.T) {
-	expectedSet := stereoscope.ImageProviders(stereoscope.ImageProviderConfig{}).
+	expectedSet := tagged.ValueSet[image.Provider]{}.
+		Join(stereoscope.ImageProviders(stereoscope.ImageProviderConfig{})...).
 		Remove(image.OciRegistrySource).
 		Collect()
 
