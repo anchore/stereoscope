@@ -163,12 +163,13 @@ func BenchmarkSimpleImage_GetImage(b *testing.B) {
 			continue
 		}
 		request := imagetest.PrepareFixtureImage(b, c.source, "image-simple")
+		filter := func(path string) bool { return true }
 
 		b.Run(c.source, func(b *testing.B) {
 			var bi *image.Image
 			for i := 0; i < b.N; i++ {
 
-				bi, err = stereoscope.GetImage(context.TODO(), request)
+				bi, err = stereoscope.GetImage(context.TODO(), request, filter)
 				b.Cleanup(func() {
 					require.NoError(b, bi.Cleanup())
 				})

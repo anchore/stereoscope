@@ -194,7 +194,7 @@ func (i *Image) applyOverrideMetadata() error {
 
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
-func (i *Image) Read() error {
+func (i *Image) Read(filter PathFilter) error {
 	var layers = make([]*Layer, 0)
 	var err error
 	i.Metadata, err = readImageMetadata(i.image)
@@ -224,7 +224,7 @@ func (i *Image) Read() error {
 
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
-		err := layer.Read(fileCatalog, i.Metadata, idx, i.contentCacheDir)
+		err := layer.Read(fileCatalog, i.Metadata, idx, i.contentCacheDir, filter)
 		if err != nil {
 			return err
 		}

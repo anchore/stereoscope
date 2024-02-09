@@ -70,7 +70,7 @@ func WithPlatform(platform string) Option {
 }
 
 // GetImageFromSource returns an image from the explicitly provided source.
-func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
+func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, filter image.PathFilter, options ...Option) (*image.Image, error) {
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
 	var cfg config
@@ -96,7 +96,7 @@ func GetImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		return nil, fmt.Errorf("unable to use %s source: %w", source, err)
 	}
 
-	err = img.Read()
+	err = img.Read(filter)
 	if err != nil {
 		return nil, fmt.Errorf("could not read image: %+v", err)
 	}
@@ -208,12 +208,12 @@ func defaultPlatformIfNil(cfg *config) {
 
 // GetImage parses the user provided image string and provides an image object;
 // note: the source where the image should be referenced from is automatically inferred.
-func GetImage(ctx context.Context, userStr string, options ...Option) (*image.Image, error) {
+func GetImage(ctx context.Context, userStr string, filter image.PathFilter, options ...Option) (*image.Image, error) {
 	source, imgStr, err := image.DetectSource(userStr)
 	if err != nil {
 		return nil, err
 	}
-	return GetImageFromSource(ctx, imgStr, source, options...)
+	return GetImageFromSource(ctx, imgStr, source, filter, options...)
 }
 
 func SetLogger(logger logger.Logger) {

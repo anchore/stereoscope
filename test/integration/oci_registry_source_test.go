@@ -32,13 +32,15 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 	imgStr := "anchore/test_images"
 	ref := fmt.Sprintf("%s@%s", imgStr, digest)
 
-	img, err := stereoscope.GetImage(context.TODO(), "registry:"+ref)
+	filter := func(path string) bool { return true }
+
+	img, err := stereoscope.GetImage(context.TODO(), "registry:"+ref, filter)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, img.Cleanup())
 	})
 
-	require.NoError(t, img.Read())
+	require.NoError(t, img.Read(filter))
 
 	assert.Len(t, img.Metadata.RepoDigests, 1)
 	assert.Equal(t, "index.docker.io/"+ref, img.Metadata.RepoDigests[0])

@@ -24,6 +24,9 @@ import (
 
 const SingularitySquashFSLayer = "application/vnd.sylabs.sif.layer.v1.squashfs"
 
+// PathFilter decides if a path has to be included in the index
+type PathFilter = func(path string) bool
+
 // Layer represents a single layer within a container image.
 type Layer struct {
 	// layer is the raw layer metadata and content provider from the GCR lib
@@ -80,7 +83,7 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
-func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
+func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string, filter PathFilter) error {
 	var err error
 	tree := filetree.New()
 	l.Tree = tree
@@ -114,7 +117,7 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 		l.indexedContent, err = file.NewTarIndex(
 			tarFilePath,
-			layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
+			layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor, filter),
 		)
 		if err != nil {
 			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
@@ -129,9 +132,9 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 
 		// Walk the more efficient walk if we're blessed with an io.ReaderAt.
 		if ra, ok := r.(io.ReaderAt); ok {
-			err = file.WalkSquashFS(ra, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
+			err = file.WalkSquashFS(ra, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor, filter))
 		} else {
-			err = file.WalkSquashFSFromReader(r, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
+			err = file.WalkSquashFSFromReader(r, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor, filter))
 		}
 		if err != nil {
 			return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
@@ -206,7 +209,7 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
+func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual, filter PathFilter) file.TarIndexVisitor {
 	builder := filetree.NewBuilder(ft, fileCatalog.Index)
 
 	return func(index file.TarIndexEntry) error {
@@ -220,6 +223,10 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 			}
 		}()
 		metadata := file.NewMetadata(entry.Header, contents)
+
+		if !filter(metadata.Path) {
+			return nil
+		}
 
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
@@ -248,10 +255,14 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 	}
 }
 
-func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.SquashFSVisitor {
+func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual, filter PathFilter) file.SquashFSVisitor {
 	builder := filetree.NewBuilder(ft, fileCatalog.Index)
 
 	return func(fsys fs.FS, path string, d fs.DirEntry) error {
+		if !filter(path) {
+			return nil
+		}
+
 		ff, err := fsys.Open(path)
 		if err != nil {
 			return err
