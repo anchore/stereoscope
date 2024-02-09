@@ -67,11 +67,18 @@ func WithPlatform(platform string) Option {
 // GetImage parses the user provided image string and provides an image object;
 // note: the source where the image should be referenced from is automatically inferred.
 func GetImage(ctx context.Context, imgStr string, options ...Option) (*image.Image, error) {
-	return GetImageFromSource(ctx, imgStr, "", options...)
+	return getImageFromSource(ctx, imgStr, "", options...)
 }
 
 // GetImageFromSource returns an image from the explicitly provided source.
 func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
+	if source == "" {
+		return nil, fmt.Errorf("source not provided, please specify a valid source tag")
+	}
+	return getImageFromSource(ctx, imgStr, source, options...)
+}
+
+func getImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
 	log.Debugf("image: source=%+v location=%+v", source, imgStr)
 
 	// apply ImageProviderConfig config
