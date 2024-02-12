@@ -14,7 +14,7 @@ func Test_NewProviderFromPath(t *testing.T) {
 	generator := file.TempDirGenerator{}
 
 	//WHEN
-	provider := NewProviderFromPath(path, &generator)
+	provider := NewProviderFromPath(path, &generator, nil)
 
 	//THEN
 	assert.NotNil(t, provider.path)
@@ -33,13 +33,47 @@ func Test_Directory_Provide(t *testing.T) {
 		{"reads valid oci manifest with no images", "test-fixtures/no_manifests", true},
 		{"reads a fully correct manifest", "test-fixtures/valid_manifest", false},
 		{"reads a fully correct manifest with equal digests", "test-fixtures/valid_manifest", false},
+		{"fails to read a fully correct manifest index with more than one manifest", "test-fixtures/valid_manifest_index", true},
 	}
 
 	for _, tc := range tests {
-		provider := NewProviderFromPath(tc.path, file.NewTempDirGenerator("tempDir"))
+		provider := NewProviderFromPath(tc.path, file.NewTempDirGenerator("tempDir"), nil)
 		t.Run(tc.name, func(t *testing.T) {
 			//WHEN
 			image, err := provider.Provide(nil)
+
+			//THEN
+			if tc.expectedErr {
+				assert.Error(t, err)
+				assert.Nil(t, image)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, image)
+			}
+
+		})
+	}
+}
+
+func Test_Directory_ProvideIndex(t *testing.T) {
+	//GIVEN
+	tests := []struct {
+		name        string
+		path        string
+		expectedErr bool
+	}{
+		{"fails to read from path", "", true},
+		{"reads invalid oci manifest", "test-fixtures/invalid_file", true},
+		{"reads valid oci manifest with no images", "test-fixtures/no_manifests", true},
+		{"reads a fully correct manifest", "test-fixtures/valid_manifest", false},
+		{"reads a fully correct manifest index with more than one manifest", "test-fixtures/valid_manifest_index", false},
+	}
+
+	for _, tc := range tests {
+		provider := NewProviderFromPath(tc.path, file.NewTempDirGenerator("tempDir"), nil)
+		t.Run(tc.name, func(t *testing.T) {
+			//WHEN
+			image, err := provider.ProvideIndex(nil)
 
 			//THEN
 			if tc.expectedErr {

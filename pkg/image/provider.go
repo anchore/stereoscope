@@ -7,3 +7,8 @@ import "context"
 type Provider interface {
 	Provide(context.Context, ...AdditionalMetadata) (*Image, error)
 }
+
+// IndexProvider is an abstraction for any object that provides image indexes.
+type IndexProvider interface {
+	ProvideIndex(context.Context, ...AdditionalMetadata) (*Index, error)
+}
