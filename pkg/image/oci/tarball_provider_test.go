@@ -28,7 +28,7 @@ func Test_TarballProvide(t *testing.T) {
 	generator := file.NewTempDirGenerator("tempDir")
 	defer generator.Cleanup()
 
-	provider := NewArchiveProvider(generator, "test-fixtures/file.tar")
+	provider := NewArchiveProvider(generator, "test-fixtures/valid-oci.tar")
 
 	//WHEN
 	image, err := provider.Provide(context.TODO())
