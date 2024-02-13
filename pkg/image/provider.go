@@ -8,5 +8,5 @@ import (
 // an OCI image, podman varlink API, etc.).
 type Provider interface {
 	Name() string
-	Provide(ctx context.Context, userInput string, platform *Platform) (*Image, error)
+	Provide(context.Context) (*Image, error)
 }

@@ -83,7 +83,9 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	// select image provider
 	providers := tagged.ValueSet[image.Provider]{}.Join(
 		ImageProviders(ImageProviderConfig{
-			Registry: cfg.Registry,
+			UserInput: imgStr,
+			Platform:  cfg.Platform,
+			Registry:  cfg.Registry,
 		})...,
 	)
 	source = strings.ToLower(strings.TrimSpace(source))
@@ -100,7 +102,7 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 
 	var errs []error
 	for _, provider := range providers.Collect() {
-		img, err := provider.Provide(ctx, imgStr, cfg.Platform)
+		img, err := provider.Provide(ctx)
 		if err != nil {
 			errs = append(errs, err)
 		}

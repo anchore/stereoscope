@@ -20,9 +20,11 @@ import (
 const Registry image.Source = image.OciRegistrySource
 
 // NewRegistryProvider creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions) image.Provider {
+func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, imageStr string, platform *image.Platform) image.Provider {
 	return &registryImageProvider{
 		tmpDirGen:       tmpDirGen,
+		imageStr:        imageStr,
+		platform:        platform,
 		registryOptions: registryOptions,
 	}
 }
@@ -30,6 +32,8 @@ func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image
 // registryImageProvider is an image.Provider capable of fetching and representing a container image fetched from a remote registry (described by the OCI distribution spec).
 type registryImageProvider struct {
 	tmpDirGen       *file.TempDirGenerator
+	imageStr        string
+	platform        *image.Platform
 	registryOptions image.RegistryOptions
 }
 
@@ -38,20 +42,20 @@ func (p *registryImageProvider) Name() string {
 }
 
 // Provide an image object that represents the cached docker image tar fetched a registry.
-func (p *registryImageProvider) Provide(ctx context.Context, imageStr string, platform *image.Platform) (*image.Image, error) {
-	log.Debugf("pulling image info directly from registry image=%q", imageStr)
+func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
 
 	imageTempDir, err := p.tmpDirGen.NewDirectory("oci-registry-image")
 	if err != nil {
 		return nil, err
 	}
 
-	ref, err := name.ParseReference(imageStr, prepareReferenceOptions(p.registryOptions)...)
+	ref, err := name.ParseReference(p.imageStr, prepareReferenceOptions(p.registryOptions)...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", imageStr, err)
+		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
 	}
 
-	platform = defaultPlatformIfNil(platform)
+	platform := defaultPlatformIfNil(p.platform)
 
 	options := prepareRemoteOptions(ctx, ref, p.registryOptions, platform)
 

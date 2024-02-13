@@ -33,18 +33,20 @@ import (
 const Daemon image.Source = image.DockerDaemonSource
 
 // NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator) image.Provider {
-	return NewAPIClientProvider(Daemon, tmpDirGen, func() (client.APIClient, error) {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform) image.Provider {
+	return NewAPIClientProvider(Daemon, tmpDirGen, imageStr, platform, func() (client.APIClient, error) {
 		return docker.GetClient()
 	})
 }
 
 // NewAPIClientProvider creates a new provider for the provided Docker client.APIClient
-func NewAPIClientProvider(name string, tmpDirGen *file.TempDirGenerator, newClient apiClientCreator) image.Provider {
+func NewAPIClientProvider(name string, tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, newClient apiClientCreator) image.Provider {
 	return &daemonImageProvider{
 		name:         name,
 		tmpDirGen:    tmpDirGen,
 		newAPIClient: newClient,
+		imageStr:     imageStr,
+		platform:     platform,
 	}
 }
 
@@ -55,6 +57,8 @@ type daemonImageProvider struct {
 	name         string
 	tmpDirGen    *file.TempDirGenerator
 	newAPIClient apiClientCreator
+	imageStr     string
+	platform     *image.Platform
 }
 
 func (p *daemonImageProvider) Name() string {
@@ -68,9 +72,9 @@ type daemonProvideProgress struct {
 }
 
 //nolint:staticcheck
-func (p *daemonImageProvider) trackSaveProgress(ctx context.Context, apiClient client.APIClient, imageStr string) (*daemonProvideProgress, error) {
+func (p *daemonImageProvider) trackSaveProgress(ctx context.Context, apiClient client.APIClient, imageRef string) (*daemonProvideProgress, error) {
 	// fetch the expected image size to estimate and measure progress
-	inspect, _, err := apiClient.ImageInspectWithRaw(ctx, imageStr)
+	inspect, _, err := apiClient.ImageInspectWithRaw(ctx, imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("unable to inspect image: %w", err)
 	}
@@ -93,7 +97,7 @@ func (p *daemonImageProvider) trackSaveProgress(ctx context.Context, apiClient c
 
 	bus.Publish(partybus.Event{
 		Type:   event.FetchImage,
-		Source: imageStr,
+		Source: imageRef,
 		Value: progress.StagedProgressable(&struct {
 			progress.Stager
 			*progress.Aggregator
@@ -111,8 +115,8 @@ func (p *daemonImageProvider) trackSaveProgress(ctx context.Context, apiClient c
 }
 
 // pull a docker image
-func (p *daemonImageProvider) pull(ctx context.Context, client client.APIClient, imageStr string, platform *image.Platform) error {
-	log.Debugf("pulling %s image=%q", p.name, imageStr)
+func (p *daemonImageProvider) pull(ctx context.Context, client client.APIClient, imageRef string) error {
+	log.Debugf("pulling %s image=%q", p.name, imageRef)
 
 	status := newPullStatus()
 	defer func() {
@@ -122,16 +126,16 @@ func (p *daemonImageProvider) pull(ctx context.Context, client client.APIClient,
 	// publish a pull event on the bus, allowing for read-only consumption of status
 	bus.Publish(partybus.Event{
 		Type:   event.PullDockerImage,
-		Source: imageStr,
+		Source: imageRef,
 		Value:  status,
 	})
 
-	options, err := p.pullOptions(imageStr, platform)
+	options, err := p.pullOptions(imageRef)
 	if err != nil {
 		return err
 	}
 
-	resp, err := client.ImagePull(ctx, imageStr, options)
+	resp, err := client.ImagePull(ctx, imageRef, options)
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
@@ -158,9 +162,9 @@ func (p *daemonImageProvider) pull(ctx context.Context, client client.APIClient,
 	return nil
 }
 
-func (p *daemonImageProvider) pullOptions(imageStr string, platform *image.Platform) (types.ImagePullOptions, error) {
+func (p *daemonImageProvider) pullOptions(imageRef string) (types.ImagePullOptions, error) {
 	options := types.ImagePullOptions{
-		Platform: platform.String(),
+		Platform: p.platform.String(),
 	}
 
 	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
@@ -171,9 +175,9 @@ func (p *daemonImageProvider) pullOptions(imageStr string, platform *image.Platf
 	log.Debugf("using docker config=%q", cfg.Filename)
 
 	// get a URL that works with docker credential helpers
-	url, err := authURL(imageStr, true)
+	url, err := authURL(imageRef, true)
 	if err != nil {
-		log.Warnf("failed to determine auth url from image=%q: %+v", imageStr, err)
+		log.Warnf("failed to determine auth url from image=%q: %+v", imageRef, err)
 		return options, nil
 	}
 
@@ -189,9 +193,9 @@ func (p *daemonImageProvider) pullOptions(imageStr string, platform *image.Platf
 		// docker credential helper was unnecessary (since the user isn't using a credential helper). For this reason
 		// lets try this auth config lookup again, but this time for a url that doesn't consider the dockerhub
 		// workaround for the credential helper.
-		url, err = authURL(imageStr, false)
+		url, err = authURL(imageRef, false)
 		if err != nil {
-			log.Warnf("failed to determine auth url from image=%q: %+v", imageStr, err)
+			log.Warnf("failed to determine auth url from image=%q: %+v", imageRef, err)
 			return options, nil
 		}
 
@@ -212,8 +216,8 @@ func (p *daemonImageProvider) pullOptions(imageStr string, platform *image.Platf
 	return options, nil
 }
 
-func authURL(imageStr string, dockerhubWorkaround bool) (string, error) {
-	ref, err := name.ParseReference(imageStr)
+func authURL(imageRef string, dockerhubWorkaround bool) (string, error) {
+	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return "", err
 	}
@@ -231,7 +235,7 @@ func authURL(imageStr string, dockerhubWorkaround bool) (string, error) {
 }
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
-func (p *daemonImageProvider) Provide(ctx context.Context, imageStr string, platform *image.Platform) (*image.Image, error) {
+func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error) {
 	apiClient, err := p.newAPIClient()
 	if err != nil {
 		return nil, fmt.Errorf("%s not available: %w", p.name, err)
@@ -251,39 +255,35 @@ func (p *daemonImageProvider) Provide(ctx context.Context, imageStr string, plat
 		return nil, fmt.Errorf("unable to get %s API response: %w", p.name, err)
 	}
 
-	imageStr, originalRef, err := image.ParseReference(imageStr)
+	imageRef, err := p.pullImageIfMissing(ctx, apiClient)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := p.pullImageIfMissing(ctx, apiClient, imageStr, originalRef, platform); err != nil {
-		return nil, err
-	}
-
 	// inspect the image that might have been pulled
-	inspectResult, _, err := apiClient.ImageInspectWithRaw(ctx, imageStr)
+	inspectResult, _, err := apiClient.ImageInspectWithRaw(ctx, imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("unable to inspect existing image: %w", err)
 	}
 
 	// by this point the platform info should match based off of user input, so we should error out if this is not the case
-	if err := p.validatePlatform(inspectResult, platform); err != nil {
+	if err := p.validatePlatform(inspectResult); err != nil {
 		return nil, err
 	}
 
-	tarFileName, err := p.saveImage(ctx, apiClient, imageStr)
+	tarFileName, err := p.saveImage(ctx, apiClient, imageRef)
 	if err != nil {
 		return nil, err
 	}
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewArchiveProvider(p.tmpDirGen, withInspectMetadata(inspectResult)...).
-		Provide(ctx, tarFileName, nil)
+	return NewArchiveProvider(p.tmpDirGen, tarFileName, withInspectMetadata(inspectResult)...).
+		Provide(ctx)
 }
 
-func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.APIClient, imageStr string) (string, error) {
+func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.APIClient, imageRef string) (string, error) {
 	// save the image from the docker daemon to a tar file
-	providerProgress, err := p.trackSaveProgress(ctx, apiClient, imageStr)
+	providerProgress, err := p.trackSaveProgress(ctx, apiClient, imageRef)
 	if err != nil {
 		return "", fmt.Errorf("unable to trace image save progress: %w", err)
 	}
@@ -312,7 +312,7 @@ func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.AP
 	}()
 
 	providerProgress.Stage.Set(fmt.Sprintf("requesting image from %s", p.name))
-	readCloser, err := apiClient.ImageSave(ctx, []string{imageStr})
+	readCloser, err := apiClient.ImageSave(ctx, []string{imageRef})
 	if err != nil {
 		return "", fmt.Errorf("unable to save image tar: %w", err)
 	}
@@ -343,47 +343,52 @@ func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.AP
 	return tempTarFile.Name(), nil
 }
 
-func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient client.APIClient, imageStr, originalImageRef string, platform *image.Platform) error {
+func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient client.APIClient) (imageRef string, err error) {
+	imageRef, originalImageRef, err := image.ParseReference(p.imageStr)
+	if err != nil {
+		return "", err
+	}
+
 	// check if the image exists locally
-	inspectResult, _, err := apiClient.ImageInspectWithRaw(ctx, imageStr)
+	inspectResult, _, err := apiClient.ImageInspectWithRaw(ctx, imageRef)
 	if err != nil {
 		inspectResult, _, err = apiClient.ImageInspectWithRaw(ctx, originalImageRef)
 		if err == nil {
-			imageStr = strings.TrimSuffix(imageStr, ":latest")
+			imageRef = strings.TrimSuffix(imageRef, ":latest")
 		}
 	}
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			if err = p.pull(ctx, apiClient, imageStr, platform); err != nil {
-				return err
+			if err = p.pull(ctx, apiClient, imageRef); err != nil {
+				return imageRef, err
 			}
 		} else {
-			return fmt.Errorf("unable to inspect existing image: %w", err)
+			return imageRef, fmt.Errorf("unable to inspect existing image: %w", err)
 		}
 	} else {
 		// looks like the image exists, but if the platform doesn't match what the user specified, we may need to
 		// pull the image again with the correct platform specifier, which will override the local tag.
-		if err := p.validatePlatform(inspectResult, platform); err != nil {
-			if err = p.pull(ctx, apiClient, imageStr, platform); err != nil {
-				return err
+		if err = p.validatePlatform(inspectResult); err != nil {
+			if err = p.pull(ctx, apiClient, imageRef); err != nil {
+				return imageRef, err
 			}
 		}
 	}
-	return nil
+	return imageRef, nil
 }
 
-func (p *daemonImageProvider) validatePlatform(i types.ImageInspect, expectedPlatform *image.Platform) error {
-	if expectedPlatform == nil {
+func (p *daemonImageProvider) validatePlatform(i types.ImageInspect) error {
+	if p.platform == nil {
 		// the user did not specify a platform
 		return nil
 	}
 
-	if i.Os != expectedPlatform.OS {
-		return fmt.Errorf("image has unexpected OS %q, which differs from the user specified PS %q", i.Os, expectedPlatform.OS)
+	if i.Os != p.platform.OS {
+		return fmt.Errorf("image has unexpected OS %q, which differs from the user specified PS %q", i.Os, p.platform.OS)
 	}
 
-	if i.Architecture != expectedPlatform.Architecture {
-		return fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", i.Architecture, expectedPlatform.Architecture)
+	if i.Architecture != p.platform.Architecture {
+		return fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", i.Architecture, p.platform.Architecture)
 	}
 
 	// note: there is no architecture variant captured in inspect responses

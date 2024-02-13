@@ -11,13 +11,15 @@ import (
 
 func Test_NewProviderFromTarball(t *testing.T) {
 	//GIVEN
+	path := "path"
 	generator := file.TempDirGenerator{}
 	defer generator.Cleanup()
 
 	//WHEN
-	provider := NewArchiveProvider(&generator).(*tarballImageProvider)
+	provider := NewArchiveProvider(&generator, path).(*tarballImageProvider)
 
 	//THEN
+	assert.NotNil(t, provider.path)
 	assert.NotNil(t, provider.tmpDirGen)
 }
 
@@ -26,10 +28,10 @@ func Test_TarballProvide(t *testing.T) {
 	generator := file.NewTempDirGenerator("tempDir")
 	defer generator.Cleanup()
 
-	provider := NewArchiveProvider(generator)
+	provider := NewArchiveProvider(generator, "test-fixtures/file.tar")
 
 	//WHEN
-	image, err := provider.Provide(context.TODO(), "test-fixtures/basic_oci.tar", nil)
+	image, err := provider.Provide(context.TODO())
 
 	//THEN
 	assert.NoError(t, err)
@@ -41,10 +43,10 @@ func Test_TarballProvide_Fails(t *testing.T) {
 	generator := file.NewTempDirGenerator("tempDir")
 	defer generator.Cleanup()
 
-	provider := NewArchiveProvider(generator)
+	provider := NewArchiveProvider(generator, "")
 
 	//WHEN
-	image, err := provider.Provide(context.TODO(), "", nil)
+	image, err := provider.Provide(context.TODO())
 
 	//THEN
 	assert.Error(t, err)

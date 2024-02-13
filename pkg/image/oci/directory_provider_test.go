@@ -11,13 +11,15 @@ import (
 
 func Test_NewProviderFromPath(t *testing.T) {
 	//GIVEN
+	path := "path"
 	generator := file.TempDirGenerator{}
 	defer generator.Cleanup()
 
 	//WHEN
-	provider := NewDirectoryProvider(&generator).(*directoryImageProvider)
+	provider := NewDirectoryProvider(&generator, path).(*directoryImageProvider)
 
 	//THEN
+	assert.NotNil(t, provider.path)
 	assert.NotNil(t, provider.tmpDirGen)
 }
 
@@ -39,10 +41,10 @@ func Test_Directory_Provider(t *testing.T) {
 	defer tmpDirGen.Cleanup()
 
 	for _, tc := range tests {
-		provider := NewDirectoryProvider(tmpDirGen)
+		provider := NewDirectoryProvider(tmpDirGen, tc.path)
 		t.Run(tc.name, func(t *testing.T) {
 			//WHEN
-			image, err := provider.Provide(context.Background(), tc.path, nil)
+			image, err := provider.Provide(context.Background())
 
 			//THEN
 			if tc.expectedErr {

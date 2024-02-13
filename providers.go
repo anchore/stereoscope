@@ -21,26 +21,27 @@ const (
 
 // ImageProviderConfig is the uber-configuration containing all configuration needed by stereoscope image providers
 type ImageProviderConfig struct {
-	Registry image.RegistryOptions
+	UserInput string
+	Platform  *image.Platform
+	Registry  image.RegistryOptions
 }
 
 func ImageProviders(cfg ImageProviderConfig) []tagged.Value[image.Provider] {
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
-
 	return []tagged.Value[image.Provider]{
 		// file providers
-		taggedProvider(docker.NewArchiveProvider(tempDirGenerator), FileTag),
-		taggedProvider(oci.NewArchiveProvider(tempDirGenerator), FileTag),
-		taggedProvider(oci.NewDirectoryProvider(tempDirGenerator), FileTag, DirTag),
-		taggedProvider(sif.NewArchiveProvider(tempDirGenerator), FileTag),
+		taggedProvider(docker.NewArchiveProvider(tempDirGenerator, cfg.UserInput), FileTag),
+		taggedProvider(oci.NewArchiveProvider(tempDirGenerator, cfg.UserInput), FileTag),
+		taggedProvider(oci.NewDirectoryProvider(tempDirGenerator, cfg.UserInput), FileTag, DirTag),
+		taggedProvider(sif.NewArchiveProvider(tempDirGenerator, cfg.UserInput), FileTag),
 
 		// daemon providers
-		taggedProvider(docker.NewDaemonProvider(tempDirGenerator), DaemonTag, PullTag),
-		taggedProvider(podman.NewDaemonProvider(tempDirGenerator), DaemonTag, PullTag),
-		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, containerdClient.Namespace(), cfg.Registry), DaemonTag, PullTag),
+		taggedProvider(docker.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
+		taggedProvider(podman.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
+		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, cfg.Registry, containerdClient.Namespace(), cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
 
 		// registry providers
-		taggedProvider(oci.NewRegistryProvider(tempDirGenerator, cfg.Registry), RegistryTag, PullTag),
+		taggedProvider(oci.NewRegistryProvider(tempDirGenerator, cfg.Registry, cfg.UserInput, cfg.Platform), RegistryTag, PullTag),
 	}
 }
 

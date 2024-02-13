@@ -14,15 +14,17 @@ import (
 const Directory image.Source = image.OciDirectorySource
 
 // NewDirectoryProvider creates a new provider instance for the specific image already at the given path.
-func NewDirectoryProvider(tmpDirGen *file.TempDirGenerator) image.Provider {
+func NewDirectoryProvider(tmpDirGen *file.TempDirGenerator, path string) image.Provider {
 	return &directoryImageProvider{
 		tmpDirGen: tmpDirGen,
+		path:      path,
 	}
 }
 
 // directoryImageProvider is an image.Provider for an OCI image (V1) for an existing tar on disk (from a buildah push <img> oci:<img> command).
 type directoryImageProvider struct {
 	tmpDirGen *file.TempDirGenerator
+	path      string
 }
 
 func (p *directoryImageProvider) Name() string {
@@ -30,13 +32,13 @@ func (p *directoryImageProvider) Name() string {
 }
 
 // Provide an image object that represents the OCI image as a directory.
-func (p *directoryImageProvider) Provide(_ context.Context, path string, _ *image.Platform) (*image.Image, error) {
-	pathObj, err := layout.FromPath(path)
+func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error) {
+	pathObj, err := layout.FromPath(p.path)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read image from OCI directory path %q: %w", path, err)
+		return nil, fmt.Errorf("unable to read image from OCI directory path %q: %w", p.path, err)
 	}
 
-	index, err := layout.ImageIndexFromPath(path)
+	index, err := layout.ImageIndexFromPath(p.path)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse OCI directory index: %w", err)
 	}

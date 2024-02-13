@@ -13,15 +13,17 @@ const ProviderName = image.SingularitySource
 
 // NewArchiveProvider creates a new provider instance for the Singularity Image Format (SIF) image
 // at path.
-func NewArchiveProvider(tmpDirGen *file.TempDirGenerator) image.Provider {
+func NewArchiveProvider(tmpDirGen *file.TempDirGenerator, path string) image.Provider {
 	return &singularityImageProvider{
 		tmpDirGen: tmpDirGen,
+		path:      path,
 	}
 }
 
 // singularityImageProvider is an image.Provider for a Singularity Image Format (SIF) image.
 type singularityImageProvider struct {
 	tmpDirGen *file.TempDirGenerator
+	path      string
 }
 
 func (p *singularityImageProvider) Name() string {
@@ -29,10 +31,10 @@ func (p *singularityImageProvider) Name() string {
 }
 
 // Provide returns an Image that represents a Singularity Image Format (SIF) image.
-func (p *singularityImageProvider) Provide(_ context.Context, path string, _ *image.Platform) (*image.Image, error) {
+func (p *singularityImageProvider) Provide(_ context.Context) (*image.Image, error) {
 	// We need to map the SIF to a GGCR v1.Image. Start with an implementation of the GGCR
 	// partial.UncompressedImageCore interface.
-	si, err := newSIFImage(path)
+	si, err := newSIFImage(p.path)
 	if err != nil {
 		return nil, err
 	}

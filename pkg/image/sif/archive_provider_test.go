@@ -9,15 +9,13 @@ import (
 	"github.com/sylabs/sif/v2/pkg/sif"
 
 	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/image"
 )
 
 func TestSingularityImageProvider_Provide(t *testing.T) {
 	tests := []struct {
-		name         string
-		path         string
-		userMetadata []image.AdditionalMetadata
-		wantErr      error
+		name    string
+		path    string
+		wantErr error
 	}{
 		{
 			name:    "NoObjects",
@@ -35,9 +33,9 @@ func TestSingularityImageProvider_Provide(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := NewArchiveProvider(file.NewTempDirGenerator(""))
+			p := NewArchiveProvider(file.NewTempDirGenerator(""), tt.path)
 
-			i, err := p.Provide(context.Background(), tt.path, nil)
+			i, err := p.Provide(context.Background())
 			t.Cleanup(func() { _ = i.Cleanup() })
 
 			if got, want := err, tt.wantErr; !errors.Is(got, want) {
