@@ -80,7 +80,7 @@ var simpleImageTestCases = []testCase{
 		imageMediaType: v1Types.DockerManifestSchema2,
 		layerMediaType: v1Types.DockerLayer,
 		layers:         simpleImageLayers,
-		tagCount:       1, // this uses a docker image save, which does not include the latest tag
+		tagCount:       2,
 		size:           65,
 	},
 	{

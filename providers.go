@@ -48,3 +48,7 @@ func ImageProviders(cfg ImageProviderConfig) []tagged.Value[image.Provider] {
 func taggedProvider(provider image.Provider, tags ...string) tagged.Value[image.Provider] {
 	return tagged.New[image.Provider](provider, append([]string{provider.Name()}, tags...)...)
 }
+
+func allProviderTags() []string {
+	return tagged.ValueSet[image.Provider]{}.Join(ImageProviders(ImageProviderConfig{})...).Tags()
+}

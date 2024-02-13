@@ -60,7 +60,9 @@ func WithPlatform(platform string) Option {
 // GetImage parses the user provided image string and provides an image object;
 // note: the source where the image should be referenced from is automatically inferred.
 func GetImage(ctx context.Context, imgStr string, options ...Option) (*image.Image, error) {
-	return getImageFromSource(ctx, imgStr, "", options...)
+	// look for a known source scheme like docker:
+	source, imgStr := ExtractSchemeSource(imgStr, allProviderTags()...)
+	return getImageFromSource(ctx, imgStr, source, options...)
 }
 
 // GetImageFromSource returns an image from the explicitly provided source.
@@ -88,22 +90,8 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 			Registry:  cfg.Registry,
 		})...,
 	)
-	source = strings.ToLower(strings.TrimSpace(source))
-	if source == "" {
-		// if no source is explicitly specified, look for a known scheme like docker:
-		source, imgStr = ExtractSchemeSource(imgStr, providers.Tags()...)
-		if source != "" {
-			// a source was specified in the string, so imgStr was something like docker:<image-ref>, reconfigure the providers with the right image ref
-			providers = tagged.ValueSet[image.Provider]{}.Join(
-				ImageProviders(ImageProviderConfig{
-					UserInput: imgStr,
-					Platform:  cfg.Platform,
-					Registry:  cfg.Registry,
-				})...,
-			)
-		}
-	}
 	if source != "" {
+		source = strings.ToLower(strings.TrimSpace(source))
 		providers = providers.Select(source)
 		if len(providers) == 0 {
 			return nil, fmt.Errorf("unable to find image providers matching: '%s'", source)
