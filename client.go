@@ -92,6 +92,16 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	if source == "" {
 		// if no source is explicitly specified, look for a known scheme like docker:
 		source, imgStr = ExtractSchemeSource(imgStr, providers.Tags()...)
+		if source != "" {
+			// a source was specified in the string, so imgStr was something like docker:<image-ref>, reconfigure the providers with the right image ref
+			providers = tagged.ValueSet[image.Provider]{}.Join(
+				ImageProviders(ImageProviderConfig{
+					UserInput: imgStr,
+					Platform:  cfg.Platform,
+					Registry:  cfg.Registry,
+				})...,
+			)
+		}
 	}
 	if source != "" {
 		providers = providers.Select(source)
