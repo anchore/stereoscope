@@ -30,10 +30,16 @@ func copyFile(t testing.TB, src, dst string) {
 	}
 }
 
-func fileOrDirExists(t testing.TB, filename string) bool {
+func fileExists(t testing.TB, filename string) bool {
 	t.Helper()
-	_, err := os.Stat(filename)
-	return !os.IsNotExist(err)
+	s, err := os.Stat(filename)
+	return !os.IsNotExist(err) && !s.IsDir()
+}
+
+func dirExists(t testing.TB, filename string) bool {
+	t.Helper()
+	s, err := os.Stat(filename)
+	return !os.IsNotExist(err) && s.IsDir()
 }
 
 func dirHash(t testing.TB, root string) string {
