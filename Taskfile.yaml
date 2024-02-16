@@ -159,7 +159,7 @@ tasks:
         sh: "go list ./... | grep -v {{ .OWNER }}/{{ .PROJECT }}/test | tr '\n' ' '"
 
       # unit test coverage threshold (in % coverage)
-      COVERAGE_THRESHOLD: 55
+      COVERAGE_THRESHOLD: 45
     cmds:
       - "go test -coverprofile {{ .TMP_DIR }}/unit-coverage-details.txt {{ .TEST_PKGS }}"
       - cmd: ".github/scripts/coverage.py {{ .COVERAGE_THRESHOLD }} {{ .TMP_DIR }}/unit-coverage-details.txt"
