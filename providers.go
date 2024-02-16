@@ -1,6 +1,7 @@
 package stereoscope
 
 import (
+	"github.com/anchore/go-collections"
 	containerdClient "github.com/anchore/stereoscope/internal/containerd"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/containerd"
@@ -8,7 +9,6 @@ import (
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/image/podman"
 	"github.com/anchore/stereoscope/pkg/image/sif"
-	"github.com/anchore/stereoscope/tagged"
 )
 
 const (
@@ -26,9 +26,9 @@ type ImageProviderConfig struct {
 	Registry  image.RegistryOptions
 }
 
-func ImageProviders(cfg ImageProviderConfig) []tagged.Value[image.Provider] {
+func ImageProviders(cfg ImageProviderConfig) []collections.TaggedValue[image.Provider] {
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
-	return []tagged.Value[image.Provider]{
+	return []collections.TaggedValue[image.Provider]{
 		// file providers
 		taggedProvider(docker.NewArchiveProvider(tempDirGenerator, cfg.UserInput), FileTag),
 		taggedProvider(oci.NewArchiveProvider(tempDirGenerator, cfg.UserInput), FileTag),
@@ -45,10 +45,10 @@ func ImageProviders(cfg ImageProviderConfig) []tagged.Value[image.Provider] {
 	}
 }
 
-func taggedProvider(provider image.Provider, tags ...string) tagged.Value[image.Provider] {
-	return tagged.New[image.Provider](provider, append([]string{provider.Name()}, tags...)...)
+func taggedProvider(provider image.Provider, tags ...string) collections.TaggedValue[image.Provider] {
+	return collections.NewTaggedValue[image.Provider](provider, append([]string{provider.Name()}, tags...)...)
 }
 
 func allProviderTags() []string {
-	return tagged.ValueSet[image.Provider]{}.Join(ImageProviders(ImageProviderConfig{})...).Tags()
+	return collections.TaggedValueSet[image.Provider]{}.Join(ImageProviders(ImageProviderConfig{})...).Tags()
 }

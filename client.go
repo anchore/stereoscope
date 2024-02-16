@@ -8,12 +8,12 @@ import (
 
 	"github.com/wagoodman/go-partybus"
 
+	"github.com/anchore/go-collections"
 	"github.com/anchore/go-logger"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
-	"github.com/anchore/stereoscope/tagged"
 )
 
 var rootTempDirGenerator = file.NewTempDirGenerator("stereoscope")
@@ -83,7 +83,7 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	}
 
 	// select image provider
-	providers := tagged.ValueSet[image.Provider]{}.Join(
+	providers := collections.TaggedValueSet[image.Provider]{}.Join(
 		ImageProviders(ImageProviderConfig{
 			UserInput: imgStr,
 			Platform:  cfg.Platform,
@@ -99,7 +99,7 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	}
 
 	var errs []error
-	for _, provider := range providers.Collect() {
+	for _, provider := range providers.Values() {
 		img, err := provider.Provide(ctx)
 		if err != nil {
 			errs = append(errs, err)

@@ -14,13 +14,13 @@ import (
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anchore/go-collections"
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/sif"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	"github.com/anchore/stereoscope/tagged"
 )
 
 // Common layer metadata for OCI / Docker / Podman. MediaType will be filled in during test.
@@ -120,10 +120,9 @@ type testCase struct {
 }
 
 func TestSimpleImage(t *testing.T) {
-	expectedSet := tagged.ValueSet[image.Provider]{}.
+	expectedSet := collections.TaggedValueSet[image.Provider]{}.
 		Join(stereoscope.ImageProviders(stereoscope.ImageProviderConfig{})...).
-		Remove(image.OciRegistrySource).
-		Collect()
+		Remove(image.OciRegistrySource)
 
 	for _, c := range simpleImageTestCases {
 		t.Run(c.source, func(t *testing.T) {

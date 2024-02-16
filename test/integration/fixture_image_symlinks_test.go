@@ -11,12 +11,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/anchore/go-collections"
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/imagetest"
-	"github.com/anchore/stereoscope/tagged"
 )
 
 type linkFetchConfig struct {
@@ -64,10 +64,9 @@ func TestImageSymlinks(t *testing.T) {
 		},
 	}
 
-	expectedSet := tagged.ValueSet[image.Provider]{}.
+	expectedSet := collections.TaggedValueSet[image.Provider]{}.
 		Join(stereoscope.ImageProviders(stereoscope.ImageProviderConfig{})...).
-		Remove(image.OciRegistrySource).
-		Collect()
+		Remove(image.OciRegistrySource)
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
