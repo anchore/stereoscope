@@ -3,9 +3,6 @@ go.work
 go.work.sum
 .tool-versions
 
-# app configuration
-/.syft.yaml
-
 # tool and bin directories
 .tmp/
 bin/
