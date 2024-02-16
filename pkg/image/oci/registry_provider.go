@@ -91,6 +91,9 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 
 	out := image.New(img, p.tmpDirGen, imageTempDir, metadata...)
 	err = out.Read()
+	if err != nil {
+		return nil, err
+	}
 	return out, err
 }
 

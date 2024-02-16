@@ -59,5 +59,8 @@ func (p *singularityImageProvider) Provide(_ context.Context) (*image.Image, err
 
 	out := image.New(ui, p.tmpDirGen, contentCacheDir, metadata...)
 	err = out.Read()
+	if err != nil {
+		return nil, err
+	}
 	return out, err
 }
