@@ -1,5 +1,5 @@
 OWNER = anchore
-PROJECT = syft
+PROJECT = stereoscope
 
 TOOL_DIR = .tool
 BINNY = $(TOOL_DIR)/binny
