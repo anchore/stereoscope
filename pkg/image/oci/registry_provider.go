@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	goRuntime "runtime"
+	"runtime"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -159,7 +159,7 @@ func getTransport(tlsConfig *tls.Config) *http.Transport {
 // do nothing.
 func defaultPlatformIfNil(platform *image.Platform) *image.Platform {
 	if platform == nil {
-		p, err := image.NewPlatform(fmt.Sprintf("linux/%s", goRuntime.GOARCH))
+		p, err := image.NewPlatform(fmt.Sprintf("linux/%s", runtime.GOARCH))
 		if err == nil {
 			return p
 		}
