@@ -46,6 +46,13 @@ func WithCredentials(credentials ...image.RegistryCredentials) Option {
 	}
 }
 
+func WithAdditionalMetadata(metadata ...image.AdditionalMetadata) Option {
+	return func(c *config) error {
+		c.AdditionalMetadata = append(c.AdditionalMetadata, metadata...)
+		return nil
+	}
+}
+
 func WithPlatform(platform string) Option {
 	return func(c *config) error {
 		p, err := image.NewPlatform(platform)
@@ -105,7 +112,8 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 			errs = append(errs, err)
 		}
 		if img != nil {
-			return img, nil
+			err = applyAdditionalMetadata(img, cfg.AdditionalMetadata...)
+			return img, err
 		}
 	}
 	return nil, fmt.Errorf("unable to detect input for '%s', errs: %w", imgStr, errors.Join(errs...))
