@@ -57,5 +57,7 @@ func (p *singularityImageProvider) Provide(_ context.Context) (*image.Image, err
 		image.WithArchitecture(si.arch, ""),
 	}
 
-	return image.Read(image.New(ui, p.tmpDirGen, contentCacheDir, metadata...))
+	out := image.New(ui, p.tmpDirGen, contentCacheDir, metadata...)
+	err = out.Read()
+	return out, err
 }

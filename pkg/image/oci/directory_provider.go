@@ -80,7 +80,9 @@ func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error
 		return nil, err
 	}
 
-	return image.Read(image.New(img, p.tmpDirGen, contentTempDir, metadata...))
+	out := image.New(img, p.tmpDirGen, contentTempDir, metadata...)
+	err = out.Read()
+	return out, err
 }
 
 func checkManifestDigestsEqual(manifests []v1.Descriptor) bool {

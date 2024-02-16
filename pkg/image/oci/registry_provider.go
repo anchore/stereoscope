@@ -89,7 +89,9 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		)
 	}
 
-	return image.Read(image.New(img, p.tmpDirGen, imageTempDir, metadata...))
+	out := image.New(img, p.tmpDirGen, imageTempDir, metadata...)
+	err = out.Read()
+	return out, err
 }
 
 func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
