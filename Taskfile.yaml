@@ -19,9 +19,6 @@ vars:
   VERSION:
     sh: git describe --dirty --always --tags
 
-  # used for install and acceptance testing
-  COMPARE_DIR: ./test/compare
-  COMPARE_TEST_IMAGE: centos:8.2.2004
 
 tasks:
 
@@ -264,36 +261,6 @@ tasks:
     cmds:
       - "{{ .TOOL_DIR }}/chronicle -vv -n --version-file {{ .NEXT_VERSION }} > {{ .CHANGELOG }}"
       - "{{ .TOOL_DIR }}/glow {{ .CHANGELOG }}"
-
-
-  ## Release targets #################################
-
-  release:
-    desc: Create a release
-    interactive: true
-    deps: [tools]
-    cmds:
-      - cmd: .github/scripts/trigger-release.sh
-        silent: true
-
-
-  ## CI-only targets #################################
-
-  ci-check:
-    # desc: "[CI only] Are you in CI?"
-    cmds:
-      - cmd: .github/scripts/ci-check.sh
-        silent: true
-
-  ci-release:
-    # desc: "[CI only] Create a release"
-    deps: [tools]
-    cmds:
-      - task: ci-check
-      - "{{ .TOOL_DIR }}/chronicle -vvv > CHANGELOG.md"
-      - cmd: "cat CHANGELOG.md"
-        silent: true
-      - "{{ .RELEASE_CMD }}"
 
 
   ## Cleanup targets #################################
