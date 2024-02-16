@@ -280,6 +280,20 @@ func Test_tarVisitor_visit(t *testing.T) {
 			wantErr: require.Error,
 		},
 		{
+			name: "regular file with possible path traversal errors out (same prefix)",
+			entry: TarFileEntry{
+				Sequence: 0,
+				Header: tar.Header{
+					Typeflag: tar.TypeReg,
+					Name:     "../tmp-file.txt",
+					Linkname: "",
+					Size:     2,
+				},
+				Reader: strings.NewReader("hi"),
+			},
+			wantErr: require.Error,
+		},
+		{
 			name: "directory is created",
 			entry: TarFileEntry{
 				Sequence: 0,
