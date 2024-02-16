@@ -115,7 +115,7 @@ func (p *DaemonImageProvider) pull(ctx context.Context, resolvedImage string) (c
 		Value:  newPullStatus(p.client, ongoing).start(ctx),
 	})
 
-	h := images.HandlerFunc(func(ctx context.Context, desc ocispec.Descriptor) ([]ocispec.Descriptor, error) {
+	h := images.HandlerFunc(func(_ context.Context, desc ocispec.Descriptor) ([]ocispec.Descriptor, error) {
 		// as new layers (and other artifacts) are discovered, add them to the ongoing list of things to monitor while pulling
 		if desc.MediaType != images.MediaTypeDockerSchema1Manifest {
 			ongoing.Add(desc)

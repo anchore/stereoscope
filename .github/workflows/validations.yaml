@@ -108,17 +108,11 @@ jobs:
         with:
           limit-access-to-actor: true
 
-      - name: Build key for test-fixture cache
-        run: make integration-fingerprint
-
       - name: Restore integration test-fixture cache
         uses: actions/cache@704facf57e6136b1bc63b828d79edcd491f0ee84 #v3.3.2
         with:
           path: ${{ github.workspace }}/test/integration/test-fixtures/cache
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/test-fixtures/cache.fingerprint') }}
-
-      - name: Build key for tool cache
-        run: make integration-tools-fingerprint
 
       - name: Restore integration tool cache
         id: integration-tool-cache
