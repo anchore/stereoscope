@@ -12,9 +12,9 @@ import (
 	"testing"
 
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/scylladb/go-set"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anchore/go-collections"
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
@@ -120,11 +120,9 @@ type testCase struct {
 }
 
 func TestSimpleImage(t *testing.T) {
-	expectedSet := set.NewIntSet()
-	for _, src := range image.AllSources {
-		expectedSet.Add(int(src))
-	}
-	expectedSet.Remove(int(image.OciRegistrySource))
+	expectedSet := collections.TaggedValueSet[image.Provider]{}.
+		Join(stereoscope.ImageProviders(stereoscope.ImageProviderConfig{})...).
+		Remove(image.OciRegistrySource)
 
 	for _, c := range simpleImageTestCases {
 		t.Run(c.source, func(t *testing.T) {
@@ -149,7 +147,7 @@ func TestSimpleImage(t *testing.T) {
 		})
 	}
 
-	if len(simpleImageTestCases) < expectedSet.Size() {
+	if len(simpleImageTestCases) < len(expectedSet) {
 		t.Fatalf("probably missed a source during testing, double check that all image.sources are covered")
 	}
 

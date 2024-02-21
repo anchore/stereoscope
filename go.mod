@@ -1,6 +1,6 @@
 module github.com/anchore/stereoscope
 
-go 1.19
+go 1.21.0
 
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
@@ -110,6 +110,8 @@ require (
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+require github.com/anchore/go-collections v0.0.0-20240216171411-9321230ce537
 
 require (
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect

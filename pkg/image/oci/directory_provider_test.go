@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,16 +13,17 @@ func Test_NewProviderFromPath(t *testing.T) {
 	//GIVEN
 	path := "path"
 	generator := file.TempDirGenerator{}
+	defer generator.Cleanup()
 
 	//WHEN
-	provider := NewProviderFromPath(path, &generator)
+	provider := NewDirectoryProvider(&generator, path).(*directoryImageProvider)
 
 	//THEN
 	assert.NotNil(t, provider.path)
 	assert.NotNil(t, provider.tmpDirGen)
 }
 
-func Test_Directory_Provide(t *testing.T) {
+func Test_Directory_Provider(t *testing.T) {
 	//GIVEN
 	tests := []struct {
 		name        string
@@ -29,17 +31,20 @@ func Test_Directory_Provide(t *testing.T) {
 		expectedErr bool
 	}{
 		{"fails to read from path", "", true},
-		{"reads invalid oci manifest", "test-fixtures/invalid_file", true},
-		{"reads valid oci manifest with no images", "test-fixtures/no_manifests", true},
-		{"reads a fully correct manifest", "test-fixtures/valid_manifest", false},
-		{"reads a fully correct manifest with equal digests", "test-fixtures/valid_manifest", false},
+		{"fails to read invalid oci manifest", "test-fixtures/invalid_file", true},
+		{"fails to read valid oci manifest with no images", "test-fixtures/no_manifests", true},
+		{"fails to read an invalid oci directory", "test-fixtures/valid_manifest", true},
+		{"reads a valid oci directory", "test-fixtures/valid_oci_dir", false},
 	}
 
+	tmpDirGen := file.NewTempDirGenerator("tempDir")
+	defer tmpDirGen.Cleanup()
+
 	for _, tc := range tests {
-		provider := NewProviderFromPath(tc.path, file.NewTempDirGenerator("tempDir"))
+		provider := NewDirectoryProvider(tmpDirGen, tc.path)
 		t.Run(tc.name, func(t *testing.T) {
 			//WHEN
-			image, err := provider.Provide(nil)
+			image, err := provider.Provide(context.Background())
 
 			//THEN
 			if tc.expectedErr {

@@ -9,23 +9,29 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 )
 
-// SingularityImageProvider is an image.Provider for a Singularity Image Format (SIF) image.
-type SingularityImageProvider struct {
-	path      string
-	tmpDirGen *file.TempDirGenerator
-}
+const ProviderName = image.SingularitySource
 
-// NewProviderFromPath creates a new provider instance for the Singularity Image Format (SIF) image
+// NewArchiveProvider creates a new provider instance for the Singularity Image Format (SIF) image
 // at path.
-func NewProviderFromPath(path string, tmpDirGen *file.TempDirGenerator) *SingularityImageProvider {
-	return &SingularityImageProvider{
-		path:      path,
+func NewArchiveProvider(tmpDirGen *file.TempDirGenerator, path string) image.Provider {
+	return &singularityImageProvider{
 		tmpDirGen: tmpDirGen,
+		path:      path,
 	}
 }
 
+// singularityImageProvider is an image.Provider for a Singularity Image Format (SIF) image.
+type singularityImageProvider struct {
+	tmpDirGen *file.TempDirGenerator
+	path      string
+}
+
+func (p *singularityImageProvider) Name() string {
+	return ProviderName
+}
+
 // Provide returns an Image that represents a Singularity Image Format (SIF) image.
-func (p *SingularityImageProvider) Provide(_ context.Context, userMetadata ...image.AdditionalMetadata) (*image.Image, error) {
+func (p *singularityImageProvider) Provide(_ context.Context) (*image.Image, error) {
 	// We need to map the SIF to a GGCR v1.Image. Start with an implementation of the GGCR
 	// partial.UncompressedImageCore interface.
 	si, err := newSIFImage(p.path)
@@ -50,7 +56,11 @@ func (p *SingularityImageProvider) Provide(_ context.Context, userMetadata ...im
 		image.WithOS("linux"),
 		image.WithArchitecture(si.arch, ""),
 	}
-	metadata = append(metadata, userMetadata...)
 
-	return image.New(ui, p.tmpDirGen, contentCacheDir, metadata...), nil
+	out := image.New(ui, p.tmpDirGen, contentCacheDir, metadata...)
+	err = out.Read()
+	if err != nil {
+		return nil, err
+	}
+	return out, err
 }
