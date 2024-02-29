@@ -147,7 +147,9 @@ func (v tarVisitor) visit(entry TarFileEntry) error {
 	target := filepath.Join(v.destination, entry.Header.Name)
 
 	// we should not allow for any destination path to be outside of where we are unarchiving to
-	if !strings.HasPrefix(target, v.destination+string(os.PathSeparator)) {
+	// "." is a special case that we allow (it is the root of the unarchived content)a
+	test := v.destination + string(os.PathSeparator)
+	if !strings.HasPrefix(target, test) && entry.Header.Name != "." {
 		return fmt.Errorf("potential path traversal attack with entry: %q", entry.Header.Name)
 	}
 
@@ -157,6 +159,10 @@ func (v tarVisitor) visit(entry TarFileEntry) error {
 		log.WithFields("path", entry.Header.Name).Trace("skipping symlink/link entry in image tar")
 
 	case tar.TypeDir:
+		// we don't need to do anything for directories, they are created as needed
+		if entry.Header.Name == "." {
+			return nil
+		}
 		if _, err := v.fs.Stat(target); err != nil {
 			if err := v.fs.MkdirAll(target, 0755); err != nil {
 				return err

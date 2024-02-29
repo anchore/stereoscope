@@ -280,6 +280,20 @@ func Test_tarVisitor_visit(t *testing.T) {
 			wantErr: require.Error,
 		},
 		{
+			name: "local . index is not a traversal error and should skip",
+			entry: TarFileEntry{
+				Sequence: 0,
+				Header: tar.Header{
+					Typeflag: tar.TypeDir,
+					Name:     ".",
+					Linkname: "",
+					Size:     2,
+				},
+				Reader: strings.NewReader("hi"),
+			},
+			assertFs: []func(t testing.TB, fs afero.Fs){},
+		},
+		{
 			name: "regular file with possible path traversal errors out (same prefix)",
 			entry: TarFileEntry{
 				Sequence: 0,
