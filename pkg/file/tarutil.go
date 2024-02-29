@@ -148,8 +148,8 @@ func (v tarVisitor) visit(entry TarFileEntry) error {
 
 	// we should not allow for any destination path to be outside of where we are unarchiving to
 	// "." is a special case that we allow (it is the root of the unarchived content)a
-	test := v.destination + string(os.PathSeparator)
-	if !strings.HasPrefix(target, test) && entry.Header.Name != "." {
+	withinDir := v.destination + string(os.PathSeparator)
+	if !strings.HasPrefix(target, withinDir) && entry.Header.Name != "." {
 		return fmt.Errorf("potential path traversal attack with entry: %q", entry.Header.Name)
 	}
 
