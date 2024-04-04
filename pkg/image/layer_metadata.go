@@ -22,11 +22,15 @@ func newLayerMetadata(imgMetadata Metadata, layer v1.Layer, idx int) (LayerMetad
 		return LayerMetadata{}, err
 	}
 
-	// digest = diff-id = a digest of the uncompressed layer content
-	diffIDHash := imgMetadata.Config.RootFS.DiffIDs[idx]
+	var diffIDHashString string
+	if idx < len(imgMetadata.Config.RootFS.DiffIDs) {
+		// digest = diff-id = a digest of the uncompressed layer content
+		diffIDHashString = imgMetadata.Config.RootFS.DiffIDs[idx].String()
+	}
+
 	return LayerMetadata{
 		Index:     uint(idx),
-		Digest:    diffIDHash.String(),
+		Digest:    diffIDHashString,
 		MediaType: mediaType,
 	}, nil
 }
