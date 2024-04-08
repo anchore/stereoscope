@@ -81,12 +81,6 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
 func (l *Layer) Read(catalog *FileCatalog, _ Metadata, idx int, uncompressedLayersCacheDir string) error {
-	// TODO: maybe we need to guard the layer metadata creation by media type?
-	// Already here, RawManifest has the bad media type a .config.mediaType, but I don't
-	// see it in the metadata. Where'd the metadata come from?
-	// TODO: move the metadata parsing _after_ the guard against unsupported media types
-	// that will probably fix other classes of this bug.
-	// TODO: how to handle monitor
 	mediaType, err := l.layer.MediaType()
 	if err != nil {
 		return err
