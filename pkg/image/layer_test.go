@@ -2,12 +2,13 @@ package image
 
 import (
 	"errors"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/stretchr/testify/require"
 	"io"
 	"strings"
 	"testing"
+
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/stretchr/testify/require"
 )
 
 type mockLayer struct {

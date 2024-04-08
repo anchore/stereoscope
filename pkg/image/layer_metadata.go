@@ -21,14 +21,14 @@ func newLayerMetadata(layer v1.Layer, idx int) (LayerMetadata, error) {
 	if err != nil {
 		return LayerMetadata{}, err
 	}
-	diffId, err := layer.DiffID()
+	diffID, err := layer.DiffID()
 	if err != nil {
 		return LayerMetadata{}, err
 	}
 
 	return LayerMetadata{
 		Index:     uint(idx),
-		Digest:    diffId.String(),
+		Digest:    diffID.String(),
 		MediaType: mediaType,
 	}, nil
 }
