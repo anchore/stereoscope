@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "config": {
+    "mediaType": "application/vnd.cncf.helm.config.v1+json",
+    "digest": "sha256:fa265257e1b905d79242f2b25b506057d179a108831b99f27a2085fc02706fff",
+    "size": 1034
+  },
+  "layers": [
+    {
+      "mediaType": "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+      "digest": "sha256:f2bee76f78dcc53d7c4b84023bede170a6fc7f3e418d056cd6ac3ba4f4939047",
+      "size": 45457,
+      "annotations": {
+        "org.opencontainers.image.title": "nginx-15.14.1.tgz"
+      }
+    }
+  ]
+}

@@ -16,21 +16,19 @@ type LayerMetadata struct {
 }
 
 // newLayerMetadata aggregates pertinent layer metadata information.
-func newLayerMetadata(imgMetadata Metadata, layer v1.Layer, idx int) (LayerMetadata, error) {
+func newLayerMetadata(layer v1.Layer, idx int) (LayerMetadata, error) {
 	mediaType, err := layer.MediaType()
 	if err != nil {
 		return LayerMetadata{}, err
 	}
-
-	var diffIDHashString string
-	if idx < len(imgMetadata.Config.RootFS.DiffIDs) {
-		// digest = diff-id = a digest of the uncompressed layer content
-		diffIDHashString = imgMetadata.Config.RootFS.DiffIDs[idx].String()
+	diffId, err := layer.DiffID()
+	if err != nil {
+		return LayerMetadata{}, err
 	}
 
 	return LayerMetadata{
 		Index:     uint(idx),
-		Digest:    diffIDHashString,
+		Digest:    diffId.String(),
 		MediaType: mediaType,
 	}, nil
 }

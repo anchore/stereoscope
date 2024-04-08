@@ -81,23 +81,21 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
 func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
-	var err error
-	tree := filetree.New()
-	l.Tree = tree
-	l.fileCatalog = catalog
-	l.Metadata, err = newLayerMetadata(imgMetadata, l.layer, idx)
+	// TODO: maybe we need to guard the layer metadata creation by media type?
+	// Already here, RawManifest has the bad media type a .config.mediaType, but I don't
+	// see it in the metadata. Where'd the metadata come from?
+	// TODO: move the metadata parsing _after_ the guard against unsupported media types
+	// that will probably fix other classes of this bug.
+	// TODO: how to handle monitor
+	mediaType, err := l.layer.MediaType()
 	if err != nil {
 		return err
 	}
+	tree := filetree.New()
+	l.Tree = tree
+	l.fileCatalog = catalog
 
-	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
-		l.Metadata.Index,
-		l.Metadata.Digest,
-		l.Metadata.MediaType)
-
-	monitor := trackReadProgress(l.Metadata)
-
-	switch l.Metadata.MediaType {
+	switch mediaType {
 	case types.OCILayer,
 		types.OCIUncompressedLayer,
 		types.OCIRestrictedLayer,
@@ -107,6 +105,16 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		types.DockerForeignLayer,
 		types.DockerUncompressedLayer:
 
+		l.Metadata, err = newLayerMetadata(l.layer, idx)
+		monitor := trackReadProgress(l.Metadata)
+		if err != nil {
+			return err
+		}
+
+		log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
+			l.Metadata.Index,
+			l.Metadata.Digest,
+			l.Metadata.MediaType)
 		tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
 		if err != nil {
 			return err
@@ -120,7 +128,18 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 		}
 
+		monitor.SetCompleted()
 	case SingularitySquashFSLayer:
+		l.Metadata, err = newLayerMetadata(l.layer, idx)
+		if err != nil {
+			return err
+		}
+
+		log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
+			l.Metadata.Index,
+			l.Metadata.Digest,
+			l.Metadata.MediaType)
+		monitor := trackReadProgress(l.Metadata)
 		r, err := l.layer.Uncompressed()
 		if err != nil {
 			return fmt.Errorf("failed to read layer=%q: %w", l.Metadata.Digest, err)
@@ -137,13 +156,12 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 			return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
 		}
 
+		monitor.SetCompleted()
 	default:
-		return fmt.Errorf("unknown layer media type: %+v", l.Metadata.MediaType)
+		return fmt.Errorf("unknown layer media type: %+v", mediaType)
 	}
 
 	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
-
-	monitor.SetCompleted()
 
 	return nil
 }
