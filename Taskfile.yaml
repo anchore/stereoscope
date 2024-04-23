@@ -1,0 +1,307 @@
+
+version: "3"
+vars:
+  OWNER: anchore
+  PROJECT: stereoscope
+
+  # static file dirs
+  TOOL_DIR: .tool
+  TMP_DIR: .tmp
+
+  # used for changelog generation
+  CHANGELOG: CHANGELOG.md
+  NEXT_VERSION: VERSION
+
+  # note: the snapshot dir must be a relative path starting with ./
+  SNAPSHOT_DIR: ./snapshot
+  SNAPSHOT_CMD: "{{ .TOOL_DIR }}/goreleaser release --config {{ .TMP_DIR }}/goreleaser.yaml --clean --snapshot --skip=publish --skip=sign"
+  RELEASE_CMD:  "{{ .TOOL_DIR }}/goreleaser release --clean --release-notes {{ .CHANGELOG }}"
+  VERSION:
+    sh: git describe --dirty --always --tags
+
+
+tasks:
+
+  ## High-level tasks #################################
+
+  default:
+    desc: Run all validation tasks
+    aliases:
+      - pr-validations
+      - validations
+    cmds:
+      - task: static-analysis
+      - task: test
+
+  static-analysis:
+    desc: Run all static analysis tasks
+    cmds:
+      - task: check-go-mod-tidy
+      - task: check-licenses
+      - task: lint
+
+  test:
+    desc: Run all levels of test
+    cmds:
+      - task: unit
+      - task: integration
+      - task: benchmark
+
+
+  ## Bootstrap tasks #################################
+
+  binny:
+    internal: true
+    # desc: Get the binny tool
+    generates:
+      - "{{ .TOOL_DIR }}/binny"
+    status:
+      - "test -f {{ .TOOL_DIR }}/binny"
+    cmd: "curl -sSfL https://raw.githubusercontent.com/anchore/binny/main/install.sh | sh -s -- -b .tool"
+    silent: true
+
+  tools:
+    desc: Install all tools needed for CI and local development
+    deps: [binny]
+    aliases:
+      - bootstrap
+    generates:
+      - ".binny.yaml"
+      - "{{ .TOOL_DIR }}/*"
+    status:
+      - "{{ .TOOL_DIR }}/binny check -v"
+    cmd: "{{ .TOOL_DIR }}/binny install -v"
+    silent: true
+
+  update-tools:
+    desc: Update pinned versions of all tools to their latest available versions
+    deps: [binny]
+    generates:
+      - ".binny.yaml"
+      - "{{ .TOOL_DIR }}/*"
+    cmd: "{{ .TOOL_DIR }}/binny update -v"
+    silent: true
+
+  list-tools:
+    desc: List all tools needed for CI and local development
+    deps: [binny]
+    cmd: "{{ .TOOL_DIR }}/binny list"
+    silent: true
+
+  list-tool-updates:
+    desc: List all tools that are not up to date relative to the binny config
+    deps: [binny]
+    cmd: "{{ .TOOL_DIR }}/binny list --updates"
+    silent: true
+
+  tmpdir:
+    silent: true
+    generates:
+      - "{{ .TMP_DIR }}"
+    cmd: "mkdir -p {{ .TMP_DIR }}"
+
+
+  ## Static analysis tasks #################################
+
+  format:
+    desc: Auto-format all source code
+    deps: [tools]
+    cmds:
+      - gofmt -w -s .
+      - "{{ .TOOL_DIR }}/gosimports -local github.com/anchore -w ."
+      - go mod tidy
+
+  lint-fix:
+    desc: Auto-format all source code + run golangci lint fixers
+    deps: [tools]
+    cmds:
+      - task: format
+      - "{{ .TOOL_DIR }}/golangci-lint run --tests=false --fix"
+
+  lint:
+    desc: Run gofmt + golangci lint checks
+    vars:
+      BAD_FMT_FILES:
+        sh: gofmt -l -s .
+      BAD_FILE_NAMES:
+        sh: "find . | grep -e ':' || true"
+    deps: [tools]
+    cmds:
+      # ensure there are no go fmt differences
+      - cmd: 'test -z "{{ .BAD_FMT_FILES }}" || (echo "files with gofmt issues: [{{ .BAD_FMT_FILES }}]"; exit 1)'
+        silent: true
+      # ensure there are no files with ":" in it (a known back case in the go ecosystem)
+      - cmd: 'test -z "{{ .BAD_FILE_NAMES }}" || (echo "files with bad names: [{{ .BAD_FILE_NAMES }}]"; exit 1)'
+        silent: true
+      # run linting
+      - "{{ .TOOL_DIR }}/golangci-lint run --tests=false"
+
+  check-licenses:
+    # desc: Ensure transitive dependencies are compliant with the current license policy
+    deps: [tools]
+    cmd: "{{ .TOOL_DIR }}/bouncer check ./..."
+
+  check-go-mod-tidy:
+    # desc: Ensure go.mod and go.sum are up to date
+    cmds:
+      - cmd: .github/scripts/go-mod-tidy-check.sh && echo "go.mod and go.sum are tidy!"
+        silent: true
+
+
+  ## Testing tasks #################################
+
+  unit:
+    desc: Run unit tests
+    deps:
+      - tmpdir
+    vars:
+      TEST_PKGS:
+        sh: "go list ./... | grep -v {{ .OWNER }}/{{ .PROJECT }}/test | tr '\n' ' '"
+
+      # unit test coverage threshold (in % coverage)
+      COVERAGE_THRESHOLD: 45
+    cmds:
+      - "go test -coverprofile {{ .TMP_DIR }}/unit-coverage-details.txt {{ .TEST_PKGS }}"
+      - cmd: ".github/scripts/coverage.py {{ .COVERAGE_THRESHOLD }} {{ .TMP_DIR }}/unit-coverage-details.txt"
+        silent: true
+
+  integration:
+    desc: Run integration tests
+    deps:
+      - integration-tools
+    cmds:
+      - "go test -v ./test/integration"
+
+  integration-tools:
+    desc: Build tools needed for integration tests
+    cmds:
+      - "cd test/integration/tools && make"
+
+  integration-tools-load:
+    desc: Load tools needed for integration tests
+    cmds:
+      - "cd test/integration/tools && make load-cache"
+
+  integration-tools-save:
+    desc: Save tools needed for integration tests
+    cmds:
+      - "cd test/integration/tools && make save-cache"
+
+
+  ## Benchmark test targets #################################
+
+  benchmark:
+    deps: [tmpdir]
+    sources:
+      - ./**/*.go
+    generates:
+      - "{{ .TMP_DIR }}/benchmark-main.txt"
+    cmds:
+      - "go test -p 1 -run=^Benchmark -bench=. -count=7 -benchmem ./... | tee {{ .TMP_DIR }}/benchmark-{{ .VERSION }}.txt"
+      - |
+        bash -c "(test -s {{ .TMP_DIR }}/benchmark-main.txt && \
+        {{ .TOOL_DIR }}/benchstat {{ .TMP_DIR }}/benchmark-main.txt {{ .TMP_DIR }}/benchmark-{{ .VERSION }}.txt || \
+        {{ .TOOL_DIR }}/benchstat {{ .TMP_DIR }}/benchmark-{{ .VERSION }}.txt) \
+        | tee {{ .TMP_DIR }}/benchstat.txt"
+
+  show-benchstat:
+    deps: [benchmark, tmpdir]
+    sources:
+      - "{{ .TMP_DIR }}/benchstat.txt"
+    cmds:
+      - cmd: "cat {{ .TMP_DIR }}/benchstat.txt"
+        silent: true
+
+
+  ## Test-fixture-related targets #################################
+
+  fingerprints:
+    desc: Generate test fixture fingerprints
+    generates:
+      - test/integration/test-fixtures/cache.fingerprint
+
+    cmds:
+      # for INTEGRATION test fixtures
+      - "cd test/integration/test-fixtures && make cache.fingerprint"
+
+  show-test-image-cache:
+    silent: true
+    cmds:
+      - "echo '\nDocker daemon cache:'"
+      - "docker images --format '{{`{{.ID}}`}} {{`{{.Repository}}`}}:{{`{{.Tag}}`}}' | grep stereoscope-fixture- | sort"
+      - "echo '\nTar cache:'"
+      - 'find . -type f -wholename "**/test-fixtures/snapshot/*" | sort'
+
+
+  ## Build-related targets #################################
+
+  snapshot:
+    desc: Builds examples to show the the library compiles
+    aliases:
+      - build
+    deps: [tools, tmpdir]
+    sources:
+      - pkg/**/*.go
+      - internal/**/*.go
+    cmds:
+      - silent: true
+        cmd: |
+          echo "dist: {{ .SNAPSHOT_DIR }}" > {{ .TMP_DIR }}/goreleaser.yaml
+          cat .goreleaser.yaml >> {{ .TMP_DIR }}/goreleaser.yaml
+      - "{{ .SNAPSHOT_CMD }}"
+      - cmd: ".github/scripts/build.sh {{ .SNAPSHOT_DIR }}"
+
+
+  changelog:
+    desc: Generate a changelog
+    deps: [tools]
+    generates:
+      - "{{ .CHANGELOG }}"
+      - "{{ .NEXT_VERSION }}"
+    cmds:
+      - "{{ .TOOL_DIR }}/chronicle -vv -n --version-file {{ .NEXT_VERSION }} > {{ .CHANGELOG }}"
+      - "{{ .TOOL_DIR }}/glow {{ .CHANGELOG }}"
+
+
+  ## Release targets #################################
+
+  release:
+    desc: Create a release
+    interactive: true
+    deps: [tools]
+    cmds:
+      - cmd: .github/scripts/trigger-release.sh
+        silent: true
+
+
+  ## CI-only targets #################################
+
+  ci-check:
+    # desc: "[CI only] Are you in CI?"
+    requires:
+      vars: [CI]
+
+  ci-release:
+    # desc: "[CI only] Create a release"
+    deps: [tools]
+    cmds:
+      - task: ci-check
+      - "{{ .TOOL_DIR }}/chronicle -vvv > CHANGELOG.md"
+      - cmd: "cat CHANGELOG.md"
+        silent: true
+      - "{{ .RELEASE_CMD }}"
+
+
+  ## Cleanup targets #################################
+
+  clean-snapshot:
+    desc: Remove any snapshot builds
+    cmds:
+      - "rm -rf {{ .SNAPSHOT_DIR }}"
+      - "rm -rf {{ .TMP_DIR }}/goreleaser.yaml"
+
+  clean-cache:
+    desc: Remove all docker cache and local image tar cache
+    cmds:
+      - 'find . -type f -wholename "**/test-fixtures/cache/stereoscope-fixture-*.tar" -delete'
+      - "docker images --format '{{`{{.ID}}`}} {{`{{.Repository}}`}}' | grep stereoscope-fixture- | awk '{print $$1}' | uniq | xargs -r docker rmi --force"
