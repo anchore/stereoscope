@@ -83,3 +83,11 @@ tools:
     method: github-release
     with:
       repo: cli/cli
+
+  # used for signing the checksums file at release
+  - name: cosign
+    version:
+      want: v2.2.4
+    method: github-release
+    with:
+      repo: sigstore/cosign
