@@ -2,13 +2,13 @@ package podman
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/adrg/xdg"
 	"github.com/docker/docker/client"
-	"github.com/pkg/errors"
 	"github.com/spf13/afero"
 
 	"github.com/anchore/stereoscope/internal/log"
