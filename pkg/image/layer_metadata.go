@@ -5,7 +5,7 @@ import (
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
-// Metadata represents container layer metadata.
+// LayerMetadata represents container layer metadata.
 type LayerMetadata struct {
 	Index uint
 	// Digest is the sha256 digest of the layer contents (the docker "diff id")
@@ -16,17 +16,19 @@ type LayerMetadata struct {
 }
 
 // newLayerMetadata aggregates pertinent layer metadata information.
-func newLayerMetadata(imgMetadata Metadata, layer v1.Layer, idx int) (LayerMetadata, error) {
+func newLayerMetadata(layer v1.Layer, idx int) (LayerMetadata, error) {
 	mediaType, err := layer.MediaType()
 	if err != nil {
 		return LayerMetadata{}, err
 	}
+	diffID, err := layer.DiffID()
+	if err != nil {
+		return LayerMetadata{}, err
+	}
 
-	// digest = diff-id = a digest of the uncompressed layer content
-	diffIDHash := imgMetadata.Config.RootFS.DiffIDs[idx]
 	return LayerMetadata{
 		Index:     uint(idx),
-		Digest:    diffIDHash.String(),
+		Digest:    diffID.String(),
 		MediaType: mediaType,
 	}, nil
 }

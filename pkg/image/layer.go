@@ -80,12 +80,76 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
-func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncompressedLayersCacheDir string) error {
-	var err error
+func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir string) error {
+	mediaType, err := l.layer.MediaType()
+	if err != nil {
+		return err
+	}
 	tree := filetree.New()
 	l.Tree = tree
 	l.fileCatalog = catalog
-	l.Metadata, err = newLayerMetadata(imgMetadata, l.layer, idx)
+
+	switch mediaType {
+	case types.OCILayer,
+		types.OCIUncompressedLayer,
+		types.OCIRestrictedLayer,
+		types.OCIUncompressedRestrictedLayer,
+		types.OCILayerZStd,
+		types.DockerLayer,
+		types.DockerForeignLayer,
+		types.DockerUncompressedLayer:
+
+		err := l.readStandardImageLayer(idx, uncompressedLayersCacheDir, tree)
+		if err != nil {
+			return err
+		}
+	case SingularitySquashFSLayer:
+		err := l.readSingularityImageLayer(idx, tree)
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown layer media type: %+v", mediaType)
+	}
+
+	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
+
+	return nil
+}
+
+func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
+	var err error
+	l.Metadata, err = newLayerMetadata(l.layer, idx)
+	monitor := trackReadProgress(l.Metadata)
+	if err != nil {
+		return err
+	}
+
+	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
+		l.Metadata.Index,
+		l.Metadata.Digest,
+		l.Metadata.MediaType)
+
+	tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
+	if err != nil {
+		return err
+	}
+
+	l.indexedContent, err = file.NewTarIndex(
+		tarFilePath,
+		layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
+	}
+
+	monitor.SetCompleted()
+	return nil
+}
+
+func (l *Layer) readSingularityImageLayer(idx int, tree *filetree.FileTree) error {
+	var err error
+	l.Metadata, err = newLayerMetadata(l.layer, idx)
 	if err != nil {
 		return err
 	}
@@ -96,55 +160,23 @@ func (l *Layer) Read(catalog *FileCatalog, imgMetadata Metadata, idx int, uncomp
 		l.Metadata.MediaType)
 
 	monitor := trackReadProgress(l.Metadata)
+	r, err := l.layer.Uncompressed()
+	if err != nil {
+		return fmt.Errorf("failed to read layer=%q: %w", l.Metadata.Digest, err)
+	}
+	// defer r.Close() // TODO: if we close this here, we can't read file contents after we return.
 
-	switch l.Metadata.MediaType {
-	case types.OCILayer,
-		types.OCIUncompressedLayer,
-		types.OCIRestrictedLayer,
-		types.OCIUncompressedRestrictedLayer,
-		types.OCILayerZStd,
-		types.DockerLayer,
-		types.DockerForeignLayer,
-		types.DockerUncompressedLayer:
-
-		tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
-		if err != nil {
-			return err
-		}
-
-		l.indexedContent, err = file.NewTarIndex(
-			tarFilePath,
-			layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
-		}
-
-	case SingularitySquashFSLayer:
-		r, err := l.layer.Uncompressed()
-		if err != nil {
-			return fmt.Errorf("failed to read layer=%q: %w", l.Metadata.Digest, err)
-		}
-		// defer r.Close() // TODO: if we close this here, we can't read file contents after we return.
-
-		// Walk the more efficient walk if we're blessed with an io.ReaderAt.
-		if ra, ok := r.(io.ReaderAt); ok {
-			err = file.WalkSquashFS(ra, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
-		} else {
-			err = file.WalkSquashFSFromReader(r, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
-		}
-		if err != nil {
-			return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
-		}
-
-	default:
-		return fmt.Errorf("unknown layer media type: %+v", l.Metadata.MediaType)
+	// Walk the more efficient walk if we're blessed with an io.ReaderAt.
+	if ra, ok := r.(io.ReaderAt); ok {
+		err = file.WalkSquashFS(ra, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
+	} else {
+		err = file.WalkSquashFSFromReader(r, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
+	}
+	if err != nil {
+		return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
 	}
 
-	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
-
 	monitor.SetCompleted()
-
 	return nil
 }
 
