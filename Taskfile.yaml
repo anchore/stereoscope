@@ -286,8 +286,8 @@ tasks:
     deps: [tools]
     cmds:
       - task: ci-check
-      - "{{ .TOOL_DIR }}/chronicle -vvv > CHANGELOG.md"
-      - cmd: "cat CHANGELOG.md"
+      - "{{ .TOOL_DIR }}/chronicle -vvv > {{ .CHANGELOG }}"
+      - cmd: "cat {{ .CHANGELOG }}"
         silent: true
       - "{{ .RELEASE_CMD }}"
 
