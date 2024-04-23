@@ -251,7 +251,7 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.SquashFSVisitor {
 	builder := filetree.NewBuilder(ft, fileCatalog.Index)
 
-	return func(fsys fs.FS, path string, d fs.DirEntry) error {
+	return func(fsys fs.FS, path string, _ fs.DirEntry) error {
 		ff, err := fsys.Open(path)
 		if err != nil {
 			return err

@@ -1,0 +1,6 @@
+release:
+  prerelease: auto
+  draft: false
+
+builds:
+  - skip: true
