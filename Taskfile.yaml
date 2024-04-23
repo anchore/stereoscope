@@ -263,6 +263,35 @@ tasks:
       - "{{ .TOOL_DIR }}/glow {{ .CHANGELOG }}"
 
 
+  ## Release targets #################################
+
+  release:
+    desc: Create a release
+    interactive: true
+    deps: [tools]
+    cmds:
+      - cmd: .github/scripts/trigger-release.sh
+        silent: true
+
+
+  ## CI-only targets #################################
+
+  ci-check:
+    # desc: "[CI only] Are you in CI?"
+    requires:
+      vars: [CI]
+
+  ci-release:
+    # desc: "[CI only] Create a release"
+    deps: [tools]
+    cmds:
+      - task: ci-check
+      - "{{ .TOOL_DIR }}/chronicle -vvv > CHANGELOG.md"
+      - cmd: "cat CHANGELOG.md"
+        silent: true
+      - "{{ .RELEASE_CMD }}"
+
+
   ## Cleanup targets #################################
 
   clean-snapshot:
