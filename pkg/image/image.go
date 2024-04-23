@@ -224,7 +224,7 @@ func (i *Image) Read() error {
 
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
-		err := layer.Read(fileCatalog, i.Metadata, idx, i.contentCacheDir)
+		err := layer.Read(fileCatalog, idx, i.contentCacheDir)
 		if err != nil {
 			return err
 		}

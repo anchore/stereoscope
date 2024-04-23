@@ -5,7 +5,7 @@ import (
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 )
 
-// Metadata represents container layer metadata.
+// LayerMetadata represents container layer metadata.
 type LayerMetadata struct {
 	Index uint
 	// Digest is the sha256 digest of the layer contents (the docker "diff id")

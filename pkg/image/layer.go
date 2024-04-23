@@ -80,7 +80,7 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
-func (l *Layer) Read(catalog *FileCatalog, _ Metadata, idx int, uncompressedLayersCacheDir string) error {
+func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir string) error {
 	mediaType, err := l.layer.MediaType()
 	if err != nil {
 		return err
@@ -104,7 +104,7 @@ func (l *Layer) Read(catalog *FileCatalog, _ Metadata, idx int, uncompressedLaye
 			return err
 		}
 	case SingularitySquashFSLayer:
-		err := l.readSingularityImage(idx, tree)
+		err := l.readSingularityImageLayer(idx, tree)
 		if err != nil {
 			return err
 		}
@@ -129,6 +129,7 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 		l.Metadata.Index,
 		l.Metadata.Digest,
 		l.Metadata.MediaType)
+
 	tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
 	if err != nil {
 		return err
@@ -146,7 +147,7 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 	return nil
 }
 
-func (l *Layer) readSingularityImage(idx int, tree *filetree.FileTree) error {
+func (l *Layer) readSingularityImageLayer(idx int, tree *filetree.FileTree) error {
 	var err error
 	l.Metadata, err = newLayerMetadata(l.layer, idx)
 	if err != nil {
@@ -157,6 +158,7 @@ func (l *Layer) readSingularityImage(idx int, tree *filetree.FileTree) error {
 		l.Metadata.Index,
 		l.Metadata.Digest,
 		l.Metadata.MediaType)
+
 	monitor := trackReadProgress(l.Metadata)
 	r, err := l.layer.Uncompressed()
 	if err != nil {
