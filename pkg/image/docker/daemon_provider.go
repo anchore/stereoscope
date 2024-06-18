@@ -17,6 +17,7 @@ import (
 	"github.com/docker/cli/cli/config"
 	configTypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/docker/api/types"
+	dockerImage "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/wagoodman/go-partybus"
@@ -162,8 +163,8 @@ func (p *daemonImageProvider) pull(ctx context.Context, client client.APIClient,
 	return nil
 }
 
-func (p *daemonImageProvider) pullOptions(imageRef string) (types.ImagePullOptions, error) {
-	options := types.ImagePullOptions{
+func (p *daemonImageProvider) pullOptions(imageRef string) (dockerImage.PullOptions, error) {
+	options := dockerImage.PullOptions{
 		Platform: p.platform.String(),
 	}
 
