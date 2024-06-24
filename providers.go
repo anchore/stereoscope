@@ -19,7 +19,7 @@ const (
 	RegistryTag = "registry"
 )
 
-// ImageProviderConfig is the uber-configuration containing all configuration needed by stereoscope image providers
+// ImageProviderConfig is the user-configuration containing all configuration needed by stereoscope image providers
 type ImageProviderConfig struct {
 	UserInput string
 	Platform  *image.Platform
