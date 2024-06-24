@@ -16,7 +16,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.5.9
-	github.com/google/go-containerregistry v0.19.0
+	github.com/google/go-containerregistry v0.19.2
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/logrusorgru/aurora v0.0.0-20200102142835-e9ef32dff381
 	github.com/mitchellh/go-homedir v1.1.0
@@ -27,11 +27,11 @@ require (
 	github.com/sergi/go-diff v1.2.0
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.8.4
-	github.com/sylabs/sif/v2 v2.8.1
+	github.com/sylabs/sif/v2 v2.17.0
 	github.com/sylabs/squashfs v0.6.1
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20230925121702-07e42b3cdba0
-	golang.org/x/crypto v0.21.0
+	golang.org/x/crypto v0.23.0
 )
 
 require (
@@ -70,7 +70,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/klauspost/compress v1.16.5 // indirect
@@ -100,9 +100,9 @@ require (
 	golang.org/x/net v0.23.0 // indirect
 	golang.org/x/oauth2 v0.18.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
-	golang.org/x/term v0.18.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/term v0.20.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/tools v0.10.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230711160842-782d3b101e98 // indirect
