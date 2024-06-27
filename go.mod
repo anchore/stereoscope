@@ -11,7 +11,7 @@ require (
 	github.com/becheran/wildmatch-go v1.0.0
 	github.com/bmatcuk/doublestar/v4 v4.0.2
 	github.com/containerd/containerd v1.7.11
-	github.com/docker/cli v26.1.4+incompatible
+	github.com/docker/cli v27.0.2+incompatible
 	github.com/docker/docker v26.1.4+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/go-test/deep v1.0.8
