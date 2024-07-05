@@ -15,7 +15,7 @@ require (
 	github.com/docker/docker v27.0.3+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/go-test/deep v1.0.8
-	github.com/google/go-cmp v0.5.9
+	github.com/google/go-cmp v0.6.0
 	github.com/google/go-containerregistry v0.19.2
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/logrusorgru/aurora v0.0.0-20200102142835-e9ef32dff381
@@ -25,7 +25,7 @@ require (
 	// pinned to pull in 386 arch fix: https://github.com/scylladb/go-set/commit/cc7b2070d91ebf40d233207b633e28f5bd8f03a5
 	github.com/scylladb/go-set v1.0.3-0.20200225121959-cc7b2070d91e
 	github.com/sergi/go-diff v1.2.0
-	github.com/spf13/afero v1.6.0
+	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.8.4
 	github.com/sylabs/sif/v2 v2.17.1
 	github.com/sylabs/squashfs v0.6.1
@@ -35,7 +35,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/compute v1.21.0 // indirect
+	cloud.google.com/go/compute v1.23.3 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20230306123547-8075edf89bb0 // indirect
@@ -99,14 +99,14 @@ require (
 	golang.org/x/mod v0.11.0 // indirect
 	golang.org/x/net v0.23.0 // indirect
 	golang.org/x/oauth2 v0.18.0 // indirect
-	golang.org/x/sync v0.3.0 // indirect
+	golang.org/x/sync v0.5.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/term v0.20.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/tools v0.10.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20230711160842-782d3b101e98 // indirect
-	google.golang.org/grpc v1.58.3 // indirect
+	google.golang.org/genproto v0.0.0-20231106174013-bbf56f31fb17 // indirect
+	google.golang.org/grpc v1.59.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
@@ -122,5 +122,5 @@ require (
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.45.0 // indirect
 	go.opentelemetry.io/otel/metric v1.19.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230711160842-782d3b101e98 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231120223509-83a465c0220f // indirect
 )
