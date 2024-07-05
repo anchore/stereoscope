@@ -13,7 +13,7 @@ require (
 	github.com/containerd/containerd v1.7.11
 	github.com/docker/cli v27.0.3+incompatible
 	github.com/docker/docker v27.0.3+incompatible
-	github.com/gabriel-vasile/mimetype v1.4.0
+	github.com/gabriel-vasile/mimetype v1.4.4
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-containerregistry v0.19.2
@@ -97,7 +97,7 @@ require (
 	go.opentelemetry.io/otel v1.19.0 // indirect
 	go.opentelemetry.io/otel/trace v1.19.0 // indirect
 	golang.org/x/mod v0.11.0 // indirect
-	golang.org/x/net v0.23.0 // indirect
+	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/oauth2 v0.18.0 // indirect
 	golang.org/x/sync v0.5.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
