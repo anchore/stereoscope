@@ -9,6 +9,12 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    groups:
+      go:
+        update-types:
+          - major
+          - minor
+          - patch
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -17,6 +23,12 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    groups:
+      workflows:
+        update-types:
+          - major
+          - minor
+          - patch
 
   - package-ecosystem: "github-actions"
     directory: "/.github/actions/boostrap"
@@ -25,3 +37,9 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    groups:
+      workflows:
+        update-types:
+          - major
+          - minor
+          - patch
