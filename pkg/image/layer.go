@@ -1,7 +1,6 @@
 package image
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -264,7 +263,9 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		if size != nil {
 			*(size) += metadata.Size()
 		}
-		fileCatalog.addImageReferences(ref.ID(), layerRef, index.Open)
+		fileCatalog.addImageReferences(ref.ID(), layerRef, func() (io.ReadCloser, error) {
+			return index.Open(), nil
+		})
 
 		if monitor != nil {
 			monitor.Increment()
@@ -340,15 +341,8 @@ func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		if size != nil {
 			*(size) += metadata.Size()
 		}
-		fileCatalog.addImageReferences(fileReference.ID(), layerRef, func() io.ReadCloser {
-			r, err := newSquashfsFileReader(sqfsPath, path)
-			if err != nil {
-				// The file.Opener interface doesn't give us a way to return an error, and callers
-				// don't seem to handle a nil return. So, return a zero-byte reader.
-				log.Debug(err)
-				return io.NopCloser(bytes.NewReader(nil)) // TODO
-			}
-			return r
+		fileCatalog.addImageReferences(fileReference.ID(), layerRef, func() (io.ReadCloser, error) {
+			return newSquashfsFileReader(sqfsPath, path)
 		})
 
 		monitor.Increment()
