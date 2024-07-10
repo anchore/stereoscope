@@ -2,6 +2,7 @@ package tree
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
@@ -22,34 +23,12 @@ func NewTree() *Tree {
 	}
 }
 
-func (t *Tree) Copy() *Tree {
+// Clone returns a shallow copy of the Tree.
+func (t *Tree) Clone() *Tree {
 	ct := NewTree()
-	for k, v := range t.nodes {
-		if v == nil {
-			ct.nodes[k] = nil
-			continue
-		}
-		ct.nodes[k] = v.Copy()
-	}
-	for k, v := range t.parent {
-		if v == nil {
-			ct.parent[k] = nil
-			continue
-		}
-		ct.parent[k] = v.Copy()
-	}
-	for from, lookup := range t.children {
-		if _, exists := ct.children[from]; !exists {
-			ct.children[from] = make(map[node.ID]node.Node)
-		}
-		for to, v := range lookup {
-			if v == nil {
-				ct.children[from][to] = nil
-				continue
-			}
-			ct.children[from][to] = v.Copy()
-		}
-	}
+	ct.nodes = maps.Clone(t.nodes)
+	ct.parent = maps.Clone(t.parent)
+	ct.children = maps.Clone(t.children)
 	return ct
 }
 

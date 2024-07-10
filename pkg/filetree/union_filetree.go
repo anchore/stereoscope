@@ -21,14 +21,14 @@ func (u *UnionFileTree) Squash() (ReadWriter, error) {
 	case 0:
 		return New(), nil
 	case 1:
-		return u.trees[0].Copy()
+		return u.trees[0].Clone()
 	}
 
 	var squashedTree ReadWriter
 	var err error
 	for layerIdx, refTree := range u.trees {
 		if layerIdx == 0 {
-			squashedTree, err = refTree.Copy()
+			squashedTree, err = refTree.Clone()
 			if err != nil {
 				return nil, err
 			}

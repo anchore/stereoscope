@@ -45,10 +45,10 @@ func New() *FileTree {
 	}
 }
 
-// Copy returns a Copy of the current FileTree.
-func (t *FileTree) Copy() (ReadWriter, error) {
+// Clone returns a shallow Copy of the current FileTree.
+func (t *FileTree) Clone() (ReadWriter, error) {
 	ct := New()
-	ct.tree = t.tree.Copy()
+	ct.tree = t.tree.Clone()
 	return ct, nil
 }
 
@@ -781,7 +781,8 @@ func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error, cond
 
 // Merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
 // are path conflicts. This is the basis function for squashing (where the current Tree is the bottom Tree and the
-// given Tree is the top Tree).
+// given Tree is the top Tree). Note: existing nodes are not mutated during this operation, they are replaced with
+// a node from the other tree.
 //
 //nolint:gocognit,funlen
 func (t *FileTree) Merge(upper Reader) error {

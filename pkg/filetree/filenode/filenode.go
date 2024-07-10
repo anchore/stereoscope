@@ -55,15 +55,6 @@ func (n *FileNode) ID() node.ID {
 	return IDByPath(n.RealPath)
 }
 
-func (n *FileNode) Copy() node.Node {
-	return &FileNode{
-		RealPath:  n.RealPath,
-		FileType:  n.FileType,
-		LinkPath:  n.LinkPath,
-		Reference: n.Reference,
-	}
-}
-
 func (n *FileNode) IsLink() bool {
 	return n.FileType == file.TypeHardLink || n.FileType == file.TypeSymLink
 }
