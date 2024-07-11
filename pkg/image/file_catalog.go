@@ -63,11 +63,11 @@ func (c *FileCatalog) Open(f file.Reference) (io.ReadCloser, error) {
 
 	opener, ok := c.openerByID[f.ID()]
 	if !ok {
-		return nil, fmt.Errorf("could not find file: %+v", f.RealPath)
+		return nil, fmt.Errorf("could not find file with ID: %+v", f.ID())
 	}
 
 	if opener == nil {
-		return nil, fmt.Errorf("no contents available for file: %+v", f.RealPath)
+		return nil, fmt.Errorf("no contents available for file ID: %+v", f.ID())
 	}
 
 	return opener()

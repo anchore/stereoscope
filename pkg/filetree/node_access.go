@@ -25,6 +25,7 @@ func (na *nodeAccess) FileResolution() *file.Resolution {
 	}
 	return file.NewResolution(
 		na.RequestPath,
+		na.FileNode.RealPath,
 		na.FileNode.Reference,
 		newResolutions(na.LeafLinkResolution),
 	)

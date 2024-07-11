@@ -16,7 +16,7 @@ import (
 
 func assertMetadataEqual(t *testing.T, expected, actual Metadata) {
 	if !assert.True(t, expected.Equal(actual)) {
-		assert.Equal(t, expected.Path, actual.Path, "mismatched path")
+		assert.Equal(t, expected.RealPath, actual.RealPath, "mismatched path")
 		assert.Equal(t, expected.Type, actual.Type, "mismatched type")
 		assert.Equal(t, expected.LinkDestination, actual.LinkDestination, "mismatched link destination")
 		assert.Equal(t, expected.Name(), actual.Name(), "mismatched name")
@@ -39,7 +39,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 
 	ex := []Metadata{
 		{
-			Path:            "/path",
+			RealPath:        "/path",
 			Type:            TypeDirectory,
 			LinkDestination: "",
 			UserID:          1337,
@@ -53,7 +53,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 			},
 		},
 		{
-			Path:            "/path/branch",
+			RealPath:        "/path/branch",
 			Type:            TypeDirectory,
 			LinkDestination: "",
 			UserID:          1337,
@@ -67,7 +67,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 			},
 		},
 		{
-			Path:            "/path/branch/one",
+			RealPath:        "/path/branch/one",
 			Type:            TypeDirectory,
 			LinkDestination: "",
 			UserID:          1337,
@@ -81,7 +81,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 			},
 		},
 		{
-			Path:            "/path/branch/one/file-1.txt",
+			RealPath:        "/path/branch/one/file-1.txt",
 			Type:            TypeRegular,
 			LinkDestination: "",
 			UserID:          1337,
@@ -95,7 +95,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 			},
 		},
 		{
-			Path:            "/path/branch/two",
+			RealPath:        "/path/branch/two",
 			Type:            TypeDirectory,
 			LinkDestination: "",
 			UserID:          1337,
@@ -109,7 +109,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 			},
 		},
 		{
-			Path:            "/path/branch/two/file-2.txt",
+			RealPath:        "/path/branch/two/file-2.txt",
 			Type:            TypeRegular,
 			LinkDestination: "",
 			UserID:          1337,
@@ -123,7 +123,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 			},
 		},
 		{
-			Path:            "/path/file-3.txt",
+			RealPath:        "/path/file-3.txt",
 			Type:            TypeRegular,
 			LinkDestination: "",
 			UserID:          1337,

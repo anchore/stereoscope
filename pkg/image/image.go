@@ -338,7 +338,11 @@ func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
-	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)
+	idx, err := i.FileCatalog.Get(ref)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get file metadata for ref=%q: %w", ref.ID(), err)
+	}
+	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(idx.RealPath, allOptions...)
 	return resolvedRef, err
 }
 
@@ -346,7 +350,11 @@ func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options 
 // If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
 func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
-	_, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, allOptions...)
+	idx, err := i.FileCatalog.Get(ref)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get file metadata for ref=%q: %w", ref.ID(), err)
+	}
+	_, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(idx.RealPath, allOptions...)
 	return resolvedRef, err
 }
 

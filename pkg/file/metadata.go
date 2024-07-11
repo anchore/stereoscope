@@ -20,8 +20,8 @@ var _ fs.FileInfo = (*ManualInfo)(nil)
 type Metadata struct {
 	fs.FileInfo
 
-	// Path is the absolute path representation to the file
-	Path string
+	// RealPath is the absolute path representation to the file
+	RealPath Path
 	// LinkDestination is populated only for hardlinks / symlinks, can be an absolute or relative
 	LinkDestination string
 	UserID          int
@@ -65,7 +65,7 @@ func (m ManualInfo) Sys() any {
 func NewMetadata(header tar.Header, content io.Reader) Metadata {
 	return Metadata{
 		FileInfo:        header.FileInfo(),
-		Path:            path.Clean(DirSeparator + header.Name),
+		RealPath:        Path(path.Clean(DirSeparator + header.Name)),
 		Type:            TypeFromTarType(header.Typeflag),
 		LinkDestination: header.Linkname,
 		UserID:          header.Uid,
@@ -107,7 +107,7 @@ func NewMetadataFromSquashFSFile(path string, f *squashfs.File) (Metadata, error
 
 	md := Metadata{
 		FileInfo:        fi,
-		Path:            filepath.Clean(filepath.Join("/", path)),
+		RealPath:        Path(filepath.Clean(filepath.Join("/", path))),
 		LinkDestination: f.SymlinkPath(),
 		UserID:          -1,
 		GroupID:         -1,
@@ -145,7 +145,7 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 
 	return Metadata{
 		FileInfo: info,
-		Path:     path,
+		RealPath: Path(path),
 		Type:     ty,
 		// unsupported across platforms
 		UserID:   uid,
@@ -155,7 +155,7 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 }
 
 func (m Metadata) Equal(other Metadata) bool {
-	return m.Path == other.Path &&
+	return m.RealPath == other.RealPath &&
 		m.LinkDestination == other.LinkDestination &&
 		m.UserID == other.UserID &&
 		m.GroupID == other.GroupID &&

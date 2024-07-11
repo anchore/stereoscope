@@ -70,7 +70,7 @@ func TestMetadataFromTar(t *testing.T) {
 			name:    "path/branch/two/file-2.txt",
 			fixture: "fixture-1",
 			expected: Metadata{
-				Path:            "/path/branch/two/file-2.txt",
+				RealPath:        "/path/branch/two/file-2.txt",
 				LinkDestination: "",
 				UserID:          1337,
 				GroupID:         5432,
@@ -88,7 +88,7 @@ func TestMetadataFromTar(t *testing.T) {
 			name:    "path/branch/two/",
 			fixture: "fixture-1",
 			expected: Metadata{
-				Path:            "/path/branch/two",
+				RealPath:        "/path/branch/two",
 				LinkDestination: "",
 				UserID:          1337,
 				GroupID:         5432,

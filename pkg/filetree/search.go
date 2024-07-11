@@ -410,9 +410,9 @@ func (sc searchContext) fileNodesInTree(fileEntries []IndexEntry) ([]*filenode.F
 allFileEntries:
 	for _, entry := range fileEntries {
 		// note: it is important that we don't enable any basename link resolution
-		na, err := sc.tree.file(entry.Reference.RealPath)
+		na, err := sc.tree.file(entry.RealPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.Reference.RealPath, err)
+			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.RealPath, err)
 		}
 
 		if !na.HasFileNode() {
@@ -437,9 +437,9 @@ func (sc searchContext) referencesInTree(fileEntries []IndexEntry) ([]file.Resol
 	var refs []file.Resolution
 
 	for _, entry := range fileEntries {
-		na, err := sc.tree.file(entry.Reference.RealPath, FollowBasenameLinks)
+		na, err := sc.tree.file(entry.RealPath, FollowBasenameLinks)
 		if err != nil {
-			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.Reference.RealPath, err)
+			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.RealPath, err)
 		}
 
 		// this filters out any index entries that do not exist in the tree
@@ -451,7 +451,7 @@ func (sc searchContext) referencesInTree(fileEntries []IndexEntry) ([]file.Resol
 		var expandedRefs []file.Resolution
 		allPathsToNode, err := sc.allPathsToNode(na.FileNode)
 		if err != nil {
-			return nil, fmt.Errorf("unable to get all paths to node for path=%q: %w", entry.Reference.RealPath, err)
+			return nil, fmt.Errorf("unable to get all paths to node for path=%q: %w", entry.RealPath, err)
 		}
 		for _, p := range allPathsToNode {
 			_, ref, err := sc.tree.File(p, FollowBasenameLinks)

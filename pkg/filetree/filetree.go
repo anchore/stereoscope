@@ -472,6 +472,7 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 		if fna.HasFileNode() && fna.FileNode.FileType != file.TypeDirectory {
 			result := file.NewResolution(
 				matchPath,
+				fna.FileNode.RealPath,
 				fna.FileNode.Reference,
 				newResolutions(fna.LeafLinkResolution),
 			)
@@ -502,7 +503,7 @@ func (t *FileTree) AddFile(realPath file.Path) (*file.Reference, error) {
 		}
 		// this is a regular file, provide a new or existing file.Reference
 		if fna.FileNode.Reference == nil {
-			fna.FileNode.Reference = file.NewFileReference(realPath)
+			fna.FileNode.Reference = file.NewFileReference()
 		}
 		return fna.FileNode.Reference, nil
 	}
@@ -511,7 +512,7 @@ func (t *FileTree) AddFile(realPath file.Path) (*file.Reference, error) {
 	if err := t.addParentPaths(realPath); err != nil {
 		return nil, err
 	}
-	newFn := filenode.NewFile(realPath, file.NewFileReference(realPath))
+	newFn := filenode.NewFile(realPath, file.NewFileReference())
 	return newFn.Reference, t.setFileNode(newFn)
 }
 
@@ -530,7 +531,7 @@ func (t *FileTree) AddSymLink(realPath file.Path, linkPath file.Path) (*file.Ref
 		}
 		// this is a symlink file, provide a new or existing file.Reference
 		if fna.FileNode.Reference == nil {
-			fna.FileNode.Reference = file.NewFileReference(realPath)
+			fna.FileNode.Reference = file.NewFileReference()
 		}
 		return fna.FileNode.Reference, nil
 	}
@@ -539,7 +540,7 @@ func (t *FileTree) AddSymLink(realPath file.Path, linkPath file.Path) (*file.Ref
 	if err := t.addParentPaths(realPath); err != nil {
 		return nil, err
 	}
-	newFn := filenode.NewSymLink(realPath, linkPath, file.NewFileReference(realPath))
+	newFn := filenode.NewSymLink(realPath, linkPath, file.NewFileReference())
 	return newFn.Reference, t.setFileNode(newFn)
 }
 
@@ -558,7 +559,7 @@ func (t *FileTree) AddHardLink(realPath file.Path, linkPath file.Path) (*file.Re
 		}
 		// this is a symlink file, provide a new or existing file.Reference
 		if fna.FileNode.Reference == nil {
-			fna.FileNode.Reference = file.NewFileReference(realPath)
+			fna.FileNode.Reference = file.NewFileReference()
 		}
 		return fna.FileNode.Reference, nil
 	}
@@ -568,7 +569,7 @@ func (t *FileTree) AddHardLink(realPath file.Path, linkPath file.Path) (*file.Re
 		return nil, err
 	}
 
-	newFn := filenode.NewHardLink(realPath, linkPath, file.NewFileReference(realPath))
+	newFn := filenode.NewHardLink(realPath, linkPath, file.NewFileReference())
 
 	return newFn.Reference, t.setFileNode(newFn)
 }
@@ -589,7 +590,7 @@ func (t *FileTree) AddDir(realPath file.Path) (*file.Reference, error) {
 		}
 		// this is a directory, provide a new or existing file.Reference
 		if fna.FileNode.Reference == nil {
-			fna.FileNode.Reference = file.NewFileReference(realPath)
+			fna.FileNode.Reference = file.NewFileReference()
 		}
 		return fna.FileNode.Reference, nil
 	}
@@ -599,7 +600,7 @@ func (t *FileTree) AddDir(realPath file.Path) (*file.Reference, error) {
 		return nil, err
 	}
 
-	newFn := filenode.NewDir(realPath, file.NewFileReference(realPath))
+	newFn := filenode.NewDir(realPath, file.NewFileReference())
 	return newFn.Reference, t.setFileNode(newFn)
 }
 
