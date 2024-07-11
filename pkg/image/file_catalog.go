@@ -70,5 +70,5 @@ func (c *FileCatalog) Open(f file.Reference) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("no contents available for file: %+v", f.RealPath)
 	}
 
-	return opener(), nil
+	return opener()
 }

@@ -144,8 +144,8 @@ func TestFileCatalog_Open(t *testing.T) {
 
 	require.Len(t, entries, 1)
 
-	opener := func() io.ReadCloser {
-		return io.NopCloser(entries[0].Reader)
+	opener := func() (io.ReadCloser, error) {
+		return io.NopCloser(entries[0].Reader), nil
 	}
 
 	catalog := NewFileCatalog()

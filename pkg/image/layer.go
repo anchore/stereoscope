@@ -1,7 +1,6 @@
 package image
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -50,15 +49,15 @@ func NewLayer(layer v1.Layer) *Layer {
 	}
 }
 
-func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string, error) {
+func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, error) {
 	if uncompressedLayersCacheDir == "" {
 		return "", fmt.Errorf("no cache directory given")
 	}
 
-	tarPath := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest+".tar")
+	path := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest)
 
-	if _, err := os.Stat(tarPath); !os.IsNotExist(err) {
-		return tarPath, nil
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		return path, nil
 	}
 
 	rawReader, err := l.layer.Uncompressed()
@@ -66,16 +65,16 @@ func (l *Layer) uncompressedTarCache(uncompressedLayersCacheDir string) (string,
 		return "", err
 	}
 
-	fh, err := os.Create(tarPath)
+	fh, err := os.Create(path)
 	if err != nil {
-		return "", fmt.Errorf("unable to create layer cache dir=%q : %w", tarPath, err)
+		return "", fmt.Errorf("unable to create layer cache dir=%q : %w", path, err)
 	}
 
 	if _, err := io.Copy(fh, rawReader); err != nil {
-		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", tarPath, err)
+		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", path, err)
 	}
 
-	return tarPath, nil
+	return path, nil
 }
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
@@ -104,7 +103,7 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 			return err
 		}
 	case SingularitySquashFSLayer:
-		err := l.readSingularityImageLayer(idx, tree)
+		err := l.readSingularityImageLayer(idx, uncompressedLayersCacheDir, tree)
 		if err != nil {
 			return err
 		}
@@ -130,7 +129,7 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 		l.Metadata.Digest,
 		l.Metadata.MediaType)
 
-	tarFilePath, err := l.uncompressedTarCache(uncompressedLayersCacheDir)
+	tarFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)
 	if err != nil {
 		return err
 	}
@@ -147,7 +146,7 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 	return nil
 }
 
-func (l *Layer) readSingularityImageLayer(idx int, tree *filetree.FileTree) error {
+func (l *Layer) readSingularityImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
 	var err error
 	l.Metadata, err = newLayerMetadata(l.layer, idx)
 	if err != nil {
@@ -160,19 +159,12 @@ func (l *Layer) readSingularityImageLayer(idx int, tree *filetree.FileTree) erro
 		l.Metadata.MediaType)
 
 	monitor := trackReadProgress(l.Metadata)
-	r, err := l.layer.Uncompressed()
+	sqfsFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)
 	if err != nil {
-		return fmt.Errorf("failed to read layer=%q: %w", l.Metadata.Digest, err)
+		return err
 	}
-	// defer r.Close() // TODO: if we close this here, we can't read file contents after we return.
 
-	// Walk the more efficient walk if we're blessed with an io.ReaderAt.
-	if ra, ok := r.(io.ReaderAt); ok {
-		err = file.WalkSquashFS(ra, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
-	} else {
-		err = file.WalkSquashFSFromReader(r, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor))
-	}
-	if err != nil {
+	if err := file.WalkSquashFS(sqfsFilePath, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor)); err != nil {
 		return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
 	}
 
@@ -271,7 +263,9 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		if size != nil {
 			*(size) += metadata.Size()
 		}
-		fileCatalog.addImageReferences(ref.ID(), layerRef, index.Open)
+		fileCatalog.addImageReferences(ref.ID(), layerRef, func() (io.ReadCloser, error) {
+			return index.Open(), nil
+		})
 
 		if monitor != nil {
 			monitor.Increment()
@@ -280,10 +274,49 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 	}
 }
 
+// squashfsReader implements an io.ReadCloser that reads a file from within a SquashFS filesystem.
+type squashfsReader struct {
+	fs.File
+	backingFile *os.File
+}
+
+// newSquashfsFileReader returns a io.ReadCloser that reads the file at path within the SquashFS
+// filesystem at sqfsPath.
+func newSquashfsFileReader(sqfsPath, path string) (io.ReadCloser, error) {
+	f, err := os.Open(sqfsPath)
+	if err != nil {
+		return nil, err
+	}
+
+	fsys, err := squashfs.NewReader(f)
+	if err != nil {
+		return nil, err
+	}
+
+	r, err := fsys.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return &squashfsReader{
+		File:        r,
+		backingFile: f,
+	}, nil
+}
+
+// Close closes the SquashFS file as well as the backing filesystem.
+func (f *squashfsReader) Close() error {
+	if err := f.File.Close(); err != nil {
+		return err
+	}
+
+	return f.backingFile.Close()
+}
+
 func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.SquashFSVisitor {
 	builder := filetree.NewBuilder(ft, fileCatalog.Index)
 
-	return func(fsys fs.FS, path string, _ fs.DirEntry) error {
+	return func(fsys fs.FS, sqfsPath, path string) error {
 		ff, err := fsys.Open(path)
 		if err != nil {
 			return err
@@ -308,15 +341,8 @@ func squashfsVisitor(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		if size != nil {
 			*(size) += metadata.Size()
 		}
-		fileCatalog.addImageReferences(fileReference.ID(), layerRef, func() io.ReadCloser {
-			r, err := fsys.Open(path)
-			if err != nil {
-				// The file.Opener interface doesn't give us a way to return an error, and callers
-				// don't seem to handle a nil return. So, return a zero-byte reader.
-				log.Debug(err)
-				return io.NopCloser(bytes.NewReader(nil)) // TODO
-			}
-			return r
+		fileCatalog.addImageReferences(fileReference.ID(), layerRef, func() (io.ReadCloser, error) {
+			return newSquashfsFileReader(sqfsPath, path)
 		})
 
 		monitor.Increment()

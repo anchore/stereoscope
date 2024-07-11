@@ -1,8 +1,8 @@
 package file
 
 import (
-	"io"
 	"io/fs"
+	"os"
 
 	"github.com/sylabs/squashfs"
 )
@@ -10,44 +10,40 @@ import (
 // SquashFSVisitor is the type of the function called by WalkSquashFS to visit each file or
 // directory.
 //
-// The path argument contains the full path, and d is the corresponding fs.DirEntry.
+// The sqfsPath argument contains the path to the SquashFS filesystem that was passed to
+// WalkSquashFS. The filePath argument contains the full path of the file or directory within the
+// SquashFS filesystem.
 //
 // The error result returned by the function controls how WalkSquashFS continues. If the function
-// returns the special value fs.SkipDir, WalkSquashFS skips the current directory (path if
-// d.IsDir() is true, otherwise path's parent directory). Otherwise, if the function returns a non-
-// nil error, WalkSquashFS stops entirely and returns that error.
-type SquashFSVisitor func(fsys fs.FS, path string, d fs.DirEntry) error
+// returns the special value fs.SkipDir, WalkSquashFS skips the current directory (filePath if
+// d.IsDir() is true, otherwise filePath's parent directory). Otherwise, if the function returns a
+// non-nil error, WalkSquashFS stops entirely and returns that error.
+type SquashFSVisitor func(fsys fs.FS, sqfsPath, filePath string) error
 
-// WalkSquashFS walks the file tree within the SquashFS filesystem read from r, calling fn for each
+// WalkSquashFS walks the file tree within the SquashFS filesystem at sqfsPath, calling fn for each
 // file or directory in the tree, including root.
-func WalkSquashFS(r io.ReaderAt, fn SquashFSVisitor) error {
-	fsys, err := squashfs.NewReader(r)
+func WalkSquashFS(sqfsPath string, fn SquashFSVisitor) error {
+	f, err := os.Open(sqfsPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	fsys, err := squashfs.NewReader(f)
 	if err != nil {
 		return err
 	}
 
-	return fs.WalkDir(fsys, ".", walkDir(fsys, fn))
-}
-
-// WalkSquashFSFromReader walks the file tree within the SquashFS filesystem read from r, calling
-// fn for each file or directory in the tree, including root. Callers should use WalkSquashFS
-// where possible, as this function is considerably less efficient.
-func WalkSquashFSFromReader(r io.Reader, fn SquashFSVisitor) error {
-	fsys, err := squashfs.NewReaderFromReader(r)
-	if err != nil {
-		return err
-	}
-
-	return fs.WalkDir(fsys, ".", walkDir(fsys, fn))
+	return fs.WalkDir(fsys, ".", walkDir(fsys, sqfsPath, fn))
 }
 
 // walkDir returns a fs.WalkDirFunc bound to fn.
-func walkDir(fsys fs.FS, fn SquashFSVisitor) fs.WalkDirFunc {
-	return func(path string, d fs.DirEntry, err error) error {
+func walkDir(fsys fs.FS, sqfsPath string, fn SquashFSVisitor) fs.WalkDirFunc {
+	return func(path string, _ fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		return fn(fsys, path, d)
+		return fn(fsys, sqfsPath, path)
 	}
 }
