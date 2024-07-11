@@ -2,7 +2,6 @@ package filetree
 
 import (
 	"fmt"
-
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
@@ -24,6 +23,7 @@ func (b *Builder) Add(metadata file.Metadata) (*file.Reference, error) {
 		ref *file.Reference
 		err error
 	)
+	//log.Tracef("adding path=%q link=%q", metadata.Path, metadata.LinkDestination)
 	switch metadata.Type {
 	case file.TypeSymLink:
 		ref, err = b.tree.AddSymLink(file.Path(metadata.Path), file.Path(metadata.LinkDestination))

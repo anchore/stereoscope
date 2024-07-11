@@ -59,7 +59,7 @@ func (sc *searchContext) buildLinkResolutionIndex() error {
 	for _, fn := range nodes {
 		destinationFna, err := sc.tree.file(fn.RenderLinkDestination())
 		if err != nil {
-			return fmt.Errorf("unable to get node for path=%q: %w", fn.RealPath, err)
+			return fmt.Errorf("unable to get node for path=%q: %w", fn.RealPath(), err)
 		}
 
 		if !destinationFna.HasFileNode() {
@@ -307,7 +307,7 @@ func (sc searchContext) allPathsToNode(fn *filenode.FileNode) ([]file.Path, erro
 
 func (sc searchContext) pathsToNode(fn *filenode.FileNode, observedPaths file.PathSet, cache map[cacheRequest]cacheResult) (file.PathSet, error) {
 	req := cacheRequest{
-		RealPath: fn.RealPath,
+		RealPath: fn.RealPath(),
 	}
 
 	if result, ok := cache[req]; ok {
@@ -331,14 +331,15 @@ func (sc searchContext) _pathsToNode(fn *filenode.FileNode, observedPaths file.P
 	}
 
 	paths := file.NewPathSet()
-	paths.Add(fn.RealPath)
+	realPath := fn.RealPath()
+	paths.Add(realPath)
 
 	if observedPaths != nil {
-		if observedPaths.Contains(fn.RealPath) {
+		if observedPaths.Contains(realPath) {
 			// we've already observed this path, so we can stop here
 			return nil, nil
 		}
-		observedPaths.Add(fn.RealPath)
+		observedPaths.Add(realPath)
 	}
 
 	nodeID := fn.ID()
@@ -400,7 +401,7 @@ func (sc searchContext) _pathsToNode(fn *filenode.FileNode, observedPaths file.P
 			addPath(nestedSuffix, parentLinkPaths.List()...)
 		}
 	}
-	observedPaths.Remove(fn.RealPath)
+	observedPaths.Remove(realPath)
 
 	return paths, nil
 }

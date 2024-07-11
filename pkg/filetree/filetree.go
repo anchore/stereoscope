@@ -78,7 +78,7 @@ func (t *FileTree) AllRealPaths() []file.Path {
 	for _, n := range t.tree.Nodes() {
 		f := n.(*filenode.FileNode)
 		if f != nil {
-			files = append(files, f.RealPath)
+			files = append(files, f.RealPath())
 		}
 	}
 	return files
@@ -108,7 +108,7 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 			continue
 		}
 		childFn := child.(*filenode.FileNode)
-		fn, err := t.node(childFn.RealPath, linkResolutionStrategy{
+		fn, err := t.node(childFn.RealPath(), linkResolutionStrategy{
 			FollowAncestorLinks: true,
 			FollowBasenameLinks: false,
 		})
@@ -116,7 +116,7 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 			return nil, err
 		}
 
-		listing = append(listing, file.Path(path.Join(string(dir), fn.FileNode.RealPath.Basename())))
+		listing = append(listing, file.Path(path.Join(string(dir), fn.FileNode.RealPath().Basename())))
 	}
 	return listing, nil
 }
@@ -293,7 +293,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPa
 		}
 
 		// keep track of what we've resolved to so far...
-		currentPath = currentNodeAccess.FileNode.RealPath
+		currentPath = currentNodeAccess.FileNode.RealPath()
 
 		// this is positively a path, however, there is no information about this Node. This may be OK since we
 		// allow for adding children before parents (and even don't require the parent to ever be added --which is
@@ -313,7 +313,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPa
 				return currentNodeAccess, err
 			}
 			if currentNodeAccess.HasFileNode() {
-				currentPath = currentNodeAccess.FileNode.RealPath
+				currentPath = currentNodeAccess.FileNode.RealPath()
 			}
 			currentPathStr = string(currentPath)
 		}
@@ -368,7 +368,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 			break
 		}
 
-		if realPathsVisited.Has(string(currentNodeAccess.FileNode.RealPath)) {
+		if realPathsVisited.Has(string(currentNodeAccess.FileNode.RealPath())) {
 			return nil, ErrLinkCycleDetected
 		}
 
@@ -380,7 +380,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 
 		// prepare for the next iteration
 		// already seen is important for the context of this loop
-		realPathsVisited.Add(string(currentNodeAccess.FileNode.RealPath))
+		realPathsVisited.Add(string(currentNodeAccess.FileNode.RealPath()))
 
 		nextPath = currentNodeAccess.FileNode.RenderLinkDestination()
 
@@ -652,21 +652,23 @@ func (t *FileTree) setFileNode(fn *filenode.FileNode) error {
 		return fmt.Errorf("must provide a FileNode when adding paths")
 	}
 
-	if existingNode := t.tree.Node(filenode.IDByPath(fn.RealPath)); existingNode != nil {
+	if existingNode := t.tree.Node(filenode.IDByPath(fn.RealPath())); existingNode != nil {
 		return t.tree.Replace(existingNode, fn)
 	}
 
-	parentPath, err := fn.RealPath.ParentPath()
+	parentPath, err := fn.RealPath().ParentPath()
 	if err != nil {
-		return fmt.Errorf("unable to determine parent path while adding path=%q: %w", fn.RealPath, err)
+		return fmt.Errorf("unable to determine parent path while adding path=%q: %w", fn.RealPath(), err)
 	}
+
+	//log.WithFields("parentPath", string(parentPath), "realPath", string(fn.RealPath())).Warn("adding path")
 
 	parentNode, err := t.node(parentPath, linkResolutionStrategy{})
 	if err != nil {
 		return err
 	}
 	if !parentNode.HasFileNode() {
-		return fmt.Errorf("unable to find parent path=%q while adding path=%q", parentPath, fn.RealPath)
+		return fmt.Errorf("unable to find parent path=%q while adding path=%q", parentPath, fn.RealPath())
 	}
 
 	return t.tree.AddChild(parentNode.FileNode, fn)
@@ -803,17 +805,18 @@ func (t *FileTree) Merge(upper Reader) error {
 		}
 		upperNode := n.(*filenode.FileNode)
 		// opaque directories must be processed first
-		if hasOpaqueDirectory(upper, upperNode.RealPath) {
-			err := t.RemoveChildPaths(upperNode.RealPath)
+		upperRealPath := upperNode.RealPath()
+		if hasOpaqueDirectory(upper, upperRealPath) {
+			err := t.RemoveChildPaths(upperRealPath)
 			if err != nil {
-				return fmt.Errorf("filetree Merge failed to remove child paths (upperPath=%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to remove child paths (upperPath=%s): %w", upperRealPath, err)
 			}
 		}
 
-		if upperNode.RealPath.IsWhiteout() {
-			lowerPath, err := upperNode.RealPath.UnWhiteoutPath()
+		if upperRealPath.IsWhiteout() {
+			lowerPath, err := upperRealPath.UnWhiteoutPath()
 			if err != nil {
-				return fmt.Errorf("filetree Merge failed to find original upperPath for whiteout (upperPath=%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to find original upperPath for whiteout (upperPath=%s): %w", upperRealPath, err)
 			}
 
 			err = t.RemovePath(lowerPath)
@@ -824,7 +827,7 @@ func (t *FileTree) Merge(upper Reader) error {
 			return nil
 		}
 
-		lowerNode, err := t.node(upperNode.RealPath, linkResolutionStrategy{
+		lowerNode, err := t.node(upperRealPath, linkResolutionStrategy{
 			FollowAncestorLinks: false,
 			FollowBasenameLinks: false,
 		})
@@ -833,7 +836,7 @@ func (t *FileTree) Merge(upper Reader) error {
 		}
 		if !lowerNode.HasFileNode() {
 			// there is no existing Node... add parents and prepare to set
-			if err := t.addParentPaths(upperNode.RealPath); err != nil {
+			if err := t.addParentPaths(upperRealPath); err != nil {
 				return fmt.Errorf("could not add parent paths to lower: %w", err)
 			}
 		}
@@ -848,9 +851,9 @@ func (t *FileTree) Merge(upper Reader) error {
 		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory && lowerNode.FileNode.FileType == file.TypeDirectory {
 			// NOTE: both upperNode and lowerNode paths are the same, and does not have an effect
 			// on removal of child paths
-			err := t.RemoveChildPaths(upperNode.RealPath)
+			err := t.RemoveChildPaths(upperRealPath)
 			if err != nil {
-				return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+				return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperRealPath, err)
 			}
 		}
 		// graft a copy of the upper Node with potential lower information into the lower tree
