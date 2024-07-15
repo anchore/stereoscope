@@ -338,7 +338,7 @@ func TestTree(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.fields, tt.fields.Clone())
+			assert.Equal(t, tt.fields, tt.fields.Copy())
 			assert.Equal(t, tt.roots, tt.fields.Roots())
 
 			if tt.id != "" {

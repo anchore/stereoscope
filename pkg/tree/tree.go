@@ -32,6 +32,38 @@ func (t *Tree) Clone() *Tree {
 	return ct
 }
 
+// Copy returns a deep copy of the Tree.
+func (t *Tree) Copy() *Tree {
+	ct := NewTree()
+	for k, v := range t.nodes {
+		if v == nil {
+			ct.nodes[k] = nil
+			continue
+		}
+		ct.nodes[k] = v.Copy()
+	}
+	for k, v := range t.parent {
+		if v == nil {
+			ct.parent[k] = nil
+			continue
+		}
+		ct.parent[k] = v.Copy()
+	}
+	for from, lookup := range t.children {
+		if _, exists := ct.children[from]; !exists {
+			ct.children[from] = make(map[node.ID]node.Node)
+		}
+		for to, v := range lookup {
+			if v == nil {
+				ct.children[from][to] = nil
+				continue
+			}
+			ct.children[from][to] = v.Copy()
+		}
+	}
+	return ct
+}
+
 // Roots is all of the nodes with no parents.
 func (t *Tree) Roots() node.Nodes {
 	var nodes = make([]node.Node, 0)

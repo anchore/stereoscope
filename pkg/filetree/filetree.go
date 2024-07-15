@@ -52,6 +52,13 @@ func (t *FileTree) Clone() (ReadWriter, error) {
 	return ct, nil
 }
 
+// Copy returns a deep Copy of the current FileTree.
+func (t *FileTree) Copy() (ReadWriter, error) {
+	ct := New()
+	ct.tree = t.tree.Copy()
+	return ct, nil
+}
+
 // AllFiles returns all files within the FileTree (defaults to regular files only, but you can provide one or more allow types).
 func (t *FileTree) AllFiles(types ...file.Type) []file.Reference {
 	if len(types) == 0 {
