@@ -8,8 +8,8 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/errdefs"
 	"github.com/scylladb/go-set/strset"
 
 	"github.com/anchore/stereoscope/internal/log"
