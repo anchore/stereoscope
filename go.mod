@@ -119,9 +119,12 @@ require (
 )
 
 require (
+	github.com/containerd/errdefs v0.1.0
+	github.com/containerd/platforms v0.2.1
+)
+
+require (
 	github.com/containerd/containerd/api v1.7.19 // indirect
-	github.com/containerd/errdefs v0.1.0 // indirect
-	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/moby/sys/user v0.1.0 // indirect
 )
 
