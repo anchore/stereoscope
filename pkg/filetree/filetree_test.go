@@ -29,6 +29,20 @@ func TestFileTree_AddPath(t *testing.T) {
 	}
 }
 
+func TestFileTree_AddPathWithConflictingWhiteout(t *testing.T) {
+	tr := New()
+	_, err := tr.AddFile("/var/lock/.wh.subsys")
+	if err != nil {
+		t.Fatalf("could not add path 1: %+v", err)
+	}
+
+	_, err = tr.AddSymLink("/var/lock", "/run/lock")
+	if err != nil {
+		t.Fatalf("could not add path 2: %+v", err)
+	}
+
+}
+
 func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	tr := New()
 	path := file.Path("/home/wagoodman/awesome/file.txt")
