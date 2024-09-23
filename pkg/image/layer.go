@@ -124,10 +124,7 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 		return err
 	}
 
-	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
-		l.Metadata.Index,
-		l.Metadata.Digest,
-		l.Metadata.MediaType)
+	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Debug("reading layer")
 
 	tarFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)
 	if err != nil {
@@ -153,10 +150,7 @@ func (l *Layer) readSingularityImageLayer(idx int, uncompressedLayersCacheDir st
 		return err
 	}
 
-	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
-		l.Metadata.Index,
-		l.Metadata.Digest,
-		l.Metadata.MediaType)
+	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Debug("reading layer")
 
 	monitor := trackReadProgress(l.Metadata)
 	sqfsFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)

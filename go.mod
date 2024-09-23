@@ -123,3 +123,5 @@ require (
 	google.golang.org/protobuf v1.36.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+require github.com/anchore/go-sync v0.0.0-20250326131806-4eda43a485b6
