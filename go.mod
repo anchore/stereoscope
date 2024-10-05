@@ -121,4 +121,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
+require github.com/anchore/go-sync v0.0.0-20240306205607-3ee6b614d624
+
 replace github.com/gabriel-vasile/mimetype v1.4.4 => github.com/anchore/mimetype v0.0.0-20240710165720-f966690755a5

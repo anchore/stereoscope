@@ -23,6 +23,8 @@ github.com/anchore/go-collections v0.0.0-20240216171411-9321230ce537 h1:GjNGuwK5
 github.com/anchore/go-collections v0.0.0-20240216171411-9321230ce537/go.mod h1:1aiktV46ATCkuVg0O573ZrH56BUawTECPETbZyBcqT8=
 github.com/anchore/go-logger v0.0.0-20220728155337-03b66a5207d8 h1:imgMA0gN0TZx7PSa/pdWqXadBvrz8WsN6zySzCe4XX0=
 github.com/anchore/go-logger v0.0.0-20220728155337-03b66a5207d8/go.mod h1:+gPap4jha079qzRTUaehv+UZ6sSdaNwkH0D3b6zhTuk=
+github.com/anchore/go-sync v0.0.0-20240306205607-3ee6b614d624 h1:uKEb2vI/rlEGhgLs9BzRwCQDUVXyB8ia9vULpm/Q9Rc=
+github.com/anchore/go-sync v0.0.0-20240306205607-3ee6b614d624/go.mod h1:4gU9pKhRjTOiU34grx5w5IM7YxZfLx+9TrrultzHThU=
 github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04 h1:VzprUTpc0vW0nnNKJfJieyH/TZ9UYAnTZs5/gHTdAe8=
 github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04/go.mod h1:6dK64g27Qi1qGQZ67gFmBFvEHScy0/C8qhQhNe5B5pQ=
 github.com/anchore/mimetype v0.0.0-20240710165720-f966690755a5 h1:MGFRxHpfVyCoRRanIz6JJHZD2L4HLKifBGhGZReOLls=

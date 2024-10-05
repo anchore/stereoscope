@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 
+	"github.com/anchore/go-sync"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -192,10 +194,14 @@ func (i *Image) applyOverrideMetadata() error {
 	return nil
 }
 
+type layerReadResult struct {
+	layer *Layer
+	err   error
+}
+
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
-func (i *Image) Read() error {
-	var layers = make([]*Layer, 0)
+func (i *Image) Read(ctx context.Context) error {
 	var err error
 	i.Metadata, err = readImageMetadata(i.image)
 	if err != nil {
@@ -207,10 +213,7 @@ func (i *Image) Read() error {
 		return err
 	}
 
-	log.Debugf("image metadata: digest=%+v mediaType=%+v tags=%+v",
-		i.Metadata.ID,
-		i.Metadata.MediaType,
-		i.Metadata.Tags)
+	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags).Info("reading image")
 
 	v1Layers, err := i.image.Layers()
 	if err != nil {
@@ -222,19 +225,23 @@ func (i *Image) Read() error {
 
 	fileCatalog := NewFileCatalog()
 
-	for idx, v1Layer := range v1Layers {
-		layer := NewLayer(v1Layer)
-		err := layer.Read(fileCatalog, idx, i.contentCacheDir)
-		if err != nil {
-			return err
-		}
-		i.Metadata.Size += layer.Metadata.Size
-		layers = append(layers, layer)
+	exec, _ := sync.FromContext(ctx)
 
-		readProg.Increment()
+	collector := sync.NewCollector[layerReadResult](exec)
+
+	for idx, v1Layer := range v1Layers {
+		collector.Provide(readLayer(fileCatalog, idx, v1Layer, i.contentCacheDir, readProg))
 	}
 
-	i.Layers = layers
+	layerReadResults := collector.Collect()
+
+	for _, result := range layerReadResults {
+		if result.err != nil {
+			return result.err
+		}
+		i.Metadata.Size += result.layer.Metadata.Size
+		i.Layers = append(i.Layers, result.layer)
+	}
 
 	// in order to resolve symlinks all squashed trees must be available
 	err = i.squash(readProg)
@@ -243,6 +250,17 @@ func (i *Image) Read() error {
 	i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
 
 	return err
+}
+
+func readLayer(fileCatalog *FileCatalog, idx int, v1Layer v1.Layer, contentDir string, prog *progress.Manual) sync.ProviderFunc[layerReadResult] {
+	return func() layerReadResult {
+		defer prog.Increment()
+		l := NewLayer(v1Layer)
+		return layerReadResult{
+			layer: l,
+			err:   l.Read(fileCatalog, idx, contentDir),
+		}
+	}
 }
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
