@@ -1,6 +1,7 @@
 module github.com/anchore/stereoscope
 
-go 1.21.5
+go 1.22.5
+
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
 	github.com/adrg/xdg v0.5.0
@@ -118,9 +119,12 @@ require (
 )
 
 require (
+	github.com/containerd/errdefs v0.1.0
+	github.com/containerd/platforms v0.2.1
+)
+
+require (
 	github.com/containerd/containerd/api v1.7.19 // indirect
-	github.com/containerd/errdefs v0.1.0 // indirect
-	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
 )
