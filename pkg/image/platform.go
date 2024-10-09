@@ -6,12 +6,10 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/errdefs"
 )
 
-var (
-	specifierRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-)
+var specifierRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // Platform is a subset of the supported fields from specs "github.com/opencontainers/image-spec/specs-go/v1.Platform"
 type Platform struct {
@@ -79,7 +77,7 @@ func parse(specifier string) (*Platform, error) {
 		}
 	}
 
-	var p = &Platform{}
+	p := &Platform{}
 	switch len(parts) {
 	case 1:
 
