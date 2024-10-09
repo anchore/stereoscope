@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/platforms"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -51,7 +51,6 @@ func Test_checkRegistryHostMissing(t *testing.T) {
 }
 
 func Test_exportPlatformComparer(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		platform *image.Platform

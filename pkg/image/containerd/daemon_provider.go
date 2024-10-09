@@ -15,9 +15,9 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/images/archive"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/remotes/docker/config"
+	"github.com/containerd/platforms"
 	"github.com/google/go-containerregistry/pkg/name"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/wagoodman/go-partybus"
@@ -148,7 +148,7 @@ func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Clien
 }
 
 func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Reference) ([]containerd.RemoteOpt, error) {
-	var options = []containerd.RemoteOpt{
+	options := []containerd.RemoteOpt{
 		containerd.WithPlatform(p.platform.String()),
 	}
 
@@ -205,7 +205,7 @@ func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Referenc
 	return options, nil
 }
 
-func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containerd.Client, imageStr string) (string, *platforms.Platform, error) {
+func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containerd.Client, imageStr string) (string, *ocispec.Platform, error) {
 	// check if the image exists locally
 
 	// note: you can NEVER depend on the GetImage() call to return an object with a platform set (even if you specify
@@ -221,7 +221,7 @@ func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containe
 		return imageStr, nil, nil
 	}
 
-	processManifest := func(imageStr string, manifestDesc ocispec.Descriptor) (string, *platforms.Platform, error) {
+	processManifest := func(imageStr string, manifestDesc ocispec.Descriptor) (string, *ocispec.Platform, error) {
 		manifest, err := p.fetchManifest(ctx, client, manifestDesc)
 		if err != nil {
 			return "", nil, err
