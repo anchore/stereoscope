@@ -2,8 +2,6 @@ module github.com/anchore/stereoscope
 
 go 1.22.5
 
-toolchain go1.22.8
-
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
 	github.com/adrg/xdg v0.5.0
