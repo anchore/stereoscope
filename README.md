@@ -1,9 +1,11 @@
 # stereoscope
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/anchore/stereoscope)](https://goreportcard.com/report/github.com/anchore/stereoscope)
-[![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/anchore/stereoscope.svg)](https://github.com/anchore/stereoscope)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/anchore/stereoscope/blob/main/LICENSE)
-[![Slack Invite](https://img.shields.io/badge/Slack-Join-blue?logo=slack)](https://anchore.com/slack)
+<p align="center">
+    &nbsp;<a href="https://goreportcard.com/report/github.com/anchore/stereoscope"><img src="https://goreportcard.com/badge/github.com/anchore/stereoscope" alt="Go Report Card"></a>&nbsp;
+    &nbsp;<a href="https://github.com/anchore/stereoscope"><img src="https://img.shields.io/github/go-mod/go-version/anchore/stereoscope.svg" alt="GitHub go.mod Go version"></a>&nbsp;
+    &nbsp;<a href="https://github.com/anchore/stereoscope/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License: Apache-2.0"></a>&nbsp;
+    &nbsp;<a href="https://anchore.com/discourse"><img src="https://img.shields.io/badge/Discourse-Join-blue?logo=discourse" alt="Join our Discourse"></a>&nbsp;
+</p>
 
 A library for working with container image contents, layer file trees, and squashed file trees.
 
