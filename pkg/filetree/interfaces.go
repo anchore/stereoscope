@@ -29,6 +29,7 @@ type PathReader interface {
 
 type Copier interface {
 	Copy() (ReadWriter, error)
+	Clone() (ReadWriter, error)
 }
 
 type Walker interface {
