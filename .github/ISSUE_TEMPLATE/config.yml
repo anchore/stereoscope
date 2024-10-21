@@ -1,11 +1,6 @@
 contact_links:
 
-  - name: Help & Support Slack Channel ⛑️
+  - name: Support & Developer Discourse Community ⛑️
     # link to toolbox-help channel
-    url: https://anchorecommunity.slack.com/archives/C019BUXV7R6
-    about: Ask a questions and get answers
-
-  - name: Developer Slack Channel 💬
-    # link to toolbox-dev channel
-    url: https://anchorecommunity.slack.com/archives/C0190NF9TSM
-    about: Participate in design discussions and feature development
+    url: https://anchore.com/discourse
+    about: Ask a questions and get answers, and participate in design discussions and feature development
