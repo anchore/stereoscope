@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -14,7 +15,9 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 )
 
-const perFileReadLimit = 2 * GB
+const perFileReadLimitDefault = 2 * GB
+var perFileReadLimit int64 = perFileReadLimitDefault
+var perFileReadLimitStr = "0" // allows configuring the above value during build time
 
 var ErrTarStopIteration = fmt.Errorf("halt iterating tar")
 
@@ -37,6 +40,18 @@ type TarFileVisitor func(TarFileEntry) error
 // ErrFileNotFound returned from ReaderFromTar if a file is not found in the given archive.
 type ErrFileNotFound struct {
 	Path string
+}
+
+func init() {
+	setPerFileReadLimit(perFileReadLimitStr)
+}
+
+func setPerFileReadLimit(val string) {
+	valInt64, err := strconv.ParseInt(val, 10, 64)
+	if err != nil || valInt64 <= 0 {
+		return
+	}
+	perFileReadLimit = valInt64
 }
 
 func (e *ErrFileNotFound) Error() string {
@@ -178,7 +193,7 @@ func (v tarVisitor) visit(entry TarFileEntry) error {
 		// limit the reader on each file read to prevent decompression bomb attacks
 		numBytes, err := io.Copy(f, io.LimitReader(entry.Reader, perFileReadLimit))
 		if numBytes >= perFileReadLimit || errors.Is(err, io.EOF) {
-			return fmt.Errorf("zip read limit hit (potential decompression bomb attack)")
+			return fmt.Errorf("zip read limit hit (potential decompression bomb attack): copied %v, limit %v", numBytes, perFileReadLimit)
 		}
 		if err != nil {
 			return fmt.Errorf("unable to copy file: %w", err)
