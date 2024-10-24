@@ -1,7 +1,6 @@
 module github.com/anchore/stereoscope
 
 go 1.22.5
-
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
 	github.com/adrg/xdg v0.5.1
@@ -29,7 +28,7 @@ require (
 	github.com/sergi/go-diff v1.3.1
 	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.9.0
-	github.com/sylabs/sif/v2 v2.19.1
+	github.com/sylabs/sif/v2 v2.19.2
 	github.com/sylabs/squashfs v1.0.0
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20230925121702-07e42b3cdba0
