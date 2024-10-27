@@ -433,7 +433,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 
 func TestSetPerFileReadLimit_Valid(t *testing.T) {
     // Test with a valid limit string
-	perFileReadLimit = perFileReadLimitDefault
+    perFileReadLimit = perFileReadLimitDefault
     setPerFileReadLimit("12345")
     
     if perFileReadLimit != 12345 {
@@ -443,7 +443,7 @@ func TestSetPerFileReadLimit_Valid(t *testing.T) {
 
 func TestSetPerFileReadLimit_Invalid(t *testing.T) {
     // Test with a invalid limit string
-	perFileReadLimit = perFileReadLimitDefault
+    perFileReadLimit = perFileReadLimitDefault
     setPerFileReadLimit("invalid")
     
     if perFileReadLimit != perFileReadLimitDefault {
@@ -453,10 +453,10 @@ func TestSetPerFileReadLimit_Invalid(t *testing.T) {
 
 func TestSetPerFileReadLimit_Empty(t *testing.T) {
     // Test with an empty limit string (default)
-	perFileReadLimit = perFileReadLimitDefault
+    perFileReadLimit = perFileReadLimitDefault
     setPerFileReadLimit("")
     
-    if perFileReadLimit != 2 * GB {
+    if perFileReadLimit != perFileReadLimitDefault {
         t.Errorf("Expected perFileReadLimit to be %d, but got %d", perFileReadLimitDefault, perFileReadLimit)
     }
 }
