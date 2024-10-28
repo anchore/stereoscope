@@ -1,1 +1,102 @@
 enforce-v0: true # don't make breaking-change label bump major version before 1.0.
+
+github:
+  # (env: CHRONICLE_GITHUB_HOST)
+  host: 'github.com'
+
+  # (env: CHRONICLE_GITHUB_EXCLUDE_LABELS)
+  exclude-labels:
+    - 'duplicate'
+    - 'question'
+    - 'invalid'
+    - 'wontfix'
+    - 'wont-fix'
+    - 'release-ignore'
+    - 'changelog-ignore'
+    - 'ignore'
+
+  # (env: CHRONICLE_GITHUB_INCLUDE_ISSUE_PR_AUTHORS)
+  include-issue-pr-authors: true
+
+  # (env: CHRONICLE_GITHUB_INCLUDE_ISSUE_PRS)
+  include-issue-prs: true
+
+  # (env: CHRONICLE_GITHUB_INCLUDE_ISSUES_NOT_PLANNED)
+  include-issues-not-planned: false
+
+  # (env: CHRONICLE_GITHUB_INCLUDE_PRS)
+  include-prs: true
+
+  # (env: CHRONICLE_GITHUB_INCLUDE_ISSUES)
+  include-issues: true
+
+  # (env: CHRONICLE_GITHUB_INCLUDE_UNLABELED_ISSUES)
+  include-unlabeled-issues: true
+
+  # (env: CHRONICLE_GITHUB_INCLUDE_UNLABELED_PRS)
+  include-unlabeled-prs: true
+
+  # (env: CHRONICLE_GITHUB_ISSUES_REQUIRE_LINKED_PRS)
+  issues-require-linked-prs: false
+
+  # (env: CHRONICLE_GITHUB_CONSIDER_PR_MERGE_COMMITS)
+  consider-pr-merge-commits: true
+
+  # (env: CHRONICLE_GITHUB_CHANGES)
+  changes:
+    - name: 'security-fixes'
+      title: 'Security Fixes'
+      semver-field: 'patch'
+      labels:
+        - 'security'
+        - 'vulnerability'
+
+    - name: 'added-feature'
+      title: 'Added Features'
+      semver-field: 'minor'
+      labels:
+        - 'enhancement'
+        - 'feature'
+        - 'minor'
+
+    - name: 'bug-fix'
+      title: 'Bug Fixes'
+      semver-field: 'patch'
+      labels:
+        - 'bug'
+        - 'fix'
+        - 'bug-fix'
+        - 'patch'
+
+    - name: 'dependencies'
+      title: 'Dependency Updates'
+      semver-field: 'patch'
+      labels:
+        - 'dependencies'
+
+    - name: 'breaking-feature'
+      title: 'Breaking Changes'
+      semver-field: 'major'
+      labels:
+        - 'breaking'
+        - 'backwards-incompatible'
+        - 'breaking-change'
+        - 'breaking-feature'
+        - 'major'
+
+    - name: 'removed-feature'
+      title: 'Removed Features'
+      semver-field: 'major'
+      labels:
+        - 'removed'
+
+    - name: 'deprecated-feature'
+      title: 'Deprecated Features'
+      semver-field: 'minor'
+      labels:
+        - 'deprecated'
+
+    - name: 'unknown'
+      title: 'Additional Changes'
+      semver-field: ''
+      labels: []
