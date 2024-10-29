@@ -3,7 +3,7 @@ module github.com/anchore/stereoscope
 go 1.22.5
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
-	github.com/adrg/xdg v0.5.1
+	github.com/adrg/xdg v0.5.2
 	github.com/anchore/go-collections v0.0.0-20240216171411-9321230ce537
 	github.com/anchore/go-logger v0.0.0-20220728155337-03b66a5207d8
 	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
