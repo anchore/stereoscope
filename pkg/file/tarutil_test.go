@@ -432,31 +432,41 @@ func Test_tarVisitor_visit(t *testing.T) {
 }
 
 func TestSetPerFileReadLimit_Valid(t *testing.T) {
-    // Test with a valid limit string
-    perFileReadLimit = perFileReadLimitDefault
-    setPerFileReadLimit("12345")
-    
-    if perFileReadLimit != 12345 {
-        t.Errorf("Expected perFileReadLimit to be 12345, but got %d", perFileReadLimit)
-    }
+	// Test with a valid limit string
+	SetPerFileReadLimit(perFileReadLimitDefault)
+	setPerFileReadLimitStr("12345")
+
+	if perFileReadLimit != 12345 {
+		t.Errorf("Expected perFileReadLimit to be 12345, but got %d", perFileReadLimit)
+	}
 }
 
 func TestSetPerFileReadLimit_Invalid(t *testing.T) {
-    // Test with a invalid limit string
-    perFileReadLimit = perFileReadLimitDefault
-    setPerFileReadLimit("invalid")
-    
-    if perFileReadLimit != perFileReadLimitDefault {
-        t.Errorf("Expected perFileReadLimit to be %d, but got %d", perFileReadLimitDefault, perFileReadLimit)
-    }
+	// Test with an invalid limit string
+	SetPerFileReadLimit(perFileReadLimitDefault)
+	setPerFileReadLimitStr("invalid")
+
+	if perFileReadLimit != perFileReadLimitDefault {
+		t.Errorf("Expected perFileReadLimit to be %d, but got %d", perFileReadLimitDefault, perFileReadLimit)
+	}
+}
+
+func TestSetPerFileReadLimit_NegativeValue(t *testing.T) {
+	// Test with an invalid limit string
+	SetPerFileReadLimit(perFileReadLimitDefault)
+	setPerFileReadLimitStr("-12345")
+
+	if perFileReadLimit != perFileReadLimitDefault {
+		t.Errorf("Expected perFileReadLimit to be %d, but got %d", perFileReadLimitDefault, perFileReadLimit)
+	}
 }
 
 func TestSetPerFileReadLimit_Empty(t *testing.T) {
-    // Test with an empty limit string (default)
-    perFileReadLimit = perFileReadLimitDefault
-    setPerFileReadLimit("")
-    
-    if perFileReadLimit != perFileReadLimitDefault {
-        t.Errorf("Expected perFileReadLimit to be %d, but got %d", perFileReadLimitDefault, perFileReadLimit)
-    }
+	// Test with an empty limit string (default)
+	SetPerFileReadLimit(perFileReadLimitDefault)
+	setPerFileReadLimitStr("")
+
+	if perFileReadLimit != perFileReadLimitDefault {
+		t.Errorf("Expected perFileReadLimit to be %d, but got %d", perFileReadLimitDefault, perFileReadLimit)
+	}
 }

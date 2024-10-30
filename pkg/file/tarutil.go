@@ -16,6 +16,7 @@ import (
 )
 
 const perFileReadLimitDefault = 2 * GB
+
 var perFileReadLimit int64 = perFileReadLimitDefault
 var perFileReadLimitStr = "0" // allows configuring the above value during build time
 
@@ -43,15 +44,19 @@ type ErrFileNotFound struct {
 }
 
 func init() {
-	setPerFileReadLimit(perFileReadLimitStr)
+	setPerFileReadLimitStr(perFileReadLimitStr)
 }
 
-func setPerFileReadLimit(val string) {
-	valInt64, err := strconv.ParseInt(val, 10, 64)
-	if err != nil || valInt64 <= 0 {
-		return
+func setPerFileReadLimitStr(val string) {
+	if parsedInt64, err := strconv.ParseInt(val, 10, 64); err == nil {
+		SetPerFileReadLimit(parsedInt64)
 	}
-	perFileReadLimit = valInt64
+}
+
+func SetPerFileReadLimit(val int64) {
+	if val > 0 {
+		perFileReadLimit = val
+	}
 }
 
 func (e *ErrFileNotFound) Error() string {
