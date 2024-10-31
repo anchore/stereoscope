@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -15,10 +14,7 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 )
 
-const perFileReadLimitDefault = 2 * GB
-
-var perFileReadLimit int64 = perFileReadLimitDefault
-var perFileReadLimitStr = "0" // allows configuring the above value during build time
+var perFileReadLimit int64 = 2 * GB
 
 var ErrTarStopIteration = fmt.Errorf("halt iterating tar")
 
@@ -43,19 +39,9 @@ type ErrFileNotFound struct {
 	Path string
 }
 
-func init() {
-	setPerFileReadLimitStr(perFileReadLimitStr)
-}
-
-func setPerFileReadLimitStr(val string) {
-	if parsedInt64, err := strconv.ParseInt(val, 10, 64); err == nil {
-		SetPerFileReadLimit(parsedInt64)
-	}
-}
-
-func SetPerFileReadLimit(val int64) {
-	if val > 0 {
-		perFileReadLimit = val
+func SetPerFileReadLimit(maxBytes int64) {
+	if maxBytes > 0 {
+		perFileReadLimit = maxBytes
 	}
 }
 
