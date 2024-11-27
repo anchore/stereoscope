@@ -15,7 +15,10 @@ func MIMEType(reader io.Reader) string {
 		return ""
 	}
 
-	s := sizer{reader: reader}
+	// though there is mimetype.SetLimit() at our disposal, that is a static resource which could be set by another
+	// library. To avoid any potential conflicts, we'll limit the reader ourselves. This is more of a safety measure
+	// to prevent performance regression than it is a performance optimization.
+	s := sizer{reader: io.LimitReader(reader, 3072)}
 
 	var mTypeStr string
 	mType, err := mimetype.DetectReader(&s)
