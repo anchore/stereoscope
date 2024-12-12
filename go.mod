@@ -29,11 +29,11 @@ require (
 	github.com/sergi/go-diff v1.3.1
 	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.10.0
-	github.com/sylabs/sif/v2 v2.20.0
+	github.com/sylabs/sif/v2 v2.20.1
 	github.com/sylabs/squashfs v1.0.4
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20230925121702-07e42b3cdba0
-	golang.org/x/crypto v0.30.0
+	golang.org/x/crypto v0.31.0
 )
 
 require (
