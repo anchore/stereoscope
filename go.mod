@@ -14,8 +14,8 @@ require (
 	github.com/containerd/containerd v1.7.24
 	github.com/containerd/errdefs v0.3.0
 	github.com/containerd/platforms v0.2.1
-	github.com/docker/cli v27.4.0+incompatible
-	github.com/docker/docker v27.4.0+incompatible
+	github.com/docker/cli v27.4.1+incompatible
+	github.com/docker/docker v27.4.1+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.7
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.6.0
@@ -29,7 +29,7 @@ require (
 	github.com/sergi/go-diff v1.3.1
 	github.com/spf13/afero v1.11.0
 	github.com/stretchr/testify v1.10.0
-	github.com/sylabs/sif/v2 v2.20.1
+	github.com/sylabs/sif/v2 v2.20.2
 	github.com/sylabs/squashfs v1.0.4
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20230925121702-07e42b3cdba0
