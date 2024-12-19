@@ -11,7 +11,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/image"
 )
 
-func Test_checkRegistryHostMissing(t *testing.T) {
+func Test_ensureRegistryHostPrefix(t *testing.T) {
 	tests := []struct {
 		image string
 		want  string
@@ -33,6 +33,22 @@ func Test_checkRegistryHostMissing(t *testing.T) {
 			want:  "registry.place.io/thing:version",
 		},
 		{
+			image: "127.0.0.1/thing:version",
+			want:  "127.0.0.1/thing:version",
+		},
+		{
+			image: "127.0.0.1:1234/thing:version",
+			want:  "127.0.0.1:1234/thing:version",
+		},
+		{
+			image: "localhost/thing:version",
+			want:  "localhost/thing:version",
+		},
+		{
+			image: "localhost:1234/thing:version",
+			want:  "localhost:1234/thing:version",
+		},
+		{
 			image: "alpine@sha256:95cf004f559831017cdf4628aaf1bb30133677be8702a8c5f2994629f637a209",
 			want:  "docker.io/library/alpine@sha256:95cf004f559831017cdf4628aaf1bb30133677be8702a8c5f2994629f637a209",
 		},
@@ -43,7 +59,7 @@ func Test_checkRegistryHostMissing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.image, func(t *testing.T) {
-			got := checkRegistryHostMissing(tt.image)
+			got := ensureRegistryHostPrefix(tt.image)
 			require.NotNil(t, got)
 			assert.Equal(t, tt.want, got)
 		})
