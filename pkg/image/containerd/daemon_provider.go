@@ -319,7 +319,7 @@ func (p *daemonImageProvider) fetchPlatformFromConfig(ctx context.Context, clien
 }
 
 func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *containerd.Client) (string, *platforms.Platform, error) {
-	p.imageStr = checkRegistryHostMissing(p.imageStr)
+	p.imageStr = ensureRegistryHostPrefix(p.imageStr)
 
 	// try to get the image first before pulling
 	resolvedImage, resolvedPlatform, err := p.resolveImage(ctx, client, p.imageStr)
@@ -504,13 +504,21 @@ func withMetadata(platform *platforms.Platform, ref string) (metadata []image.Ad
 	return metadata
 }
 
-// if image doesn't have host set, add docker hub by default
-func checkRegistryHostMissing(imageName string) string {
+// if imageName doesn't have an identifiable hostname prefix set,
+// add docker hub by default
+func ensureRegistryHostPrefix(imageName string) string {
 	parts := strings.Split(imageName, "/")
 	if len(parts) == 1 {
 		return fmt.Sprintf("docker.io/library/%s", imageName)
-	} else if len(parts) > 1 && !strings.Contains(parts[0], ".") {
-		return fmt.Sprintf("docker.io/%s", imageName)
 	}
-	return imageName
+	if isRegistryHostname(parts[0]) {
+		return imageName
+	}
+	return fmt.Sprintf("docker.io/%s", imageName)
+}
+
+// isRegistryHostname returns true if the string passed in can be interpreted
+// as a container registry hostname
+func isRegistryHostname(s string) bool {
+	return s == "localhost" || strings.Contains(s, ".") || strings.Contains(s, ":")
 }
