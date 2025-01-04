@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/stretchr/testify/assert"
@@ -21,6 +23,78 @@ import (
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 )
+
+func TestValidatePlatform(t *testing.T) {
+	isFetchError := func(t require.TestingT, err error, args ...interface{}) {
+		var pErr *image.ErrFetchingImage
+		require.ErrorAs(t, err, &pErr)
+	}
+	tests := []struct {
+		name           string
+		platform       *image.Platform
+		givenOs        string
+		givenArch      string
+		expectedErrMsg string
+		expectedErr    require.ErrorAssertionFunc
+	}{
+		{
+			name:        "nil platform",
+			platform:    nil,
+			givenOs:     "linux",
+			givenArch:   "amd64",
+			expectedErr: require.NoError,
+		},
+		{
+			name:           "missing OS",
+			platform:       &image.Platform{OS: "linux", Architecture: "amd64"},
+			givenOs:        "",
+			givenArch:      "amd64",
+			expectedErr:    isFetchError,
+			expectedErrMsg: "missing architecture or OS",
+		},
+		{
+			name:           "missing architecture",
+			platform:       &image.Platform{OS: "linux", Architecture: "amd64"},
+			givenOs:        "linux",
+			givenArch:      "",
+			expectedErr:    isFetchError,
+			expectedErrMsg: "missing architecture or OS",
+		},
+		{
+			name:           "invalid platform string",
+			platform:       &image.Platform{OS: "linux", Architecture: "amd64"},
+			givenOs:        "invalid/thing/place",
+			givenArch:      "platform",
+			expectedErr:    isFetchError,
+			expectedErrMsg: "failed to parse platform from image config",
+		},
+		{
+			name:           "mismatched platform",
+			platform:       &image.Platform{OS: "linux", Architecture: "amd64"},
+			givenOs:        "windows",
+			givenArch:      "arm64",
+			expectedErr:    isFetchError,
+			expectedErrMsg: `image platform="windows/arm64" does not match user specified platform="linux/amd64"`,
+		},
+		{
+			name:        "matching platform",
+			platform:    &image.Platform{OS: "linux", Architecture: "amd64"},
+			givenOs:     "linux",
+			givenArch:   "amd64",
+			expectedErr: require.NoError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePlatform(tt.platform, tt.givenOs, tt.givenArch)
+			tt.expectedErr(t, err)
+			if err != nil {
+				assert.ErrorContains(t, err, tt.expectedErrMsg)
+			}
+		})
+	}
+}
 
 func Test_RegistryProvider(t *testing.T) {
 	imageName := "my-image"
@@ -181,7 +255,18 @@ func pushRandomRegistryImage(t *testing.T, registryHost, repo, tag string) {
 
 	repoTag := repo + ":" + tag
 
-	img, err := random.Image(1024, 2)
+	baseImg, err := random.Image(1024, 2)
+	require.NoError(t, err)
+
+	cfg, err := baseImg.ConfigFile()
+	require.NoError(t, err)
+
+	// match the default values that stereoscope uses
+	cfg.OS = "linux"
+	cfg.Architecture = runtime.GOARCH
+
+	// update the image with the modified config with os/arch info
+	img, err := mutate.ConfigFile(baseImg, cfg)
 	require.NoError(t, err)
 
 	opts := []name.Option{name.Insecure, name.WithDefaultRegistry(registryHost)}

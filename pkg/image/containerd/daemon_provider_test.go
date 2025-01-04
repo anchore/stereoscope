@@ -94,3 +94,69 @@ func Test_exportPlatformComparer(t *testing.T) {
 		})
 	}
 }
+
+func TestValidatePlatform(t *testing.T) {
+	isFetchError := func(t require.TestingT, err error, args ...interface{}) {
+		var pErr *image.ErrFetchingImage
+		require.ErrorAs(t, err, &pErr)
+	}
+
+	tests := []struct {
+		name           string
+		expected       *image.Platform
+		given          *platforms.Platform
+		expectedErrMsg string
+		expectedErr    require.ErrorAssertionFunc
+	}{
+		{
+			name:        "nil expected platform",
+			expected:    nil,
+			given:       &platforms.Platform{OS: "linux", Architecture: "amd64"},
+			expectedErr: require.NoError,
+		},
+		{
+			name:           "nil given platform",
+			expected:       &image.Platform{OS: "linux", Architecture: "amd64"},
+			given:          nil,
+			expectedErr:    isFetchError,
+			expectedErrMsg: "image has no platform information",
+		},
+		{
+			name:           "OS mismatch",
+			expected:       &image.Platform{OS: "linux", Architecture: "amd64"},
+			given:          &platforms.Platform{OS: "windows", Architecture: "amd64"},
+			expectedErr:    isFetchError,
+			expectedErrMsg: `image has unexpected OS "windows", which differs from the user specified PS "linux"`,
+		},
+		{
+			name:           "architecture mismatch",
+			expected:       &image.Platform{OS: "linux", Architecture: "amd64"},
+			given:          &platforms.Platform{OS: "linux", Architecture: "arm64"},
+			expectedErr:    isFetchError,
+			expectedErrMsg: `image has unexpected architecture "arm64", which differs from the user specified architecture "amd64"`,
+		},
+		{
+			name:           "variant mismatch",
+			expected:       &image.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"},
+			given:          &platforms.Platform{OS: "linux", Architecture: "arm64", Variant: "v7"},
+			expectedErr:    isFetchError,
+			expectedErrMsg: `image has unexpected architecture "v7", which differs from the user specified architecture "v8"`,
+		},
+		{
+			name:        "matching platform",
+			expected:    &image.Platform{OS: "linux", Architecture: "amd64", Variant: ""},
+			given:       &platforms.Platform{OS: "linux", Architecture: "amd64", Variant: ""},
+			expectedErr: require.NoError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePlatform(tt.expected, tt.given)
+			tt.expectedErr(t, err)
+			if err != nil {
+				assert.ErrorContains(t, err, tt.expectedErrMsg)
+			}
+		})
+	}
+}

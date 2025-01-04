@@ -32,7 +32,7 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 	imgStr := "anchore/test_images"
 	ref := fmt.Sprintf("%s@%s", imgStr, digest)
 
-	img, err := stereoscope.GetImage(context.TODO(), "registry:"+ref)
+	img, err := stereoscope.GetImage(context.TODO(), "registry:"+ref, stereoscope.WithPlatform("linux/amd64"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, img.Cleanup())
