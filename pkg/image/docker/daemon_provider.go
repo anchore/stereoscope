@@ -151,14 +151,34 @@ func (p *daemonImageProvider) pull(ctx context.Context, client client.APIClient,
 
 			return fmt.Errorf("failed to pull image: %w", err)
 		}
-
-		// check for the last two events indicating the pull is complete
-		if strings.HasPrefix(thePullEvent.Status, "Digest:") || strings.HasPrefix(thePullEvent.Status, "Status:") {
-			continue
+		if err := handlePullEvent(status, thePullEvent); err != nil {
+			return err
 		}
-
-		status.onEvent(thePullEvent)
 	}
+
+	return nil
+}
+
+type emitter interface {
+	onEvent(event *pullEvent)
+}
+
+func handlePullEvent(status emitter, event *pullEvent) error {
+	if event.Error != "" {
+		if strings.Contains(event.Error, "does not match the specified platform") {
+			return &image.ErrPlatformMismatch{
+				Err: errors.New(event.Error),
+			}
+		}
+		return errors.New(event.Error)
+	}
+
+	// check for the last two events indicating the pull is complete
+	if strings.HasPrefix(event.Status, "Digest:") || strings.HasPrefix(event.Status, "Status:") {
+		return nil
+	}
+
+	status.onEvent(event)
 
 	return nil
 }

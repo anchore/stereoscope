@@ -13,6 +13,7 @@ bin/
 /snapshot
 /.tool
 /.task
+.mise.toml
 
 # changelog generation
 CHANGELOG.md

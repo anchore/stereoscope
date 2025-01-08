@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	containerregistryV1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	containerregistryV1Types "github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -64,9 +65,20 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
 	}
 
+	p.finalizePlatform(descriptor, &platform)
+
 	img, err := descriptor.Image()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image from registry: %+v", err)
+	}
+
+	c, err := img.ConfigFile()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image config from registry: %+v", err)
+	}
+
+	if err := validatePlatform(platform, c.OS, c.Architecture); err != nil {
+		return nil, err
 	}
 
 	// craft a repo digest from the registry reference and the known digest
@@ -97,6 +109,50 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 	return out, err
 }
 
+func (p *registryImageProvider) finalizePlatform(descriptor *remote.Descriptor, platform **image.Platform) {
+	if p.platform != nil {
+		return
+	}
+
+	// no platform was specified by the user. There are two cases we want to cover:
+	// 1. there is a manifest list, in which case we want to default the architecture to the host's architecture
+	// 2. there is a single platform image, in which case we want to use that architecture (specify no default)
+	switch descriptor.MediaType {
+	case containerregistryV1Types.OCIManifestSchema1, containerregistryV1Types.DockerManifestSchema1, containerregistryV1Types.DockerManifestSchema2:
+		// this is not for a multi-platform image, do not force the architecture if a platform was not specified explicitly by the user
+		*platform = nil
+		descriptor.Platform = nil
+	}
+}
+
+func validatePlatform(platform *image.Platform, givenOs, givenArch string) error {
+	if platform == nil {
+		return nil
+	}
+	if givenArch == "" || givenOs == "" {
+		return newErrPlatformMismatch(platform, fmt.Errorf("missing architecture or OS from image config when user specified platform=%q", platform.String()))
+	}
+	platformStr := fmt.Sprintf("%s/%s", givenOs, givenArch)
+	actualPlatform, err := containerregistryV1.ParsePlatform(platformStr)
+	if err != nil {
+		return newErrPlatformMismatch(platform, fmt.Errorf("failed to parse platform from image config: %w", err))
+	}
+	if actualPlatform == nil {
+		return newErrPlatformMismatch(platform, fmt.Errorf("not platform from image config (from %q)", platformStr))
+	}
+	if !matchesPlatform(*actualPlatform, *toContainerRegistryPlatform(platform)) {
+		return newErrPlatformMismatch(platform, fmt.Errorf("image platform=%q does not match user specified platform=%q", actualPlatform.String(), platform.String()))
+	}
+	return nil
+}
+
+func newErrPlatformMismatch(platform *image.Platform, err error) *image.ErrPlatformMismatch {
+	return &image.ErrPlatformMismatch{
+		ExpectedPlatform: platform.String(),
+		Err:              err,
+	}
+}
+
 func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
 	var options []name.Option
 	if registryOptions.InsecureUseHTTP {
@@ -105,15 +161,22 @@ func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Optio
 	return options
 }
 
+func toContainerRegistryPlatform(p *image.Platform) *containerregistryV1.Platform {
+	if p == nil {
+		return nil
+	}
+	return &containerregistryV1.Platform{
+		Architecture: p.Architecture,
+		OS:           p.OS,
+		Variant:      p.Variant,
+	}
+}
+
 func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform) (options []remote.Option) {
 	options = append(options, remote.WithContext(ctx))
 
 	if p != nil {
-		options = append(options, remote.WithPlatform(containerregistryV1.Platform{
-			Architecture: p.Architecture,
-			OS:           p.OS,
-			Variant:      p.Variant,
-		}))
+		options = append(options, remote.WithPlatform(*toContainerRegistryPlatform(p)))
 	}
 
 	registryName := ref.Context().RegistryStr()
@@ -165,4 +228,52 @@ func defaultPlatformIfNil(platform *image.Platform) *image.Platform {
 		}
 	}
 	return platform
+}
+
+// matchesPlatform checks if the given platform matches the required platforms.
+// The given platform matches the required platform if
+// - architecture and OS are identical.
+// - OS version and variant are identical if provided.
+// - features and OS features of the required platform are subsets of those of the given platform.
+// note: this function was copied from the GGCR repo, as it is not exported.
+func matchesPlatform(given, required containerregistryV1.Platform) bool {
+	// Required fields that must be identical.
+	if given.Architecture != required.Architecture || given.OS != required.OS {
+		return false
+	}
+
+	// Optional fields that may be empty, but must be identical if provided.
+	if required.OSVersion != "" && given.OSVersion != required.OSVersion {
+		return false
+	}
+	if required.Variant != "" && given.Variant != required.Variant {
+		return false
+	}
+
+	// Verify required platform's features are a subset of given platform's features.
+	if !isSubset(given.OSFeatures, required.OSFeatures) {
+		return false
+	}
+	if !isSubset(given.Features, required.Features) {
+		return false
+	}
+
+	return true
+}
+
+// isSubset checks if the required array of strings is a subset of the given lst.
+// note: this function was copied from the GGCR repo, as it is not exported.
+func isSubset(lst, required []string) bool {
+	set := make(map[string]bool)
+	for _, value := range lst {
+		set[value] = true
+	}
+
+	for _, value := range required {
+		if _, ok := set[value]; !ok {
+			return false
+		}
+	}
+
+	return true
 }

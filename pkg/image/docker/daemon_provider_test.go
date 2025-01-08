@@ -8,6 +8,8 @@ import (
 	configTypes "github.com/docker/cli/cli/config/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/anchore/stereoscope/pkg/image"
 )
 
 func TestEncodeCredentials(t *testing.T) {
@@ -82,6 +84,87 @@ func Test_authURL(t *testing.T) {
 			got, err := authURL(tt.imageStr, tt.workaround)
 			tt.wantErr(t, err)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+type mockEmitter struct {
+	calledEvents []*pullEvent
+}
+
+func (m *mockEmitter) onEvent(event *pullEvent) {
+	m.calledEvents = append(m.calledEvents, event)
+}
+
+func TestHandlePullEventWithMockEmitter(t *testing.T) {
+	tests := []struct {
+		name          string
+		event         *pullEvent
+		expectOnEvent bool
+		assertFunc    require.ErrorAssertionFunc
+	}{
+		{
+			name: "error in event",
+			event: &pullEvent{
+				Error: "fetch failed",
+			},
+			expectOnEvent: false,
+			assertFunc: func(t require.TestingT, err error, args ...interface{}) {
+				require.Error(t, err)
+				var pErr *image.ErrPlatformMismatch
+				require.NotErrorAs(t, err, &pErr)
+			},
+		},
+		{
+			name: "platform error in event",
+			event: &pullEvent{
+				Error: "image with reference anchore/test_images:golang was found but its platform (linux/amd64) does not match the specified platform (linux/arm64)",
+			},
+			expectOnEvent: false,
+			assertFunc: func(t require.TestingT, err error, args ...interface{}) {
+				require.Error(t, err)
+				var pErr *image.ErrPlatformMismatch
+				require.ErrorAs(t, err, &pErr)
+			},
+		},
+		{
+			name: "digest event",
+			event: &pullEvent{
+				Status: "Digest: abc123",
+			},
+			expectOnEvent: false,
+			assertFunc:    require.NoError,
+		},
+		{
+			name: "status event",
+			event: &pullEvent{
+				Status: "Status: Downloaded",
+			},
+			expectOnEvent: false,
+			assertFunc:    require.NoError,
+		},
+		{
+			name: "non-terminal event",
+			event: &pullEvent{
+				Status: "Downloading layer",
+			},
+			expectOnEvent: true,
+			assertFunc:    require.NoError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &mockEmitter{}
+			err := handlePullEvent(mock, tt.event)
+			tt.assertFunc(t, err)
+
+			if tt.expectOnEvent {
+				require.Len(t, mock.calledEvents, 1)
+				require.Equal(t, tt.event, mock.calledEvents[0])
+			} else {
+				require.Empty(t, mock.calledEvents)
+			}
 		})
 	}
 }
