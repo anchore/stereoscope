@@ -97,7 +97,7 @@ func Test_exportPlatformComparer(t *testing.T) {
 
 func TestValidatePlatform(t *testing.T) {
 	isFetchError := func(t require.TestingT, err error, args ...interface{}) {
-		var pErr *image.ErrFetchingImage
+		var pErr *image.ErrPlatformMismatch
 		require.ErrorAs(t, err, &pErr)
 	}
 

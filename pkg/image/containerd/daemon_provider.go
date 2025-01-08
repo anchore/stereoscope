@@ -354,27 +354,28 @@ func validatePlatform(expected *image.Platform, given *platforms.Platform) error
 	}
 
 	if given == nil {
-		return newErrFetchingImage(fmt.Errorf("image has no platform information (might be a manifest list)"))
+		return newErrPlatformMismatch(expected, fmt.Errorf("image has no platform information (might be a manifest list)"))
 	}
 
 	if given.OS != expected.OS {
-		return newErrFetchingImage(fmt.Errorf("image has unexpected OS %q, which differs from the user specified PS %q", given.OS, expected.OS))
+		return newErrPlatformMismatch(expected, fmt.Errorf("image has unexpected OS %q, which differs from the user specified PS %q", given.OS, expected.OS))
 	}
 
 	if given.Architecture != expected.Architecture {
-		return newErrFetchingImage(fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", given.Architecture, expected.Architecture))
+		return newErrPlatformMismatch(expected, fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", given.Architecture, expected.Architecture))
 	}
 
 	if given.Variant != expected.Variant {
-		return newErrFetchingImage(fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", given.Variant, expected.Variant))
+		return newErrPlatformMismatch(expected, fmt.Errorf("image has unexpected architecture %q, which differs from the user specified architecture %q", given.Variant, expected.Variant))
 	}
 
 	return nil
 }
 
-func newErrFetchingImage(err error) *image.ErrFetchingImage {
-	return &image.ErrFetchingImage{
-		Reason: err.Error(),
+func newErrPlatformMismatch(expected *image.Platform, err error) *image.ErrPlatformMismatch {
+	return &image.ErrPlatformMismatch{
+		ExpectedPlatform: expected.String(),
+		Err:              err,
 	}
 }
 

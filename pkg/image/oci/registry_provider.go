@@ -130,25 +130,26 @@ func validatePlatform(platform *image.Platform, givenOs, givenArch string) error
 		return nil
 	}
 	if givenArch == "" || givenOs == "" {
-		return newErrFetchingImage(fmt.Errorf("missing architecture or OS from image config when user specified platform=%q", platform.String()))
+		return newErrPlatformMismatch(platform, fmt.Errorf("missing architecture or OS from image config when user specified platform=%q", platform.String()))
 	}
 	platformStr := fmt.Sprintf("%s/%s", givenOs, givenArch)
 	actualPlatform, err := containerregistryV1.ParsePlatform(platformStr)
 	if err != nil {
-		return newErrFetchingImage(fmt.Errorf("failed to parse platform from image config: %w", err))
+		return newErrPlatformMismatch(platform, fmt.Errorf("failed to parse platform from image config: %w", err))
 	}
 	if actualPlatform == nil {
-		return newErrFetchingImage(fmt.Errorf("not platform from image config (from %q)", platformStr))
+		return newErrPlatformMismatch(platform, fmt.Errorf("not platform from image config (from %q)", platformStr))
 	}
 	if !matchesPlatform(*actualPlatform, *toContainerRegistryPlatform(platform)) {
-		return newErrFetchingImage(fmt.Errorf("image platform=%q does not match user specified platform=%q", actualPlatform.String(), platform.String()))
+		return newErrPlatformMismatch(platform, fmt.Errorf("image platform=%q does not match user specified platform=%q", actualPlatform.String(), platform.String()))
 	}
 	return nil
 }
 
-func newErrFetchingImage(err error) *image.ErrFetchingImage {
-	return &image.ErrFetchingImage{
-		Reason: err.Error(),
+func newErrPlatformMismatch(platform *image.Platform, err error) *image.ErrPlatformMismatch {
+	return &image.ErrPlatformMismatch{
+		ExpectedPlatform: platform.String(),
+		Err:              err,
 	}
 }
 

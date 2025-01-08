@@ -165,7 +165,12 @@ type emitter interface {
 
 func handlePullEvent(status emitter, event *pullEvent) error {
 	if event.Error != "" {
-		return &image.ErrFetchingImage{Reason: event.Error}
+		if strings.Contains(event.Error, "does not match the specified platform") {
+			return &image.ErrPlatformMismatch{
+				Err: errors.New(event.Error),
+			}
+		}
+		return errors.New(event.Error)
 	}
 
 	// check for the last two events indicating the pull is complete
