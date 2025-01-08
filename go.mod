@@ -33,7 +33,7 @@ require (
 	github.com/sylabs/squashfs v1.0.4
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20230925121702-07e42b3cdba0
-	golang.org/x/crypto v0.31.0
+	golang.org/x/crypto v0.32.0
 )
 
 require (
@@ -112,8 +112,8 @@ require (
 	golang.org/x/net v0.31.0 // indirect
 	golang.org/x/oauth2 v0.18.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20231211222908-989df2bf70f3 // indirect
