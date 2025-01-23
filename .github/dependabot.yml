@@ -29,7 +29,7 @@ updates:
           - patch
 
   - package-ecosystem: "github-actions"
-    directory: "/.github/actions/boostrap"
+    directory: "/.github/actions/bootstrap"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
