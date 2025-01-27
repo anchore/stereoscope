@@ -41,10 +41,7 @@ func (s StringSet) Contains(i string) bool {
 }
 
 func (s StringSet) Clear() {
-	// TODO: replace this with the new 'clear' keyword when it's available in go 1.20 or 1.21
-	for i := range s {
-		delete(s, i)
-	}
+	clear(s)
 }
 
 func (s StringSet) List() []string {
