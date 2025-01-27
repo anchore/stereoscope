@@ -41,7 +41,7 @@ func (s IDSet) Contains(i ID) bool {
 }
 
 func (s IDSet) Clear() {
-	clear(s)
+	 clear(s)
 }
 
 func (s IDSet) List() []ID {
