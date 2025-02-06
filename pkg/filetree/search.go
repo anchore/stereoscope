@@ -333,74 +333,56 @@ func (sc searchContext) _pathsToNode(fn *filenode.FileNode, observedPaths file.P
 	paths := file.NewPathSet()
 	paths.Add(fn.RealPath)
 
+	// Early exit if we've processed this path before
 	if observedPaths != nil {
 		if observedPaths.Contains(fn.RealPath) {
-			// we've already observed this path, so we can stop here
-			return nil, nil
+			return paths, nil
 		}
 		observedPaths.Add(fn.RealPath)
 	}
 
 	nodeID := fn.ID()
 
-	addPath := func(suffix string, ps ...file.Path) {
-		for _, p := range ps {
-			if suffix != "" {
-				p = file.Path(path.Join(string(p), suffix))
-			}
-			paths.Add(p)
-		}
-	}
-
-	// add all paths to the node that are linked to it
+	// Process backward references
 	for _, linkSrcID := range sc.linkBackwardRefs[nodeID].List() {
 		pfn := sc.tree.tree.Node(linkSrcID)
 		if pfn == nil {
-			log.WithFields("id", nodeID, "parent", linkSrcID).Warn("found non-existent parent link")
 			continue
 		}
 		linkSrcPaths, err := sc.pathsToNode(pfn.(*filenode.FileNode), observedPaths, cache)
 		if err != nil {
 			return nil, err
 		}
-
-		addPath("", linkSrcPaths.List()...)
+		if linkSrcPaths != nil {
+			for _, p := range linkSrcPaths.List() {
+				paths.Add(p)
+			}
+		}
 	}
 
-	// crawl up the tree to find all paths to our parent and repeat
-	for _, p := range paths.List() {
-		nextNestedSuffix := p.Basename()
-		allParentPaths := p.ConstituentPaths()
-		sort.Sort(sort.Reverse(file.Paths(allParentPaths)))
+	// Get single parent instead of all constituents
+	parentPath := path.Dir(string(fn.RealPath))
+	if parentPath != "/" && parentPath != "." {
+		pna, err := sc.tree.node(file.Path(parentPath), linkResolutionStrategy{
+			FollowAncestorLinks: true,
+			FollowBasenameLinks: false,
+		})
+		if err != nil {
+			return nil, err
+		}
 
-		for _, pp := range allParentPaths {
-			if pp == "/" {
-				break
-			}
-
-			nestedSuffix := nextNestedSuffix
-			nextNestedSuffix = path.Join(pp.Basename(), nestedSuffix)
-
-			pna, err := sc.tree.node(pp, linkResolutionStrategy{
-				FollowAncestorLinks: true,
-				FollowBasenameLinks: false,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("unable to get parent node for path=%q: %w", pp, err)
-			}
-
-			if !pna.HasFileNode() {
-				continue
-			}
-
-			parentLinkPaths, err := sc.pathsToNode(pna.FileNode, observedPaths, cache)
+		if pna.HasFileNode() {
+			parentPaths, err := sc.pathsToNode(pna.FileNode, observedPaths, cache)
 			if err != nil {
 				return nil, err
 			}
-			addPath(nestedSuffix, parentLinkPaths.List()...)
+			if parentPaths != nil {
+				for _, pp := range parentPaths.List() {
+					paths.Add(file.Path(path.Join(string(pp), fn.RealPath.Basename())))
+				}
+			}
 		}
 	}
-	observedPaths.Remove(fn.RealPath)
 
 	return paths, nil
 }
