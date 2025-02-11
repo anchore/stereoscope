@@ -2,42 +2,20 @@ version: 2
 
 updates:
 
-  - package-ecosystem: gomod
+  - package-ecosystem: "gomod"
+    open-pull-requests-limit: 10
     directory: "/"
     schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-    groups:
-      go:
-        update-types:
-          - patch
+      interval: "weekly"
 
   - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "daily"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-    groups:
-      workflows:
-        update-types:
-          - major
-          - minor
-          - patch
-
-  - package-ecosystem: "github-actions"
     directory: "/.github/actions/bootstrap"
     schedule:
       interval: "daily"
+
+  - package-ecosystem: "github-actions"
     open-pull-requests-limit: 10
-    labels:
-      - "dependencies"
-    groups:
-      workflows:
-        update-types:
-          - major
-          - minor
-          - patch
+    directory: "/.github/workflows"
+    schedule:
+      interval: "daily"
