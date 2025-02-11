@@ -82,16 +82,12 @@ func (sc *searchContext) buildLinkResolutionIndex() error {
 
 func (sc searchContext) SearchByPath(path string, options ...LinkResolutionOption) (*file.Resolution, error) {
 	// TODO: one day this could leverage indexes outside of the tree, but today this is not implemented
-	log.WithFields("path", path).Trace("searching filetree by path")
-
 	options = append(options, FollowBasenameLinks)
 	_, ref, err := sc.tree.File(file.Path(path), options...)
 	return ref, err
 }
 
 func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution, error) {
-	log.WithFields("types", mimeTypes).Trace("searching filetree by MIME types")
-
 	var fileEntries []IndexEntry
 
 	for _, mType := range mimeTypes {
@@ -115,8 +111,6 @@ func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution
 // add case for status.d/* like things that hook up directly into filetree.ListPaths()
 
 func (sc searchContext) SearchByGlob(pattern string, options ...LinkResolutionOption) ([]file.Resolution, error) {
-	log.WithFields("glob", pattern).Trace("searching filetree by glob")
-
 	if sc.index == nil {
 		options = append(options, FollowBasenameLinks)
 		refs, err := sc.tree.FilesByGlob(pattern, options...)
