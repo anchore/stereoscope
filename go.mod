@@ -1,6 +1,7 @@
 module github.com/anchore/stereoscope
 
 go 1.22.9
+toolchain go1.23.6
 
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
@@ -33,7 +34,7 @@ require (
 	github.com/sylabs/squashfs v1.0.4
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20230925121702-07e42b3cdba0
-	golang.org/x/crypto v0.33.0
+	golang.org/x/crypto v0.35.0
 )
 
 require (
