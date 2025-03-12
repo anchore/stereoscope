@@ -55,7 +55,7 @@ func (t *Tree) Copy() *Tree {
 
 // Roots is all of the nodes with no parents.
 func (t *Tree) Roots() node.Nodes {
-	var nodes = make([]node.Node, 0)
+	nodes := make([]node.Node, 0)
 	for _, n := range t.nodes {
 		if parent := t.parent[n.ID()]; parent == nil {
 			nodes = append(nodes, n)
@@ -104,41 +104,41 @@ func (t *Tree) addNode(n node.Node) error {
 }
 
 // Replace takes the given old node and replaces it with the given new one.
-func (t *Tree) Replace(old node.Node, new node.Node) error {
+func (t *Tree) Replace(old node.Node, newNode node.Node) error {
 	if !t.HasNode(old.ID()) {
 		return fmt.Errorf("cannot replace node not in the Tree")
 	}
 
-	if old.ID() == new.ID() {
+	if old.ID() == newNode.ID() {
 		// the underlying objects may be different, but the ID's match. Simply track the new [already existing] node
 		// and keep all existing relationships.
-		t.nodes[new.ID()] = new
+		t.nodes[newNode.ID()] = newNode
 		return nil
 	}
 
 	// add the new node
-	err := t.addNode(new)
+	err := t.addNode(newNode)
 	if err != nil {
 		return err
 	}
 
 	// set the new node parent to the old node parent
-	t.parent[new.ID()] = t.parent[old.ID()]
+	t.parent[newNode.ID()] = t.parent[old.ID()]
 
 	for cid := range t.children[old.ID()] {
 		// replace the parent entry for each child
-		t.parent[cid] = new
+		t.parent[cid] = newNode
 
 		// add child entries to the new node
-		t.children[new.ID()][cid] = t.nodes[cid]
+		t.children[newNode.ID()][cid] = t.nodes[cid]
 	}
 
 	// replace the child entry for the old parents node
 	delete(t.children[t.parent[old.ID()].ID()], old.ID())
-	t.children[t.parent[old.ID()].ID()][new.ID()] = new
+	t.children[t.parent[old.ID()].ID()][newNode.ID()] = newNode
 
 	// remove the old node (if not already overwritten)
-	if old.ID() != new.ID() {
+	if old.ID() != newNode.ID() {
 		delete(t.children, old.ID())
 		delete(t.nodes, old.ID())
 		delete(t.parent, old.ID())
