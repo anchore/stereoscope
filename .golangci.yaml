@@ -1,5 +1,6 @@
 issues:
   max-same-issues: 25
+  uniq-by-line: false
 
   # TODO: enable this when we have coverage on docstring comments
 #  # The list of ids of default excludes to include or disable.
@@ -15,7 +16,6 @@ linters:
     - dogsled
     - dupl
     - errcheck
-    - exportloopref
     - funlen
     - gocognit
     - goconst
@@ -49,8 +49,9 @@ linters-settings:
     # If lower than 0, disable the check.
     # Default: 40
     statements: 50
-output:
-  uniq-by-line: false
+  gosec:
+    excludes: G115
+
 run:
   timeout: 10m
 
