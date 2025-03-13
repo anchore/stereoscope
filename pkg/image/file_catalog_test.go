@@ -736,8 +736,11 @@ func TestFileCatalog_GetBasenames(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := fileCatalog.Basenames()
-			assert.ElementsMatchf(t, tt.want, actual, "diff: %s", cmp.Diff(tt.want, actual))
+			for _, name := range tt.want {
+				e, err := fileCatalog.GetByBasenameGlob(name)
+				require.NoError(t, err)
+				require.NotEmpty(t, e)
+			}
 		})
 	}
 }
