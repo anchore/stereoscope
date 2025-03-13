@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"os"
 	"runtime"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -174,6 +175,10 @@ func toContainerRegistryPlatform(p *image.Platform) *containerregistryV1.Platfor
 
 func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform) (options []remote.Option) {
 	options = append(options, remote.WithContext(ctx))
+
+	// Set the user agent to indicate what binary is making the request
+	// (e.g. syft, grype)
+	options = append(options, remote.WithUserAgent(os.Args[0]))
 
 	if p != nil {
 		options = append(options, remote.WithPlatform(*toContainerRegistryPlatform(p)))
