@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"sort"
 	"strings"
 	"sync"
 
@@ -28,7 +27,6 @@ type IndexReader interface {
 	GetByExtension(extensions ...string) ([]IndexEntry, error)
 	GetByBasename(basenames ...string) ([]IndexEntry, error)
 	GetByBasenameGlob(globs ...string) ([]IndexEntry, error)
-	Basenames() []string
 }
 
 type IndexWriter interface {
@@ -132,16 +130,6 @@ func (c *index) Get(f file.Reference) (IndexEntry, error) {
 		return IndexEntry{}, os.ErrNotExist
 	}
 	return value, nil
-}
-
-func (c *index) Basenames() []string {
-	c.RLock()
-	defer c.RUnlock()
-
-	bns := c.basenames.List()
-	sort.Strings(bns)
-
-	return bns
 }
 
 func (c *index) GetByFileType(fTypes ...file.Type) ([]IndexEntry, error) {
@@ -258,14 +246,20 @@ func (c *index) GetByBasenameGlob(globs ...string) ([]IndexEntry, error) {
 		}
 
 		patternObj := wildmatch.NewWildMatch(glob)
-		for _, b := range c.Basenames() {
+		var e error
+		c.basenames.Each(func(b string) bool {
 			if patternObj.IsMatch(b) {
 				bns, err := c.GetByBasename(b)
 				if err != nil {
-					return nil, fmt.Errorf("unable to fetch file references by basename (%q): %w", b, err)
+					e = fmt.Errorf("unable to fetch file references by basename (%q): %w", b, err)
+					return false
 				}
 				entries = append(entries, bns...)
 			}
+			return true
+		})
+		if e != nil {
+			return nil, e
 		}
 	}
 
