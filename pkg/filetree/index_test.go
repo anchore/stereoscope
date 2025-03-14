@@ -5,6 +5,8 @@ package filetree
 
 import (
 	"io/fs"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -661,6 +663,9 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 				tt.wantErr = require.NoError
 			}
 			actual, err := fileIndex.GetByBasenameGlob(tt.input)
+			sortPath := func(a, b IndexEntry) int { return strings.Compare(a.Path, b.Path) }
+			slices.SortFunc(actual, sortPath)
+			slices.SortFunc(tt.want, sortPath)
 			tt.wantErr(t, err)
 			if err != nil {
 				return
