@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -584,6 +585,9 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			if err != nil {
 				return
 			}
+			sortPath := func(a, b filetree.IndexEntry) int { return strings.Compare(a.Path, b.Path) }
+			slices.SortFunc(actual, sortPath)
+			slices.SortFunc(tt.want, sortPath)
 			if d := cmp.Diff(tt.want, actual,
 				cmpopts.EquateEmpty(),
 				cmpopts.IgnoreUnexported(file.Reference{}),
