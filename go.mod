@@ -18,7 +18,7 @@ require (
 	github.com/docker/docker v27.5.1+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/go-test/deep v1.0.8
-	github.com/google/go-cmp v0.6.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.2
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/logrusorgru/aurora v2.0.3+incompatible
