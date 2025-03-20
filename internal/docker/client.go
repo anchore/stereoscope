@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/anchore/go-homedir"
 	"github.com/docker/cli/cli/connhelper"
 	"github.com/docker/docker/client"
-	"github.com/mitchellh/go-homedir"
 )
 
 func GetClient() (*client.Client, error) {
