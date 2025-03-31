@@ -79,7 +79,7 @@ jobs:
           sudo podman images ls
 
       - name: Setup containerd
-        uses: crazy-max/ghaction-setup-containerd@44268919722b46e48dfbf518f9020466a1c8368b #v3.1.0
+        uses: crazy-max/ghaction-setup-containerd@b1962824078138dddccdf925db7402a9428c4aca #v3.2.0
 
       - name: Configure rootless containerd
         run: |
