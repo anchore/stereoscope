@@ -12,7 +12,7 @@ require (
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.9.1
 	github.com/becheran/wildmatch-go v1.0.0
 	github.com/bmatcuk/doublestar/v4 v4.8.1
-	github.com/containerd/containerd v1.7.26
+	github.com/containerd/containerd v1.7.27
 	github.com/containerd/errdefs v0.3.0
 	github.com/containerd/platforms v0.2.1
 	github.com/docker/cli v28.0.1+incompatible
