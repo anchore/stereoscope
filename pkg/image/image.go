@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 
+	"github.com/anchore/go-sync"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -192,10 +194,14 @@ func (i *Image) applyOverrideMetadata() error {
 	return nil
 }
 
+type layerReadResult struct {
+	layer *Layer
+	err   error
+}
+
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
-func (i *Image) Read() error {
-	var layers = make([]*Layer, 0)
+func (i *Image) Read(ctx context.Context) error { // nolint:funlen
 	var err error
 	i.Metadata, err = readImageMetadata(i.image)
 	if err != nil {
@@ -207,10 +213,7 @@ func (i *Image) Read() error {
 		return err
 	}
 
-	log.Debugf("image metadata: digest=%+v mediaType=%+v tags=%+v",
-		i.Metadata.ID,
-		i.Metadata.MediaType,
-		i.Metadata.Tags)
+	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags).Info("reading image")
 
 	v1Layers, err := i.image.Layers()
 	if err != nil {
@@ -222,19 +225,62 @@ func (i *Image) Read() error {
 
 	fileCatalog := NewFileCatalog()
 
+	idxLookup := make(map[string]int)
 	for idx, v1Layer := range v1Layers {
-		layer := NewLayer(v1Layer)
-		err := layer.Read(fileCatalog, idx, i.contentCacheDir)
+		diffID, err := v1Layer.DiffID()
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to get diffID for layer: %w", err)
 		}
-		i.Metadata.Size += layer.Metadata.Size
-		layers = append(layers, layer)
-
-		readProg.Increment()
+		idxLookup[diffID.String()] = idx
 	}
 
-	i.Layers = layers
+	layerReadResults := make([]layerReadResult, len(v1Layers))
+
+	errs := sync.Collect(&ctx, "cpu",
+		sync.ToSeq(v1Layers),
+		func(v1Layer v1.Layer) (layerReadResult, error) {
+			defer readProg.Increment()
+
+			diffID, err := v1Layer.DiffID()
+			if err != nil {
+				return layerReadResult{}, fmt.Errorf("unable to get diffID for layer: %w", err)
+			}
+
+			idx, ok := idxLookup[diffID.String()]
+			if !ok {
+				return layerReadResult{}, fmt.Errorf("unable to find layer index for diffID: %s", diffID.String())
+			}
+
+			l := NewLayer(v1Layer)
+			return layerReadResult{
+				layer: l,
+				err:   l.Read(fileCatalog, idx, i.contentCacheDir),
+			}, nil
+		}, func(v1Layer v1.Layer, res layerReadResult) {
+			diffID, err := v1Layer.DiffID()
+			if err != nil {
+				panic(fmt.Errorf("unable to get diffID for layer: %w", err))
+			}
+
+			idx, ok := idxLookup[diffID.String()]
+			if !ok {
+				panic(fmt.Errorf("unable to find layer index for diffID: %s", diffID.String()))
+			}
+
+			layerReadResults[idx] = res
+		})
+
+	if errs != nil {
+		return fmt.Errorf("failed to read image: %w", errs)
+	}
+
+	for _, result := range layerReadResults {
+		if result.err != nil {
+			return result.err
+		}
+		i.Metadata.Size += result.layer.Metadata.Size
+		i.Layers = append(i.Layers, result.layer)
+	}
 
 	// in order to resolve symlinks all squashed trees must be available
 	err = i.squash(readProg)
