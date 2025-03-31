@@ -1,6 +1,7 @@
 module github.com/anchore/stereoscope
 
 go 1.24.1
+toolchain go1.24.1
 
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
@@ -15,7 +16,7 @@ require (
 	github.com/containerd/containerd v1.7.27
 	github.com/containerd/errdefs v0.3.0
 	github.com/containerd/platforms v0.2.1
-	github.com/docker/cli v28.0.1+incompatible
+	github.com/docker/cli v28.0.4+incompatible
 	github.com/docker/docker v28.0.2+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/go-test/deep v1.0.8
