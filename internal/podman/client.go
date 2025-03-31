@@ -54,8 +54,6 @@ func ClientOverSSH() (*client.Client, error) {
 	clientOpts = append(clientOpts, func(c *client.Client) error {
 		return client.WithHTTPClient(httpClient)(c)
 	})
-	// This http path is defined by podman's docs: https://github.com/containers/podman/blob/main/pkg/api/server/docs.go#L31-L34
-	clientOpts = append(clientOpts, client.WithHost("http://d"))
 
 	c, err := client.NewClientWithOpts(clientOpts...)
 	if err != nil {
