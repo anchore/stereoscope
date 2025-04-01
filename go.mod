@@ -1,6 +1,7 @@
 module github.com/anchore/stereoscope
 
-go 1.24.1
+go 1.24.0
+
 toolchain go1.24.1
 
 require (
