@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -39,6 +40,8 @@ func (p *tarballImageProvider) Name() string {
 
 // Provide an image object that represents the docker image tar at the configured location on disk.
 func (p *tarballImageProvider) Provide(_ context.Context) (*image.Image, error) {
+	startTime := time.Now()
+
 	img, err := tarball.ImageFromPath(p.path, nil)
 	if err != nil {
 		// raise a more controlled error for when there are multiple images within the given tar (from https://github.com/anchore/grype/issues/215)
@@ -47,6 +50,8 @@ func (p *tarballImageProvider) Provide(_ context.Context) (*image.Image, error) 
 		}
 		return nil, fmt.Errorf("unable to provide image from tarball: %w", err)
 	}
+
+	log.WithFields("image", p.path, "time", time.Since(startTime)).Debug("got uncompressed image tarball")
 
 	// make a best-effort to generate an OCI manifest and gets tags, but ultimately this should be considered optional
 	var rawOCIManifest []byte
