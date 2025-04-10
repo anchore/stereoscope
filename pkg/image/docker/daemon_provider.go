@@ -256,6 +256,7 @@ func authURL(imageRef string, dockerhubWorkaround bool) (string, error) {
 
 // Provide an image object that represents the cached docker image tar fetched from a docker daemon.
 func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+	startTime := time.Now()
 	apiClient, err := p.newAPIClient()
 	if err != nil {
 		return nil, fmt.Errorf("%s not available: %w", p.name, err)
@@ -275,10 +276,14 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 		return nil, fmt.Errorf("unable to get %s API response: %w", p.name, err)
 	}
 
+	log.WithFields("image", p.imageStr).Info("docker pulling image")
 	imageRef, err := p.pullImageIfMissing(ctx, apiClient)
 	if err != nil {
 		return nil, err
 	}
+
+	log.WithFields("image", imageRef, "time", time.Since(startTime)).Info("docker pulled image")
+	startTime = time.Now()
 
 	// inspect the image that might have been pulled
 	inspectResult, err := apiClient.ImageInspect(ctx, imageRef)
@@ -291,10 +296,15 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 		return nil, err
 	}
 
+	log.WithFields("image", imageRef, "time", time.Since(startTime)).Trace("docker validated image")
+	startTime = time.Now()
+
 	tarFileName, err := p.saveImage(ctx, apiClient, imageRef)
 	if err != nil {
 		return nil, err
 	}
+
+	log.WithFields("image", imageRef, "time", time.Since(startTime), "path", tarFileName).Info("docker saved image")
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
 	return NewArchiveProvider(p.tmpDirGen, tarFileName, withInspectMetadata(inspectResult)...).

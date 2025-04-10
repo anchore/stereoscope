@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -60,6 +61,9 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 		return path, nil
 	}
 
+	log.WithFields("index", l.Metadata.Index, "path", path).Trace("start uncompressed layer cache")
+	startTime := time.Now()
+
 	rawReader, err := l.layer.Uncompressed()
 	if err != nil {
 		return "", err
@@ -73,6 +77,7 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 	if _, err := io.Copy(fh, rawReader); err != nil {
 		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", path, err)
 	}
+	log.WithFields("index", l.Metadata.Index, "path", path, "time", time.Since(startTime)).Trace("completed uncompressed layer cache")
 
 	return path, nil
 }
@@ -111,7 +116,9 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 		return fmt.Errorf("unknown layer media type: %+v", mediaType)
 	}
 
+	startTime := time.Now()
 	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
+	log.WithFields("index", idx, "time", time.Since(startTime)).Trace("completed layer search context")
 
 	return nil
 }
@@ -124,16 +131,14 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 		return err
 	}
 
-	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
-		l.Metadata.Index,
-		l.Metadata.Digest,
-		l.Metadata.MediaType)
+	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Trace("reading uncompressed image layer")
 
 	tarFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)
 	if err != nil {
 		return err
 	}
 
+	startTime := time.Now()
 	l.indexedContent, err = file.NewTarIndex(
 		tarFilePath,
 		layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
@@ -141,6 +146,7 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 	if err != nil {
 		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 	}
+	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType, "time", time.Since(startTime)).Trace("completed indexing image layer")
 
 	monitor.SetCompleted()
 	return nil
