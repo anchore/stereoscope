@@ -39,7 +39,7 @@ func (p *tarballImageProvider) Name() string {
 }
 
 // Provide an image object that represents the docker image tar at the configured location on disk.
-func (p *tarballImageProvider) Provide(_ context.Context) (*image.Image, error) {
+func (p *tarballImageProvider) Provide(ctx context.Context) (*image.Image, error) {
 	startTime := time.Now()
 
 	img, err := tarball.ImageFromPath(p.path, nil)
@@ -97,7 +97,7 @@ func (p *tarballImageProvider) Provide(_ context.Context) (*image.Image, error) 
 	}
 
 	out := image.New(img, p.tmpDirGen, contentTempDir, metadata...)
-	err = out.Read()
+	err = out.Read(ctx)
 	if err != nil {
 		return nil, err
 	}
