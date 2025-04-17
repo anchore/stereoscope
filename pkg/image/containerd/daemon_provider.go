@@ -71,6 +71,7 @@ type daemonProvideProgress struct {
 }
 
 func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error) {
+	startTime := time.Now()
 	client, err := containerdClient.GetClient()
 	if err != nil {
 		return nil, fmt.Errorf("containerd not available: %w", err)
@@ -89,10 +90,15 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 		return nil, err
 	}
 
+	log.WithFields("image", p.imageStr, "time", time.Since(startTime)).Info("containerd pulled image")
+	startTime = time.Now()
+
 	tarFileName, err := p.saveImage(ctx, client, resolvedImage)
 	if err != nil {
 		return nil, err
 	}
+
+	log.WithFields("image", p.imageStr, "time", time.Since(startTime)).Info("containerd saved image")
 
 	// use the existing tarball provider to process what was pulled from the containerd daemon
 	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, tarFileName, withMetadata(resolvedPlatform, p.imageStr)...).

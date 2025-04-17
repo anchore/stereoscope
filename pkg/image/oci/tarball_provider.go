@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 )
@@ -43,9 +45,14 @@ func (p *tarballImageProvider) Provide(ctx context.Context) (*image.Image, error
 		return nil, err
 	}
 
+	log.WithFields("file", p.path, "tempDir", tempDir).Trace("extracting OCI tar file to tempdir")
+	startTime := time.Now()
+
 	if err = file.UntarToDirectory(f, tempDir); err != nil {
 		return nil, err
 	}
+
+	log.WithFields("file", p.path, "tempDir", tempDir, "time", time.Since(startTime)).Debug("extracted OCI tar file to tempdir")
 
 	return NewDirectoryProvider(p.tmpDirGen, tempDir).Provide(ctx)
 }

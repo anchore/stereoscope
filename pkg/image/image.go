@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -213,7 +214,10 @@ func (i *Image) Read(ctx context.Context) error { // nolint:funlen
 		return err
 	}
 
-	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags).Info("reading image")
+	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags).Debug("reading image")
+
+	startTime := time.Now()
+	lapTime := startTime
 
 	v1Layers, err := i.image.Layers()
 	if err != nil {
@@ -282,11 +286,20 @@ func (i *Image) Read(ctx context.Context) error { // nolint:funlen
 		i.Layers = append(i.Layers, result.layer)
 	}
 
+	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image layer copy")
+	lapTime = time.Now()
+
 	// in order to resolve symlinks all squashed trees must be available
 	err = i.squash(readProg)
 
+	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image squash")
+	lapTime = time.Now()
+
 	i.FileCatalog = fileCatalog
 	i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
+
+	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image search context")
+	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime)).Info("completed image read")
 
 	return err
 }

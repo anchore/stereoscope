@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -47,6 +48,7 @@ func (p *registryImageProvider) Name() string {
 func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
 	log.Debugf("pulling image info directly from registry image=%q", p.imageStr)
 
+	startTime := time.Now()
 	imageTempDir, err := p.tmpDirGen.NewDirectory("oci-registry-image")
 	if err != nil {
 		return nil, err
@@ -81,6 +83,8 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 	if err := validatePlatform(platform, c.OS, c.Architecture); err != nil {
 		return nil, err
 	}
+
+	log.WithFields("image", p.imageStr, "time", time.Since(startTime)).Info("completed downloading image")
 
 	// craft a repo digest from the registry reference and the known digest
 	// note: the descriptor is fetched from the registry, and the descriptor digest is the same as the repo digest
