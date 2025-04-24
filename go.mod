@@ -17,7 +17,7 @@ require (
 	github.com/containerd/containerd v1.7.27
 	github.com/containerd/errdefs v0.3.0
 	github.com/containerd/platforms v0.2.1
-	github.com/docker/cli v28.0.4+incompatible
+	github.com/docker/cli v28.1.1+incompatible
 	github.com/docker/docker v28.0.4+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.9
 	github.com/go-test/deep v1.0.8
