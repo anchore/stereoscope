@@ -7,16 +7,14 @@ import (
 
 type TarIndexEntry struct {
 	path         string
-	sequence     int64
-	header       tar.Header
+	header       *tar.Header
 	seekPosition int64
 }
 
 func (t *TarIndexEntry) ToTarFileEntry() TarFileEntry {
 	return TarFileEntry{
-		Sequence: t.sequence,
-		Header:   t.header,
-		Reader:   t.Open(),
+		Header: t.header,
+		Reader: t.Open(),
 	}
 }
 
