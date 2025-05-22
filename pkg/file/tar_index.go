@@ -15,14 +15,19 @@ type TarIndex struct {
 
 // NewTarIndex creates a new TarIndex that is already indexed.
 func NewTarIndex(tarFilePath string, onIndex TarIndexVisitor) (*TarIndex, error) {
-	t := &TarIndex{
-		indexByName: make(map[string][]TarIndexEntry),
-	}
 	tarFileHandle, err := os.Open(tarFilePath)
 	if err != nil {
 		return nil, err
 	}
 	defer tarFileHandle.Close()
+	return NewTarIndexReadSeeker(tarFileHandle, tarFileHandle.Name(), onIndex)
+}
+
+// NewTarIndexReadSeeker creates a new TarIndex that is already indexed.
+func NewTarIndexReadSeeker(tarFileHandle io.ReadSeeker, path string, onIndex TarIndexVisitor) (*TarIndex, error) {
+	t := &TarIndex{
+		indexByName: make(map[string][]TarIndexEntry),
+	}
 
 	visitor := func(entry TarFileEntry) error {
 		// keep track of the current location (just after reading the tar header) as this is the file content for the
@@ -35,7 +40,7 @@ func NewTarIndex(tarFilePath string, onIndex TarIndexVisitor) (*TarIndex, error)
 		// keep track of the header position for this entry; the current tarFileHandle position is where the entry
 		// body payload starts (after the header has been read).
 		indexEntry := TarIndexEntry{
-			path:         tarFileHandle.Name(),
+			path:         path,
 			sequence:     entry.Sequence,
 			header:       entry.Header,
 			seekPosition: entrySeekPosition,

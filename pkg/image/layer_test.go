@@ -97,3 +97,54 @@ func TestRead(t *testing.T) {
 		})
 	}
 }
+
+func Test_formatBytes(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     int64
+		expected string
+	}{
+		{
+			name:     "zero",
+			size:     0,
+			expected: "0B",
+		},
+		{
+			name:     "bytes",
+			size:     129,
+			expected: "129B",
+		},
+		{
+			name:     "kbytes",
+			size:     1290,
+			expected: "1.29kB",
+		},
+		{
+			name:     "mbytes",
+			size:     1290000,
+			expected: "1.29MB",
+		},
+		{
+			name:     "gbytes",
+			size:     1290000000,
+			expected: "1.29GB",
+		},
+		{
+			name:     "tbytes",
+			size:     1290000000000,
+			expected: "1.29TB",
+		},
+		{
+			name:     "pbytes",
+			size:     1290000000000000,
+			expected: "1290.00TB",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatBytes(tt.size)
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}

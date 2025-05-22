@@ -126,4 +126,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-require github.com/anchore/go-sync v0.0.0-20250326131806-4eda43a485b6
+require github.com/anchore/go-sync v0.0.0-20250327190822-bd22fcad7676

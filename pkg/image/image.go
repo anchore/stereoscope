@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -16,7 +18,7 @@ import (
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 
-	"github.com/anchore/go-sync"
+	async "github.com/anchore/go-sync"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -195,11 +197,6 @@ func (i *Image) applyOverrideMetadata() error {
 	return nil
 }
 
-type layerReadResult struct {
-	layer *Layer
-	err   error
-}
-
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
 func (i *Image) Read(ctx context.Context) error { // nolint:funlen
@@ -229,68 +226,62 @@ func (i *Image) Read(ctx context.Context) error { // nolint:funlen
 
 	fileCatalog := NewFileCatalog()
 
-	idxLookup := make(map[string]int)
-	for idx, v1Layer := range v1Layers {
-		diffID, err := v1Layer.DiffID()
+	i.Layers = make([]*Layer, len(v1Layers))
+	locks := make([]sync.WaitGroup, len(v1Layers))
+	for idx := range v1Layers {
+		locks[idx].Add(1)
+	}
+
+	squashErr := make(chan error, 1)
+	// in order to resolve symlinks all squashed trees must be available, we process them in order as soon as possible
+	go func() {
+		startTime := time.Now()
+		squashErr <- i.squash(locks, readProg)
+		log.WithFields("digest", i.Metadata.ID, "time", time.Since(startTime)).Debug("completed total squash layers")
+	}()
+
+	if !async.HasContextExecutor(ctx, "disk-write") {
+		// default to serial write rather than inheriting a general executor behavior
+		ctx = async.SetContextExecutor(ctx, "disk-write", async.NewExecutor(0)) // serial
+	}
+	maxConcurrent := atomic.Int32{}
+	concurrent := atomic.Int32{}
+	errs := async.Collect2(&ctx, "disk-write", async.ToIndexSeq(v1Layers), func(idx int, v1Layer v1.Layer) (*Layer, error) {
+		l := NewLayer(v1Layer)
+		c := concurrent.Add(1)
+		if c > maxConcurrent.Load() {
+			maxConcurrent.Store(c)
+		}
+		defer concurrent.Add(-1)
+
+		l.Metadata, err = newLayerMetadata(l.layer, idx)
 		if err != nil {
-			return fmt.Errorf("unable to get diffID for layer: %w", err)
+			return l, err
 		}
-		idxLookup[diffID.String()] = idx
-	}
 
-	layerReadResults := make([]layerReadResult, len(v1Layers))
+		// save the contents of each layer sequentially
+		// _, err = l.uncompressedCache(idx, i.contentCacheDir)
 
-	errs := sync.Collect(&ctx, "cpu",
-		sync.ToSeq(v1Layers),
-		func(v1Layer v1.Layer) (layerReadResult, error) {
-			defer readProg.Increment()
+		i.Layers[idx] = l
 
-			diffID, err := v1Layer.DiffID()
-			if err != nil {
-				return layerReadResult{}, fmt.Errorf("unable to get diffID for layer: %w", err)
-			}
+		// spawn reader
+		defer locks[idx].Done()
+		defer readProg.Increment()
+		err = i.Layers[idx].Read(fileCatalog, idx, i.contentCacheDir)
 
-			idx, ok := idxLookup[diffID.String()]
-			if !ok {
-				return layerReadResult{}, fmt.Errorf("unable to find layer index for diffID: %s", diffID.String())
-			}
-
-			l := NewLayer(v1Layer)
-			return layerReadResult{
-				layer: l,
-				err:   l.Read(fileCatalog, idx, i.contentCacheDir),
-			}, nil
-		}, func(v1Layer v1.Layer, res layerReadResult) {
-			diffID, err := v1Layer.DiffID()
-			if err != nil {
-				panic(fmt.Errorf("unable to get diffID for layer: %w", err))
-			}
-
-			idx, ok := idxLookup[diffID.String()]
-			if !ok {
-				panic(fmt.Errorf("unable to find layer index for diffID: %s", diffID.String()))
-			}
-
-			layerReadResults[idx] = res
-		})
-
+		return l, err
+	}, func(_ int, _ v1.Layer, l *Layer) {
+		i.Metadata.Size += l.Metadata.Size
+	})
 	if errs != nil {
-		return fmt.Errorf("failed to read image: %w", errs)
+		return errs
 	}
 
-	for _, result := range layerReadResults {
-		if result.err != nil {
-			return result.err
-		}
-		i.Metadata.Size += result.layer.Metadata.Size
-		i.Layers = append(i.Layers, result.layer)
-	}
-
-	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image layer copy")
+	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(lapTime)).Debug("completed copying image layers")
 	lapTime = time.Now()
 
 	// in order to resolve symlinks all squashed trees must be available
-	err = i.squash(readProg)
+	err = <-squashErr
 
 	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image squash")
 	lapTime = time.Now()
@@ -299,17 +290,20 @@ func (i *Image) Read(ctx context.Context) error { // nolint:funlen
 	i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
 
 	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image search context")
-	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime)).Info("completed image read")
+	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime), "concurrent", maxConcurrent.Load()).Info("completed image read")
 
 	return err
 }
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
-func (i *Image) squash(prog *progress.Manual) error {
+func (i *Image) squash(locks []sync.WaitGroup, prog *progress.Manual) error {
 	var lastSquashTree filetree.ReadWriter
 
-	for idx, layer := range i.Layers {
+	lastTime := time.Now()
+	for idx := range i.Layers {
+		locks[idx].Wait()
+		layer := i.Layers[idx]
 		if idx == 0 {
 			lastSquashTree = layer.Tree.(filetree.ReadWriter)
 			layer.SquashedTree = layer.Tree
@@ -329,6 +323,9 @@ func (i *Image) squash(prog *progress.Manual) error {
 		layer.SquashedTree = squashedTree
 		layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 		lastSquashTree = squashedTree
+
+		log.WithFields("index", idx, "time", time.Since(lastTime)).Debug("squashed layer")
+		lastTime = time.Now()
 
 		prog.Increment()
 	}

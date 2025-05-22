@@ -50,7 +50,7 @@ func NewLayer(layer v1.Layer) *Layer {
 	}
 }
 
-func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, error) {
+func (l *Layer) uncompressedCache(idx int, uncompressedLayersCacheDir string) (string, error) {
 	if uncompressedLayersCacheDir == "" {
 		return "", fmt.Errorf("no cache directory given")
 	}
@@ -61,7 +61,7 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 		return path, nil
 	}
 
-	log.WithFields("index", l.Metadata.Index, "path", path).Trace("start uncompressed layer cache")
+	log.WithFields("index", idx, "path", path).Trace("start uncompressed layer cache")
 	startTime := time.Now()
 
 	rawReader, err := l.layer.Uncompressed()
@@ -74,10 +74,11 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 		return "", fmt.Errorf("unable to create layer cache dir=%q : %w", path, err)
 	}
 
-	if _, err := io.Copy(fh, rawReader); err != nil {
+	bytesCopied, err := io.Copy(fh, rawReader)
+	if err != nil {
 		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", path, err)
 	}
-	log.WithFields("index", l.Metadata.Index, "path", path, "time", time.Since(startTime)).Trace("completed uncompressed layer cache")
+	log.WithFields("index", idx, "path", path, "size", formatBytes(bytesCopied), "time", time.Since(startTime)).Debug("uncompressing layer cache completed")
 
 	return path, nil
 }
@@ -85,13 +86,32 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
 func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir string) error {
+	var err error
+	l.fileCatalog = catalog
+	l.Metadata, err = newLayerMetadata(l.layer, idx)
+	if err != nil {
+		return err
+	}
+	err = l.read(idx, uncompressedLayersCacheDir)
+	if err != nil {
+		return err
+	}
+	l.index(idx)
+	return nil
+}
+
+func (l *Layer) read(idx int, uncompressedLayersCacheDir string) error {
+	log.WithFields("index", idx).Debug("reading image layer")
+
 	mediaType, err := l.layer.MediaType()
 	if err != nil {
 		return err
 	}
 	tree := filetree.New()
 	l.Tree = tree
-	l.fileCatalog = catalog
+
+	monitor := trackReadProgress(l.Metadata)
+	defer monitor.SetCompleted()
 
 	switch mediaType {
 	case types.OCILayer,
@@ -103,12 +123,12 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 		types.DockerForeignLayer,
 		types.DockerUncompressedLayer:
 
-		err := l.readStandardImageLayer(idx, uncompressedLayersCacheDir, tree)
+		err := l.readStandardImageLayer(idx, uncompressedLayersCacheDir, monitor, tree)
 		if err != nil {
 			return err
 		}
 	case SingularitySquashFSLayer:
-		err := l.readSingularityImageLayer(idx, uncompressedLayersCacheDir, tree)
+		err := l.readSingularityImageLayer(idx, uncompressedLayersCacheDir, monitor, tree)
 		if err != nil {
 			return err
 		}
@@ -123,17 +143,18 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 	return nil
 }
 
-func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
-	var err error
-	l.Metadata, err = newLayerMetadata(l.layer, idx)
-	monitor := trackReadProgress(l.Metadata)
-	if err != nil {
-		return err
-	}
+func (l *Layer) index(idx int) {
+	startTime := time.Now()
 
+	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
+
+	log.WithFields("index", idx, "time", time.Since(startTime)).Info("completed indexing image layer")
+}
+
+func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir string, monitor *progress.Manual, tree *filetree.FileTree) error {
 	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Trace("reading uncompressed image layer")
 
-	tarFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)
+	tarFilePath, err := l.uncompressedCache(idx, uncompressedLayersCacheDir)
 	if err != nil {
 		return err
 	}
@@ -143,6 +164,9 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 		tarFilePath,
 		layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
 	)
+
+	log.WithFields("index", l.Metadata.Index, "path", tarFilePath, "time", time.Since(startTime)).Debug("completed indexing of layer")
+
 	if err != nil {
 		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 	}
@@ -152,17 +176,10 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 	return nil
 }
 
-func (l *Layer) readSingularityImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
-	var err error
-	l.Metadata, err = newLayerMetadata(l.layer, idx)
-	if err != nil {
-		return err
-	}
+func (l *Layer) readSingularityImageLayer(idx int, uncompressedLayersCacheDir string, monitor *progress.Manual, tree *filetree.FileTree) error {
+	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Debug("reading singularity layer")
 
-	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Debug("reading layer")
-
-	monitor := trackReadProgress(l.Metadata)
-	sqfsFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)
+	sqfsFilePath, err := l.uncompressedCache(idx, uncompressedLayersCacheDir)
 	if err != nil {
 		return err
 	}
@@ -170,8 +187,6 @@ func (l *Layer) readSingularityImageLayer(idx int, uncompressedLayersCacheDir st
 	if err := file.WalkSquashFS(sqfsFilePath, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor)); err != nil {
 		return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
 	}
-
-	monitor.SetCompleted()
 	return nil
 }
 
@@ -363,4 +378,23 @@ func trackReadProgress(metadata LayerMetadata) *progress.Manual {
 	})
 
 	return p
+}
+
+func formatBytes(bytes int64) string {
+	const kb = 1000
+	const mb = kb * kb
+	const gb = kb * mb
+	const tb = kb * gb
+	switch {
+	case bytes > tb:
+		return fmt.Sprintf("%.2fTB", float64(bytes)/tb)
+	case bytes > gb:
+		return fmt.Sprintf("%.2fGB", float64(bytes)/gb)
+	case bytes > mb:
+		return fmt.Sprintf("%.2fMB", float64(bytes)/mb)
+	case bytes > kb:
+		return fmt.Sprintf("%.2fkB", float64(bytes)/kb)
+	default:
+		return fmt.Sprintf("%dB", bytes)
+	}
 }
