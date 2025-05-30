@@ -73,6 +73,17 @@ func parseGlob(glob string) []searchRequest {
 
 	beforeBasename, basename := splitAtBasename(glob)
 
+	// special case: exact path with basename glob match, e.g.: /var/lib/dpkg/info/fuse.*
+	if beforeBasename != "" && exactMatch(beforeBasename) {
+		return []searchRequest{
+			{
+				searchBasis: searchBySubDirectory,
+				value:       beforeBasename,
+				requirement: glob,
+			},
+		}
+	}
+
 	if basename == "*" {
 		_, nestedBasename := splitAtBasename(beforeBasename)
 		if !strings.ContainsAny(nestedBasename, "*?[]{}") {
@@ -94,6 +105,11 @@ func parseGlob(glob string) []searchRequest {
 	}
 
 	return requests
+}
+
+// exactMatch indicates the string does not contain an expression that may result in multiple results such as * or {}
+func exactMatch(glob string) bool {
+	return !strings.ContainsAny(glob, "*?[]{}")
 }
 
 func splitAtBasename(glob string) (string, string) {

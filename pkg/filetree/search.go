@@ -98,9 +98,13 @@ func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution
 		fileEntries = append(fileEntries, entries...)
 	}
 
-	refs, err := sc.referencesInTree(fileEntries)
-	if err != nil {
-		return nil, err
+	// this was never a path-based request, so resolving all link resolutions is not necessary (since all request paths are real paths)
+	var refs []file.Resolution
+	for _, entry := range fileEntries {
+		refs = append(refs, file.Resolution{
+			RequestPath: entry.RealPath,
+			Reference:   &entry.Reference,
+		})
 	}
 
 	sort.Sort(file.Resolutions(refs))

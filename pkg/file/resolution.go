@@ -59,28 +59,28 @@ func (f *Resolution) HasReference() bool {
 	return f.Reference != nil
 }
 
-func (f *Resolution) AllPaths() []Path {
-	set := strset.New()
-	set.Add(string(f.RequestPath))
-	if f.Reference != nil {
-		set.Add(string(f.Reference.RealPath))
-	}
-	for _, p := range f.LinkResolutions {
-		set.Add(string(p.RequestPath))
-		if p.Reference != nil {
-			set.Add(string(p.Reference.RealPath))
-		}
-	}
-
-	paths := set.List()
-	sort.Strings(paths)
-
-	var results []Path
-	for _, p := range paths {
-		results = append(results, Path(p))
-	}
-	return results
-}
+//func (f *Resolution) AllPaths() []Path {
+//	set := strset.New()
+//	set.Add(string(f.RequestPath))
+//	if f.Reference != nil {
+//		set.Add(string(f.Reference.RealPath))
+//	}
+//	for _, p := range f.LinkResolutions {
+//		set.Add(string(p.RequestPath))
+//		if p.Reference != nil {
+//			set.Add(string(p.Reference.RealPath))
+//		}
+//	}
+//
+//	paths := set.List()
+//	sort.Strings(paths)
+//
+//	var results []Path
+//	for _, p := range paths {
+//		results = append(results, Path(p))
+//	}
+//	return results
+//}
 
 func (f *Resolution) AllRequestPaths() []Path {
 	set := strset.New()
@@ -99,41 +99,41 @@ func (f *Resolution) AllRequestPaths() []Path {
 	return results
 }
 
-// RequestResolutionPath represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
-func (f *Resolution) RequestResolutionPath() []Path {
-	var paths []Path
-	var firstPath Path
-	var lastLinkResolutionIsDead bool
-
-	if string(f.RequestPath) != "" {
-		firstPath = f.RequestPath
-		paths = append(paths, f.RequestPath)
-	}
-	for i, p := range f.LinkResolutions {
-		if i == 0 && p.RequestPath == f.RequestPath {
-			// ignore link resolution that starts with the same user requested path
-			continue
-		}
-		if firstPath == "" {
-			firstPath = p.RequestPath
-		}
-
-		paths = append(paths, p.RequestPath)
-
-		if i == len(f.LinkResolutions)-1 {
-			// we've reached the final link resolution
-			if p.Reference == nil {
-				lastLinkResolutionIsDead = true
-			}
-		}
-	}
-	if f.HasReference() && firstPath != f.Reference.RealPath && !lastLinkResolutionIsDead {
-		// we've reached the final reference that was resolved
-		// we should only do this if there was a link resolution
-		paths = append(paths, f.Reference.RealPath)
-	}
-	return paths
-}
+//// RequestResolutionPath represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
+//func (f *Resolution) RequestResolutionPath() []Path {
+//	var paths []Path
+//	var firstPath Path
+//	var lastLinkResolutionIsDead bool
+//
+//	if string(f.RequestPath) != "" {
+//		firstPath = f.RequestPath
+//		paths = append(paths, f.RequestPath)
+//	}
+//	for i, p := range f.LinkResolutions {
+//		if i == 0 && p.RequestPath == f.RequestPath {
+//			// ignore link resolution that starts with the same user requested path
+//			continue
+//		}
+//		if firstPath == "" {
+//			firstPath = p.RequestPath
+//		}
+//
+//		paths = append(paths, p.RequestPath)
+//
+//		if i == len(f.LinkResolutions)-1 {
+//			// we've reached the final link resolution
+//			if p.Reference == nil {
+//				lastLinkResolutionIsDead = true
+//			}
+//		}
+//	}
+//	if f.HasReference() && firstPath != f.Reference.RealPath && !lastLinkResolutionIsDead {
+//		// we've reached the final reference that was resolved
+//		// we should only do this if there was a link resolution
+//		paths = append(paths, f.Reference.RealPath)
+//	}
+//	return paths
+//}
 
 // References represents the traversal through the filesystem to access to current reference, including all symlink and hardlink resolution.
 func (f *Resolution) References() []Reference {
