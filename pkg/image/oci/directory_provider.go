@@ -32,7 +32,7 @@ func (p *directoryImageProvider) Name() string {
 }
 
 // Provide an image object that represents the OCI image as a directory.
-func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error) {
+func (p *directoryImageProvider) Provide(ctx context.Context) (*image.Image, error) {
 	pathObj, err := layout.FromPath(p.path)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read image from OCI directory path %q: %w", p.path, err)
@@ -81,7 +81,7 @@ func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error
 	}
 
 	out := image.New(img, p.tmpDirGen, contentTempDir, metadata...)
-	err = out.Read()
+	err = out.Read(ctx)
 	if err != nil {
 		return nil, err
 	}
