@@ -267,7 +267,6 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 	observedPaths.Add(fullPath)
 
 	// first, test the path against the glob and return it if matches
-	// _, ref, err := sc.tree.File(fullPath, FollowBasenameLinks, followAncestorLinks)
 	_, ref, err := sc.tree.File(fullPath, FollowBasenameLinks)
 	if err != nil {
 		return nil, err
