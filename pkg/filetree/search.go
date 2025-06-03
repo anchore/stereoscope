@@ -99,13 +99,9 @@ func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution
 		fileEntries = append(fileEntries, entries...)
 	}
 
-	// this is not a path-based request, so resolving all link resolutions is not necessary, since all real paths satisfy the request
-	var refs []file.Resolution
-	for _, entry := range fileEntries {
-		refs = append(refs, file.Resolution{
-			RequestPath: entry.RealPath,
-			Reference:   &entry.Reference,
-		})
+	refs, err := sc.firstMatchingReferences("**/*", fileEntries)
+	if err != nil {
+		return nil, err
 	}
 
 	sort.Sort(file.Resolutions(refs))
@@ -254,8 +250,15 @@ func matchesGlob(ref file.Resolution, glob string) (bool, error) {
 // firstPathToNode returns the first path matching the given glob, this is done by:
 // * testing the provided path, returning the path if matching
 // * expanding parent paths, replacing paths that are symlinks
-func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string, pathSegments ...string) (*file.Resolution, error) {
-	fullPath := file.Path(path.Join(pathSegments...))
+func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string, symlinkCheckedPath, suffix string) (*file.Resolution, error) {
+	fullPath := file.Path(symlinkCheckedPath)
+	if suffix != "" {
+		if strings.HasPrefix(suffix, "/") {
+			fullPath = file.Path(symlinkCheckedPath + suffix)
+		} else {
+			fullPath = file.Path(path.Join(symlinkCheckedPath, suffix))
+		}
+	}
 
 	if observedPaths.Contains(fullPath) {
 		// we've already observed this path, so we can stop here
@@ -280,13 +283,14 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 		}
 	}
 
-	parts := strings.Split(strings.TrimLeft(pathSegments[0], "/"), "/")
-	for i := 0; i <= len(parts); i++ {
-		joinedPath := path.Join(parts[0:i]...)
-		if !strings.HasPrefix(joinedPath, "/") {
-			joinedPath = "/" + joinedPath
-		}
-		dir := file.Path(joinedPath)
+	// the first segment should is always an absolute path, starting with /, ensure it does here
+	if !strings.HasPrefix(symlinkCheckedPath, "/") {
+		symlinkCheckedPath = "/" + symlinkCheckedPath
+	}
+
+	for indexAfter := nextSlashOrEnd(symlinkCheckedPath, 1); indexAfter > 0; indexAfter = nextSlashOrEnd(symlinkCheckedPath, indexAfter+1) {
+		dir := file.Path(symlinkCheckedPath[:indexAfter])
+		remain := string(fullPath[indexAfter:])
 
 		if observedPaths.Contains(dir) {
 			// we've already observed this path, don't get in a loop, e.g. /usr/bin/X11 -> /usr/bin
@@ -315,8 +319,7 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 			}
 
 			linkPath := string(pfn.(*filenode.FileNode).RealPath)
-			linkReplacedPath := append(append([]string{linkPath}, parts[i:]...), pathSegments[1:]...)
-			ref, err = sc.firstPathToNode(observedPaths, glob, linkReplacedPath...)
+			ref, err = sc.firstPathToNode(observedPaths, glob, linkPath, remain)
 			if ref != nil || err != nil {
 				return ref, err
 			}
@@ -352,6 +355,18 @@ allFileEntries:
 }
 
 // firstMatchingReference returns the first file reference matching the glob
-func (sc searchContext) firstMatchingReference(glob string, pathSegments ...string) (*file.Resolution, error) {
-	return sc.firstPathToNode(file.PathSet{}, glob, pathSegments...)
+func (sc searchContext) firstMatchingReference(glob string, realPath string) (*file.Resolution, error) {
+	return sc.firstPathToNode(file.PathSet{}, glob, realPath, "")
+}
+
+// nextSlashOrEnd returns the next index a slash is found, the end of the string, or -1 if the request is beyond the
+func nextSlashOrEnd(s string, start int) int {
+	if start >= len(s) {
+		return -1
+	}
+	idx := strings.IndexRune(s[start:], '/')
+	if idx < 0 {
+		return len(s)
+	}
+	return idx + start
 }

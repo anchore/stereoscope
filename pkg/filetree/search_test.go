@@ -456,3 +456,31 @@ func Test_complexSymlinkPerformance(t *testing.T) {
 		})
 	}
 }
+
+func Test_nextSlash(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		start    int
+		expected int
+	}{
+		{name: "single begin", input: "/a", start: 0, expected: 0},
+		{name: "single after", input: "/ab1", start: 1, expected: 4},
+		{name: "single end", input: "/ab1", start: 4, expected: -1},
+		{name: "multiple first", input: "/a/b/c", start: 0, expected: 0},
+		{name: "multiple mid", input: "/a/b/c", start: 1, expected: 2},
+		{name: "multiple last", input: "/a/b/c", start: 3, expected: 4},
+		{name: "multiple after", input: "/a/b/c", start: 5, expected: 6},
+		{name: "multiple end", input: "/a/b/c", start: 6, expected: -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := nextSlashOrEnd(tt.input, tt.start)
+			if got < 0 {
+				got = -1
+			}
+			require.Equal(t, tt.expected, got)
+		})
+	}
+}
