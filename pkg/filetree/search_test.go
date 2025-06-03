@@ -457,13 +457,19 @@ func Test_complexSymlinkPerformance(t *testing.T) {
 	}
 }
 
-func Test_nextSlash(t *testing.T) {
+func Test_nextSegment(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		start    int
 		expected int
 	}{
+		{name: "empty", input: "", start: 0, expected: -1},
+		{name: "empty after", input: "", start: 1, expected: -1},
+		{name: "no slash", input: "abc", start: 0, expected: 3},
+		{name: "no slash after", input: "abc", start: 3, expected: -1},
+		{name: "end slash", input: "abc/", start: 0, expected: 3},
+		{name: "end slash after", input: "abc/", start: 4, expected: -1},
 		{name: "single begin", input: "/a", start: 0, expected: 0},
 		{name: "single after", input: "/ab1", start: 1, expected: 4},
 		{name: "single end", input: "/ab1", start: 4, expected: -1},
@@ -476,7 +482,7 @@ func Test_nextSlash(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := nextSlashOrEnd(tt.input, tt.start)
+			got := nextSegment(tt.input, tt.start)
 			if got < 0 {
 				got = -1
 			}

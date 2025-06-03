@@ -287,9 +287,9 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 		symlinkCheckedPath = "/" + symlinkCheckedPath
 	}
 
-	for indexAfter := nextSlashOrEnd(symlinkCheckedPath, 1); indexAfter > 0; indexAfter = nextSlashOrEnd(symlinkCheckedPath, indexAfter+1) {
-		dir := file.Path(symlinkCheckedPath[:indexAfter])
-		remain := string(fullPath[indexAfter:])
+	for i := nextSegment(symlinkCheckedPath, 1); i > 0; i = nextSegment(symlinkCheckedPath, i+1) {
+		dir := file.Path(symlinkCheckedPath[:i])
+		remain := string(fullPath[i:])
 
 		if observedPaths.Contains(dir) {
 			// we've already observed this path, don't get in a loop, e.g. /usr/bin/X11 -> /usr/bin
@@ -358,8 +358,8 @@ func (sc searchContext) firstMatchingReference(glob string, realPath string) (*f
 	return sc.firstPathToNode(file.PathSet{}, glob, realPath, "")
 }
 
-// nextSlashOrEnd returns the next index a slash is found, the end of the string, or -1 if the request is beyond the
-func nextSlashOrEnd(s string, start int) int {
+// nextSegment returns the next index a slash is found, the end of the string, or -1 if the request is >= string len
+func nextSegment(s string, start int) int {
 	if start >= len(s) {
 		return -1
 	}
