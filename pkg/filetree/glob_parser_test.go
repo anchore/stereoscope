@@ -19,8 +19,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
-					indexLookup: "foo/bar/basename.txt",
-					glob:        "foo/bar/basename.txt",
+					indexLookup: "/foo/bar/basename.txt",
+					glob:        "/foo/bar/basename.txt",
 				},
 			},
 		},
@@ -42,7 +42,18 @@ func Test_parseGlob(t *testing.T) {
 				{
 					searchBasis: searchByExtension,
 					indexLookup: ".txt",
-					glob:        "*.txt",
+					glob:        "/*.txt",
+				},
+			},
+		},
+		{
+			name: "extension with slash",
+			glob: "/*.txt",
+			want: []searchRequest{
+				{
+					searchBasis: searchByExtension,
+					indexLookup: ".txt",
+					glob:        "/*.txt",
 				},
 			},
 		},
@@ -64,7 +75,7 @@ func Test_parseGlob(t *testing.T) {
 				{
 					searchBasis: searchByBasenameGlob,
 					indexLookup: "bas*nam?.txt",
-					glob:        "bas*nam?.txt",
+					glob:        "/bas*nam?.txt",
 				},
 			},
 		},
@@ -75,7 +86,7 @@ func Test_parseGlob(t *testing.T) {
 				{
 					searchBasis: searchByExtension,
 					indexLookup: ".txt",
-					glob:        "foo/bar/**/*.txt",
+					glob:        "/foo/bar/**/*.txt",
 				},
 			},
 		},
@@ -85,8 +96,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
-					indexLookup: "basename.txt",
-					glob:        "basename.txt",
+					indexLookup: "/basename.txt",
+					glob:        "/basename.txt",
 				},
 			},
 		},
@@ -108,7 +119,7 @@ func Test_parseGlob(t *testing.T) {
 				{
 					searchBasis: searchByBasename,
 					indexLookup: "basename.txt",
-					glob:        "foo/b*/basename.txt",
+					glob:        "/foo/b*/basename.txt",
 				},
 			},
 		},
@@ -119,7 +130,7 @@ func Test_parseGlob(t *testing.T) {
 				{
 					searchBasis: searchByBasenameGlob,
 					indexLookup: "basename.*",
-					glob:        "basename.*",
+					glob:        "/basename.*",
 				},
 			},
 		},
@@ -268,6 +279,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
+					indexLookup: "/",
+					glob:        "/",
 				},
 			},
 		},
@@ -503,7 +516,7 @@ func Test_cleanGlob(t *testing.T) {
 		{
 			name: "empty string",
 			glob: "",
-			want: "",
+			want: "/",
 		},
 		{
 			name: "remove spaces from glob edges",
@@ -528,7 +541,7 @@ func Test_cleanGlob(t *testing.T) {
 		{
 			name: "simplify glob within multiple path",
 			glob: "bar**/ba**r*/***/**/bar***/**/foo.txt",
-			want: "bar*/ba*r*/**/bar*/**/foo.txt",
+			want: "/bar*/ba*r*/**/bar*/**/foo.txt",
 		},
 		{
 			name: "simplify prefix and suffix glob",

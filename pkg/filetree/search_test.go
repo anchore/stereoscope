@@ -412,7 +412,7 @@ func Test_complexSymlinkPerformance(t *testing.T) {
 
 	var realPaths []string
 
-	numPkgs := 30
+	numPkgs := 30 // with this few packages, the allPathsToNode behavior would essentially hang
 
 	for num := 0; num < numPkgs; num++ {
 		// add a concrete path

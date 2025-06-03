@@ -247,6 +247,10 @@ func cleanGlob(glob string) string {
 	// e.g. replace "/bar**/" with "/bar*/"
 	glob = simplifyMultipleGlobAsterisks(glob)
 	glob = simplifyGlobRecursion(glob)
+	// paths are compared against absolute paths. these must begin with slash or doublestar will not match certain cases
+	if !strings.HasPrefix(glob, "/") && !strings.HasPrefix(glob, "**") {
+		glob = "/" + glob
+	}
 	return glob
 }
 
