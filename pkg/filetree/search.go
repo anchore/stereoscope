@@ -299,10 +299,10 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 			return nil, fmt.Errorf("unable to get ref for path=%q: %w", fullPath, err)
 		}
 
-		// this filters out any index entries that do not exist in the tree
-		// if !na.HasFileNode() {
-		//	return nil, nil
-		//}
+		// this filters out any entries that do not exist in the tree
+		if !na.HasFileNode() {
+			continue
+		}
 
 		nodeID := na.FileNode.ID()
 
