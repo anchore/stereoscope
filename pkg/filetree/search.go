@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 
@@ -98,7 +99,7 @@ func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution
 		fileEntries = append(fileEntries, entries...)
 	}
 
-	refs, err := sc.referencesInTree(fileEntries)
+	refs, err := sc.firstMatchingReferences("**/*", fileEntries)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +140,7 @@ func (sc searchContext) searchByRequest(request searchRequest, options ...LinkRe
 	switch request.searchBasis {
 	case searchByFullPath:
 		options = append(options, FollowBasenameLinks)
-		ref, err := sc.SearchByPath(request.value, options...)
+		ref, err := sc.SearchByPath(request.indexLookup, options...)
 		if err != nil {
 			return nil, err
 		}
@@ -148,118 +149,96 @@ func (sc searchContext) searchByRequest(request searchRequest, options ...LinkRe
 		}
 		return []file.Resolution{*ref}, nil
 	case searchByBasename:
-		indexes, err := sc.index.GetByBasename(request.value)
+		indexes, err := sc.index.GetByBasename(request.indexLookup)
 		if err != nil {
-			return nil, fmt.Errorf("unable to search by basename=%q: %w", request.value, err)
+			return nil, fmt.Errorf("unable to search by basename=%q: %w", request.indexLookup, err)
 		}
-		refs, err := sc.referencesWithRequirement(request.requirement, indexes)
+		resolutions, err := sc.firstMatchingReferences(request.glob, indexes)
 		if err != nil {
 			return nil, err
 		}
-		return refs, nil
+		return resolutions, nil
 	case searchByBasenameGlob:
-		indexes, err := sc.index.GetByBasenameGlob(request.value)
+		indexes, err := sc.index.GetByBasenameGlob(request.indexLookup)
 		if err != nil {
-			return nil, fmt.Errorf("unable to search by basename-glob=%q: %w", request.value, err)
+			return nil, fmt.Errorf("unable to search by basename-glob=%q: %w", request.indexLookup, err)
 		}
-		refs, err := sc.referencesWithRequirement(request.requirement, indexes)
+		resolutions, err := sc.firstMatchingReferences(request.glob, indexes)
 		if err != nil {
 			return nil, err
 		}
-		return refs, nil
+		return resolutions, nil
 	case searchByExtension:
-		indexes, err := sc.index.GetByExtension(request.value)
+		indexes, err := sc.index.GetByExtension(request.indexLookup)
 		if err != nil {
-			return nil, fmt.Errorf("unable to search by extension=%q: %w", request.value, err)
+			return nil, fmt.Errorf("unable to search by extension=%q: %w", request.indexLookup, err)
 		}
-		refs, err := sc.referencesWithRequirement(request.requirement, indexes)
+		resolutions, err := sc.firstMatchingReferences(request.glob, indexes)
 		if err != nil {
 			return nil, err
 		}
-		return refs, nil
+		return resolutions, nil
 	case searchBySubDirectory:
 		return sc.searchByParentBasename(request)
 
 	case searchByGlob:
-		log.WithFields("glob", request.value).Trace("glob provided is an expensive search, consider using a more specific indexed search")
+		log.WithFields("glob", request.glob).Trace("glob provided is an expensive search, consider using a more specific indexed search")
 
 		options = append(options, FollowBasenameLinks)
-		return sc.tree.FilesByGlob(request.value, options...)
+		return sc.tree.FilesByGlob(request.glob, options...)
 	}
 
 	return nil, fmt.Errorf("invalid search request: %+v", request.searchBasis)
 }
 
 func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Resolution, error) {
-	indexes, err := sc.index.GetByBasename(request.value)
+	indexes, err := sc.index.GetByBasename(request.indexLookup)
 	if err != nil {
-		return nil, fmt.Errorf("unable to search by extension=%q: %w", request.value, err)
-	}
-	refs, err := sc.referencesWithRequirement(request.requirement, indexes)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to search by extension=%q: %w", request.indexLookup, err)
 	}
 
 	var results []file.Resolution
-	for _, ref := range refs {
-		paths, err := sc.tree.ListPaths(ref.RequestPath)
+	for _, i := range indexes {
+		paths, err := sc.tree.ListPaths(i.RealPath)
 		if err != nil {
 			// this may not be a directory, that's alright, just continue...
 			continue
 		}
 		for _, p := range paths {
-			_, nestedRef, err := sc.tree.File(p, FollowBasenameLinks)
+			nestedRef, err := sc.firstMatchingReference(request.glob, string(p))
 			if err != nil {
-				return nil, fmt.Errorf("unable to fetch file reference from parent path %q for path=%q: %w", ref.RequestPath, p, err)
+				return nil, fmt.Errorf("unable to fetch file reference from parent path %q for path=%q: %w", i.RealPath, p, err)
 			}
 			if !nestedRef.HasReference() {
 				continue
 			}
-			// note: the requirement was written for the parent, so we need to consider the new
-			// child path by adding /* to match all children
-			matches, err := matchesRequirement(*nestedRef, request.requirement+"/*")
-			if err != nil {
-				return nil, err
-			}
-			if matches {
-				results = append(results, *nestedRef)
-			}
+			results = append(results, *nestedRef)
 		}
 	}
 
 	return results, nil
 }
 
-func (sc searchContext) referencesWithRequirement(requirement string, entries []IndexEntry) ([]file.Resolution, error) {
-	refs, err := sc.referencesInTree(entries)
-	if err != nil {
-		return nil, err
-	}
-
-	if requirement == "" {
-		return refs, nil
-	}
-
-	var results []file.Resolution
-	for _, ref := range refs {
-		matches, err := matchesRequirement(ref, requirement)
+func (sc searchContext) firstMatchingReferences(glob string, entries []IndexEntry) ([]file.Resolution, error) {
+	var references []file.Resolution
+	for _, entry := range entries {
+		ref, err := sc.firstMatchingReference(glob, string(entry.Reference.RealPath))
 		if err != nil {
 			return nil, err
 		}
-		if matches {
-			results = append(results, ref)
+		if ref != nil {
+			references = append(references, *ref)
 		}
 	}
-
-	return results, nil
+	return references, nil
 }
 
-func matchesRequirement(ref file.Resolution, requirement string) (bool, error) {
+func matchesGlob(ref file.Resolution, glob string) (bool, error) {
 	allRefPaths := ref.AllRequestPaths()
 	for _, p := range allRefPaths {
-		matched, err := doublestar.Match(requirement, string(p))
+		matched, err := doublestar.Match(glob, string(p))
 		if err != nil {
-			return false, fmt.Errorf("unable to match glob pattern=%q to path=%q: %w", requirement, p, err)
+			return false, fmt.Errorf("unable to match glob pattern=%q to path=%q: %w", glob, p, err)
 		}
 		if matched {
 			return true, nil
@@ -268,135 +247,85 @@ func matchesRequirement(ref file.Resolution, requirement string) (bool, error) {
 	return false, nil
 }
 
-type cacheRequest struct {
-	RealPath file.Path
-}
-
-type cacheResult struct {
-	Paths file.PathSet
-	Error error
-}
-
-func (sc searchContext) allPathsToNode(fn *filenode.FileNode) ([]file.Path, error) {
-	if fn == nil {
-		return nil, nil
+// firstPathToNode returns the first path matching the given glob, this is done by:
+// * testing the provided path, returning the path if matching
+// * expanding parent paths, replacing paths that are symlinks
+func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string, symlinkCheckedPath, suffix string) (*file.Resolution, error) {
+	fullPath := file.Path(symlinkCheckedPath)
+	if suffix != "" {
+		if strings.HasPrefix(suffix, "/") {
+			fullPath = file.Path(symlinkCheckedPath + suffix)
+		} else {
+			fullPath = file.Path(path.Join(symlinkCheckedPath, suffix))
+		}
 	}
 
-	observedPaths := file.NewPathSet()
+	if observedPaths.Contains(fullPath) {
+		// we've already observed this path, so we can stop here
+		return nil, nil
+	}
+	observedPaths.Add(fullPath)
 
-	cache := map[cacheRequest]cacheResult{}
-
-	paths, err := sc.pathsToNode(fn, observedPaths, cache)
+	// first, test the path against the glob and return it if matches
+	_, ref, err := sc.tree.File(fullPath, FollowBasenameLinks)
 	if err != nil {
 		return nil, err
 	}
-
-	pathsList := paths.List()
-	sort.Sort(file.Paths(pathsList))
-
-	// TODO: filter to only paths that exist in the tree
-
-	return pathsList, nil
-}
-
-func (sc searchContext) pathsToNode(fn *filenode.FileNode, observedPaths file.PathSet, cache map[cacheRequest]cacheResult) (file.PathSet, error) {
-	req := cacheRequest{
-		RealPath: fn.RealPath,
-	}
-
-	if result, ok := cache[req]; ok {
-		return result.Paths, result.Error
-	}
-
-	paths, err := sc._pathsToNode(fn, observedPaths, cache)
-
-	cache[req] = cacheResult{
-		Paths: paths,
-		Error: err,
-	}
-
-	return paths, err
-}
-
-// nolint: funlen
-func (sc searchContext) _pathsToNode(fn *filenode.FileNode, observedPaths file.PathSet, cache map[cacheRequest]cacheResult) (file.PathSet, error) {
-	if fn == nil {
-		return nil, nil
-	}
-
-	paths := file.NewPathSet()
-	paths.Add(fn.RealPath)
-
-	if observedPaths != nil {
-		if observedPaths.Contains(fn.RealPath) {
-			// we've already observed this path, so we can stop here
-			return nil, nil
-		}
-		observedPaths.Add(fn.RealPath)
-	}
-
-	nodeID := fn.ID()
-
-	addPath := func(suffix string, ps ...file.Path) {
-		for _, p := range ps {
-			if suffix != "" {
-				p = file.Path(path.Join(string(p), suffix))
-			}
-			paths.Add(p)
-		}
-	}
-
-	// add all paths to the node that are linked to it
-	for _, linkSrcID := range sc.linkBackwardRefs[nodeID].List() {
-		pfn := sc.tree.tree.Node(linkSrcID)
-		if pfn == nil {
-			log.WithFields("id", nodeID, "parent", linkSrcID).Warn("found non-existent parent link")
-			continue
-		}
-		linkSrcPaths, err := sc.pathsToNode(pfn.(*filenode.FileNode), observedPaths, cache)
+	if ref != nil {
+		matches, err := matchesGlob(*ref, glob)
 		if err != nil {
 			return nil, err
 		}
-
-		addPath("", linkSrcPaths.List()...)
+		// path matches, don't need to check for more symlink path references
+		if matches {
+			return ref, nil
+		}
 	}
 
-	// crawl up the tree to find all paths to our parent and repeat
-	for _, p := range paths.List() {
-		nextNestedSuffix := p.Basename()
-		allParentPaths := p.ConstituentPaths()
-		sort.Sort(sort.Reverse(file.Paths(allParentPaths)))
+	// the first segment should is always an absolute path, starting with /, ensure it does here
+	if !strings.HasPrefix(symlinkCheckedPath, "/") {
+		symlinkCheckedPath = "/" + symlinkCheckedPath
+	}
 
-		for _, pp := range allParentPaths {
-			if pp == "/" {
-				break
-			}
+	for i := nextSegment(symlinkCheckedPath, 1); i > 0; i = nextSegment(symlinkCheckedPath, i+1) {
+		dir := file.Path(symlinkCheckedPath[:i])
+		remain := string(fullPath[i:])
 
-			nestedSuffix := nextNestedSuffix
-			nextNestedSuffix = path.Join(pp.Basename(), nestedSuffix)
+		if observedPaths.Contains(dir) {
+			// we've already observed this path, don't get in a loop, e.g. /usr/bin/X11 -> /usr/bin
+			continue
+		}
+		observedPaths.Add(dir)
 
-			pna, err := sc.tree.node(pp, linkResolutionStrategy{
-				FollowAncestorLinks: true,
-				FollowBasenameLinks: false,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("unable to get parent node for path=%q: %w", pp, err)
-			}
+		na, err := sc.tree.file(dir) // do not follow symlinks here; this call is effectively following symlinks manually
+		if err != nil {
+			return nil, fmt.Errorf("unable to get ref for path=%q: %w", fullPath, err)
+		}
 
-			if !pna.HasFileNode() {
+		// this filters out any entries that do not exist in the tree
+		if !na.HasFileNode() {
+			continue
+		}
+
+		nodeID := na.FileNode.ID()
+
+		// check all paths to the node that are linked to any parent dir
+		for _, linkSrcID := range sc.linkBackwardRefs[nodeID].List() {
+			pfn := sc.tree.tree.Node(linkSrcID)
+			if pfn == nil {
+				log.WithFields("id", nodeID, "parent", linkSrcID).Trace("found non-existent parent link")
 				continue
 			}
 
-			parentLinkPaths, err := sc.pathsToNode(pna.FileNode, observedPaths, cache)
-			if err != nil {
-				return nil, err
+			linkPath := string(pfn.(*filenode.FileNode).RealPath)
+			ref, err = sc.firstPathToNode(observedPaths, glob, linkPath, remain)
+			if ref != nil || err != nil {
+				return ref, err
 			}
-			addPath(nestedSuffix, parentLinkPaths.List()...)
 		}
 	}
-	observedPaths.Remove(fn.RealPath)
 
-	return paths, nil
+	return nil, nil
 }
 
 func (sc searchContext) fileNodesInTree(fileEntries []IndexEntry) ([]*filenode.FileNode, error) {
@@ -424,48 +353,19 @@ allFileEntries:
 	return nodes, nil
 }
 
-// referencesInTree does two things relative to the index entries given:
-// 1) it expands the index entries to include all possible access paths to the file node (by considering all possible link resolutions)
-// 2) it filters the index entries to only include those that exist in the tree
-func (sc searchContext) referencesInTree(fileEntries []IndexEntry) ([]file.Resolution, error) {
-	var refs []file.Resolution
+// firstMatchingReference returns the first file reference matching the glob
+func (sc searchContext) firstMatchingReference(glob string, realPath string) (*file.Resolution, error) {
+	return sc.firstPathToNode(file.PathSet{}, glob, realPath, "")
+}
 
-	for _, entry := range fileEntries {
-		na, err := sc.tree.file(entry.Reference.RealPath, FollowBasenameLinks)
-		if err != nil {
-			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.Reference.RealPath, err)
-		}
-
-		// this filters out any index entries that do not exist in the tree
-		if !na.HasFileNode() {
-			continue
-		}
-
-		// expand the index results with more possible access paths from the link resolution cache
-		var expandedRefs []file.Resolution
-		allPathsToNode, err := sc.allPathsToNode(na.FileNode)
-		if err != nil {
-			return nil, fmt.Errorf("unable to get all paths to node for path=%q: %w", entry.Reference.RealPath, err)
-		}
-		for _, p := range allPathsToNode {
-			_, ref, err := sc.tree.File(p, FollowBasenameLinks)
-			if err != nil {
-				return nil, fmt.Errorf("unable to get ref for path=%q: %w", p, err)
-			}
-			if !ref.HasReference() {
-				continue
-			}
-			expandedRefs = append(expandedRefs, *ref)
-		}
-
-		for _, ref := range expandedRefs {
-			for _, accessRef := range ref.References() {
-				if accessRef.ID() == entry.Reference.ID() {
-					// we know this entry exists in the tree, keep track of the reference for this file
-					refs = append(refs, ref)
-				}
-			}
-		}
+// nextSegment returns the next index a slash is found, the end of the string, or -1 if the request is >= string len
+func nextSegment(s string, start int) int {
+	if start >= len(s) {
+		return -1
 	}
-	return refs, nil
+	idx := strings.IndexRune(s[start:], '/')
+	if idx < 0 {
+		return len(s)
+	}
+	return idx + start
 }

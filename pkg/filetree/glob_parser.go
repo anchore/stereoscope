@@ -47,14 +47,14 @@ func (s searchBasis) String() string {
 
 type searchRequest struct {
 	searchBasis
-	value       string
-	requirement string
+	indexLookup string
+	glob        string
 }
 
 func (s searchRequest) String() string {
-	value := s.searchBasis.String() + ": " + s.value
-	if s.requirement != "" {
-		value += " (requirement: " + s.requirement + ")"
+	value := s.searchBasis.String() + ": " + s.indexLookup
+	if s.glob != "" {
+		value += " (requirement: " + s.glob + ")"
 	}
 	return value
 }
@@ -62,11 +62,12 @@ func (s searchRequest) String() string {
 func parseGlob(glob string) []searchRequest {
 	glob = cleanGlob(glob)
 
-	if !strings.ContainsAny(glob, "*?[]{}") {
+	if exactMatch(glob) {
 		return []searchRequest{
 			{
 				searchBasis: searchByFullPath,
-				value:       glob,
+				indexLookup: glob,
+				glob:        glob,
 			},
 		}
 	}
@@ -80,20 +81,20 @@ func parseGlob(glob string) []searchRequest {
 			requests := []searchRequest{
 				{
 					searchBasis: searchBySubDirectory,
-					value:       nestedBasename,
-					requirement: beforeBasename,
+					indexLookup: nestedBasename,
+					glob:        glob,
 				},
 			}
 			return requests
 		}
 	}
 
-	requests := parseGlobBasename(basename)
-	for i := range requests {
-		applyRequirement(&requests[i], beforeBasename, glob)
-	}
+	return parseGlobBasename(basename, glob)
+}
 
-	return requests
+// exactMatch indicates the string does not contain an expression that may result in multiple results such as * or {}
+func exactMatch(glob string) bool {
+	return !strings.ContainsAny(glob, "*?[]{}")
 }
 
 func splitAtBasename(glob string) (string, string) {
@@ -118,34 +119,9 @@ func splitAtBasename(glob string) (string, string) {
 	return beforeBasename, basename
 }
 
-func applyRequirement(request *searchRequest, beforeBasename, glob string) {
-	var requirement string
-
-	if beforeBasename != "" {
-		requirement = glob
-		switch beforeBasename {
-		case "**", request.requirement:
-			if request.searchBasis != searchByExtension {
-				requirement = ""
-			}
-		}
-	} else {
-		requirement = ""
-	}
-
-	request.requirement = requirement
-
-	if request.searchBasis == searchByGlob {
-		request.value = glob
-		if glob == request.requirement {
-			request.requirement = ""
-		}
-	}
-}
-
-func parseGlobBasename(basenameInput string) []searchRequest {
+func parseGlobBasename(basenameInput, glob string) []searchRequest {
 	if strings.ContainsAny(basenameInput, "[]{}") {
-		return parseBasenameAltAndClassGlobSections(basenameInput)
+		return parseBasenameAltAndClassGlobSections(basenameInput, glob)
 	}
 
 	extensionFields := strings.Split(basenameInput, "*.")
@@ -156,7 +132,8 @@ func parseGlobBasename(basenameInput string) []searchRequest {
 			return []searchRequest{
 				{
 					searchBasis: searchByExtension,
-					value:       "." + possibleExtension,
+					indexLookup: "." + possibleExtension,
+					glob:        glob,
 				},
 			}
 		}
@@ -167,7 +144,8 @@ func parseGlobBasename(basenameInput string) []searchRequest {
 		return []searchRequest{
 			{
 				searchBasis: searchByBasename,
-				value:       basenameInput,
+				indexLookup: basenameInput,
+				glob:        glob,
 			},
 		}
 	}
@@ -177,7 +155,7 @@ func parseGlobBasename(basenameInput string) []searchRequest {
 		return []searchRequest{
 			{
 				searchBasis: searchByGlob,
-				// note: we let the parent caller attach the full glob value
+				glob:        glob,
 			},
 		}
 	}
@@ -185,12 +163,13 @@ func parseGlobBasename(basenameInput string) []searchRequest {
 	return []searchRequest{
 		{
 			searchBasis: searchByBasenameGlob,
-			value:       basenameInput,
+			indexLookup: basenameInput,
+			glob:        glob,
 		},
 	}
 }
 
-func parseBasenameAltAndClassGlobSections(basenameInput string) []searchRequest {
+func parseBasenameAltAndClassGlobSections(basenameInput, glob string) []searchRequest {
 	// TODO: process escape sequences
 
 	altStartCount := strings.Count(basenameInput, "{")
@@ -203,7 +182,7 @@ func parseBasenameAltAndClassGlobSections(basenameInput string) []searchRequest 
 		return []searchRequest{
 			{
 				searchBasis: searchByGlob,
-				// note: we let the parent caller attach the full glob value
+				glob:        glob,
 			},
 		}
 	}
@@ -213,7 +192,8 @@ func parseBasenameAltAndClassGlobSections(basenameInput string) []searchRequest 
 		return []searchRequest{
 			{
 				searchBasis: searchByBasenameGlob,
-				value:       basenameInput,
+				indexLookup: basenameInput,
+				glob:        glob,
 			},
 		}
 	}
@@ -236,7 +216,8 @@ func parseBasenameAltAndClassGlobSections(basenameInput string) []searchRequest 
 
 					requests = append(requests, searchRequest{
 						searchBasis: basis,
-						value:       altSection,
+						indexLookup: altSection,
+						glob:        glob,
 					})
 				}
 				return requests
@@ -248,7 +229,8 @@ func parseBasenameAltAndClassGlobSections(basenameInput string) []searchRequest 
 	return []searchRequest{
 		{
 			searchBasis: searchByBasenameGlob,
-			value:       basenameInput,
+			indexLookup: basenameInput,
+			glob:        glob,
 		},
 	}
 }
@@ -265,6 +247,10 @@ func cleanGlob(glob string) string {
 	// e.g. replace "/bar**/" with "/bar*/"
 	glob = simplifyMultipleGlobAsterisks(glob)
 	glob = simplifyGlobRecursion(glob)
+	// paths are compared against absolute paths. these must begin with slash or doublestar will not match certain cases
+	if !strings.HasPrefix(glob, "/") && !strings.HasPrefix(glob, "**") {
+		glob = "/" + glob
+	}
 	return glob
 }
 

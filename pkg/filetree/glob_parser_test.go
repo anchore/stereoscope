@@ -19,7 +19,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
-					value:       "foo/bar/basename.txt",
+					indexLookup: "/foo/bar/basename.txt",
+					glob:        "/foo/bar/basename.txt",
 				},
 			},
 		},
@@ -29,7 +30,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
-					value:       "/foo/bar/basename.txt",
+					indexLookup: "/foo/bar/basename.txt",
+					glob:        "/foo/bar/basename.txt",
 				},
 			},
 		},
@@ -39,7 +41,19 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByExtension,
-					value:       ".txt",
+					indexLookup: ".txt",
+					glob:        "/*.txt",
+				},
+			},
+		},
+		{
+			name: "extension with slash",
+			glob: "/*.txt",
+			want: []searchRequest{
+				{
+					searchBasis: searchByExtension,
+					indexLookup: ".txt",
+					glob:        "/*.txt",
 				},
 			},
 		},
@@ -49,8 +63,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByExtension,
-					value:       ".txt",
-					requirement: "**/*.txt",
+					indexLookup: ".txt",
+					glob:        "**/*.txt",
 				},
 			},
 		},
@@ -60,7 +74,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "bas*nam?.txt",
+					indexLookup: "bas*nam?.txt",
+					glob:        "/bas*nam?.txt",
 				},
 			},
 		},
@@ -70,8 +85,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByExtension,
-					value:       ".txt",
-					requirement: "foo/bar/**/*.txt",
+					indexLookup: ".txt",
+					glob:        "/foo/bar/**/*.txt",
 				},
 			},
 		},
@@ -81,7 +96,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
-					value:       "basename.txt",
+					indexLookup: "/basename.txt",
+					glob:        "/basename.txt",
 				},
 			},
 		},
@@ -91,7 +107,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasename,
-					value:       "basename.txt",
+					indexLookup: "basename.txt",
+					glob:        "**/basename.txt",
 				},
 			},
 		},
@@ -101,8 +118,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasename,
-					value:       "basename.txt",
-					requirement: "foo/b*/basename.txt",
+					indexLookup: "basename.txt",
+					glob:        "/foo/b*/basename.txt",
 				},
 			},
 		},
@@ -112,7 +129,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "basename.*",
+					indexLookup: "basename.*",
+					glob:        "/basename.*",
 				},
 			},
 		},
@@ -122,8 +140,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "basename.*",
-					requirement: "**/foo/bar/basename.*",
+					indexLookup: "basename.*",
+					glob:        "**/foo/bar/basename.*",
 				},
 			},
 		},
@@ -133,8 +151,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "basenam?.txt",
-					requirement: "**/foo/bar/basenam?.txt",
+					indexLookup: "basenam?.txt",
+					glob:        "**/foo/bar/basenam?.txt",
 				},
 			},
 		},
@@ -144,8 +162,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "basena[me][me].txt",
-					requirement: "**/foo/bar/basena[me][me].txt",
+					indexLookup: "basena[me][me].txt",
+					glob:        "**/foo/bar/basena[me][me].txt",
 				},
 			},
 		},
@@ -155,8 +173,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "basena[me][me].txt",
-					requirement: "**/foo/[bB]ar/basena[me][me].txt",
+					indexLookup: "basena[me][me].txt",
+					glob:        "**/foo/[bB]ar/basena[me][me].txt",
 				},
 			},
 		},
@@ -166,7 +184,7 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByGlob,
-					value:       "**/foo/bar/{nested/basena[me][me].txt,another.txt}",
+					glob:        "**/foo/bar/{nested/basena[me][me].txt,another.txt}",
 				},
 			},
 		},
@@ -176,7 +194,7 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByGlob,
-					value:       "**/foo/bar/[me][m/e].txt,another.txt",
+					glob:        "**/foo/bar/[me][m/e].txt,another.txt",
 				},
 			},
 		},
@@ -186,18 +204,18 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasename,
-					value:       "Packages",
-					requirement: "**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}",
+					indexLookup: "Packages",
+					glob:        "**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}",
 				},
 				{
 					searchBasis: searchByBasename,
-					value:       "Packages.db",
-					requirement: "**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}",
+					indexLookup: "Packages.db",
+					glob:        "**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}",
 				},
 				{
 					searchBasis: searchByBasename,
-					value:       "rpmdb.sqlite",
-					requirement: "**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}",
+					indexLookup: "rpmdb.sqlite",
+					glob:        "**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}",
 				},
 			},
 		},
@@ -207,8 +225,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "{Packa{ges}{GES},Packages.db,rpmdb.sqlite}",
-					requirement: "**/var/lib/rpm/{Packa{ges}{GES},Packages.db,rpmdb.sqlite}",
+					indexLookup: "{Packa{ges}{GES},Packages.db,rpmdb.sqlite}",
+					glob:        "**/var/lib/rpm/{Packa{ges}{GES},Packages.db,rpmdb.sqlite}",
 				},
 			},
 		},
@@ -218,18 +236,18 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "Pack???s",
-					requirement: "**/var/lib/rpm/{Pack???s,Packages.db,rpm*.sqlite}",
+					indexLookup: "Pack???s",
+					glob:        "**/var/lib/rpm/{Pack???s,Packages.db,rpm*.sqlite}",
 				},
 				{
 					searchBasis: searchByBasename,
-					value:       "Packages.db",
-					requirement: "**/var/lib/rpm/{Pack???s,Packages.db,rpm*.sqlite}",
+					indexLookup: "Packages.db",
+					glob:        "**/var/lib/rpm/{Pack???s,Packages.db,rpm*.sqlite}",
 				},
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "rpm*.sqlite",
-					requirement: "**/var/lib/rpm/{Pack???s,Packages.db,rpm*.sqlite}",
+					indexLookup: "rpm*.sqlite",
+					glob:        "**/var/lib/rpm/{Pack???s,Packages.db,rpm*.sqlite}",
 				},
 			},
 		},
@@ -239,7 +257,7 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByGlob,
-					value:       "**/foo/bar/*?/**",
+					glob:        "**/foo/bar/*?/**",
 				},
 			},
 		},
@@ -249,8 +267,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchBySubDirectory,
-					value:       "bar",
-					requirement: "**/foo/bar",
+					indexLookup: "bar",
+					glob:        "**/foo/bar/*",
 				},
 			},
 		},
@@ -261,6 +279,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
+					indexLookup: "/",
+					glob:        "/",
 				},
 			},
 		},
@@ -270,7 +290,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
-					value:       "/",
+					indexLookup: "/",
+					glob:        "/",
 				},
 			},
 		},
@@ -280,7 +301,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByFullPath,
-					value:       "/",
+					indexLookup: "/",
+					glob:        "/",
 				},
 			},
 		},
@@ -290,8 +312,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "b*r",
-					requirement: "/foo/b*r", // note that the slash is removed since this should be a clean path
+					indexLookup: "b*r",
+					glob:        "/foo/b*r", // note that the slash is removed since this should be a clean path
 				},
 			},
 		},
@@ -301,7 +323,7 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByGlob,
-					value:       "**/foo/b*r/*",
+					glob:        "**/foo/b*r/*",
 				},
 			},
 		},
@@ -311,7 +333,7 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByGlob,
-					value:       "**/foo/b*r/**",
+					glob:        "**/foo/b*r/**",
 				},
 			},
 		},
@@ -321,8 +343,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasename,
-					value:       " .txt",          // note the space
-					requirement: "/foo/b*r/ .txt", // note the space in the middle, but otherwise clean on the front and back
+					indexLookup: " .txt",          // note the space
+					glob:        "/foo/b*r/ .txt", // note the space in the middle, but otherwise clean on the front and back
 				},
 			},
 		},
@@ -332,8 +354,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "*.*.*",            // note that the basename glob is cleaned up
-					requirement: "**/foo/bar/*.*.*", // note that the glob is cleaned up
+					indexLookup: "*.*.*",            // note that the basename glob is cleaned up
+					glob:        "**/foo/bar/*.*.*", // note that the glob is cleaned up
 				},
 			},
 		},
@@ -343,8 +365,8 @@ func Test_parseGlob(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "*thin*.txt",                 // note that the basename glob is cleaned up
-					requirement: "**/foo/*.*.*bar/*thin*.txt", // note that the glob is cleaned up
+					indexLookup: "*thin*.txt",                 // note that the basename glob is cleaned up
+					glob:        "**/foo/*.*.*bar/*thin*.txt", // note that the glob is cleaned up
 				},
 			},
 		},
@@ -395,7 +417,7 @@ func Test_parseGlobBasename(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasename,
-					value:       "basename.txt",
+					indexLookup: "basename.txt",
 				},
 			},
 		},
@@ -405,7 +427,7 @@ func Test_parseGlobBasename(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "*basename.txt",
+					indexLookup: "*basename.txt",
 				},
 			},
 		},
@@ -415,7 +437,7 @@ func Test_parseGlobBasename(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "bas*nam?.txt",
+					indexLookup: "bas*nam?.txt",
 				},
 			},
 		},
@@ -425,7 +447,7 @@ func Test_parseGlobBasename(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByExtension,
-					value:       ".txt",
+					indexLookup: ".txt",
 				},
 			},
 		},
@@ -435,7 +457,7 @@ func Test_parseGlobBasename(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "*.*.txt",
+					indexLookup: "*.*.txt",
 				},
 			},
 		},
@@ -445,7 +467,7 @@ func Test_parseGlobBasename(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasename,
-					value:       ".txt",
+					indexLookup: ".txt",
 				},
 			},
 		},
@@ -455,7 +477,7 @@ func Test_parseGlobBasename(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasenameGlob,
-					value:       "*thin*.txt",
+					indexLookup: "*thin*.txt",
 				},
 			},
 		},
@@ -465,22 +487,22 @@ func Test_parseGlobBasename(t *testing.T) {
 			want: []searchRequest{
 				{
 					searchBasis: searchByBasename,
-					value:       "Packages",
+					indexLookup: "Packages",
 				},
 				{
 					searchBasis: searchByBasename,
-					value:       "Packages.db",
+					indexLookup: "Packages.db",
 				},
 				{
 					searchBasis: searchByBasename,
-					value:       "rpmdb.sqlite",
+					indexLookup: "rpmdb.sqlite",
 				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, parseGlobBasename(tt.input), "parseGlobBasename(%v)", tt.input)
+			assert.Equalf(t, tt.want, parseGlobBasename(tt.input, ""), "parseGlobBasename(%v)", tt.input)
 		})
 	}
 }
@@ -494,7 +516,7 @@ func Test_cleanGlob(t *testing.T) {
 		{
 			name: "empty string",
 			glob: "",
-			want: "",
+			want: "/",
 		},
 		{
 			name: "remove spaces from glob edges",
@@ -519,7 +541,7 @@ func Test_cleanGlob(t *testing.T) {
 		{
 			name: "simplify glob within multiple path",
 			glob: "bar**/ba**r*/***/**/bar***/**/foo.txt",
-			want: "bar*/ba*r*/**/bar*/**/foo.txt",
+			want: "/bar*/ba*r*/**/bar*/**/foo.txt",
 		},
 		{
 			name: "simplify prefix and suffix glob",
