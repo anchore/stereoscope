@@ -41,6 +41,8 @@ type Image struct {
 	SquashedSearchContext filetree.Searcher
 
 	overrideMetadata []AdditionalMetadata
+
+	imageCleanupFunc func() error
 }
 
 type AdditionalMetadata func(*Image) error
@@ -69,6 +71,16 @@ func WithTags(tags ...string) AdditionalMetadata {
 				image.Metadata.Tags = append(image.Metadata.Tags, tagObj)
 			}
 		}
+		return nil
+	}
+}
+
+func WithCleanupFunc(fn func() error) AdditionalMetadata {
+	return func(image *Image) error {
+		if image.imageCleanupFunc != nil {
+			return fmt.Errorf("image cleanup function already set, cannot override")
+		}
+		image.imageCleanupFunc = fn
 		return nil
 	}
 }
@@ -379,5 +391,12 @@ func (i *Image) Cleanup() error {
 			}
 		}
 	}
+
+	if i.imageCleanupFunc != nil {
+		if err := i.imageCleanupFunc(); err != nil {
+			errs = multierror.Append(errs, fmt.Errorf("image cleanup function failed: %w", err))
+		}
+	}
+
 	return errs
 }
