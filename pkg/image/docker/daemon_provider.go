@@ -311,6 +311,32 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 		Provide(ctx)
 }
 
+func (p *daemonImageProvider) Cleanup(ctx context.Context) error {
+	fmt.Println("############## daemonImageProvider CLEANUP", p.name, p.imageStr)
+	apiClient, err := p.newAPIClient()
+	if err != nil {
+		return fmt.Errorf("%s not available: %w", p.name, err)
+	}
+	defer func() {
+		if err := apiClient.Close(); err != nil {
+			log.Errorf("unable to close %s client: %+v", p.name, err)
+		}
+	}()
+
+	// delete the image from the docker daemon
+	imageRef, _, err := image.ParseReference(p.imageStr)
+
+	if err != nil {
+		return fmt.Errorf("unable to parse image reference %q: %w", p.imageStr, err)
+	}
+
+	if err := p.deleteImage(ctx, apiClient, imageRef); err != nil {
+		return fmt.Errorf("unable to delete image %q: %w", p.imageStr, err)
+	}
+	log.Debugf("deleted %s image=%q", p.name, p.imageStr)
+	return nil
+}
+
 func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.APIClient, imageRef string) (string, error) {
 	// save the image from the docker daemon to a tar file
 	providerProgress, err := p.trackSaveProgress(ctx, apiClient, imageRef)
@@ -371,6 +397,20 @@ func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.AP
 		return "", errors.New("cannot provide an empty image")
 	}
 	return tempTarFile.Name(), nil
+}
+
+func (p *daemonImageProvider) deleteImage(ctx context.Context, apiClient client.APIClient, imageRef string) error {
+	// delete the image from the docker daemon
+	_, err := apiClient.ImageRemove(ctx, imageRef, dockerImage.RemoveOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to delete image: %w", err)
+	}
+
+	log.Debugf("deleted %s image=%q", p.name, imageRef)
+
+	// Somehow clean tempTarFile TBD
+
+	return nil
 }
 
 func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient client.APIClient) (imageRef string, err error) {

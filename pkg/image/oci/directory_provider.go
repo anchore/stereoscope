@@ -7,6 +7,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 )
@@ -86,6 +87,12 @@ func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error
 		return nil, err
 	}
 	return out, err
+}
+
+func (p *directoryImageProvider) Cleanup(ctx context.Context) error {
+	// nothing to do here, the image is not stored in the daemon
+	log.Debugf("no cleanup required for %s provider", p.Name())
+	return nil
 }
 
 func checkManifestDigestsEqual(manifests []v1.Descriptor) bool {
