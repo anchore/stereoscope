@@ -103,3 +103,9 @@ func (p *tarballImageProvider) Provide(_ context.Context) (*image.Image, error) 
 	}
 	return out, err
 }
+
+func (p *tarballImageProvider) Cleanup(ctx context.Context) error {
+	// nothing to do here, the image is not stored in the daemon
+	log.Debugf("no cleanup required for %s provider", p.Name())
+	return nil
+}

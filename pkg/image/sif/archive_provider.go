@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 )
@@ -63,4 +64,10 @@ func (p *singularityImageProvider) Provide(_ context.Context) (*image.Image, err
 		return nil, err
 	}
 	return out, err
+}
+
+func (p *singularityImageProvider) Cleanup(ctx context.Context) error {
+	// nothing to do here, the image is not stored in the daemon
+	log.Debugf("no cleanup required for %s provider", p.Name())
+	return nil
 }

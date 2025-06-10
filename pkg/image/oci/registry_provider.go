@@ -114,6 +114,12 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 	return out, err
 }
 
+func (p *registryImageProvider) Cleanup(ctx context.Context) error {
+	// nothing to do here, the image is not stored in the daemon
+	log.Debugf("no cleanup required for %s provider", p.Name())
+	return nil
+}
+
 func (p *registryImageProvider) finalizePlatform(descriptor *remote.Descriptor, platform **image.Platform) {
 	if p.platform != nil {
 		return

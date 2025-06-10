@@ -105,6 +105,25 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 		Provide(ctx)
 }
 
+func (p *daemonImageProvider) Cleanup(ctx context.Context) error {
+	client, err := containerdClient.GetClient()
+	if err != nil {
+		return fmt.Errorf("containerd not available: %w", err)
+	}
+
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Errorf("unable to close containerd client: %+v", err)
+		}
+	}()
+
+	if err := p.deleteImage(ctx, client, p.imageStr); err != nil {
+		return fmt.Errorf("unable to delete image=%q: %w", p.imageStr, err)
+	}
+
+	return nil
+}
+
 // pull a containerd image
 func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Client, resolvedImage string) (containerd.Image, error) {
 	var platformStr string
@@ -444,6 +463,15 @@ func (p *daemonImageProvider) saveImage(ctx context.Context, client *containerd.
 	}
 
 	return tempTarFile.Name(), nil
+}
+
+func (p *daemonImageProvider) deleteImage(ctx context.Context, client *containerd.Client, resolvedImage string) error {
+	// Remove the image
+	if err := client.ImageService().Delete(ctx, resolvedImage, nil); err != nil {
+		return fmt.Errorf("failed to delete image %s: %w", resolvedImage, err)
+	}
+
+	return nil
 }
 
 func exportPlatformComparer(platform *image.Platform) (platforms.MatchComparer, error) {
