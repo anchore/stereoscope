@@ -312,7 +312,6 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 }
 
 func (p *daemonImageProvider) Cleanup(ctx context.Context) error {
-	fmt.Println("############## daemonImageProvider CLEANUP", p.name, p.imageStr)
 	apiClient, err := p.newAPIClient()
 	if err != nil {
 		return fmt.Errorf("%s not available: %w", p.name, err)
