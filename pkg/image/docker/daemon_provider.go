@@ -420,8 +420,6 @@ func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient 
 				return imageRef, cleanupFunc, err
 			}
 			// Image Pulled Create cleanupFunc
-			log.Infof("############### PULLED 2", err)
-
 			cleanupFunc = func() error {
 				return p.deleteImage(ctx, apiClient, imageRef)
 			}
