@@ -28,5 +28,4 @@ func (e *ErrPlatformMismatch) Unwrap() error {
 type Provider interface {
 	Name() string
 	Provide(context.Context) (*Image, error)
-	Cleanup(context.Context) error
 }

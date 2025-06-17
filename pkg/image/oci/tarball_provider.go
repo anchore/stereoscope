@@ -56,9 +56,3 @@ func (p *tarballImageProvider) Provide(ctx context.Context) (*image.Image, error
 
 	return NewDirectoryProvider(p.tmpDirGen, tempDir).Provide(ctx)
 }
-
-func (p *tarballImageProvider) Cleanup(ctx context.Context) error {
-	// nothing to do here, the image is not stored in the daemon
-	log.Debugf("no cleanup required for %s provider", p.Name())
-	return nil
-}

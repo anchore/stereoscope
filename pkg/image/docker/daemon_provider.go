@@ -277,7 +277,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	}
 
 	log.WithFields("image", p.imageStr).Info("docker pulling image")
-	imageRef, err := p.pullImageIfMissing(ctx, apiClient)
+	imageRef, imageCleanupFunc, err := p.pullImageIfMissing(ctx, apiClient)
 	if err != nil {
 		return nil, err
 	}
@@ -307,33 +307,8 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	log.WithFields("image", imageRef, "time", time.Since(startTime), "path", tarFileName).Info("docker saved image")
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewArchiveProvider(p.tmpDirGen, tarFileName, withInspectMetadata(inspectResult)...).
+	return NewArchiveProvider(p.tmpDirGen, tarFileName, withInspectMetadata(inspectResult, imageCleanupFunc)...).
 		Provide(ctx)
-}
-
-func (p *daemonImageProvider) Cleanup(ctx context.Context) error {
-	apiClient, err := p.newAPIClient()
-	if err != nil {
-		return fmt.Errorf("%s not available: %w", p.name, err)
-	}
-	defer func() {
-		if err := apiClient.Close(); err != nil {
-			log.Errorf("unable to close %s client: %+v", p.name, err)
-		}
-	}()
-
-	// delete the image from the docker daemon
-	imageRef, _, err := image.ParseReference(p.imageStr)
-
-	if err != nil {
-		return fmt.Errorf("unable to parse image reference %q: %w", p.imageStr, err)
-	}
-
-	if err := p.deleteImage(ctx, apiClient, imageRef); err != nil {
-		return fmt.Errorf("unable to delete image %q: %w", p.imageStr, err)
-	}
-	log.Debugf("deleted %s image=%q", p.name, p.imageStr)
-	return nil
 }
 
 func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.APIClient, imageRef string) (string, error) {
@@ -405,17 +380,15 @@ func (p *daemonImageProvider) deleteImage(ctx context.Context, apiClient client.
 		return fmt.Errorf("unable to delete image: %w", err)
 	}
 
-	log.Debugf("deleted %s image=%q", p.name, imageRef)
-
-	// Somehow clean tempTarFile TBD
+	log.Infof("deleted image %q from %s", imageRef, p.name)
 
 	return nil
 }
 
-func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient client.APIClient) (imageRef string, err error) {
+func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient client.APIClient) (imageRef string, cleanupFunc func() error, err error) {
 	imageRef, originalImageRef, err := image.ParseReference(p.imageStr)
 	if err != nil {
-		return "", err
+		return "", cleanupFunc, err
 	}
 
 	// check if the image exists locally
@@ -426,24 +399,35 @@ func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient 
 			imageRef = strings.TrimSuffix(imageRef, ":latest")
 		}
 	}
+
 	if err != nil {
 		if client.IsErrNotFound(err) {
 			if err = p.pull(ctx, apiClient, imageRef); err != nil {
-				return imageRef, err
+				return imageRef, cleanupFunc, err
+			}
+			// Image Pulled Create cleanupFunc
+			cleanupFunc = func() error {
+				return p.deleteImage(ctx, apiClient, imageRef)
 			}
 		} else {
-			return imageRef, fmt.Errorf("unable to inspect existing image: %w", err)
+			return imageRef, cleanupFunc, fmt.Errorf("unable to inspect existing image: %w", err)
 		}
 	} else {
 		// looks like the image exists, but if the platform doesn't match what the user specified, we may need to
 		// pull the image again with the correct platform specifier, which will override the local tag.
 		if err = p.validatePlatform(inspectResult); err != nil {
 			if err = p.pull(ctx, apiClient, imageRef); err != nil {
-				return imageRef, err
+				return imageRef, cleanupFunc, err
+			}
+			// Image Pulled Create cleanupFunc
+			log.Infof("############### PULLED 2", err)
+
+			cleanupFunc = func() error {
+				return p.deleteImage(ctx, apiClient, imageRef)
 			}
 		}
 	}
-	return imageRef, nil
+	return imageRef, cleanupFunc, nil
 }
 
 func (p *daemonImageProvider) validatePlatform(i dockerImage.InspectResponse) error {
@@ -465,12 +449,13 @@ func (p *daemonImageProvider) validatePlatform(i dockerImage.InspectResponse) er
 	return nil
 }
 
-func withInspectMetadata(i dockerImage.InspectResponse) (metadata []image.AdditionalMetadata) {
+func withInspectMetadata(i dockerImage.InspectResponse, cleanupFunc func() error) (metadata []image.AdditionalMetadata) {
 	metadata = append(metadata,
 		image.WithTags(i.RepoTags...),
 		image.WithRepoDigests(i.RepoDigests...),
 		image.WithArchitecture(i.Architecture, ""), // since we don't have variant info from the image directly, we don't report it
 		image.WithOS(i.Os),
+		image.WithCleanupFunc(cleanupFunc),
 	)
 	return metadata
 }
