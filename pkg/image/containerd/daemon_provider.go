@@ -456,7 +456,7 @@ func (p *daemonImageProvider) deleteImage(ctx context.Context, client *container
 		return fmt.Errorf("failed to delete image %s: %w", resolvedImage, err)
 	}
 
-	log.Infof("deleted image %s from containerd", resolvedImage)
+	log.Infof("deleted image %s from containerd", p.Name())
 	return nil
 }
 
