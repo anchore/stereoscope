@@ -18,7 +18,7 @@ require (
 	github.com/containerd/errdefs v0.3.0
 	github.com/containerd/platforms v0.2.1
 	github.com/docker/cli v28.2.2+incompatible
-	github.com/docker/docker v28.1.1+incompatible
+	github.com/docker/docker v28.3.0+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.9
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.7.0
@@ -67,7 +67,7 @@ require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.16.3 // indirect
 	github.com/containerd/ttrpc v1.2.7 // indirect
-	github.com/containerd/typeurl/v2 v2.1.1 // indirect
+	github.com/containerd/typeurl/v2 v2.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	// docker/distribution for https://github.com/advisories/GHSA-qq97-vm5h-rrhg
@@ -125,3 +125,5 @@ require (
 	google.golang.org/protobuf v1.36.4 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+require github.com/containerd/errdefs/pkg v0.3.0 // indirect
