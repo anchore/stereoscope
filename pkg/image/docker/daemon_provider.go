@@ -33,20 +33,21 @@ import (
 const Daemon image.Source = image.DockerDaemonSource
 
 // NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform) image.Provider {
-	return NewAPIClientProvider(Daemon, tmpDirGen, imageStr, platform, func() (client.APIClient, error) {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, imageCleanup bool) image.Provider {
+	return NewAPIClientProvider(Daemon, tmpDirGen, imageStr, platform, imageCleanup, func() (client.APIClient, error) {
 		return docker.GetClient()
 	})
 }
 
 // NewAPIClientProvider creates a new provider for the provided Docker client.APIClient
-func NewAPIClientProvider(name string, tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, newClient apiClientCreator) image.Provider {
+func NewAPIClientProvider(name string, tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, imageCleanup bool, newClient apiClientCreator) image.Provider {
 	return &daemonImageProvider{
 		name:         name,
 		tmpDirGen:    tmpDirGen,
 		newAPIClient: newClient,
 		imageStr:     imageStr,
 		platform:     platform,
+		imageCleanup: imageCleanup,
 	}
 }
 
@@ -59,6 +60,7 @@ type daemonImageProvider struct {
 	newAPIClient apiClientCreator
 	imageStr     string
 	platform     *image.Platform
+	imageCleanup bool
 }
 
 func (p *daemonImageProvider) Name() string {
@@ -307,8 +309,9 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	log.WithFields("image", imageRef, "time", time.Since(startTime), "path", tarFileName).Info("docker saved image")
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewArchiveProvider(p.tmpDirGen, tarFileName, withInspectMetadata(inspectResult, imageCleanupFunc)...).
-		Provide(ctx)
+	return NewArchiveProvider(p.tmpDirGen, tarFileName,
+		append(withInspectMetadata(inspectResult), withCleanupFunc(p.imageCleanup, imageCleanupFunc)...)...,
+	).Provide(ctx)
 }
 
 func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.APIClient, imageRef string) (string, error) {
@@ -447,15 +450,21 @@ func (p *daemonImageProvider) validatePlatform(i dockerImage.InspectResponse) er
 	return nil
 }
 
-func withInspectMetadata(i dockerImage.InspectResponse, cleanupFunc func() error) (metadata []image.AdditionalMetadata) {
+func withInspectMetadata(i dockerImage.InspectResponse) (metadata []image.AdditionalMetadata) {
 	metadata = append(metadata,
 		image.WithTags(i.RepoTags...),
 		image.WithRepoDigests(i.RepoDigests...),
 		image.WithArchitecture(i.Architecture, ""), // since we don't have variant info from the image directly, we don't report it
 		image.WithOS(i.Os),
-		image.WithCleanupFunc(cleanupFunc),
 	)
 	return metadata
+}
+
+func withCleanupFunc(imageCleanup bool, cleanupFunc func() error) []image.AdditionalMetadata {
+	if cleanupFunc == nil || !imageCleanup {
+		return nil // Or return []image.AdditionalMetadata{} for an empty slice
+	}
+	return []image.AdditionalMetadata{image.WithCleanupFunc(cleanupFunc)}
 }
 
 func encodeCredentials(authConfig configTypes.AuthConfig) (string, error) {

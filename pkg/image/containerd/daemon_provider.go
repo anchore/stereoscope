@@ -35,7 +35,7 @@ import (
 const Daemon image.Source = image.ContainerdDaemonSource
 
 // NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, namespace string, imageStr string, platform *image.Platform) image.Provider {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, namespace string, imageStr string, platform *image.Platform, imageCleanup bool) image.Provider {
 	if namespace == "" {
 		namespace = namespaces.Default
 	}
@@ -58,6 +58,7 @@ type daemonImageProvider struct {
 	platform        *image.Platform
 	namespace       string
 	registryOptions image.RegistryOptions
+	imageCleanup    bool
 }
 
 func (p *daemonImageProvider) Name() string {
@@ -101,7 +102,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	log.WithFields("image", p.imageStr, "time", time.Since(startTime)).Info("containerd saved image")
 
 	// use the existing tarball provider to process what was pulled from the containerd daemon
-	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, tarFileName, withMetadata(resolvedPlatform, p.imageStr, imageCleanupFunc)...).
+	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, tarFileName, append(withMetadata(resolvedPlatform, p.imageStr), withCleanupFunc(p.imageCleanup, imageCleanupFunc)...)...).
 		Provide(ctx)
 }
 
@@ -516,12 +517,11 @@ func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Optio
 	return options
 }
 
-func withMetadata(platform *platforms.Platform, ref string, cleanupFunc func() error) (metadata []image.AdditionalMetadata) {
+func withMetadata(platform *platforms.Platform, ref string) (metadata []image.AdditionalMetadata) {
 	if platform != nil {
 		metadata = append(metadata,
 			image.WithArchitecture(platform.Architecture, platform.Variant),
 			image.WithOS(platform.OS),
-			image.WithCleanupFunc(cleanupFunc),
 		)
 	}
 
@@ -530,6 +530,14 @@ func withMetadata(platform *platforms.Platform, ref string, cleanupFunc func() e
 		metadata = append(metadata, image.WithTags(strings.Split(ref, "@")[0]))
 	}
 	return metadata
+}
+
+func withCleanupFunc(imageCleanup bool, cleanupFunc func() error) []image.AdditionalMetadata {
+	// with image.WithCleanupFunc we can ensure that the image is cleaned up after use
+	if cleanupFunc == nil || !imageCleanup {
+		return nil // Or return []image.AdditionalMetadata{} for an empty slice
+	}
+	return []image.AdditionalMetadata{image.WithCleanupFunc(cleanupFunc)}
 }
 
 // if imageName doesn't have an identifiable hostname prefix set,
