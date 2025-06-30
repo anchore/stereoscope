@@ -16,12 +16,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
+        with:
+          persist-credentials: false
 
       - name: Check if tag already exists
         # note: this will fail if the tag already exists
         run: |
-          [[ "${{ github.event.inputs.version }}" == v* ]] || (echo "version '${{ github.event.inputs.version }}' does not have a 'v' prefix" && exit 1)
-          git tag ${{ github.event.inputs.version }}
+          [[ "${VERSION}" == v* ]] || (echo "version '${VERSION}' does not have a 'v' prefix" && exit 1)
+          git tag "${VERSION}"
+        env:
+          VERSION: ${{ github.event.inputs.version }}
 
       - name: Check static analysis results
         uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
@@ -62,11 +66,16 @@ jobs:
       - name: Quality gate
         if: steps.static-analysis.outputs.conclusion != 'success' || steps.unit.outputs.conclusion != 'success' || steps.integration.outputs.conclusion != 'success' || steps.snapshot.outputs.conclusion != 'success'
         run: |
-          echo "Static Analysis Status: ${{ steps.static-analysis.conclusion }}"
-          echo "Unit Test Status: ${{ steps.unit.outputs.conclusion }}"
-          echo "Integration Test Status: ${{ steps.integration.outputs.conclusion }}"
-          echo "Build snapshot artifacts Status: ${{ steps.snapshot.outputs.conclusion }}"
+          echo "Static Analysis Status: ${STATIC_ANALYSIS_STATUS}"
+          echo "Unit Test Status: ${UNIT_TEST_STATUS}"
+          echo "Integration Test Status: ${INTEGRATION_TEST_STATUS}"
+          echo "Build snapshot artifacts Status: ${SNAPSHOT_STATUS}"
           false
+        env:
+          STATIC_ANALYSIS_STATUS: ${{ steps.static-analysis.outputs.conclusion }}
+          UNIT_TEST_STATUS: ${{ steps.unit.outputs.conclusion }}
+          INTEGRATION_TEST_STATUS: ${{ steps.integration.outputs.conclusion }}
+          SNAPSHOT_STATUS: ${{ steps.snapshot.outputs.conclusion }}
 
   release:
     needs: [quality-gate]
@@ -80,6 +89,7 @@ jobs:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 #v4.1.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
@@ -88,10 +98,11 @@ jobs:
         run: |
           git config --global user.name "anchoreci"
           git config --global user.email "anchoreci@users.noreply.github.com"
-          git tag -a ${{ github.event.inputs.version }} -m "Release ${{ github.event.inputs.version }}"
+          git tag -a "${VERSION}" -m "Release ${VERSION}"
           git push origin --tags
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.event.inputs.version }}
 
       - name: Build & publish release artifacts
         run: make ci-release
