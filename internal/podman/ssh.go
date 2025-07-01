@@ -152,7 +152,6 @@ func httpClientOverSSH(params *sshClientConfig) (*http.Client, error) {
 			HostKeyCallback: getSSHCallback(params),
 			HostKeyAlgorithms: []string{
 				ssh.KeyAlgoRSA,
-				ssh.KeyAlgoDSA,
 				ssh.KeyAlgoECDSA256,
 				ssh.KeyAlgoSKECDSA256,
 				ssh.KeyAlgoECDSA384,
