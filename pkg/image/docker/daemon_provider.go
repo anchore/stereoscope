@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/docker/cli/cli/config"
 	configTypes "github.com/docker/cli/cli/config/types"
 	dockerImage "github.com/docker/docker/api/types/image"
@@ -388,7 +389,7 @@ func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient 
 		}
 	}
 	if err != nil {
-		if client.IsErrNotFound(err) {
+		if errdefs.IsNotFound(err) {
 			if err = p.pull(ctx, apiClient, imageRef); err != nil {
 				return imageRef, err
 			}
