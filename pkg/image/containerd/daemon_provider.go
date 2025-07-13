@@ -46,6 +46,7 @@ func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.R
 		platform:        platform,
 		namespace:       namespace,
 		registryOptions: registryOptions,
+		imageCleanup:    imageCleanup,
 	}
 }
 
