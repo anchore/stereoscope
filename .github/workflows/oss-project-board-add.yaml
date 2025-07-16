@@ -8,6 +8,8 @@ on:
       - transferred
       - labeled
 
+permissions: {} # workflow GH token has all necessary permissions
+
 jobs:
 
   run:

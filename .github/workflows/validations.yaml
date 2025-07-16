@@ -16,6 +16,9 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
 
   Static-Analysis:
@@ -23,6 +26,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac #v4.0.0
+      with:
+        persist-credentials: false
 
     - name: Bootstrap environment
       uses: ./.github/actions/bootstrap
@@ -35,6 +40,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac #v4.0.0
+        with:
+          persist-credentials: false
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
@@ -52,6 +59,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac #v4.0.0
+        with:
+          persist-credentials: false
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
@@ -103,7 +112,7 @@ jobs:
 
       - name: Setup tmate session
         if: ${{ github.event.inputs.run-tmate == 'true' }}
-        uses: mxschmitt/action-tmate@v3
+        uses: mxschmitt/action-tmate@7b6a61a73bbb9793cb80ad69b8dd8ac19261834c #v3
         timeout-minutes: ${{ fromJSON(github.event.inputs.tmate-duration) }}
         with:
           limit-access-to-actor: true
@@ -133,6 +142,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac #v4.0.0
+        with:
+          persist-credentials: false
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
