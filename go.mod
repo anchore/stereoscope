@@ -18,7 +18,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/platforms v0.2.1
 	github.com/docker/cli v28.3.0+incompatible
-	github.com/docker/docker v28.2.2+incompatible
+	github.com/docker/docker v28.3.2+incompatible
 	github.com/gabriel-vasile/mimetype v1.4.9
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.7.0
