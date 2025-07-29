@@ -28,7 +28,16 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, contents, actualContents)
-	require.NotNil(t, dReader.file)
+	require.Nil(t, dReader.file) // file is closed at EOF
+
+	_, err = dReader.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	require.NotNil(t, dReader.file) // file is reopened
+
+	secondReadContents, err := io.ReadAll(dReader)
+	require.NoError(t, err)
+	require.Equal(t, contents, secondReadContents)
+	require.Nil(t, dReader.file) // file is closed again at EOF
 
 	require.NoError(t, dReader.Close())
 	require.Nil(t, dReader.file, "should not have a file, but we do somehow")
@@ -49,7 +58,7 @@ func TestDeferredPartialReadCloser_Seek(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, content[int(off):], actualContent)
-	require.NotNil(t, dReader.file)
+	require.Nil(t, dReader.file) // file is closed at EOF
 
 	require.NoError(t, dReader.Close())
 	require.Nil(t, dReader.file, "should not have a file, but we do somehow")

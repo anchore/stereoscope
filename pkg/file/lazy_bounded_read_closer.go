@@ -4,11 +4,15 @@ import (
 	"errors"
 	"io"
 	"os"
+
+	"github.com/anchore/stereoscope/internal/log"
 )
 
-var _ io.ReadCloser = (*lazyBoundedReadCloser)(nil)
-var _ io.ReaderAt = (*lazyBoundedReadCloser)(nil)
-var _ io.Seeker = (*lazyBoundedReadCloser)(nil)
+var _ interface {
+	io.ReadCloser
+	io.ReaderAt
+	io.Seeker
+} = (*lazyBoundedReadCloser)(nil)
 
 // lazyBoundedReadCloser is a "lazy" read closer, allocating a file descriptor for the given path only upon the first Read() call.
 // Only part of the file is allowed to be read, starting at a given position.
@@ -40,10 +44,10 @@ func (d *lazyBoundedReadCloser) Read(b []byte) (int, error) {
 
 	n, err := d.reader.Read(b)
 	if err != nil && errors.Is(err, io.EOF) {
-		// we've reached the end of the file, force a release of the file descriptor. If the file has already been
-		// closed, ignore the error.
-		if closeErr := d.file.Close(); !errors.Is(closeErr, os.ErrClosed) {
-			return n, closeErr
+		// we've reached the end of the file, release of the file descriptor. continue to return EOF
+		// IMPORTANT: call d.Close to reset internal state
+		if closeErr := d.Close(); closeErr != nil {
+			log.Tracef("unable to close: %v: %v", d.path, closeErr)
 		}
 	}
 	return n, err
@@ -80,10 +84,10 @@ func (d *lazyBoundedReadCloser) ReadAt(b []byte, off int64) (n int, err error) {
 
 	n, err = d.reader.ReadAt(b, off)
 	if err != nil && errors.Is(err, io.EOF) {
-		// we've reached the end of the file, force a release of the file descriptor. If the file has already been
-		// closed, ignore the error.
-		if closeErr := d.file.Close(); !errors.Is(closeErr, os.ErrClosed) {
-			return n, closeErr
+		// we've reached the end of the file, release of the file descriptor. continue to return EOF
+		// IMPORTANT: call d.Close to reset internal state
+		if closeErr := d.Close(); closeErr != nil {
+			log.Tracef("unable to close: %v: %v", d.path, closeErr)
 		}
 	}
 	return n, err
