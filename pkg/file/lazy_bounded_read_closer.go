@@ -22,9 +22,11 @@ type lazyBoundedReadCloser struct {
 	// file is the active file handle for the given path
 	file *os.File
 	// reader is the LimitedReader that wraps the open file
-	reader *io.SectionReader
-	start  int64
-	size   int64
+	reader   *io.SectionReader
+	start    int64
+	size     int64
+	isEOF    bool
+	isClosed bool
 }
 
 // NewDeferredPartialReadCloser creates a new NewDeferredPartialReadCloser for the given path.
@@ -44,9 +46,10 @@ func (d *lazyBoundedReadCloser) Read(b []byte) (int, error) {
 
 	n, err := d.reader.Read(b)
 	if err != nil && errors.Is(err, io.EOF) {
+		d.isEOF = true
+		d.reader = nil // IMPORTANT: this needs to be unset so opneFile continues to work when appropriate
 		// we've reached the end of the file, release of the file descriptor. continue to return EOF
-		// IMPORTANT: call d.Close to reset internal state
-		if closeErr := d.Close(); closeErr != nil {
+		if closeErr := d.file.Close(); closeErr != nil {
 			log.Tracef("unable to close: %v: %v", d.path, closeErr)
 		}
 	}
@@ -55,6 +58,8 @@ func (d *lazyBoundedReadCloser) Read(b []byte) (int, error) {
 
 // Close implements the io.Closer interface for the previously loaded path / opened file.
 func (d *lazyBoundedReadCloser) Close() error {
+	d.isClosed = true
+
 	if d.file == nil {
 		return nil
 	}
@@ -70,6 +75,9 @@ func (d *lazyBoundedReadCloser) Close() error {
 }
 
 func (d *lazyBoundedReadCloser) Seek(offset int64, whence int) (int64, error) {
+	// let Read determine further EOF state
+	d.isEOF = false
+
 	if err := d.openFile(); err != nil {
 		return 0, err
 	}
@@ -78,15 +86,19 @@ func (d *lazyBoundedReadCloser) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (d *lazyBoundedReadCloser) ReadAt(b []byte, off int64) (n int, err error) {
+	// let Read determine further EOF state
+	d.isEOF = false
+
 	if err := d.openFile(); err != nil {
 		return 0, err
 	}
 
 	n, err = d.reader.ReadAt(b, off)
 	if err != nil && errors.Is(err, io.EOF) {
+		d.isEOF = true
+		d.reader = nil // IMPORTANT: this needs to be unset so opneFile continues to work when appropriate
 		// we've reached the end of the file, release of the file descriptor. continue to return EOF
-		// IMPORTANT: call d.Close to reset internal state
-		if closeErr := d.Close(); closeErr != nil {
+		if closeErr := d.file.Close(); closeErr != nil {
 			log.Tracef("unable to close: %v: %v", d.path, closeErr)
 		}
 	}
@@ -94,6 +106,12 @@ func (d *lazyBoundedReadCloser) ReadAt(b []byte, off int64) (n int, err error) {
 }
 
 func (d *lazyBoundedReadCloser) openFile() error {
+	if d.isEOF {
+		return io.EOF
+	}
+	if d.isClosed {
+		return os.ErrClosed
+	}
 	if d.reader != nil {
 		return nil
 	}
