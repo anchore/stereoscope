@@ -21,9 +21,10 @@ const (
 
 // ImageProviderConfig is the user-configuration containing all configuration needed by stereoscope image providers
 type ImageProviderConfig struct {
-	UserInput string
-	Platform  *image.Platform
-	Registry  image.RegistryOptions
+	UserInput    string
+	Platform     *image.Platform
+	Registry     image.RegistryOptions
+	ImageCleanup bool
 }
 
 func ImageProviders(cfg ImageProviderConfig) []collections.TaggedValue[image.Provider] {
@@ -36,9 +37,9 @@ func ImageProviders(cfg ImageProviderConfig) []collections.TaggedValue[image.Pro
 		taggedProvider(sif.NewArchiveProvider(tempDirGenerator, cfg.UserInput), FileTag),
 
 		// daemon providers
-		taggedProvider(docker.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
-		taggedProvider(podman.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
-		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, cfg.Registry, containerdClient.Namespace(), cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
+		taggedProvider(docker.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform, cfg.ImageCleanup), DaemonTag, PullTag),
+		taggedProvider(podman.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform, cfg.ImageCleanup), DaemonTag, PullTag),
+		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, cfg.Registry, containerdClient.Namespace(), cfg.UserInput, cfg.Platform, cfg.ImageCleanup), DaemonTag, PullTag),
 
 		// registry providers
 		taggedProvider(oci.NewRegistryProvider(tempDirGenerator, cfg.Registry, cfg.UserInput, cfg.Platform), RegistryTag, PullTag),
