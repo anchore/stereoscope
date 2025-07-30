@@ -28,8 +28,15 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, contents, actualContents)
-	require.Nil(t, dReader.file) // file is closed at EOF
+	require.Nil(t, dReader.reader) // file is closed when reader is nil at EOF
 
+	// test EOF behavior
+	ignore := make([]byte, 0, 16)
+	eofBytesRead, err := dReader.Read(ignore)
+	require.ErrorIs(t, err, io.EOF) // continues to return EOF for later reads
+	require.Equal(t, 0, eofBytesRead)
+
+	// able to seek after EOF
 	_, err = dReader.Seek(0, io.SeekStart)
 	require.NoError(t, err)
 	require.NotNil(t, dReader.file) // file is reopened
@@ -37,10 +44,13 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 	secondReadContents, err := io.ReadAll(dReader)
 	require.NoError(t, err)
 	require.Equal(t, contents, secondReadContents)
-	require.Nil(t, dReader.file) // file is closed again at EOF
+	require.Nil(t, dReader.reader) // file is closed when reader is nil at EOF
 
 	require.NoError(t, dReader.Close())
 	require.Nil(t, dReader.file, "should not have a file, but we do somehow")
+
+	_, err = io.ReadAll(dReader)
+	require.ErrorIs(t, err, os.ErrClosed)
 }
 
 func TestDeferredPartialReadCloser_Seek(t *testing.T) {
@@ -58,7 +68,7 @@ func TestDeferredPartialReadCloser_Seek(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, content[int(off):], actualContent)
-	require.Nil(t, dReader.file) // file is closed at EOF
+	require.Nil(t, dReader.reader) // file is closed when reader is nil at EOF
 
 	require.NoError(t, dReader.Close())
 	require.Nil(t, dReader.file, "should not have a file, but we do somehow")
