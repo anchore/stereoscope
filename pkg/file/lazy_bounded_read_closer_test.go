@@ -48,6 +48,9 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 
 	require.NoError(t, dReader.Close())
 	require.Nil(t, dReader.file, "should not have a file, but we do somehow")
+
+	_, err = io.ReadAll(dReader)
+	require.ErrorIs(t, err, os.ErrClosed)
 }
 
 func TestDeferredPartialReadCloser_Seek(t *testing.T) {
