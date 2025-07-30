@@ -106,11 +106,11 @@ func (d *lazyBoundedReadCloser) ReadAt(b []byte, off int64) (n int, err error) {
 }
 
 func (d *lazyBoundedReadCloser) openFile() error {
-	if d.isEOF {
-		return io.EOF
-	}
 	if d.isClosed {
 		return os.ErrClosed
+	}
+	if d.isEOF {
+		return io.EOF
 	}
 	if d.reader != nil {
 		return nil
