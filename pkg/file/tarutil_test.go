@@ -249,8 +249,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "regular file is written",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeReg,
 					Name:     "file.txt",
 					Linkname: "",
@@ -268,8 +267,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "regular file with possible path traversal errors out",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeReg,
 					Name:     "../file.txt",
 					Linkname: "",
@@ -282,8 +280,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "local . index is not a traversal error and should skip",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeDir,
 					Name:     ".",
 					Linkname: "",
@@ -296,8 +293,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "regular file with possible path traversal errors out (same prefix)",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeReg,
 					Name:     "../tmp-file.txt",
 					Linkname: "",
@@ -310,8 +306,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "directory is created",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeDir,
 					Name:     "dir",
 					Linkname: "",
@@ -327,8 +322,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "symlink is ignored",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeSymlink,
 					Name:     "symlink",
 					Linkname: "./../to-location",
@@ -344,8 +338,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "hardlink is ignored",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeLink,
 					Name:     "link",
 					Linkname: "./../to-location",
@@ -361,8 +354,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "device is ignored",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeChar,
 					Name:     "device",
 				},
@@ -377,8 +369,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "block device is ignored",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeBlock,
 					Name:     "device",
 				},
@@ -393,8 +384,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 		{
 			name: "pipe is ignored",
 			entry: TarFileEntry{
-				Sequence: 0,
-				Header: tar.Header{
+				Header: &tar.Header{
 					Typeflag: tar.TypeFifo,
 					Name:     "pipe",
 				},
