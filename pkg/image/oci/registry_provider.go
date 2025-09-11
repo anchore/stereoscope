@@ -80,7 +80,7 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		return nil, fmt.Errorf("failed to get image config from registry: %+v", err)
 	}
 
-	if err := validatePlatform(platform, c.OS, c.Architecture); err != nil {
+	if err := validatePlatform(platform, c.OS, c.Architecture, c.Variant); err != nil {
 		return nil, err
 	}
 
@@ -130,7 +130,7 @@ func (p *registryImageProvider) finalizePlatform(descriptor *remote.Descriptor, 
 	}
 }
 
-func validatePlatform(platform *image.Platform, givenOs, givenArch string) error {
+func validatePlatform(platform *image.Platform, givenOs, givenArch, givenVariant string) error {
 	if platform == nil {
 		return nil
 	}
@@ -138,6 +138,9 @@ func validatePlatform(platform *image.Platform, givenOs, givenArch string) error
 		return newErrPlatformMismatch(platform, fmt.Errorf("missing architecture or OS from image config when user specified platform=%q", platform.String()))
 	}
 	platformStr := fmt.Sprintf("%s/%s", givenOs, givenArch)
+	if givenVariant != "" {
+		platformStr += "/" + givenVariant
+	}
 	actualPlatform, err := containerregistryV1.ParsePlatform(platformStr)
 	if err != nil {
 		return newErrPlatformMismatch(platform, fmt.Errorf("failed to parse platform from image config: %w", err))
