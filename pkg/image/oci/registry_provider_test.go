@@ -34,6 +34,7 @@ func TestValidatePlatform(t *testing.T) {
 		platform       *image.Platform
 		givenOs        string
 		givenArch      string
+		givenVariant   string
 		expectedErrMsg string
 		expectedErr    require.ErrorAssertionFunc
 	}{
@@ -83,11 +84,53 @@ func TestValidatePlatform(t *testing.T) {
 			givenArch:   "amd64",
 			expectedErr: require.NoError,
 		},
+		{
+			name:         "matching platform with variant v7",
+			platform:     &image.Platform{OS: "linux", Architecture: "arm", Variant: "v7"},
+			givenOs:      "linux",
+			givenArch:    "arm",
+			givenVariant: "v7",
+			expectedErr:  require.NoError,
+		},
+		{
+			name:         "matching platform with variant arm64/v8",
+			platform:     &image.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"},
+			givenOs:      "linux",
+			givenArch:    "arm64",
+			givenVariant: "v8",
+			expectedErr:  require.NoError,
+		},
+		{
+			name:           "mismatched variant",
+			platform:       &image.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"},
+			givenOs:        "linux",
+			givenArch:      "arm64",
+			givenVariant:   "v7",
+			expectedErr:    isFetchError,
+			expectedErrMsg: `image platform="linux/arm64/v7" does not match user specified platform="linux/arm64/v8"`,
+		},
+		{
+			name:           "user specifies variant, image does not have one",
+			platform:       &image.Platform{OS: "linux", Architecture: "arm64", Variant: "v8"},
+			givenOs:        "linux",
+			givenArch:      "arm64",
+			givenVariant:   "",
+			expectedErr:    isFetchError,
+			expectedErrMsg: `image platform="linux/arm64" does not match user specified platform="linux/arm64/v8"`,
+		},
+		{
+			name:         "image has variant, user does not specify one",
+			platform:     &image.Platform{OS: "linux", Architecture: "arm64"},
+			givenOs:      "linux",
+			givenArch:    "arm64",
+			givenVariant: "v8",
+			expectedErr:  require.NoError,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePlatform(tt.platform, tt.givenOs, tt.givenArch)
+			err := validatePlatform(tt.platform, tt.givenOs, tt.givenArch, tt.givenVariant)
 			tt.expectedErr(t, err)
 			if err != nil {
 				assert.ErrorContains(t, err, tt.expectedErrMsg)
