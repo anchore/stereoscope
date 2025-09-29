@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -21,6 +22,53 @@ import (
 )
 
 const Registry image.Source = image.OciRegistrySource
+
+// effectiveURLTransport is a custom transport that captures the effective URL after following redirects
+type effectiveURLTransport struct {
+	base       http.RoundTripper
+	effectiveURLs map[string]string // maps original host to effective host
+	mutex         sync.RWMutex
+}
+
+func newEffectiveURLTransport(base http.RoundTripper) *effectiveURLTransport {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return &effectiveURLTransport{
+		base:          base,
+		effectiveURLs: make(map[string]string),
+	}
+}
+
+func (t *effectiveURLTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	originalHost := req.URL.Host
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+
+	// Check if the effective URL is different from the original
+	if resp.Request != nil && resp.Request.URL != nil {
+		effectiveHost := resp.Request.URL.Host
+		if effectiveHost != originalHost {
+			t.mutex.Lock()
+			t.effectiveURLs[originalHost] = effectiveHost
+			t.mutex.Unlock()
+			log.Debugf("captured effective URL after redirect: %s -> %s", originalHost, effectiveHost)
+		}
+	}
+
+	return resp, err
+}
+
+func (t *effectiveURLTransport) getEffectiveHost(originalHost string) string {
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
+	if effectiveHost, exists := t.effectiveURLs[originalHost]; exists {
+		return effectiveHost
+	}
+	return originalHost
+}
 
 // NewRegistryProvider creates a new provider instance for a specific image that will later be cached to the given directory.
 func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, imageStr string, platform *image.Platform) image.Provider {
@@ -38,6 +86,7 @@ type registryImageProvider struct {
 	imageStr        string
 	platform        *image.Platform
 	registryOptions image.RegistryOptions
+	effectiveTransport *effectiveURLTransport
 }
 
 func (p *registryImageProvider) Name() string {
@@ -61,7 +110,12 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 
 	platform := defaultPlatformIfNil(p.platform)
 
-	options := prepareRemoteOptions(ctx, ref, p.registryOptions, platform)
+	// Initialize the effective URL transport if not already done
+	if p.effectiveTransport == nil {
+		p.effectiveTransport = newEffectiveURLTransport(nil)
+	}
+
+	options := prepareRemoteOptions(ctx, ref, p.registryOptions, platform, p.effectiveTransport)
 
 	descriptor, err := remote.Get(ref, options...)
 	if err != nil {
@@ -88,7 +142,10 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 
 	// craft a repo digest from the registry reference and the known digest
 	// note: the descriptor is fetched from the registry, and the descriptor digest is the same as the repo digest
-	repoDigest := fmt.Sprintf("%s/%s@%s", ref.Context().RegistryStr(), ref.Context().RepositoryStr(), descriptor.Digest.String())
+	// Use the effective registry host if it differs from the original due to redirects
+	originalRegistry := ref.Context().RegistryStr()
+	effectiveRegistry := p.effectiveTransport.getEffectiveHost(originalRegistry)
+	repoDigest := fmt.Sprintf("%s/%s@%s", effectiveRegistry, ref.Context().RepositoryStr(), descriptor.Digest.String())
 
 	metadata := []image.AdditionalMetadata{
 		image.WithRepoDigests(repoDigest),
@@ -180,7 +237,7 @@ func toContainerRegistryPlatform(p *image.Platform) *containerregistryV1.Platfor
 	}
 }
 
-func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform) (options []remote.Option) {
+func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform, effectiveTransport *effectiveURLTransport) (options []remote.Option) {
 	options = append(options, remote.WithContext(ctx))
 
 	// Set the user agent to indicate what binary is making the request
@@ -212,9 +269,11 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	tlsConfig, err := registryOptions.TLSConfig(registryName)
 	if err != nil {
 		log.Warn("unable to configure TLS transport: %w", err)
-	} else if tlsConfig != nil {
-		options = append(options, remote.WithTransport(getTransport(tlsConfig)))
 	}
+	
+	// Use our custom transport that captures effective URLs after redirects
+	transport := getTransportWithEffectiveURL(tlsConfig, effectiveTransport)
+	options = append(options, remote.WithTransport(transport))
 
 	return options
 }
@@ -224,6 +283,15 @@ func getTransport(tlsConfig *tls.Config) *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = tlsConfig
 	return transport
+}
+
+func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *effectiveURLTransport) http.RoundTripper {
+	// Create base transport with TLS config
+	baseTransport := getTransport(tlsConfig)
+	
+	// Wrap it with our effective URL capturing transport
+	effectiveTransport.base = baseTransport
+	return effectiveTransport
 }
 
 // defaultPlatformIfNil sets the platform to use the host's architecture
