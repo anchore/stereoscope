@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/sylabs/squashfs"
@@ -128,7 +130,13 @@ func NewMetadataFromPath(path string, info os.FileInfo) Metadata {
 	ty := TypeFromMode(info.Mode())
 
 	if ty == TypeRegular {
-		f, err := os.Open(path)
+		usablePath := path
+		// denormalize the path back to windows so we can open the file
+		if runtime.GOOS == "windows" {
+			usablePath = FromPosix(usablePath)
+		}
+
+		f, err := os.Open(usablePath)
 		if err != nil {
 			// TODO: it may be that the file is inaccessible, however, this is not an error or a warning. In the future we need to track these as known-unknowns
 			f = nil
@@ -166,4 +174,16 @@ func (m Metadata) Equal(other Metadata) bool {
 		m.FileInfo.Mode() == other.FileInfo.Mode() &&
 		m.FileInfo.Size() == other.FileInfo.Size() &&
 		m.FileInfo.ModTime().UTC().Equal(other.FileInfo.ModTime().UTC())
+}
+
+func FromPosix(posixPath string) (windowsPath string) {
+	// decode the volume (e.g. /c/<path> --> C:\\) - There should always be a volume name.
+	pathFields := strings.Split(posixPath, "/")
+	volumeName := strings.ToUpper(pathFields[1]) + `:\\`
+
+	// translate non-escaped forward slashes into backslashes
+	remainingTranslatedPath := strings.Join(pathFields[2:], "\\")
+
+	// combine volume name and backslash components
+	return filepath.Clean(volumeName + remainingTranslatedPath)
 }
