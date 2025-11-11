@@ -26,9 +26,8 @@ type tarFile struct {
 
 // TarFileEntry represents the header, contents, and list position of an entry within a tar file.
 type TarFileEntry struct {
-	Sequence int64
-	Header   tar.Header
-	Reader   io.Reader
+	Header *tar.Header
+	Reader io.Reader
 }
 
 // TarFileVisitor is a visitor function meant to be used in conjunction with the IterateTar.
@@ -54,10 +53,7 @@ func (e *ErrFileNotFound) Error() string {
 // or if the visitor function returns a ErrTarStopIteration sentinel error.
 func IterateTar(reader io.Reader, visitor TarFileVisitor) error {
 	tarReader := tar.NewReader(reader)
-	var sequence int64 = -1
 	for {
-		sequence++
-
 		hdr, err := tarReader.Next()
 		if errors.Is(err, io.EOF) {
 			break
@@ -70,9 +66,8 @@ func IterateTar(reader io.Reader, visitor TarFileVisitor) error {
 		}
 
 		if err := visitor(TarFileEntry{
-			Sequence: sequence,
-			Header:   *hdr,
-			Reader:   tarReader,
+			Header: hdr,
+			Reader: tarReader,
 		}); err != nil {
 			if errors.Is(err, ErrTarStopIteration) {
 				return nil
@@ -150,7 +145,7 @@ type tarVisitor struct {
 }
 
 func (v tarVisitor) visit(entry TarFileEntry) error {
-	target := filepath.Join(v.destination, entry.Header.Name)
+	target := filepath.Join(v.destination, entry.Header.Name) //nolint:gosec  // we are checking path traversal issues just below this line
 
 	// we should not allow for any destination path to be outside of where we are unarchiving to
 	// "." is a special case that we allow (it is the root of the unarchived content)
