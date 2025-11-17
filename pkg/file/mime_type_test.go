@@ -31,7 +31,7 @@ func Test_MIMEType(t *testing.T) {
 		{
 			name:     "script",
 			fixture:  fileReader("test-fixtures/mime/capture.sh"),
-			expected: "text/plain",
+			expected: "text/x-shellscript",
 		},
 		{
 			name:     "no contents",
