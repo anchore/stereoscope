@@ -128,7 +128,7 @@ func TestFileMetadataFromTar(t *testing.T) {
 			LinkDestination: "",
 			UserID:          1337,
 			GroupID:         5432,
-			MIMEType:        "text/plain",
+			MIMEType:        "text/x-shellscript",
 			FileInfo: ManualInfo{
 				NameValue:    "file-3.txt",
 				SizeValue:    11,
@@ -141,8 +141,11 @@ func TestFileMetadataFromTar(t *testing.T) {
 	var actual []Metadata
 	visitor := func(entry TarFileEntry) error {
 		var contents io.Reader
-		if strings.HasSuffix(entry.Header.Name, ".txt") {
+		switch {
+		case entry.Header.Name == "path/file-3.txt":
 			contents = strings.NewReader("#!/usr/bin/env bash\necho 'awesome script'")
+		case strings.HasSuffix(entry.Header.Name, ".txt"):
+			contents = strings.NewReader("echo 'not awesome script'")
 		}
 
 		entry.Header.ModTime = time.Time{}
