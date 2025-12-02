@@ -34,20 +34,21 @@ import (
 const Daemon image.Source = image.DockerDaemonSource
 
 // NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform) image.Provider {
-	return NewAPIClientProvider(Daemon, tmpDirGen, imageStr, platform, func() (client.APIClient, error) {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, imageCleanup bool) image.Provider {
+	return NewAPIClientProvider(Daemon, tmpDirGen, imageStr, platform, imageCleanup, func() (client.APIClient, error) {
 		return docker.GetClient()
 	})
 }
 
 // NewAPIClientProvider creates a new provider for the provided Docker client.APIClient
-func NewAPIClientProvider(name string, tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, newClient apiClientCreator) image.Provider {
+func NewAPIClientProvider(name string, tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, imageCleanup bool, newClient apiClientCreator) image.Provider {
 	return &daemonImageProvider{
 		name:         name,
 		tmpDirGen:    tmpDirGen,
 		newAPIClient: newClient,
 		imageStr:     imageStr,
 		platform:     platform,
+		imageCleanup: imageCleanup,
 	}
 }
 
@@ -60,6 +61,7 @@ type daemonImageProvider struct {
 	newAPIClient apiClientCreator
 	imageStr     string
 	platform     *image.Platform
+	imageCleanup bool
 }
 
 func (p *daemonImageProvider) Name() string {
@@ -278,7 +280,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	}
 
 	log.WithFields("image", p.imageStr).Info("docker pulling image")
-	imageRef, err := p.pullImageIfMissing(ctx, apiClient)
+	imageRef, imageCleanupFunc, err := p.pullImageIfMissing(ctx, apiClient)
 	if err != nil {
 		return nil, err
 	}
@@ -308,8 +310,9 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	log.WithFields("image", imageRef, "time", time.Since(startTime), "path", tarFileName).Info("docker saved image")
 
 	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewArchiveProvider(p.tmpDirGen, tarFileName, withInspectMetadata(inspectResult)...).
-		Provide(ctx)
+	return NewArchiveProvider(p.tmpDirGen, tarFileName,
+		append(withInspectMetadata(inspectResult), withCleanupFunc(p.imageCleanup, imageCleanupFunc)...)...,
+	).Provide(ctx)
 }
 
 func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.APIClient, imageRef string) (string, error) {
@@ -374,10 +377,22 @@ func (p *daemonImageProvider) saveImage(ctx context.Context, apiClient client.AP
 	return tempTarFile.Name(), nil
 }
 
-func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient client.APIClient) (imageRef string, err error) {
+func (p *daemonImageProvider) deleteImage(ctx context.Context, apiClient client.APIClient, imageRef string) error {
+	// delete the image from the docker daemon
+	_, err := apiClient.ImageRemove(ctx, imageRef, dockerImage.RemoveOptions{})
+	if err != nil {
+		return fmt.Errorf("unable to delete image: %w", err)
+	}
+
+	log.Infof("deleted image %q from %s", imageRef, p.name)
+
+	return nil
+}
+
+func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient client.APIClient) (imageRef string, cleanupFunc func() error, err error) {
 	imageRef, originalImageRef, err := image.ParseReference(p.imageStr)
 	if err != nil {
-		return "", err
+		return "", cleanupFunc, err
 	}
 
 	// check if the image exists locally
@@ -388,24 +403,33 @@ func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient 
 			imageRef = strings.TrimSuffix(imageRef, ":latest")
 		}
 	}
+
 	if err != nil {
 		if errdefs.IsNotFound(err) {
 			if err = p.pull(ctx, apiClient, imageRef); err != nil {
-				return imageRef, err
+				return imageRef, cleanupFunc, err
+			}
+			// Image Pulled Create cleanupFunc
+			cleanupFunc = func() error {
+				return p.deleteImage(ctx, apiClient, imageRef)
 			}
 		} else {
-			return imageRef, fmt.Errorf("unable to inspect existing image: %w", err)
+			return imageRef, cleanupFunc, fmt.Errorf("unable to inspect existing image: %w", err)
 		}
 	} else {
 		// looks like the image exists, but if the platform doesn't match what the user specified, we may need to
 		// pull the image again with the correct platform specifier, which will override the local tag.
 		if err = p.validatePlatform(inspectResult); err != nil {
 			if err = p.pull(ctx, apiClient, imageRef); err != nil {
-				return imageRef, err
+				return imageRef, cleanupFunc, err
+			}
+			// Image Pulled Create cleanupFunc
+			cleanupFunc = func() error {
+				return p.deleteImage(ctx, apiClient, imageRef)
 			}
 		}
 	}
-	return imageRef, nil
+	return imageRef, cleanupFunc, nil
 }
 
 func (p *daemonImageProvider) validatePlatform(i dockerImage.InspectResponse) error {
@@ -435,6 +459,13 @@ func withInspectMetadata(i dockerImage.InspectResponse) (metadata []image.Additi
 		image.WithOS(i.Os),
 	)
 	return metadata
+}
+
+func withCleanupFunc(imageCleanup bool, cleanupFunc func() error) []image.AdditionalMetadata {
+	if cleanupFunc == nil || !imageCleanup {
+		return nil // Or return []image.AdditionalMetadata{} for an empty slice
+	}
+	return []image.AdditionalMetadata{image.WithCleanupFunc(cleanupFunc)}
 }
 
 func encodeCredentials(authConfig configTypes.AuthConfig) (string, error) {
