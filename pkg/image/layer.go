@@ -24,6 +24,8 @@ import (
 
 const SingularitySquashFSLayer = "application/vnd.sylabs.sif.layer.v1.squashfs"
 
+const BuildKitZstdCompressedLayer = "application/vnd.docker.image.rootfs.diff.tar.zstd"
+
 // Layer represents a single layer within a container image.
 type Layer struct {
 	// layer is the raw layer metadata and content provider from the GCR lib
@@ -101,7 +103,8 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 		types.OCILayerZStd,
 		types.DockerLayer,
 		types.DockerForeignLayer,
-		types.DockerUncompressedLayer:
+		types.DockerUncompressedLayer,
+		BuildKitZstdCompressedLayer:
 
 		err := l.readStandardImageLayer(idx, uncompressedLayersCacheDir, tree)
 		if err != nil {
