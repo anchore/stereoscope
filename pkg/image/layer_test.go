@@ -79,8 +79,40 @@ func TestRead(t *testing.T) {
 			wantErrContents: "no media type for you",
 		},
 		{
-			name:      "no error",
+			name:      "support OCI layer",
+			mediaType: v1Types.OCILayer,
+		},
+		{
+			name:      "support OCI uncompressed layer",
+			mediaType: v1Types.OCIUncompressedLayer,
+		},
+		{
+			name:      "support OCI restricted layer",
+			mediaType: v1Types.OCIRestrictedLayer,
+		},
+		{
+			name:      "support OCI uncompressed restricted layer",
+			mediaType: v1Types.OCIUncompressedRestrictedLayer,
+		},
+		{
+			name:      "support OCI zstd layer",
+			mediaType: v1Types.OCILayerZStd,
+		},
+		{
+			name:      "support docker tar.gz layer",
 			mediaType: v1Types.DockerLayer,
+		},
+		{
+			name:      "support docker foreign layer",
+			mediaType: v1Types.DockerForeignLayer,
+		},
+		{
+			name:      "support docker uncompressed layer",
+			mediaType: v1Types.DockerUncompressedLayer,
+		},
+		{
+			name:      "support docker tar.zstd layer",
+			mediaType: BuildKitZstdCompressedLayer,
 		},
 	}
 

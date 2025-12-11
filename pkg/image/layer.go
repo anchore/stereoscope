@@ -22,9 +22,10 @@ import (
 	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
-const SingularitySquashFSLayer = "application/vnd.sylabs.sif.layer.v1.squashfs"
-
-const BuildKitZstdCompressedLayer = "application/vnd.docker.image.rootfs.diff.tar.zstd"
+const (
+	SingularitySquashFSLayer    = "application/vnd.sylabs.sif.layer.v1.squashfs"
+	BuildKitZstdCompressedLayer = "application/vnd.docker.image.rootfs.diff.tar.zstd"
+)
 
 // Layer represents a single layer within a container image.
 type Layer struct {
