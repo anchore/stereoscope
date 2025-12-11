@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	SingularitySquashFSLayer    = "application/vnd.sylabs.sif.layer.v1.squashfs"
-	BuildKitZstdCompressedLayer = "application/vnd.docker.image.rootfs.diff.tar.zstd"
+	SingularitySquashFSLayer       = "application/vnd.sylabs.sif.layer.v1.squashfs"
+	BuildKitZstdCompressedLayer    = "application/vnd.docker.image.rootfs.diff.tar.zstd"
+	BuildKitZstdCompressedLayerAlt = "application/vnd.docker.image.rootfs.diff.tar+zstd" // we're future proofing against a possible media type variation
 )
 
 // Layer represents a single layer within a container image.
@@ -105,7 +106,8 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 		types.DockerLayer,
 		types.DockerForeignLayer,
 		types.DockerUncompressedLayer,
-		BuildKitZstdCompressedLayer:
+		BuildKitZstdCompressedLayer,
+		BuildKitZstdCompressedLayerAlt:
 
 		err := l.readStandardImageLayer(idx, uncompressedLayersCacheDir, tree)
 		if err != nil {

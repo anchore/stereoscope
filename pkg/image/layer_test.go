@@ -114,6 +114,10 @@ func TestRead(t *testing.T) {
 			name:      "support docker tar.zstd layer",
 			mediaType: BuildKitZstdCompressedLayer,
 		},
+		{
+			name:      "support docker tar+zstd layer",
+			mediaType: BuildKitZstdCompressedLayerAlt,
+		},
 	}
 
 	for _, tt := range tests {
