@@ -25,7 +25,7 @@ jobs:
         uses: ./.github/actions/bootstrap
 
       - name: Restore base benchmark result
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 #v4.3.0
+        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb #v5.0.1
         with:
           path: test/results/benchmark-main.txt
           # use base sha for PR or new commit hash for main push in benchmark result key
