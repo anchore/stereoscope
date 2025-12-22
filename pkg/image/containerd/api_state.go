@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/remotes"
+	"github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/remotes"
 	"github.com/containerd/errdefs"
 	"github.com/scylladb/go-set/strset"
 
@@ -17,7 +17,7 @@ import (
 
 // apiState represents anything needed to be persisted from the containerd API for pull status.
 type apiState struct {
-	client    *containerd.Client
+	client    *client.Client
 	startedAt time.Time
 	ongoing   *jobs
 	store     content.Store
@@ -37,7 +37,7 @@ type statusInfo struct {
 	UpdatedAt time.Time
 }
 
-func newAPIState(client *containerd.Client, ongoing *jobs) apiState {
+func newAPIState(client *client.Client, ongoing *jobs) apiState {
 	return apiState{
 		lock:      &sync.RWMutex{},
 		client:    client,
