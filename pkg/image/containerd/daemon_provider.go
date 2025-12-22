@@ -35,7 +35,7 @@ import (
 const Daemon image.Source = image.ContainerdDaemonSource
 
 // NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, namespace string, imageStr string, platform *image.Platform) image.Provider {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, namespace string, imageStr string, platform *image.Platform, imageCleanup bool) image.Provider {
 	if namespace == "" {
 		namespace = namespaces.Default
 	}
@@ -46,6 +46,7 @@ func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.R
 		platform:        platform,
 		namespace:       namespace,
 		registryOptions: registryOptions,
+		imageCleanup:    imageCleanup,
 	}
 }
 
@@ -58,6 +59,7 @@ type daemonImageProvider struct {
 	platform        *image.Platform
 	namespace       string
 	registryOptions image.RegistryOptions
+	imageCleanup    bool
 }
 
 func (p *daemonImageProvider) Name() string {
@@ -85,7 +87,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 
 	ctx = namespaces.WithNamespace(ctx, p.namespace)
 
-	resolvedImage, resolvedPlatform, err := p.pullImageIfMissing(ctx, client)
+	resolvedImage, resolvedPlatform, imageCleanupFunc, err := p.pullImageIfMissing(ctx, client)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +103,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	log.WithFields("image", p.imageStr, "time", time.Since(startTime)).Info("containerd saved image")
 
 	// use the existing tarball provider to process what was pulled from the containerd daemon
-	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, tarFileName, withMetadata(resolvedPlatform, p.imageStr)...).
+	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, tarFileName, append(withMetadata(resolvedPlatform, p.imageStr), withCleanupFunc(p.imageCleanup, imageCleanupFunc)...)...).
 		Provide(ctx)
 }
 
@@ -324,7 +326,8 @@ func (p *daemonImageProvider) fetchPlatformFromConfig(ctx context.Context, clien
 	return &cfg, nil
 }
 
-func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *containerd.Client) (string, *platforms.Platform, error) {
+func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *containerd.Client) (string, *platforms.Platform, func() error, error) {
+	var cleanupFunc func() error
 	p.imageStr = ensureRegistryHostPrefix(p.imageStr)
 
 	// try to get the image first before pulling
@@ -338,20 +341,23 @@ func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *co
 	if err != nil {
 		_, err := p.pull(ctx, client, imageStr)
 		if err != nil {
-			return "", nil, err
+			return "", nil, cleanupFunc, err
 		}
-
+		// Image Pulled Create cleanupFunc
+		cleanupFunc = func() error {
+			return p.deleteImage(ctx, client, resolvedImage)
+		}
 		resolvedImage, resolvedPlatform, err = p.resolveImage(ctx, client, imageStr)
 		if err != nil {
-			return "", nil, fmt.Errorf("unable to resolve image after pull: %w", err)
+			return "", nil, cleanupFunc, fmt.Errorf("unable to resolve image after pull: %w", err)
 		}
 	}
 
 	if err := validatePlatform(p.platform, resolvedPlatform); err != nil {
-		return "", nil, fmt.Errorf("platform validation failed: %w", err)
+		return "", nil, cleanupFunc, fmt.Errorf("platform validation failed: %w", err)
 	}
 
-	return resolvedImage, resolvedPlatform, nil
+	return resolvedImage, resolvedPlatform, cleanupFunc, nil
 }
 
 func validatePlatform(expected *image.Platform, given *platforms.Platform) error {
@@ -446,6 +452,16 @@ func (p *daemonImageProvider) saveImage(ctx context.Context, client *containerd.
 	return tempTarFile.Name(), nil
 }
 
+func (p *daemonImageProvider) deleteImage(ctx context.Context, client *containerd.Client, resolvedImage string) error {
+	// Remove the image
+	if err := client.ImageService().Delete(ctx, resolvedImage, nil); err != nil {
+		return fmt.Errorf("failed to delete image %s: %w", resolvedImage, err)
+	}
+
+	log.Infof("deleted image %s from containerd", p.Name())
+	return nil
+}
+
 func exportPlatformComparer(platform *image.Platform) (platforms.MatchComparer, error) {
 	// it is important to only export a single architecture. Default to linux/amd64. Without specifying a specific
 	// architecture then the export may include multiple architectures (if the tag points to a manifest list)
@@ -515,6 +531,14 @@ func withMetadata(platform *platforms.Platform, ref string) (metadata []image.Ad
 		metadata = append(metadata, image.WithTags(strings.Split(ref, "@")[0]))
 	}
 	return metadata
+}
+
+func withCleanupFunc(imageCleanup bool, cleanupFunc func() error) []image.AdditionalMetadata {
+	// with image.WithCleanupFunc we can ensure that the image is cleaned up after use
+	if cleanupFunc == nil || !imageCleanup {
+		return nil // Or return []image.AdditionalMetadata{} for an empty slice
+	}
+	return []image.AdditionalMetadata{image.WithCleanupFunc(cleanupFunc)}
 }
 
 // if imageName doesn't have an identifiable hostname prefix set,
