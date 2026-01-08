@@ -208,8 +208,6 @@ func (i *Image) Read() error {
 		return err
 	}
 
-	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags).Debug("reading image")
-
 	startTime := time.Now()
 	lapTime := startTime
 
@@ -217,6 +215,13 @@ func (i *Image) Read() error {
 	if err != nil {
 		return err
 	}
+
+	// validate all layer media types before processing
+	if err := validateLayerMediaTypes(v1Layers); err != nil {
+		return err
+	}
+
+	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags).Debug("reading image")
 
 	// let consumers know of a monitorable event (image save + copy stages)
 	readProg := i.trackReadProgress(i.Metadata)
