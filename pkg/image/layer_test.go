@@ -133,3 +133,135 @@ func TestRead(t *testing.T) {
 		})
 	}
 }
+
+func TestIsSupportedLayerMediaType(t *testing.T) {
+	tests := []struct {
+		name      string
+		mediaType v1Types.MediaType
+		want      bool
+	}{
+		{
+			name:      "OCI layer",
+			mediaType: v1Types.OCILayer,
+			want:      true,
+		},
+		{
+			name:      "OCI uncompressed layer",
+			mediaType: v1Types.OCIUncompressedLayer,
+			want:      true,
+		},
+		{
+			name:      "OCI restricted layer",
+			mediaType: v1Types.OCIRestrictedLayer,
+			want:      true,
+		},
+		{
+			name:      "OCI uncompressed restricted layer",
+			mediaType: v1Types.OCIUncompressedRestrictedLayer,
+			want:      true,
+		},
+		{
+			name:      "OCI zstd layer",
+			mediaType: v1Types.OCILayerZStd,
+			want:      true,
+		},
+		{
+			name:      "Docker layer",
+			mediaType: v1Types.DockerLayer,
+			want:      true,
+		},
+		{
+			name:      "Docker foreign layer",
+			mediaType: v1Types.DockerForeignLayer,
+			want:      true,
+		},
+		{
+			name:      "Docker uncompressed layer",
+			mediaType: v1Types.DockerUncompressedLayer,
+			want:      true,
+		},
+		{
+			name:      "BuildKit zstd layer",
+			mediaType: BuildKitZstdCompressedLayer,
+			want:      true,
+		},
+		{
+			name:      "BuildKit zstd layer alt",
+			mediaType: BuildKitZstdCompressedLayerAlt,
+			want:      true,
+		},
+		{
+			name:      "Singularity squashfs layer",
+			mediaType: SingularitySquashFSLayer,
+			want:      true,
+		},
+		{
+			name:      "unsupported garbage type",
+			mediaType: "garbage",
+			want:      false,
+		},
+		{
+			name:      "unsupported helm chart",
+			mediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip",
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isSupportedLayerMediaType(tt.mediaType)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestValidateLayerMediaTypes(t *testing.T) {
+	tests := []struct {
+		name            string
+		layers          []v1.Layer
+		wantErrContents string
+	}{
+		{
+			name: "all supported types",
+			layers: []v1.Layer{
+				fakeLayer(v1Types.OCILayer, nil),
+				fakeLayer(v1Types.DockerLayer, nil),
+			},
+		},
+		{
+			name: "one unsupported type",
+			layers: []v1.Layer{
+				fakeLayer(v1Types.OCILayer, nil),
+				fakeLayer("garbage", nil),
+			},
+			wantErrContents: "unsupported layer media type(s): layer 1: garbage",
+		},
+		{
+			name: "multiple unsupported types",
+			layers: []v1.Layer{
+				fakeLayer("garbage", nil),
+				fakeLayer(v1Types.OCILayer, nil),
+				fakeLayer("also-garbage", nil),
+			},
+			wantErrContents: "unsupported layer media type(s): layer 0: garbage, layer 2: also-garbage",
+		},
+		{
+			name: "media type error",
+			layers: []v1.Layer{
+				fakeLayer("", errors.New("no media type")),
+			},
+			wantErrContents: "unable to get media type for layer 0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateLayerMediaTypes(tt.layers)
+			if tt.wantErrContents != "" {
+				require.ErrorContains(t, err, tt.wantErrContents)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
