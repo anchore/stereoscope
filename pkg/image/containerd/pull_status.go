@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/containerd/containerd"
+	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/wagoodman/go-progress"
 )
 
