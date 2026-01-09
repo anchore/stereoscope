@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/adrg/xdg"
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/defaults"
-	"github.com/containerd/containerd/namespaces"
+	"github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/defaults"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/spf13/afero"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -15,8 +15,8 @@ import (
 
 var ErrNoSocketAddress = fmt.Errorf("no socket address")
 
-func GetClient() (*containerd.Client, error) {
-	client, err := containerd.New(Address())
+func GetClient() (*client.Client, error) {
+	client, err := client.New(Address())
 	if err != nil {
 		return nil, err
 	}

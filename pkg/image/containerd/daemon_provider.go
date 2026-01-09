@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/containerd/containerd"
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/images"
-	"github.com/containerd/containerd/images/archive"
-	"github.com/containerd/containerd/namespaces"
-	"github.com/containerd/containerd/remotes/docker"
-	"github.com/containerd/containerd/remotes/docker/config"
+	"github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/images"
+	"github.com/containerd/containerd/v2/core/images/archive"
+	"github.com/containerd/containerd/v2/core/remotes/docker"
+	"github.com/containerd/containerd/v2/core/remotes/docker/config"
+	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/containerd/platforms"
 	"github.com/google/go-containerregistry/pkg/name"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -106,7 +106,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 }
 
 // pull a containerd image
-func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Client, resolvedImage string) (containerd.Image, error) {
+func (p *daemonImageProvider) pull(ctx context.Context, c *client.Client, resolvedImage string) (client.Image, error) {
 	var platformStr string
 	if p.platform != nil {
 		platformStr = p.platform.String()
@@ -122,7 +122,7 @@ func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Clien
 	bus.Publish(partybus.Event{
 		Type:   event.PullContainerdImage,
 		Source: resolvedImage,
-		Value:  newPullStatus(client, ongoing).start(ctx),
+		Value:  newPullStatus(c, ongoing).start(ctx),
 	})
 
 	h := images.HandlerFunc(func(_ context.Context, desc ocispec.Descriptor) ([]ocispec.Descriptor, error) {
@@ -142,10 +142,10 @@ func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Clien
 	if err != nil {
 		return nil, fmt.Errorf("unable to prepare pull options: %w", err)
 	}
-	options = append(options, containerd.WithImageHandler(h))
+	options = append(options, client.WithImageHandler(h))
 
 	// note: this will return an image object with the platform correctly set (if it exists)
-	resp, err := client.Pull(ctx, resolvedImage, options...)
+	resp, err := c.Pull(ctx, resolvedImage, options...)
 	if err != nil {
 		return nil, fmt.Errorf("pull failed: %w", err)
 	}
@@ -153,9 +153,9 @@ func (p *daemonImageProvider) pull(ctx context.Context, client *containerd.Clien
 	return resp, nil
 }
 
-func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Reference) ([]containerd.RemoteOpt, error) {
-	options := []containerd.RemoteOpt{
-		containerd.WithPlatform(p.platform.String()),
+func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Reference) ([]client.RemoteOpt, error) {
+	options := []client.RemoteOpt{
+		client.WithPlatform(p.platform.String()),
 	}
 
 	dockerOptions := docker.ResolverOptions{
@@ -206,12 +206,12 @@ func (p *daemonImageProvider) pullOptions(ctx context.Context, ref name.Referenc
 
 	dockerOptions.Hosts = config.ConfigureHosts(ctx, hostOptions)
 
-	options = append(options, containerd.WithResolver(docker.NewResolver(dockerOptions)))
+	options = append(options, client.WithResolver(docker.NewResolver(dockerOptions)))
 
 	return options, nil
 }
 
-func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containerd.Client, imageStr string) (string, *ocispec.Platform, error) {
+func (p *daemonImageProvider) resolveImage(ctx context.Context, client *client.Client, imageStr string) (string, *ocispec.Platform, error) {
 	// check if the image exists locally
 
 	// note: you can NEVER depend on the GetImage() call to return an object with a platform set (even if you specify
@@ -282,7 +282,7 @@ func (p *daemonImageProvider) resolveImage(ctx context.Context, client *containe
 	return "", nil, fmt.Errorf("unexpected mediaType for image: %q", desc.MediaType)
 }
 
-func (p *daemonImageProvider) fetchManifest(ctx context.Context, client *containerd.Client, desc ocispec.Descriptor) (*ocispec.Manifest, error) {
+func (p *daemonImageProvider) fetchManifest(ctx context.Context, client *client.Client, desc ocispec.Descriptor) (*ocispec.Manifest, error) {
 	switch desc.MediaType {
 	case images.MediaTypeDockerSchema2Manifest, ocispec.MediaTypeImageManifest:
 		// pass
@@ -303,7 +303,7 @@ func (p *daemonImageProvider) fetchManifest(ctx context.Context, client *contain
 	return &manifest, nil
 }
 
-func (p *daemonImageProvider) fetchPlatformFromConfig(ctx context.Context, client *containerd.Client, desc ocispec.Descriptor) (*platforms.Platform, error) {
+func (p *daemonImageProvider) fetchPlatformFromConfig(ctx context.Context, client *client.Client, desc ocispec.Descriptor) (*platforms.Platform, error) {
 	switch desc.MediaType {
 	case images.MediaTypeDockerSchema2Config, ocispec.MediaTypeImageConfig:
 		// pass
@@ -324,7 +324,7 @@ func (p *daemonImageProvider) fetchPlatformFromConfig(ctx context.Context, clien
 	return &cfg, nil
 }
 
-func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *containerd.Client) (string, *platforms.Platform, error) {
+func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, client *client.Client) (string, *platforms.Platform, error) {
 	p.imageStr = ensureRegistryHostPrefix(p.imageStr)
 
 	// try to get the image first before pulling
@@ -386,7 +386,7 @@ func newErrPlatformMismatch(expected *image.Platform, err error) *image.ErrPlatf
 }
 
 // save the image from the containerd daemon to a tar file
-func (p *daemonImageProvider) saveImage(ctx context.Context, client *containerd.Client, resolvedImage string) (string, error) {
+func (p *daemonImageProvider) saveImage(ctx context.Context, client *client.Client, resolvedImage string) (string, error) {
 	imageTempDir, err := p.tmpDirGen.NewDirectory("containerd-daemon-image")
 	if err != nil {
 		return "", err
