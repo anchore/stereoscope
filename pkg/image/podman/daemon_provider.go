@@ -1,7 +1,7 @@
 package podman
 
 import (
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 
 	"github.com/anchore/stereoscope/internal/podman"
 	"github.com/anchore/stereoscope/pkg/file"

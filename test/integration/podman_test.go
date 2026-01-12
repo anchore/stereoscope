@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -90,11 +90,11 @@ func TestPodmanConnections(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotEmpty(t, c.ClientVersion())
 
-			p, err := c.Ping(context.Background())
+			p, err := c.Ping(context.Background(), client.PingOptions{})
 			require.NoError(t, err)
 			assert.NotNil(t, p)
 
-			version, err := c.ServerVersion(context.Background())
+			version, err := c.ServerVersion(context.Background(), client.ServerVersionOptions{})
 			require.NoError(t, err)
 			assert.NotEmpty(t, version)
 		})

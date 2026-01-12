@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/client"
 	"github.com/spf13/afero"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -22,9 +22,7 @@ var (
 const defaultSocketPath = "/run/podman/podman.sock"
 
 func ClientOverSSH() (*client.Client, error) {
-	var clientOpts = []client.Opt{
-		client.WithAPIVersionNegotiation(),
-	}
+	var clientOpts []client.Opt
 
 	host, identity := getSSHAddress(afero.NewOsFs(), configPaths)
 
@@ -51,26 +49,22 @@ func ClientOverSSH() (*client.Client, error) {
 		return nil, fmt.Errorf("making http client: %w", err)
 	}
 
-	clientOpts = append(clientOpts, func(c *client.Client) error {
-		return client.WithHTTPClient(httpClient)(c)
-	})
+	clientOpts = append(clientOpts, client.WithHTTPClient(httpClient))
 
-	c, err := client.NewClientWithOpts(clientOpts...)
+	c, err := client.New(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed create remote client for podman: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
 	defer cancel()
-	_, err = c.Ping(ctx)
+	_, err = c.Ping(ctx, client.PingOptions{})
 
 	return c, err
 }
 
 func ClientOverUnixSocket() (*client.Client, error) {
-	var clientOpts = []client.Opt{
-		client.WithAPIVersionNegotiation(),
-	}
+	var clientOpts []client.Opt
 
 	addr, err := getContainerHostAddress(afero.NewOsFs(), configPaths, xdg.RuntimeDir, defaultSocketPath)
 	if err != nil {
@@ -79,14 +73,14 @@ func ClientOverUnixSocket() (*client.Client, error) {
 
 	clientOpts = append(clientOpts, client.WithHost(addr))
 
-	c, err := client.NewClientWithOpts(clientOpts...)
+	c, err := client.New(clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create podman client: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.TODO(), time.Second*3)
 	defer cancel()
-	_, err = c.Ping(ctx)
+	_, err = c.Ping(ctx, client.PingOptions{})
 
 	return c, err
 }
