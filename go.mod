@@ -1,8 +1,6 @@
 module github.com/anchore/stereoscope
 
-go 1.24.0
-
-toolchain go1.24.1
+go 1.24.3
 
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
@@ -19,12 +17,15 @@ require (
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/docker/cli v29.1.3+incompatible
 	github.com/docker/docker v28.5.2+incompatible
+	github.com/docker/go-connections v0.6.0
 	github.com/gabriel-vasile/mimetype v1.4.12
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.7
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/logrusorgru/aurora v2.0.3+incompatible
+	github.com/opencontainers/go-digest v1.0.0
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml v1.9.5
 	// pinned to pull in 386 arch fix: https://github.com/scylladb/go-set/commit/cc7b2070d91ebf40d233207b633e28f5bd8f03a5
 	github.com/scylladb/go-set v1.0.3-0.20200225121959-cc7b2070d91e
@@ -75,7 +76,6 @@ require (
 	// docker/distribution for https://github.com/advisories/GHSA-qq97-vm5h-rrhg
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.4 // indirect
-	github.com/docker/go-connections v0.6.0
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -96,8 +96,6 @@ require (
 	github.com/moby/sys/signal v0.7.1 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
-	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.1.1
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
 	github.com/opencontainers/selinux v1.13.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
