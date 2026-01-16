@@ -8,6 +8,6 @@ permissions: {} # deny default GITHUB_TOKEN permissions (workflow uses custom OS
 
 jobs:
   run:
-    uses: "anchore/workflows/.github/workflows/remove-awaiting-response-label.yaml@main"
+    uses: anchore/workflows/.github/workflows/remove-awaiting-response-label.yaml@main
     secrets:
       token: ${{ secrets.OSS_PROJECT_GH_TOKEN }}
