@@ -13,6 +13,6 @@ permissions: {} # workflow GH token has all necessary permissions
 jobs:
 
   run:
-    uses: "anchore/workflows/.github/workflows/oss-project-board-add.yaml@main"
+    uses: anchore/workflows/.github/workflows/oss-project-board-add.yaml@main
     secrets:
       token: ${{ secrets.OSS_PROJECT_GH_TOKEN }}

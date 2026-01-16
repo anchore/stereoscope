@@ -7,15 +7,21 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "github-actions"
     open-pull-requests-limit: 10
     directory: "/.github/actions/bootstrap"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "github-actions"
     open-pull-requests-limit: 10
     directory: "/.github/workflows"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 7
