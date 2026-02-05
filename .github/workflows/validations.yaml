@@ -118,14 +118,14 @@ jobs:
           limit-access-to-actor: true
 
       - name: Restore integration test-fixture cache
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 #v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 #v5.0.3
         with:
           path: ${{ github.workspace }}/test/integration/test-fixtures/cache
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/test-fixtures/cache.fingerprint') }}
 
       - name: Restore integration tool cache
         id: integration-tool-cache
-        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7 #v5.0.2
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 #v5.0.3
         with:
           path: ${{ github.workspace }}/test/integration/tools/cache
           key: ${{ runner.os }}-integration-tools-cache-${{ hashFiles('test/integration/tools/cache.fingerprint') }}
