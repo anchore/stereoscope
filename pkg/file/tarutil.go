@@ -176,6 +176,10 @@ func (v tarVisitor) visit(entry TarFileEntry) error {
 		}
 
 	case tar.TypeReg:
+		// ensure parent directories exist (some tar files may not include explicit directory entries)
+		if err := v.fs.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
 		f, err := v.fs.OpenFile(target, os.O_CREATE|os.O_RDWR, os.FileMode(entry.Header.Mode))
 		if err != nil {
 			return err

@@ -413,7 +413,7 @@ func Test_tarVisitor_visit(t *testing.T) {
 				tt.wantErr = require.NoError
 			}
 			v := tarVisitor{
-				fs:          afero.NewMemMapFs(),
+				fs:          afero.NewBasePathFs(afero.NewOsFs(), t.TempDir()),
 				destination: "/tmp",
 			}
 			err := v.visit(tt.entry)
@@ -429,4 +429,32 @@ func Test_tarVisitor_visit(t *testing.T) {
 			assertNoFilesInRoot(t, v.fs)
 		})
 	}
+}
+
+func Test_tarVisitor_visit_missingParentDirs(t *testing.T) {
+	// use a real filesystem to ensure MkdirAll works correctly
+	// (MemMapFs may behave differently than OS filesystem)
+	v := tarVisitor{
+		fs:          afero.NewBasePathFs(afero.NewOsFs(), t.TempDir()),
+		destination: "",
+	}
+
+	entry := TarFileEntry{
+		Sequence: 0,
+		Header: tar.Header{
+			Typeflag: tar.TypeReg,
+			Name:     "/blobs/sha256/somefile.txt",
+			Linkname: "",
+			Size:     7,
+			Mode:     0644,
+		},
+		Reader: strings.NewReader("content"),
+	}
+
+	require.NoError(t, v.visit(entry))
+
+	// verify the file was created with correct content
+	content, err := afero.ReadFile(v.fs, filepath.Join("blobs", "sha256", "somefile.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "content", string(content))
 }
