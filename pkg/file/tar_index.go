@@ -36,7 +36,6 @@ func NewTarIndex(tarFilePath string, onIndex TarIndexVisitor) (*TarIndex, error)
 		// body payload starts (after the header has been read).
 		indexEntry := TarIndexEntry{
 			path:         tarFileHandle.Name(),
-			sequence:     entry.Sequence,
 			header:       entry.Header,
 			seekPosition: entrySeekPosition,
 		}

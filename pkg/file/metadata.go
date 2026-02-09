@@ -62,7 +62,7 @@ func (m ManualInfo) Sys() any {
 	return m.SysValue
 }
 
-func NewMetadata(header tar.Header, content io.Reader) Metadata {
+func NewMetadata(header *tar.Header, content io.Reader) Metadata {
 	return Metadata{
 		FileInfo:        header.FileInfo(),
 		Path:            path.Clean(DirSeparator + header.Name),
