@@ -17,9 +17,9 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/docker/cli/cli/config"
 	configTypes "github.com/docker/cli/cli/config/types"
-	dockerImage "github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 
@@ -75,7 +75,7 @@ type daemonProvideProgress struct {
 //nolint:staticcheck
 func (p *daemonImageProvider) trackSaveProgress(ctx context.Context, apiClient client.APIClient, imageRef string) (*daemonProvideProgress, error) {
 	// fetch the expected image size to estimate and measure progress
-	inspect, _, err := apiClient.ImageInspectWithRaw(ctx, imageRef)
+	inspect, err := apiClient.ImageInspect(ctx, imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("unable to inspect image: %w", err)
 	}
@@ -86,11 +86,11 @@ func (p *daemonImageProvider) trackSaveProgress(ctx context.Context, apiClient c
 	// data used by the container and the writable layer.
 	// "size" (also provider by the inspect result) shows the amount of data (on disk)
 	// that is used for the writable layer of each container.
-	sec := float64(inspect.VirtualSize) / (mb * 125)
+	sec := float64(inspect.Size) / (mb * 125)
 	approxSaveTime := time.Duration(sec*1000) * time.Millisecond
 
 	estimateSaveProgress := progress.NewTimedProgress(approxSaveTime)
-	copyProgress := progress.NewSizedWriter(inspect.VirtualSize)
+	copyProgress := progress.NewSizedWriter(inspect.Size)
 	aggregateProgress := progress.NewAggregator(progress.NormalizeStrategy, estimateSaveProgress, copyProgress)
 
 	// let consumers know of a monitorable event (image save + copy stages)
@@ -183,9 +183,14 @@ func handlePullEvent(status emitter, event *pullEvent) error {
 	return nil
 }
 
-func (p *daemonImageProvider) pullOptions(imageRef string) (dockerImage.PullOptions, error) {
-	options := dockerImage.PullOptions{
-		Platform: p.platform.String(),
+func (p *daemonImageProvider) pullOptions(imageRef string) (client.ImagePullOptions, error) {
+	options := client.ImagePullOptions{}
+	if p.platform != nil {
+		options.Platforms = append(options.Platforms, ocispec.Platform{
+			Architecture: p.platform.Architecture,
+			OS:           p.platform.OS,
+			Variant:      p.platform.Variant,
+		})
 	}
 
 	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
@@ -272,7 +277,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	c2, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	pong, err := apiClient.Ping(c2)
+	pong, err := apiClient.Ping(c2, client.PingOptions{})
 	if err != nil || pong.APIVersion == "" {
 		return nil, fmt.Errorf("unable to get %s API response: %w", p.name, err)
 	}
@@ -408,7 +413,7 @@ func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient 
 	return imageRef, nil
 }
 
-func (p *daemonImageProvider) validatePlatform(i dockerImage.InspectResponse) error {
+func (p *daemonImageProvider) validatePlatform(i client.ImageInspectResult) error {
 	if p.platform == nil {
 		// the user did not specify a platform
 		return nil
@@ -427,7 +432,7 @@ func (p *daemonImageProvider) validatePlatform(i dockerImage.InspectResponse) er
 	return nil
 }
 
-func withInspectMetadata(i dockerImage.InspectResponse) (metadata []image.AdditionalMetadata) {
+func withInspectMetadata(i client.ImageInspectResult) (metadata []image.AdditionalMetadata) {
 	metadata = append(metadata,
 		image.WithTags(i.RepoTags...),
 		image.WithRepoDigests(i.RepoDigests...),
