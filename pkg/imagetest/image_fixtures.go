@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/logrusorgru/aurora"
+	"github.com/logrusorgru/aurora/v4"
 	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/go-testutils"
