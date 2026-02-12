@@ -1,10 +1,9 @@
 package file
 
 import (
+	"errors"
 	"os"
 	"strings"
-
-	"github.com/hashicorp/go-multierror"
 )
 
 type TempDirGenerator struct {
@@ -50,16 +49,16 @@ func (t *TempDirGenerator) NewDirectory(name ...string) (string, error) {
 
 // Cleanup deletes all temp dirs created by this generator and any child generator.
 func (t *TempDirGenerator) Cleanup() error {
-	var allErrs error
+	var errs []error
 	for _, gen := range t.children {
 		if err := gen.Cleanup(); err != nil {
-			allErrs = multierror.Append(allErrs, err)
+			errs = append(errs, err)
 		}
 	}
 	if t.rootLocation != "" {
 		if err := os.RemoveAll(t.rootLocation); err != nil {
-			allErrs = multierror.Append(allErrs, err)
+			errs = append(errs, err)
 		}
 	}
-	return allErrs
+	return errors.Join(errs...)
 }
