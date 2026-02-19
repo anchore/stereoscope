@@ -69,7 +69,7 @@ func (sc *searchContext) buildLinkResolutionIndex() error {
 		}
 
 		linkID := fn.ID()
-		destinationID := destinationFna.FileNode.ID()
+		destinationID := destinationFna.Node.ID()
 
 		// add backward reference...
 		if _, ok := sc.linkBackwardRefs[destinationID]; !ok {
@@ -307,7 +307,7 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 			continue
 		}
 
-		nodeID := na.FileNode.ID()
+		nodeID := na.Node.ID()
 
 		// check all paths to the node that are linked to any parent dir
 		for _, linkSrcID := range sc.linkBackwardRefs[nodeID].List() {
@@ -317,7 +317,7 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 				continue
 			}
 
-			linkPath := string(pfn.(*filenode.FileNode).RealPath)
+			linkPath := string(getNodeRealPath(pfn))
 			ref, err = sc.firstPathToNode(observedPaths, glob, linkPath, remain)
 			if ref != nil || err != nil {
 				return ref, err
@@ -343,8 +343,9 @@ allFileEntries:
 		}
 
 		// only check the resolved node matches the index entries reference, not via link resolutions...
-		if na.FileNode.Reference != nil && na.FileNode.Reference.ID() == entry.Reference.ID() {
-			nodes = append(nodes, na.FileNode)
+		naRef := getNodeReference(na.Node)
+		if naRef != nil && naRef.ID() == entry.Reference.ID() {
+			nodes = append(nodes, na.AsFileNode())
 			continue allFileEntries
 		}
 
