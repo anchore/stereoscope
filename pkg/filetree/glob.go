@@ -52,7 +52,7 @@ func isInPathResolutionLoop(path string, ft *FileTree) (bool, error) {
 			return false, err
 		}
 		if fna.HasFileNode() {
-			allPathSet.Add(file.Path(fna.FileNode.ID()))
+			allPathSet.Add(file.Path(fna.Node.ID()))
 		}
 	}
 	// we want to allow for getting children out of the first iteration of a infinite path, but NOT allowing
@@ -103,7 +103,7 @@ func (f *fileAdapter) ReadDir(n int) ([]fs.DirEntry, error) {
 		return ret, err
 	}
 
-	for idx, child := range f.filetree.tree.Children(fna.FileNode) {
+	for idx, child := range f.filetree.tree.Children(fna.Node) {
 		if idx == n && n != -1 {
 			break
 		}
@@ -142,7 +142,7 @@ func (a *osAdapter) ReadDir(name string) ([]fs.DirEntry, error) {
 		return ret, err
 	}
 
-	for _, child := range a.filetree.tree.Children(fna.FileNode) {
+	for _, child := range a.filetree.tree.Children(fna.Node) {
 		requestPath := path.Join(name, filepath.Base(string(child.ID())))
 		r, err := a.Lstat(requestPath)
 		if err == nil {
@@ -173,7 +173,7 @@ func (a *osAdapter) Lstat(name string) (fs.FileInfo, error) {
 
 	return &fileinfoAdapter{
 		VirtualPath: file.Path(name),
-		Node:        *fna.FileNode,
+		Node:        *fna.AsFileNode(),
 	}, nil
 }
 
@@ -201,7 +201,7 @@ func (a *osAdapter) Stat(name string) (fs.FileInfo, error) {
 	}
 	return &fileinfoAdapter{
 		VirtualPath: file.Path(name),
-		Node:        *fna.FileNode,
+		Node:        *fna.AsFileNode(),
 	}, nil
 }
 

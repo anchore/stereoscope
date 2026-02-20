@@ -49,7 +49,7 @@ func TestFileTree_AddPathAndMissingAncestors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not get parent Node: %+v", err)
 	}
-	children := tr.tree.Children(n.FileNode)
+	children := tr.tree.Children(n.Node)
 
 	if len(children) != 1 {
 		t.Fatal("unexpected child count", len(children))
@@ -492,7 +492,7 @@ func TestFileTree_Merge_DirOverride(t *testing.T) {
 		t.Fatalf("somehow override path does not exist?")
 	}
 
-	if n.FileNode.FileType != file.TypeDirectory {
+	if n.FileType() != file.TypeDirectory {
 		t.Errorf("did not override to dir")
 	}
 
@@ -531,7 +531,7 @@ func TestFileTree_Merge_RemoveChildPathsOnOverride(t *testing.T) {
 		t.Fatalf("somehow override path does not exist?")
 	}
 
-	if fileNode.FileNode.FileType != file.TypeRegular {
+	if fileNode.FileType() != file.TypeRegular {
 		t.Errorf("did not override to dir")
 	}
 

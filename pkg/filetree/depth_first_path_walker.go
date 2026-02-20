@@ -89,26 +89,27 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 
 		// prevent infinite loop
 		if strings.Count(string(currentPath.Normalize()), file.DirSeparator) >= maxDirDepth {
-			return currentPath, currentNode.FileNode, ErrMaxTraversalDepth
+			return currentPath, currentNode.AsFileNode(), ErrMaxTraversalDepth
 		}
 
-		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(currentPath, *currentNode.FileNode) {
-			return currentPath, currentNode.FileNode, nil
+		fn := currentNode.AsFileNode()
+		if w.conditions.ShouldTerminate != nil && w.conditions.ShouldTerminate(currentPath, *fn) {
+			return currentPath, fn, nil
 		}
 		currentPath = currentPath.Normalize()
 
 		// visit
 		if w.visitor != nil && !w.visitedPaths.Contains(currentPath) {
-			if w.conditions.ShouldVisit == nil || w.conditions.ShouldVisit != nil && w.conditions.ShouldVisit(currentPath, *currentNode.FileNode) {
-				err := w.visitor(currentPath, *currentNode.FileNode)
+			if w.conditions.ShouldVisit == nil || w.conditions.ShouldVisit != nil && w.conditions.ShouldVisit(currentPath, *fn) {
+				err := w.visitor(currentPath, *fn)
 				if err != nil {
-					return currentPath, currentNode.FileNode, err
+					return currentPath, fn, err
 				}
 				w.visitedPaths.Add(currentPath)
 			}
 		}
 
-		if w.conditions.ShouldContinueBranch != nil && !w.conditions.ShouldContinueBranch(currentPath, *currentNode.FileNode) {
+		if w.conditions.ShouldContinueBranch != nil && !w.conditions.ShouldContinueBranch(currentPath, *fn) {
 			continue
 		}
 
@@ -123,7 +124,7 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 		}
 	}
 
-	return currentPath, currentNode.FileNode, nil
+	return currentPath, currentNode.AsFileNode(), nil
 }
 
 func (w *DepthFirstPathWalker) WalkAll() error {
