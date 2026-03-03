@@ -24,17 +24,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anchore/stereoscope/internal/testutil"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
-)
-
-const (
-	fixturesPath = "test-fixtures"
-)
-
-var (
-	fixturesGeneratorsPath = path.Join(fixturesPath, "generators")
-	tarCachePath           = path.Join(fixturesPath, "tar-cache")
 )
 
 func basicMetadataComparer(x, y file.Metadata) bool {
@@ -751,6 +743,8 @@ func TestFileCatalog_GetBasenames(t *testing.T) {
 
 func getTarFixture(t *testing.T, name string) *os.File {
 	generatorScriptName := name + ".sh"
+	fixturesGeneratorsPath := testutil.GetFixturePath(t, "generators")
+	tarCachePath := testutil.GetFixturePath(t, "tar-cache")
 	generatorScriptPath := path.Join(fixturesGeneratorsPath, generatorScriptName)
 	if !fileExists(t, generatorScriptPath) {
 		t.Fatalf("no tar generator script for fixture '%s'", generatorScriptPath)

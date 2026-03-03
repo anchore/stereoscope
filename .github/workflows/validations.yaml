@@ -120,8 +120,8 @@ jobs:
       - name: Restore integration test-fixture cache
         uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 #v5.0.3
         with:
-          path: ${{ github.workspace }}/test/integration/test-fixtures/cache
-          key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/test-fixtures/cache.fingerprint') }}
+          path: ${{ github.workspace }}/test/integration/testdata/cache
+          key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/testdata/cache.fingerprint') }}
 
       - name: Restore integration tool cache
         id: integration-tool-cache

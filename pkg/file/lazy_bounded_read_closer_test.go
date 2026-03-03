@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/anchore/stereoscope/internal/testutil"
 )
 
 func getFixture(t *testing.T, filepath string) []byte {
@@ -18,7 +20,7 @@ func getFixture(t *testing.T, filepath string) []byte {
 }
 
 func TestDeferredPartialReadCloser(t *testing.T) {
-	p := "test-fixtures/a-file.txt"
+	p := testutil.GetFixturePath(t, "a-file.txt")
 	contents := getFixture(t, p)
 
 	dReader := newLazyBoundedReadCloser(p, 0, int64(len(contents)))
@@ -54,7 +56,7 @@ func TestDeferredPartialReadCloser(t *testing.T) {
 }
 
 func TestDeferredPartialReadCloser_Seek(t *testing.T) {
-	p := "test-fixtures/a-file.txt"
+	p := testutil.GetFixturePath(t, "a-file.txt")
 	content := getFixture(t, p)
 
 	dReader := newLazyBoundedReadCloser(p, 0, int64(len(content)))
@@ -75,7 +77,7 @@ func TestDeferredPartialReadCloser_Seek(t *testing.T) {
 }
 
 func TestDeferredPartialReadCloser_PartialRead(t *testing.T) {
-	p := "test-fixtures/a-file.txt"
+	p := testutil.GetFixturePath(t, "a-file.txt")
 	contents := getFixture(t, p)
 
 	var start, size int64 = 10, 7

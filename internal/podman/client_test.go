@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/anchore/stereoscope/internal/testutil"
 )
 
 func Test_getContainerHostAddress(t *testing.T) {
@@ -83,7 +85,7 @@ func Test_getContainerHostAddress(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("CONTAINER_HOST", tt.args.containerHostEnvVar)
-			fs := afero.NewBasePathFs(afero.NewOsFs(), "test-fixtures")
+			fs := afero.NewBasePathFs(afero.NewOsFs(), testutil.GetTestFixturesDir(t))
 			got, err := getContainerHostAddress(fs, tt.args.configPaths, tt.args.xdgRuntimeDir, tt.args.defaultSocketPath)
 			if !tt.wantErr(t, err, fmt.Sprintf("getContainerHostAddress(%v, %v)", tt.args.configPaths, tt.args.xdgRuntimeDir)) {
 				return

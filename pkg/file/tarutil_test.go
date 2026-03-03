@@ -22,15 +22,8 @@ import (
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
 
-const (
-	fixturesPath = "test-fixtures"
-)
-
-var (
-	fixturesGeneratorsPath = path.Join(fixturesPath, "generators")
-	tarCachePath           = path.Join(fixturesPath, "tar-cache")
+	"github.com/anchore/stereoscope/internal/testutil"
 )
 
 func TestReaderFromTar_GoCase(t *testing.T) {
@@ -115,6 +108,8 @@ func TestMetadataFromTar(t *testing.T) {
 
 func getTarFixture(t testing.TB, name string) *os.File {
 	generatorScriptName := name + ".sh"
+	fixturesGeneratorsPath := testutil.GetFixturePath(t, "generators")
+	tarCachePath := testutil.GetFixturePath(t, "tar-cache")
 	generatorScriptPath := path.Join(fixturesGeneratorsPath, generatorScriptName)
 	if !fileExists(t, generatorScriptPath) {
 		t.Fatalf("no tar generator script for fixture '%s'", generatorScriptPath)

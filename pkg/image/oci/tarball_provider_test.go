@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/anchore/stereoscope/internal/testutil"
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
@@ -28,7 +29,7 @@ func Test_TarballProvide(t *testing.T) {
 	generator := file.NewTempDirGenerator("tempDir")
 	defer generator.Cleanup()
 
-	provider := NewArchiveProvider(generator, "test-fixtures/valid-oci.tar")
+	provider := NewArchiveProvider(generator, testutil.GetFixturePath(t, "valid-oci.tar"))
 
 	//WHEN
 	image, err := provider.Provide(context.TODO())

@@ -8,7 +8,6 @@ require (
 	github.com/anchore/go-collections v0.0.0-20240216171411-9321230ce537
 	github.com/anchore/go-homedir v0.0.0-20250319154043-c29668562e4d
 	github.com/anchore/go-logger v0.0.0-20220728155337-03b66a5207d8
-	github.com/anchore/go-testutils v0.0.0-20200925183923-d5f45b0d3c04
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.11.0
 	github.com/becheran/wildmatch-go v1.0.0
 	github.com/bmatcuk/doublestar/v4 v4.10.0
@@ -19,17 +18,17 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.6.0
 	github.com/gabriel-vasile/mimetype v1.4.13
+	github.com/gkampitakis/go-snaps v0.5.20
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.7
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml v1.9.5
 	// pinned to pull in 386 arch fix: https://github.com/scylladb/go-set/commit/cc7b2070d91ebf40d233207b633e28f5bd8f03a5
 	github.com/scylladb/go-set v1.0.3-0.20200225121959-cc7b2070d91e
-	github.com/sergi/go-diff v1.4.0
+	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
 	github.com/sylabs/sif/v2 v2.22.0
@@ -78,13 +77,18 @@ require (
 	github.com/docker/docker-credential-helpers v0.9.4 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/gkampitakis/ciinfo v0.3.2 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.1 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
+	github.com/kr/text v0.2.0 // indirect
+	github.com/maruel/natural v1.1.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
@@ -102,9 +106,14 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/therootcompany/xz v1.0.1 // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	github.com/vbatts/tar-split v0.12.2 // indirect
 	go.opencensus.io v0.24.0 // indirect

@@ -3,37 +3,38 @@ package sif
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"github.com/sylabs/sif/v2/pkg/sif"
 
+	"github.com/anchore/stereoscope/internal/testutil"
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
 func TestSingularityImageProvider_Provide(t *testing.T) {
 	tests := []struct {
-		name    string
-		path    string
-		wantErr error
+		name        string
+		fixturePath string
+		wantErr     error
 	}{
 		{
-			name:    "NoObjects",
-			path:    filepath.Join("test-fixtures", "empty.sif"),
-			wantErr: sif.ErrNoObjects,
+			name:        "NoObjects",
+			fixturePath: "empty.sif",
+			wantErr:     sif.ErrNoObjects,
 		},
 		{
-			name: "OK",
-			path: filepath.Join("test-fixtures", "one-group.sif"),
+			name:        "OK",
+			fixturePath: "one-group.sif",
 		},
 		{
-			name: "FIFO",
-			path: filepath.Join("test-fixtures", "fifo.sif"),
+			name:        "FIFO",
+			fixturePath: "fifo.sif",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := NewArchiveProvider(file.NewTempDirGenerator(""), tt.path)
+			path := testutil.GetFixturePath(t, tt.fixturePath)
+			p := NewArchiveProvider(file.NewTempDirGenerator(""), path)
 
 			i, err := p.Provide(context.Background())
 			t.Cleanup(func() { _ = i.Cleanup() })

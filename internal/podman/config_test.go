@@ -5,6 +5,8 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/anchore/stereoscope/internal/testutil"
 )
 
 func Test_findUnixAddress(t *testing.T) {
@@ -183,7 +185,7 @@ func Test_configPrecedence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fs := afero.NewBasePathFs(afero.NewOsFs(), "test-fixtures")
+			fs := afero.NewBasePathFs(afero.NewOsFs(), testutil.GetTestFixturesDir(t))
 			assert.Equalf(t,
 				tt.wantUnixAddress,
 				getUnixSocketAddressFromConfig(fs, tt.args.paths),

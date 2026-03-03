@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/anchore/stereoscope/internal/testutil"
 )
 
 func TestDeferredReadCloser(t *testing.T) {
-	filepath := "test-fixtures/a-file.txt"
+	filepath := testutil.GetFixturePath(t, "a-file.txt")
 	allContent := getFixture(t, filepath)
 
 	dReader := NewLazyReadCloser(filepath)
@@ -24,7 +26,7 @@ func TestDeferredReadCloser(t *testing.T) {
 }
 
 func TestLazyReader_ReadAt(t *testing.T) {
-	filepath := "test-fixtures/a-file.txt"
+	filepath := testutil.GetFixturePath(t, "a-file.txt")
 	allContent := getFixture(t, filepath)
 
 	dReader := NewLazyReadCloser(filepath)
@@ -44,7 +46,7 @@ func TestLazyReader_ReadAt(t *testing.T) {
 }
 
 func TestLazyReader_Seek(t *testing.T) {
-	filepath := "test-fixtures/a-file.txt"
+	filepath := testutil.GetFixturePath(t, "a-file.txt")
 	allContent := getFixture(t, filepath)
 
 	dReader := NewLazyReadCloser(filepath)

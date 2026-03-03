@@ -14,6 +14,15 @@ bin/
 /.tool
 /.task
 .mise.toml
+specs/
+.conductor
+.claude
+CLAUDE.md
+
+# test dirs
+**/test-fixtures/
+**/testdata/cache/
+**/.cache/
 
 # changelog generation
 CHANGELOG.md

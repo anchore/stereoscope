@@ -1,20 +1,16 @@
 package docker
 
 import (
-	"bytes"
 	"encoding/json"
-	"flag"
 	"io"
 	"os"
 	"testing"
 
+	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/go-test/deep"
-	"github.com/sergi/go-diff/diffmatchpatch"
 
-	"github.com/anchore/go-testutils"
+	"github.com/anchore/stereoscope/internal/testutil"
 )
-
-var update = flag.Bool("update", false, "update the *.golden files for the oci manifest assembly test")
 
 func TestNewManifest(t *testing.T) {
 	tests := []struct {
@@ -23,28 +19,29 @@ func TestNewManifest(t *testing.T) {
 		expectedConfig    string
 	}{
 		{
-			fixture:           "test-fixtures/valid-multi-manifest-with-tags.json",
+			fixture:           "valid-multi-manifest-with-tags.json",
 			expectedToBeValid: true,
 			expectedConfig:    "881a352c4517dbf5e561a08dd1c7cf65f6c4349d3ab9b13e95210800e12b14a8.json",
 		},
 		{
-			fixture:           "test-fixtures/empty-file",
+			fixture:           "empty-file",
 			expectedToBeValid: false,
 		},
 		{
-			fixture:           "test-fixtures/no-descriptors.json",
+			fixture:           "no-descriptors.json",
 			expectedToBeValid: false,
 		},
 		{
 			// unexpected, but we are not expecting to validate this case further
-			fixture:           "test-fixtures/single-blank-manifest.json",
+			fixture:           "single-blank-manifest.json",
 			expectedToBeValid: true,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.fixture, func(t *testing.T) {
-			fh, err := os.Open(test.fixture)
+			fixturePath := testutil.GetFixturePath(t, test.fixture)
+			fh, err := os.Open(fixturePath)
 			if err != nil {
 				t.Fatalf("could not open fixture: %+v", err)
 			}
@@ -91,7 +88,7 @@ func TestManifestTags(t *testing.T) {
 		tags    []string
 	}{
 		{
-			fixture: "test-fixtures/valid-multi-manifest-with-tags.json",
+			fixture: "valid-multi-manifest-with-tags.json",
 			tags: []string{
 				"anchore/anchore-engine:latest",
 				"anchore/anchore-engine:v0.8.2",
@@ -101,7 +98,8 @@ func TestManifestTags(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.fixture, func(t *testing.T) {
-			fh, err := os.Open(test.fixture)
+			fixturePath := testutil.GetFixturePath(t, test.fixture)
+			fh, err := os.Open(fixturePath)
 			if err != nil {
 				t.Fatalf("could not open fixture: %+v", err)
 			}
@@ -124,8 +122,8 @@ func TestManifestTags(t *testing.T) {
 }
 
 func TestAssembleOCIManifest(t *testing.T) {
-	// note: this is a
-	fh, err := os.Open("test-fixtures/engine-config.json")
+	fixturePath := testutil.GetFixturePath(t, "engine-config.json")
+	fh, err := os.Open(fixturePath)
 	if err != nil {
 		t.Fatalf("could not open config: %+v", err)
 	}
@@ -155,16 +153,6 @@ func TestAssembleOCIManifest(t *testing.T) {
 		t.Fatalf("could not serialize manifest: %+v", err)
 	}
 
-	if *update {
-		testutils.UpdateGoldenFileContents(t, actualBytes)
-	}
-
-	var expectedBytes = testutils.GetGoldenFileContents(t)
-
-	if !bytes.Equal(expectedBytes, actualBytes) {
-		dmp := diffmatchpatch.New()
-		diffs := dmp.DiffMain(string(expectedBytes), string(actualBytes), true)
-		t.Errorf("mismatched output:\n%s", dmp.DiffPrettyText(diffs))
-	}
-
+	// to update snapshots, run: UPDATE_SNAPS=true go test -run TestAssembleOCIManifest ./...
+	snaps.MatchJSON(t, actualBytes)
 }

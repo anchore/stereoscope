@@ -10,19 +10,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/logrusorgru/aurora"
 	"github.com/stretchr/testify/require"
 
-	"github.com/anchore/go-testutils"
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/internal/containerd"
+	"github.com/anchore/stereoscope/internal/testutil"
 	"github.com/anchore/stereoscope/pkg/image"
 )
 
-const (
-	CacheDir    = testutils.TestFixturesDir + string(filepath.Separator) + "cache"
-	ImagePrefix = "stereoscope-fixture"
-)
+const ImagePrefix = "stereoscope-fixture"
+
+// getCacheDir returns the path to the image cache directory, automatically migrating
+// from the legacy "test-fixtures/cache" directory to "testdata/cache" if needed.
+func getCacheDir(t testing.TB) string {
+	return testutil.GetFixturePath(t, "cache")
+}
 
 func PrepareFixtureImage(t testing.TB, source, name string) string {
 	t.Helper()
@@ -82,16 +84,21 @@ func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 
 func GetGoldenFixtureImage(t testing.TB, name string) *image.Image {
 	imageName, _ := getFixtureImageInfo(t, name)
-	tarFileName := imageName + testutils.GoldenFileExt
-	tarPath := getFixtureImageTarPath(t, name, testutils.GoldenFileDirPath, tarFileName)
+	tarFileName := imageName + testutil.GoldenFileExt
+	tarPath := getFixtureImageTarPath(t, name, testutil.GoldenFileDirPath, tarFileName)
 	return getFixtureImageFromTar(t, tarPath)
 }
 
+func dangerText(s string) string {
+	// reverse + red text
+	return "\033[7;31m" + s + "\033[0m"
+}
+
 func UpdateGoldenFixtureImage(t testing.TB, name string) {
-	t.Log(aurora.Reverse(aurora.Red("!!! UPDATING GOLDEN FIXTURE IMAGE !!!")), name)
+	t.Log(dangerText("!!! UPDATING GOLDEN FIXTURE IMAGE !!!"), name)
 
 	imageName, _ := getFixtureImageInfo(t, name)
-	goldenTarFilePath := path.Join(testutils.GoldenFileDirPath, imageName+testutils.GoldenFileExt)
+	goldenTarFilePath := path.Join(testutil.GoldenFileDirPath, imageName+testutil.GoldenFileExt)
 	tarPath := GetFixtureImageTarPath(t, name)
 	copyFile(t, tarPath, goldenTarFilePath)
 }
@@ -158,7 +165,7 @@ func loadFixtureInContainerEngine(t testing.TB, name string,
 	fullImageName := fmt.Sprintf("%s:%s", imageName, imageVersion)
 
 	if !hasImage(fullImageName) {
-		contextPath := path.Join(testutils.TestFixturesDir, name)
+		contextPath := testutil.GetFixturePath(t, name)
 		build(t, contextPath, imageName, imageVersion)
 	}
 
@@ -171,17 +178,17 @@ func getFixtureImageTarPath(t testing.TB, fixtureName, tarStoreDir, tarFileName 
 	tarPath := path.Join(tarStoreDir, tarFileName)
 
 	// create the cache dir if it does not already exist...
-	if !dirExists(t, CacheDir) {
-		err := os.Mkdir(CacheDir, 0o755)
+	if !dirExists(t, getCacheDir(t)) {
+		err := os.MkdirAll(getCacheDir(t), 0o755)
 		if err != nil {
-			t.Fatalf("could not create tar cache dir (%s): %+v", CacheDir, err)
+			t.Fatalf("could not create tar cache dir (%s): %+v", getCacheDir(t), err)
 		}
 	}
 
 	// if the image tar does not exist, make it
 	if !fileExists(t, tarPath) {
 		if !isImageInDocker(fullImageName) {
-			contextPath := path.Join(testutils.TestFixturesDir, fixtureName)
+			contextPath := testutil.GetFixturePath(t, fixtureName)
 			buildDockerImage(t, contextPath, imageName, imageVersion)
 		}
 
@@ -207,11 +214,11 @@ func fileInfo(filePath string) string {
 func GetFixtureImageTarPath(t testing.TB, name string) string {
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	tarFileName := fmt.Sprintf("%s-%s.tar", imageName, imageVersion)
-	return getFixtureImageTarPath(t, name, CacheDir, tarFileName)
+	return getFixtureImageTarPath(t, name, getCacheDir(t), tarFileName)
 }
 
 func fixtureVersion(t testing.TB, name string) string {
-	contextPath := path.Join(testutils.TestFixturesDir, name)
+	contextPath := testutil.GetFixturePath(t, name)
 	dockerfileHash := dirHash(t, contextPath)
 	return dockerfileHash
 }
@@ -314,7 +321,7 @@ func saveImage(t testing.TB, image, path string) error {
 func GetFixtureImageSIFPath(t testing.TB, name string) string {
 	imageName, imageVersion := getFixtureImageInfo(t, name)
 	sifFileName := fmt.Sprintf("%s-%s.sif", imageName, imageVersion)
-	return getFixtureImageSIFPath(t, name, CacheDir, sifFileName)
+	return getFixtureImageSIFPath(t, name, getCacheDir(t), sifFileName)
 }
 
 func getFixtureImageSIFPath(t testing.TB, fixtureName, sifStoreDir, sifFileName string) string {
@@ -323,17 +330,17 @@ func getFixtureImageSIFPath(t testing.TB, fixtureName, sifStoreDir, sifFileName 
 	sifPath := path.Join(sifStoreDir, sifFileName)
 
 	// create the cache dir if it does not already exist...
-	if !dirExists(t, CacheDir) {
-		err := os.Mkdir(CacheDir, 0o755)
+	if !dirExists(t, getCacheDir(t)) {
+		err := os.MkdirAll(getCacheDir(t), 0o755)
 		if err != nil {
-			t.Fatalf("could not create sif cache dir (%s): %+v", CacheDir, err)
+			t.Fatalf("could not create sif cache dir (%s): %+v", getCacheDir(t), err)
 		}
 	}
 
 	// if the image sif does not exist, make it
 	if !fileExists(t, sifPath) {
 		if !isImageInDocker(fullImageName) {
-			contextPath := path.Join(testutils.TestFixturesDir, fixtureName)
+			contextPath := testutil.GetFixturePath(t, fixtureName)
 			buildDockerImage(t, contextPath, imageName, imageVersion)
 		}
 		err := buildSIFFromDocker(t, fullImageName, sifPath)
