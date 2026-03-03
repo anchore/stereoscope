@@ -135,19 +135,19 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
-// dangerText wraps text in ANSI escape codes for reverse red to make it highly visible.
-func dangerText(s string) string {
+// DangerText wraps text in ANSI escape codes for reverse red to make it highly visible.
+func DangerText(s string) string {
 	return "\033[7;31m" + s + "\033[0m"
 }
 
 // warnDuplicateFixture logs a warning when a fixture exists in both the new and legacy locations.
 // This indicates that manual cleanup is needed.
 func warnDuplicateFixture(newPath, legacyPath string) {
-	log.Warn(dangerText("!!! DUPLICATE FIXTURE DETECTED !!!"))
-	log.Warnf(dangerText("Fixture exists in BOTH locations:"))
-	log.Warnf(dangerText("  New path:    %s"), newPath)
-	log.Warnf(dangerText("  Legacy path: %s"), legacyPath)
-	log.Warn(dangerText("Please manually remove the legacy fixture to resolve this conflict."))
+	log.Warn(DangerText("!!! DUPLICATE FIXTURE DETECTED !!!"))
+	log.Warnf(DangerText("Fixture exists in BOTH locations:"))
+	log.Warnf(DangerText("  New path:    %s"), newPath)
+	log.Warnf(DangerText("  Legacy path: %s"), legacyPath)
+	log.Warn(DangerText("Please manually remove the legacy fixture to resolve this conflict."))
 }
 
 // GetTestFixturesDir returns the fixture directory path, automatically migrating

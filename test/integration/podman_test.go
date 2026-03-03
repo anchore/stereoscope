@@ -64,8 +64,7 @@ func TestPodmanConnections(t *testing.T) {
 
 				cmd := exec.Command("make", "stop")
 				cmd.Dir = fixturesPath
-				// note: runAndShow uses t which is not available here, using basic error handling
-				_ = cmd.Run()
+				runAndShow(t, cmd)
 			},
 		},
 		{

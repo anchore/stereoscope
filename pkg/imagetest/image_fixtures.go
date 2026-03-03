@@ -89,13 +89,8 @@ func GetGoldenFixtureImage(t testing.TB, name string) *image.Image {
 	return getFixtureImageFromTar(t, tarPath)
 }
 
-func dangerText(s string) string {
-	// reverse + red text
-	return "\033[7;31m" + s + "\033[0m"
-}
-
 func UpdateGoldenFixtureImage(t testing.TB, name string) {
-	t.Log(dangerText("!!! UPDATING GOLDEN FIXTURE IMAGE !!!"), name)
+	t.Log(testutil.DangerText("!!! UPDATING GOLDEN FIXTURE IMAGE !!!"), name)
 
 	imageName, _ := getFixtureImageInfo(t, name)
 	goldenTarFilePath := path.Join(testutil.GoldenFileDirPath, imageName+testutil.GoldenFileExt)
