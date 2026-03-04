@@ -222,7 +222,7 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 func (sc searchContext) firstMatchingReferences(glob string, entries []IndexEntry) ([]file.Resolution, error) {
 	var references []file.Resolution
 	for _, entry := range entries {
-		ref, err := sc.firstMatchingReference(glob, string(entry.Reference.RealPath))
+		ref, err := sc.firstMatchingReference(glob, string(entry.RealPath))
 		if err != nil {
 			return nil, err
 		}
@@ -333,9 +333,9 @@ func (sc searchContext) fileNodesInTree(fileEntries []IndexEntry) ([]*filenode.F
 allFileEntries:
 	for _, entry := range fileEntries {
 		// note: it is important that we don't enable any basename link resolution
-		na, err := sc.tree.file(entry.Reference.RealPath)
+		na, err := sc.tree.file(entry.RealPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.Reference.RealPath, err)
+			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.RealPath, err)
 		}
 
 		if !na.HasFileNode() {
@@ -343,7 +343,7 @@ allFileEntries:
 		}
 
 		// only check the resolved node matches the index entries reference, not via link resolutions...
-		if na.FileNode.Reference != nil && na.FileNode.Reference.ID() == entry.Reference.ID() {
+		if na.FileNode.Reference != nil && na.FileNode.Reference.ID() == entry.ID() {
 			nodes = append(nodes, na.FileNode)
 			continue allFileEntries
 		}

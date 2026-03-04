@@ -230,6 +230,7 @@ func (l *Layer) OpenPathFromSquash(path file.Path) (io.ReadCloser, error) {
 
 // FileContents reads the file contents for the given path from the underlying layer blob, relative to the layers "diff tree".
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+//
 // Deprecated: use OpenPath() instead.
 func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
 	return fetchReaderByPath(l.Tree, l.fileCatalog, path)
@@ -237,12 +238,14 @@ func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
 
 // FileContentsFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
+//
 // Deprecated: use OpenPathFromSquash() instead.
 func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
 	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
 }
 
 // FilesByMIMEType returns file references for files that match at least one of the given MIME types relative to each layer tree.
+//
 // Deprecated: use SearchContext().SearchByMIMEType() instead.
 func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
@@ -259,6 +262,7 @@ func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
 }
 
 // FilesByMIMETypeFromSquash returns file references for files that match at least one of the given MIME types relative to the squashed file tree representation.
+//
 // Deprecated: use SquashedSearchContext().SearchByMIMEType() instead.
 func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
 	var refs []file.Reference
