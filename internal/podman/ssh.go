@@ -13,10 +13,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/docker/docker/pkg/homedir"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
+	"github.com/anchore/go-homedir"
 	"github.com/anchore/stereoscope/internal/log"
 )
 
@@ -122,7 +122,8 @@ func getSSHCallback(params *sshClientConfig) ssh.HostKeyCallback {
 		return cb
 	}
 
-	knownHosts := filepath.Join(homedir.Get(), ".ssh", "known_hosts")
+	home, _ := homedir.Dir()
+	knownHosts := filepath.Join(home, ".ssh", "known_hosts")
 	key := hostKey(params.host, knownHosts)
 	if key != nil {
 		cb = ssh.FixedHostKey(key)
