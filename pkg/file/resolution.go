@@ -35,8 +35,8 @@ func (f Resolutions) Less(i, j int) bool {
 	ith := f[i]
 	jth := f[j]
 
-	ithIsReal := ith.Reference != nil && ith.Reference.RealPath == ith.RequestPath
-	jthIsReal := jth.Reference != nil && jth.Reference.RealPath == jth.RequestPath
+	ithIsReal := ith.Reference != nil && ith.RealPath == ith.RequestPath
+	jthIsReal := jth.Reference != nil && jth.RealPath == jth.RequestPath
 
 	switch {
 	case ithIsReal && !jthIsReal:
@@ -63,12 +63,12 @@ func (f *Resolution) AllPaths() []Path {
 	set := strset.New()
 	set.Add(string(f.RequestPath))
 	if f.Reference != nil {
-		set.Add(string(f.Reference.RealPath))
+		set.Add(string(f.RealPath))
 	}
 	for _, p := range f.LinkResolutions {
 		set.Add(string(p.RequestPath))
 		if p.Reference != nil {
-			set.Add(string(p.Reference.RealPath))
+			set.Add(string(p.RealPath))
 		}
 	}
 
@@ -127,10 +127,10 @@ func (f *Resolution) RequestResolutionPath() []Path {
 			}
 		}
 	}
-	if f.HasReference() && firstPath != f.Reference.RealPath && !lastLinkResolutionIsDead {
+	if f.HasReference() && firstPath != f.RealPath && !lastLinkResolutionIsDead {
 		// we've reached the final reference that was resolved
 		// we should only do this if there was a link resolution
-		paths = append(paths, f.Reference.RealPath)
+		paths = append(paths, f.RealPath)
 	}
 	return paths
 }

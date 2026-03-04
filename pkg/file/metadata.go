@@ -161,9 +161,9 @@ func (m Metadata) Equal(other Metadata) bool {
 		m.GroupID == other.GroupID &&
 		m.Type == other.Type &&
 		m.MIMEType == other.MIMEType &&
-		m.FileInfo.Name() == other.FileInfo.Name() &&
-		m.FileInfo.IsDir() == other.FileInfo.IsDir() &&
-		m.FileInfo.Mode() == other.FileInfo.Mode() &&
-		m.FileInfo.Size() == other.FileInfo.Size() &&
+		m.Name() == other.Name() &&
+		m.IsDir() == other.IsDir() &&
+		m.Mode() == other.Mode() &&
+		m.Size() == other.Size() &&
 		m.FileInfo.ModTime().UTC().Equal(other.FileInfo.ModTime().UTC())
 }
