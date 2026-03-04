@@ -2,6 +2,7 @@ package image
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/hashicorp/go-multierror"
 	"github.com/scylladb/go-set/strset"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
@@ -370,19 +370,19 @@ func (i *Image) Cleanup() error {
 	if i == nil {
 		return nil
 	}
-	var errs error
+	var errs []error
 	if i.tmpDirGen != nil {
 		if err := i.tmpDirGen.Cleanup(); err != nil {
-			errs = multierror.Append(errs, err)
+			errs = append(errs, err)
 		}
 
 		if i.contentCacheDir != "" {
 			if _, err := os.Stat(i.contentCacheDir); !os.IsNotExist(err) {
 				if err := os.RemoveAll(i.contentCacheDir); err != nil {
-					errs = multierror.Append(errs, err)
+					errs = append(errs, err)
 				}
 			}
 		}
 	}
-	return errs
+	return errors.Join(errs...)
 }

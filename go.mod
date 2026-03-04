@@ -22,7 +22,6 @@ require (
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.20.7
-	github.com/hashicorp/go-multierror v1.1.1
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -35,7 +34,7 @@ require (
 	github.com/sylabs/sif/v2 v2.22.0
 	github.com/sylabs/squashfs v1.0.6
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
-	github.com/wagoodman/go-progress v0.0.0-20230925121702-07e42b3cdba0
+	github.com/wagoodman/go-progress v0.0.0-20260303201901-10176f79b2c0
 	golang.org/x/crypto v0.48.0
 )
 
@@ -83,7 +82,6 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/klauspost/compress v1.18.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
