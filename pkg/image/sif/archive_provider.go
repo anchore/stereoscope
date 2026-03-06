@@ -2,6 +2,7 @@ package sif
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 
@@ -60,7 +61,8 @@ func (p *singularityImageProvider) Provide(_ context.Context) (*image.Image, err
 	out := image.New(ui, p.tmpDirGen, contentCacheDir, metadata...)
 	err = out.Read()
 	if err != nil {
-		return nil, err
+		cleanErr := out.Cleanup()
+		return nil, errors.Join(err, cleanErr)
 	}
 	return out, err
 }

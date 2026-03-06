@@ -2,6 +2,7 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -65,7 +66,7 @@ func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error
 		return nil, fmt.Errorf("unable to parse OCI directory as an image: %w", err)
 	}
 
-	var metadata = []image.AdditionalMetadata{
+	metadata := []image.AdditionalMetadata{
 		image.WithManifestDigest(manifest.Digest.String()),
 	}
 
@@ -83,7 +84,8 @@ func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error
 	out := image.New(img, p.tmpDirGen, contentTempDir, metadata...)
 	err = out.Read()
 	if err != nil {
-		return nil, err
+		cleanErr := out.Cleanup()
+		return nil, errors.Join(err, cleanErr)
 	}
 	return out, err
 }
