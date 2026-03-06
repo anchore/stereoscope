@@ -218,11 +218,11 @@ tasks:
   fingerprints:
     desc: Generate test fixture fingerprints
     generates:
-      - test/integration/test-fixtures/cache.fingerprint
+      - test/integration/testdata/cache.fingerprint
 
     cmds:
       # for INTEGRATION test fixtures
-      - "cd test/integration/test-fixtures && make cache.fingerprint"
+      - "cd test/integration/testdata && make cache.fingerprint"
 
   show-test-image-cache:
     silent: true
@@ -230,7 +230,7 @@ tasks:
       - "echo '\nDocker daemon cache:'"
       - "docker images --format '{{`{{.ID}}`}} {{`{{.Repository}}`}}:{{`{{.Tag}}`}}' | grep stereoscope-fixture- | sort"
       - "echo '\nTar cache:'"
-      - 'find . -type f -wholename "**/test-fixtures/snapshot/*" | sort'
+      - 'find . -type f -wholename "**/testdata/snapshot/*" | sort'
 
 
   ## Build-related targets #################################
@@ -294,6 +294,11 @@ tasks:
 
   ## Cleanup targets #################################
 
+  clean:
+    cmds:
+      - task: clean-snapshot
+      - task: clean-cache
+
   clean-snapshot:
     desc: Remove any snapshot builds
     cmds:
@@ -303,5 +308,6 @@ tasks:
   clean-cache:
     desc: Remove all docker cache and local image tar cache
     cmds:
-      - 'find . -type f -wholename "**/test-fixtures/cache/stereoscope-fixture-*.tar" -delete'
+      - 'find . -type f -wholename "**/testdata/cache/stereoscope-fixture-*.tar" -delete'
+      - 'find . -type d -name "test-fixtures" -exec rm -rf {} +'
       - "docker images --format '{{`{{.ID}}`}} {{`{{.Repository}}`}}' | grep stereoscope-fixture- | awk '{print $$1}' | uniq | xargs -r docker rmi --force"

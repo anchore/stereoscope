@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/anchore/stereoscope/internal/testutil"
 )
 
 func Test_MIMEType(t *testing.T) {
@@ -25,12 +27,12 @@ func Test_MIMEType(t *testing.T) {
 	}{
 		{
 			name:     "binary",
-			fixture:  fileReader("test-fixtures/mime/mach-binary"),
+			fixture:  fileReader(testutil.GetFixturePath(t, "mime", "mach-binary")),
 			expected: "application/x-mach-binary",
 		},
 		{
 			name:     "script",
-			fixture:  fileReader("test-fixtures/mime/capture.sh"),
+			fixture:  fileReader(testutil.GetFixturePath(t, "mime", "capture.sh")),
 			expected: "text/x-shellscript",
 		},
 		{

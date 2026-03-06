@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/anchore/stereoscope/internal/testutil"
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
@@ -27,19 +28,23 @@ func Test_Directory_Provider(t *testing.T) {
 	//GIVEN
 	tests := []struct {
 		name        string
-		path        string
+		fixturePath string
 		expectedErr bool
 	}{
 		{"fails to read from path", "", true},
-		{"fails to read invalid oci manifest", "test-fixtures/invalid_file", true},
-		{"fails to read valid oci manifest with no images", "test-fixtures/no_manifests", true},
-		{"fails to read an invalid oci directory", "test-fixtures/valid_manifest", true},
-		{"reads a valid oci directory", "test-fixtures/valid_oci_dir", false},
+		{"fails to read invalid oci manifest", "invalid_file", true},
+		{"fails to read valid oci manifest with no images", "no_manifests", true},
+		{"fails to read an invalid oci directory", "valid_manifest", true},
+		{"reads a valid oci directory", "valid_oci_dir", false},
 	}
 
 	for _, tc := range tests {
 		tmpDirGen := file.NewTempDirGenerator("tempDir")
-		provider := NewDirectoryProvider(tmpDirGen, tc.path)
+		path := tc.fixturePath
+		if path != "" {
+			path = testutil.GetFixturePath(t, tc.fixturePath)
+		}
+		provider := NewDirectoryProvider(tmpDirGen, path)
 		t.Run(tc.name, func(t *testing.T) {
 			defer tmpDirGen.Cleanup()
 			//WHEN

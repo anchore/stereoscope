@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/testdata"
+
+	"github.com/anchore/stereoscope/internal/testutil"
 )
 
 func TestNewSSHConfig(t *testing.T) {
@@ -26,7 +27,7 @@ func TestNewSSHConfig(t *testing.T) {
 		sshKeyPath = "/home/jonas/.ssh/podman-machine-default"
 	)
 
-	fs := afero.NewBasePathFs(afero.NewOsFs(), "test-fixtures")
+	fs := afero.NewBasePathFs(afero.NewOsFs(), testutil.GetTestFixturesDir(t))
 	address, identity := getSSHAddress(fs, paths)
 	assert.Equal(t, sshAddress, address)
 	assert.Equal(t, sshKeyPath, identity)
@@ -49,7 +50,7 @@ func TestEmptySSHConfig(t *testing.T) {
 		"empty.conf",
 	}
 
-	fs := afero.NewBasePathFs(afero.NewOsFs(), "test-fixtures")
+	fs := afero.NewBasePathFs(afero.NewOsFs(), testutil.GetTestFixturesDir(t))
 	address, identity := getSSHAddress(fs, paths)
 	conf, err := newSSHConf(address, identity, "")
 	assert.Error(t, err)
@@ -143,40 +144,41 @@ func TestSSHCallback(t *testing.T) {
 func TestHostKey(t *testing.T) {
 	tests := []struct {
 		name           string
-		knownHostsPath string
+		knownHostsFile string
 		host           string
 		keyType        string
 		hasPublicKey   bool
 	}{
 		{
 			name:           "known host with public key",
-			knownHostsPath: filepath.Join("test-fixtures", "known_hosts"),
+			knownHostsFile: "known_hosts",
 			host:           "github.com",
 			keyType:        "ssh-rsa",
 			hasPublicKey:   true,
 		},
 		{
 			name:           "unknown host",
-			knownHostsPath: filepath.Join("test-fixtures", "known_hosts"),
+			knownHostsFile: "known_hosts",
 			host:           "doma.in",
 			keyType:        "",
 			hasPublicKey:   false,
 		},
 		{
 			name:           "file not found",
-			knownHostsPath: filepath.Join("test-fixtures", "not-there"),
+			knownHostsFile: "not-there",
 			host:           "doma.in",
 		},
 		{
 			name:           "file not found",
-			knownHostsPath: filepath.Join("test-fixtures", "known_hosts_empty"),
+			knownHostsFile: "known_hosts_empty",
 			host:           "doma.in",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pk := hostKey(tt.host, tt.knownHostsPath)
+			knownHostsPath := testutil.GetFixturePath(t, tt.knownHostsFile)
+			pk := hostKey(tt.host, knownHostsPath)
 
 			if tt.hasPublicKey {
 				assert.Equal(t, tt.keyType, pk.Type())

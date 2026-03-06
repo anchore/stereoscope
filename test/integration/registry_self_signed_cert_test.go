@@ -1,18 +1,14 @@
 package integration
 
 import (
-	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/anchore/stereoscope/internal/testutil"
 )
 
 func TestRegistrySelfSignedCert(t *testing.T) {
-	cwd, err := os.Getwd()
-	require.NoErrorf(t, err, "unable to get cwd: %+v", err)
-	fixturesPath := filepath.Join(cwd, "test-fixtures", "registry")
+	fixturesPath := testutil.GetFixturePath(t, "registry")
 
 	runMakeTarget := func(targets ...string) func(*testing.T) {
 		return func(t *testing.T) {
