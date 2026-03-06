@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -99,7 +100,8 @@ func (p *tarballImageProvider) Provide(_ context.Context) (*image.Image, error) 
 	out := image.New(img, p.tmpDirGen, contentTempDir, metadata...)
 	err = out.Read()
 	if err != nil {
-		return nil, err
+		cleanErr := out.Cleanup()
+		return nil, errors.Join(err, cleanErr)
 	}
 	return out, err
 }

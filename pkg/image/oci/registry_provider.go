@@ -3,6 +3,7 @@ package oci
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -109,7 +110,8 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 	out := image.New(img, p.tmpDirGen, imageTempDir, metadata...)
 	err = out.Read()
 	if err != nil {
-		return nil, err
+		cleanErr := out.Cleanup()
+		return nil, errors.Join(err, cleanErr)
 	}
 	return out, err
 }
