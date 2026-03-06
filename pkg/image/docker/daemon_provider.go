@@ -17,9 +17,8 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/docker/cli/cli/config"
 	configTypes "github.com/docker/cli/cli/config/types"
-	dockerImage "github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/client"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
@@ -84,7 +83,7 @@ func (p *daemonImageProvider) ociPlatform() *ocispec.Platform {
 // inspect returns empty OS/Architecture fields for foreign-platform images. This method
 // passes the platform to the API (available since API v1.49) and falls back to a plain
 // inspect for older daemons.
-func (p *daemonImageProvider) platformInspect(ctx context.Context, apiClient client.APIClient, imageRef string) (dockerImage.InspectResponse, error) {
+func (p *daemonImageProvider) platformInspect(ctx context.Context, apiClient client.APIClient, imageRef string) (client.ImageInspectResult, error) {
 	if p.platform != nil {
 		result, err := apiClient.ImageInspect(ctx, imageRef, client.ImageInspectWithPlatform(p.ociPlatform()))
 		if err == nil {
@@ -224,9 +223,14 @@ func handlePullEvent(status emitter, event *pullEvent) error {
 	return nil
 }
 
-func (p *daemonImageProvider) pullOptions(imageRef string) (dockerImage.PullOptions, error) {
-	options := dockerImage.PullOptions{
-		Platform: p.platform.String(),
+func (p *daemonImageProvider) pullOptions(imageRef string) (client.ImagePullOptions, error) {
+	options := client.ImagePullOptions{}
+	if p.platform != nil {
+		options.Platforms = append(options.Platforms, ocispec.Platform{
+			Architecture: p.platform.Architecture,
+			OS:           p.platform.OS,
+			Variant:      p.platform.Variant,
+		})
 	}
 
 	// note: this will search the default config dir and allow for a DOCKER_CONFIG override
@@ -313,7 +317,7 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 	c2, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	pong, err := apiClient.Ping(c2)
+	pong, err := apiClient.Ping(c2, client.PingOptions{})
 	if err != nil || pong.APIVersion == "" {
 		return nil, fmt.Errorf("unable to get %s API response: %w", p.name, err)
 	}
@@ -451,7 +455,7 @@ func (p *daemonImageProvider) pullImageIfMissing(ctx context.Context, apiClient 
 	return imageRef, nil
 }
 
-func (p *daemonImageProvider) validatePlatform(i dockerImage.InspectResponse) error {
+func (p *daemonImageProvider) validatePlatform(i client.ImageInspectResult) error {
 	if p.platform == nil {
 		// the user did not specify a platform
 		return nil
@@ -470,7 +474,7 @@ func (p *daemonImageProvider) validatePlatform(i dockerImage.InspectResponse) er
 	return nil
 }
 
-func withInspectMetadata(i dockerImage.InspectResponse) (metadata []image.AdditionalMetadata) {
+func withInspectMetadata(i client.ImageInspectResult) (metadata []image.AdditionalMetadata) {
 	metadata = append(metadata,
 		image.WithTags(i.RepoTags...),
 		image.WithRepoDigests(i.RepoDigests...),

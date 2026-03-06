@@ -28,6 +28,7 @@ type FileTree struct {
 }
 
 // NewFileTree creates a new FileTree instance.
+//
 // Deprecated: use New() instead.
 func NewFileTree() *FileTree {
 	return New()

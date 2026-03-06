@@ -38,16 +38,15 @@ func Test_Directory_Provider(t *testing.T) {
 		{"reads a valid oci directory", "valid_oci_dir", false},
 	}
 
-	tmpDirGen := file.NewTempDirGenerator("tempDir")
-	defer tmpDirGen.Cleanup()
-
 	for _, tc := range tests {
+		tmpDirGen := file.NewTempDirGenerator("tempDir")
 		path := tc.fixturePath
 		if path != "" {
 			path = testutil.GetFixturePath(t, tc.fixturePath)
 		}
 		provider := NewDirectoryProvider(tmpDirGen, path)
 		t.Run(tc.name, func(t *testing.T) {
+			defer tmpDirGen.Cleanup()
 			//WHEN
 			image, err := provider.Provide(context.Background())
 

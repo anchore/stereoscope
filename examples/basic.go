@@ -14,7 +14,6 @@ import (
 )
 
 func main() {
-
 	// context for network requests
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -39,7 +38,11 @@ func main() {
 	}
 
 	// note: we are writing out temp files which should be cleaned up after you're done with the image object
-	defer image.Cleanup()
+	defer func() {
+		if err := image.Cleanup(); err != nil {
+			fmt.Printf("failed to cleanup image: %v\n", err)
+		}
+	}()
 
 	for _, layer := range image.Layers {
 		fmt.Printf("layer: %s\n", layer.Metadata.Digest)
@@ -49,7 +52,7 @@ func main() {
 	// Show the filetree for each layer
 	for idx, layer := range image.Layers {
 		fmt.Printf("Walking layer: %d", idx)
-		err = layer.Tree.Walk(func(path file.Path, f filenode.FileNode) error {
+		err = layer.Tree.Walk(func(path file.Path, _ filenode.FileNode) error {
 			fmt.Println("   ", path)
 			return nil
 		}, nil)
@@ -63,7 +66,7 @@ func main() {
 	// Show the squashed filetree for each layer
 	for idx, layer := range image.Layers {
 		fmt.Printf("Walking squashed layer: %d", idx)
-		err = layer.SquashedTree.Walk(func(path file.Path, f filenode.FileNode) error {
+		err = layer.SquashedTree.Walk(func(path file.Path, _ filenode.FileNode) error {
 			fmt.Println("   ", path)
 			return nil
 		}, nil)
@@ -76,7 +79,7 @@ func main() {
 	//////////////////////////////////////////////////////////////////
 	// Show the final squashed tree
 	fmt.Printf("Walking squashed image (same as the last layer squashed tree)")
-	err = image.SquashedTree().Walk(func(path file.Path, f filenode.FileNode) error {
+	err = image.SquashedTree().Walk(func(path file.Path, _ filenode.FileNode) error {
 		fmt.Println("   ", path)
 		return nil
 	}, nil)

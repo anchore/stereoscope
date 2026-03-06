@@ -76,10 +76,7 @@ func (s *apiState) current() ([]statusInfo, bool) {
 
 func (ps *PullStatus) start(ctx context.Context) *PullStatus {
 	go func() {
-		for {
-			if ps.state.done {
-				break
-			}
+		for !ps.state.done {
 			select {
 			case <-ctx.Done():
 				return
