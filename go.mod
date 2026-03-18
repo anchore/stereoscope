@@ -20,7 +20,7 @@ require (
 	github.com/gkampitakis/go-snaps v0.5.20
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-containerregistry v0.21.1
+	github.com/google/go-containerregistry v0.21.2
 	github.com/moby/moby/client v0.2.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
