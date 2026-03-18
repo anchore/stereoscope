@@ -2,7 +2,7 @@ tools:
   # we want to use a pinned version of binny to manage the toolchain (so binny manages itself!)
   - name: binny
     version:
-      want: v0.11.3
+      want: v0.12.0
     method: github-release
     with:
       repo: anchore/binny
@@ -10,7 +10,7 @@ tools:
   # used for linting
   - name: golangci-lint
     version:
-      want: v2.11.2
+      want: v2.11.3
     method: github-release
     with:
       repo: golangci/golangci-lint
@@ -26,7 +26,7 @@ tools:
   # used to release
   - name: goreleaser
     version:
-      want: v2.14.2
+      want: v2.14.3
     method: github-release
     with:
       repo: goreleaser/goreleaser
@@ -79,7 +79,7 @@ tools:
   # used for triggering a release
   - name: gh
     version:
-      want: v2.87.3
+      want: v2.88.1
     method: github-release
     with:
       repo: cli/cli
