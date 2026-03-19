@@ -12,6 +12,7 @@ import (
 
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/imagetest"
 )
 
 func TestPlatformSelection(t *testing.T) {
@@ -145,6 +146,106 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 func TestDefaultPlatformWithOciRegistry(t *testing.T) {
 	img, err := stereoscope.GetImageFromSource(context.TODO(), "busybox:1.31", image.OciRegistrySource)
 	require.NoError(t, err)
+	assertArchAndOs(t, img, "linux", runtime.GOARCH)
+}
+
+func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
+	/*
+	   These expected digests differ from the registry/daemon tests above because the
+	   image configs change during format conversion. When skopeo converts from Docker v2
+	   to OCI format, Docker-specific fields (container, container_config, docker_version)
+	   are stripped and the config mediaType changes. Since Metadata.ID is sha256 of the
+	   raw config JSON, the different bytes produce a different digest even though the
+	   image content (layers, filesystem) is identical.
+
+	   Digests were obtained by copying the actual values from the OCI layout directory.
+	*/
+	remoteImage := "docker.io/library/busybox:1.31"
+
+	tests := []struct {
+		source         image.Source
+		architecture   string
+		os             string
+		expectedDigest string
+	}{
+		{
+			source:         image.OciDirectorySource,
+			architecture:   "arm64",
+			os:             "linux",
+			expectedDigest: "sha256:7dab09c052ab69926c287ddbf1b0e5e0aefa9af660ca2125910f6034e6a59fca",
+		},
+		{
+			source:         image.OciDirectorySource,
+			architecture:   "s390x",
+			os:             "linux",
+			expectedDigest: "sha256:3c0567d696f41bab6ae6c0cab3a48b88383541a49cc7c74877a4a2492b5d5653",
+		},
+		{
+			source:         image.OciDirectorySource,
+			architecture:   "amd64",
+			os:             "linux",
+			expectedDigest: "sha256:213a9af84a4859684574404e3ad2457da2f6088338d3c777a5931441259c6a19",
+		},
+		{
+			source:         image.OciTarballSource,
+			architecture:   "arm64",
+			os:             "linux",
+			expectedDigest: "sha256:7dab09c052ab69926c287ddbf1b0e5e0aefa9af660ca2125910f6034e6a59fca",
+		},
+		{
+			source:         image.OciTarballSource,
+			architecture:   "s390x",
+			os:             "linux",
+			expectedDigest: "sha256:3c0567d696f41bab6ae6c0cab3a48b88383541a49cc7c74877a4a2492b5d5653",
+		},
+		{
+			source:         image.OciTarballSource,
+			architecture:   "amd64",
+			os:             "linux",
+			expectedDigest: "sha256:213a9af84a4859684574404e3ad2457da2f6088338d3c777a5931441259c6a19",
+		},
+	}
+
+	for _, tt := range tests {
+		platform := fmt.Sprintf("%s/%s", tt.os, tt.architecture)
+		t.Run(fmt.Sprintf("%s/%s", tt.source, platform), func(t *testing.T) {
+			localPath := imagetest.PrepareMultiplatformFixtureImage(t, tt.source, remoteImage)
+
+			platformOpt := stereoscope.WithPlatform(platform)
+			img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, tt.source, platformOpt)
+			require.NoError(t, err)
+			require.NotNil(t, img)
+			t.Cleanup(func() {
+				require.NoError(t, img.Cleanup())
+			})
+
+			assertArchAndOs(t, img, tt.os, tt.architecture)
+			assert.Equal(t, tt.expectedDigest, img.Metadata.ID)
+		})
+	}
+}
+
+func TestDefaultPlatformWithOciDirectory(t *testing.T) {
+	remoteImage := "docker.io/library/busybox:1.31"
+	localPath := imagetest.PrepareMultiplatformFixtureImage(t, image.OciDirectorySource, remoteImage)
+
+	img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, image.OciDirectorySource)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
+	})
+	assertArchAndOs(t, img, "linux", runtime.GOARCH)
+}
+
+func TestDefaultPlatformWithOciTarball(t *testing.T) {
+	remoteImage := "docker.io/library/busybox:1.31"
+	localPath := imagetest.PrepareMultiplatformFixtureImage(t, image.OciTarballSource, remoteImage)
+
+	img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, image.OciTarballSource)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
+	})
 	assertArchAndOs(t, img, "linux", runtime.GOARCH)
 }
 
