@@ -184,7 +184,7 @@ func walkImages(index v1.ImageIndex, fn func(v1.Image, *v1.Platform) error) erro
 		case manifest.MediaType.IsIndex():
 			imgIndex, err := index.ImageIndex(manifest.Digest)
 			if err != nil {
-				return fmt.Errorf("unable to parse OCI directory as an image index: %w", err)
+				return fmt.Errorf("unable to parse reference %s from OCI directory as an image index: %w", manifest.Digest, err)
 			}
 			err = walkImages(imgIndex, fn)
 			if err != nil {
@@ -193,7 +193,7 @@ func walkImages(index v1.ImageIndex, fn func(v1.Image, *v1.Platform) error) erro
 		case manifest.MediaType.IsImage():
 			image, err := index.Image(manifest.Digest)
 			if err != nil {
-				return fmt.Errorf("unable to parse OCI directory as an image: %w", err)
+				return fmt.Errorf("unable to parse reference %s from OCI directory as an image: %w", manifest.Digest, err)
 			}
 			err = fn(image, manifest.Platform)
 			if err != nil {
