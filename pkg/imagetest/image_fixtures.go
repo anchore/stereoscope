@@ -121,6 +121,55 @@ func skopeoCopyDockerArchiveToPath(t testing.TB, dockerArchivePath, destination 
 	}
 }
 
+// PrepareMultiplatformFixtureImage pulls a multiplatform image from a registry and stores it as
+// an OCI directory or OCI tarball, preserving the multiplatform index. Returns the local path.
+func PrepareMultiplatformFixtureImage(t testing.TB, source, remoteImage string) string {
+	t.Helper()
+
+	if !isSkopeoAvailable() {
+		t.Fatalf("cannot find skopeo executable")
+	}
+
+	cacheDir := getCacheDir(t)
+	if !dirExists(t, cacheDir) {
+		err := os.MkdirAll(cacheDir, 0o755)
+		if err != nil {
+			t.Fatalf("could not create cache dir (%s): %+v", cacheDir, err)
+		}
+	}
+
+	// create a safe filename from the remote image reference
+	safeName := strings.NewReplacer("/", "_", ":", "-", ".", "_").Replace(remoteImage)
+
+	var location, destination string
+	switch source {
+	case image.OciDirectorySource:
+		location = path.Join(cacheDir, "multiplatform-oci-dir-"+safeName)
+		destination = fmt.Sprintf("oci:%s", location)
+	case image.OciTarballSource:
+		location = path.Join(cacheDir, "multiplatform-oci-archive-"+safeName+".tar")
+		destination = fmt.Sprintf("oci-archive:%s", location)
+	default:
+		t.Fatalf("PrepareMultiplatformFixtureImage does not support source: %s", source)
+	}
+
+	if _, err := os.Stat(location); os.IsNotExist(err) {
+		src := fmt.Sprintf("docker://%s", remoteImage)
+		cmd := exec.Command("skopeo", "copy", "--insecure-policy", "--all", src, destination)
+		cmd.Env = os.Environ()
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("skopeo copy failed for multiplatform image %q: %+v", remoteImage, err)
+		}
+	} else {
+		t.Logf("using cached multiplatform fixture: %s", location)
+	}
+
+	return location
+}
+
 func getFixtureImageFromTar(t testing.TB, tarPath string) *image.Image {
 	request := fmt.Sprintf("docker-archive:%s", tarPath)
 
