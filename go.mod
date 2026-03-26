@@ -17,7 +17,7 @@ require (
 	github.com/docker/cli v29.3.0+incompatible
 	github.com/docker/go-connections v0.6.0
 	github.com/gabriel-vasile/mimetype v1.4.13
-	github.com/gkampitakis/go-snaps v0.5.20
+	github.com/gkampitakis/go-snaps v0.5.21
 	github.com/go-test/deep v1.0.8
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.21.2
