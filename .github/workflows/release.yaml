@@ -1,6 +1,7 @@
 name: "Release"
 
-permissions: {}
+permissions:
+  contents: read
 
 # there should never be two releases in progress at the same time
 concurrency:
@@ -15,71 +16,41 @@ on:
         required: true
 
 jobs:
-
   version-available:
-    uses: anchore/workflows/.github/workflows/check-version-available.yaml@8b2b1caf40e03933c6807e03b99e883e2ceb5ac8 # v0.4.0
+    uses: anchore/workflows/.github/workflows/check-version-available.yaml@4f25313f96311410cad4173f74617654a3e46d48 # v0.3.0
+    permissions:
+      contents: read # for listing tags
     with:
       version: ${{ github.event.inputs.version }}
 
   check-gate:
     permissions:
-      checks: read   # required for getting the status of specific check names
-    uses: anchore/workflows/.github/workflows/check-gate.yaml@8b2b1caf40e03933c6807e03b99e883e2ceb5ac8 # v0.4.0
+      checks: read # required for getting the status of specific check names
+    uses: anchore/workflows/.github/workflows/check-gate.yaml@4f25313f96311410cad4173f74617654a3e46d48 # v0.3.0
     with:
       # these are checks that should be run on pull-request and merges to main.
       # we do NOT want to kick off a release if these have not been verified on main.
       # Please see the validations.yaml workflow for the names that should be used here.
-      checks: '["Build snapshot artifacts", "Integration tests", "Static analysis", "Unit tests"]'
+      checks: '["Static analysis", "Unit tests", "Integration tests", "Cross-platform build test"]'
 
   release:
     needs: [check-gate, version-available]
+    environment: release # contains secrets needed for release
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
-      packages: write
-      # required for goreleaser signs section with cosign
-      id-token: write
+      contents: write # needed for creating github release objects
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
-          fetch-depth: 0
-          persist-credentials: true
+          fetch-depth: 0 # we need the full history to reason about changelogs and tags
+          persist-credentials: true # needed for pushing a tag
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
 
-      - name: Tag release
-        run: |
-          git config --global user.name "anchoreci"
-          git config --global user.email "anchoreci@users.noreply.github.com"
-          git tag -a "${VERSION}" -m "Release ${VERSION}"
-          git push origin --tags
+      - name: Create release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ github.event.inputs.version }}
-
-      - name: Build & publish release artifacts
+          GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: make ci-release
-        env:
-          # for creating the release (requires write access to packages and content)
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Notify Slack of new release
-        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c #v3.0.3
-        continue-on-error: true
-        with:
-          webhook: ${{ secrets.SLACK_TOOLBOX_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            text: "A new Stereoscope release has been published: https://github.com/anchore/stereoscope/releases/tag/${{ github.event.inputs.version }}"
-            blocks:
-              - type: section
-                text:
-                  type: mrkdwn
-                  text: |
-                    *A new Stereoscope release has been published* :rocket:
-                    • Release: <https://github.com/anchore/stereoscope/releases/tag/${{ github.event.inputs.version }}|${{ github.event.inputs.version }}>
-                    • Repo: `${{ github.repository }}`
-                    • Workflow: `${{ github.workflow }}`
-                    • Event: `${{ github.event_name }}`
-        if: ${{ success() }}

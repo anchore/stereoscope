@@ -490,6 +490,7 @@ func encodeCredentials(authConfig configTypes.AuthConfig) (string, error) {
 	// note: the contents may contain characters that should not be escaped (such as password contents)
 	encoder.SetEscapeHTML(false)
 
+	//nolint:gosec // G117: encoding auth config with password is required for Docker registry authentication
 	if err := encoder.Encode(authConfig); err != nil {
 		return "", err
 	}
