@@ -1,9 +1,12 @@
 version: "2"
+run:
+  tests: false
 linters:
   default: none
   enable:
     - asciicheck
     - bodyclose
+    - copyloopvar
     - dogsled
     - dupl
     - errcheck
@@ -18,13 +21,40 @@ linters:
     - ineffassign
     - misspell
     - nakedret
+    - nolintlint
     - revive
     - staticcheck
     - unconvert
     - unparam
     - unused
     - whitespace
-#     do not enable...
+
+  settings:
+    funlen:
+      lines: 100
+      statements: 60
+    gocognit:
+      min-complexity: 40
+    gocritic:
+      enabled-checks:
+        - deferInLoop
+    gosec:
+      excludes:
+        - G115
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+# do not enable...
 #    - deadcode          # The owner seems to have abandoned the linter. Replaced by "unused".
 #    - depguard          # We don't have a configuration for this yet
 #    - goprintffuncname  # does not catch all cases and there are exceptions
@@ -42,7 +72,6 @@ linters:
 #    - lll         # without a way to specify per-line exception cases, this is not usable
 #    - maligned    # this is an excellent linter, but tricky to optimize and we are not sensitive to memory layout optimizations
 #    - nestif
-#    - nolintlint   # as of go1.19 this conflicts with the behavior of gofmt, which is a deal-breaker (lint-fix will still fail when running lint)
 #    - prealloc     # following this rule isn't consistently a good idea, as it sometimes forces unnecessary allocations that result in less idiomatic code
 #    - rowserrcheck # not in a repo with sql, so this is not useful
 #    - scopelint    # deprecated
@@ -50,36 +79,16 @@ linters:
 #    - testpackage
 #    - varcheck     # The owner seems to have abandoned the linter. Replaced by "unused".
 #    - wsl          # this doens't have an auto-fixer yet and is pretty noisy (https://github.com/bombsimon/wsl/issues/90)
-  settings:
-    funlen:
-      lines: 70
-      statements: 50
-    gosec:
-      excludes:
-        - G115
-        - G117
-    revive:
-      rules:
-        - name: var-naming
-          disabled: true
-  exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
-    rules:
-      - linters:
-          - funlen
-        path: examples/
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+
 issues:
   max-same-issues: 25
   uniq-by-line: false
+
+# TODO: enable this when we have coverage on docstring comments
+#  # The list of ids of default excludes to include or disable.
+#  include:
+#    - EXC0002 # disable excluding of issues about comments from golint
+
 formatters:
   enable:
     - gofmt

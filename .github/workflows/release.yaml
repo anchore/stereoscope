@@ -3,6 +3,11 @@ name: "Release"
 permissions:
   contents: read
 
+# there should never be two releases in progress at the same time
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
@@ -11,121 +16,40 @@ on:
         required: true
 
 jobs:
-  quality-gate:
-    environment: release
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
-        with:
-          persist-credentials: false
 
-      - name: Check if tag already exists
-        # note: this will fail if the tag already exists
-        run: |
-          [[ "${VERSION}" == v* ]] || (echo "version '${VERSION}' does not have a 'v' prefix" && exit 1)
-          git tag "${VERSION}"
-        env:
-          VERSION: ${{ github.event.inputs.version }}
+  version-available:
+    uses: anchore/workflows/.github/workflows/check-version-available.yaml@4f25313f96311410cad4173f74617654a3e46d48 # v0.3.0
+    with:
+      version: ${{ github.event.inputs.version }}
 
-      - name: Check static analysis results
-        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
-        id: static-analysis
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # This check name is defined as the github action job name (in .github/workflows/validations.yaml)
-          checkName: "Static analysis"
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Check unit test results
-        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
-        id: unit
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # This check name is defined as the github action job name (in .github/workflows/validations.yaml)
-          checkName: "Unit tests"
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Check integration test results
-        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
-        id: integration
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # This check name is defined as the github action job name (in .github/workflows/validations.yaml)
-          checkName: "Integration tests"
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Check snapshot build
-        uses: fountainhead/action-wait-for-check@5a908a24814494009c4bb27c242ea38c93c593be # v1.2.0
-        id: snapshot
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # This check name is defined as the github action job name (in .github/workflows/validations.yaml)
-          checkName: "Build snapshot artifacts"
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
-      - name: Quality gate
-        if: steps.static-analysis.outputs.conclusion != 'success' || steps.unit.outputs.conclusion != 'success' || steps.integration.outputs.conclusion != 'success' || steps.snapshot.outputs.conclusion != 'success'
-        run: |
-          echo "Static Analysis Status: ${STATIC_ANALYSIS_STATUS}"
-          echo "Unit Test Status: ${UNIT_TEST_STATUS}"
-          echo "Integration Test Status: ${INTEGRATION_TEST_STATUS}"
-          echo "Build snapshot artifacts Status: ${SNAPSHOT_STATUS}"
-          false
-        env:
-          STATIC_ANALYSIS_STATUS: ${{ steps.static-analysis.outputs.conclusion }}
-          UNIT_TEST_STATUS: ${{ steps.unit.outputs.conclusion }}
-          INTEGRATION_TEST_STATUS: ${{ steps.integration.outputs.conclusion }}
-          SNAPSHOT_STATUS: ${{ steps.snapshot.outputs.conclusion }}
+  check-gate:
+    permissions:
+      checks: read   # required for getting the status of specific check names
+    uses: anchore/workflows/.github/workflows/check-gate.yaml@4f25313f96311410cad4173f74617654a3e46d48 # v0.3.0
+    with:
+      # these are checks that should be run on pull-request and merges to main.
+      # we do NOT want to kick off a release if these have not been verified on main.
+      # Please see the validations.yaml workflow for the names that should be used here.
+      checks: '["Static analysis", "Unit tests", "Integration tests", "Build snapshot artifacts"]'
 
   release:
-    needs: [quality-gate]
+    needs: [check-gate, version-available]
+    environment: release  # contains secrets needed for release
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
-      packages: write
-      # required for goreleaser signs section with cosign
-      id-token: write
+      contents: write   # needed for creating github release objects
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
         with:
-          fetch-depth: 0
-          persist-credentials: true
+          fetch-depth: 0  # we need the full history to reason about changelogs and tags
+          persist-credentials: true  # needed for pushing a tag
 
-      - name: Bootstrap environment
-        uses: ./.github/actions/bootstrap
+      # setup checkout, go, go-make, binny, and cache go modules
+      - uses: anchore/go-make/.github/actions/setup@383ef7852b8ae43a30f424896b52479186d2ea4d # v0.1.0
 
-      - name: Tag release
-        run: |
-          git config --global user.name "anchoreci"
-          git config --global user.email "anchoreci@users.noreply.github.com"
-          git tag -a "${VERSION}" -m "Release ${VERSION}"
-          git push origin --tags
+      - name: Create release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ github.event.inputs.version }}
-
-      - name: Build & publish release artifacts
+          GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          RELEASE_VERSION: ${{ github.event.inputs.version }}
         run: make ci-release
-        env:
-          # for creating the release (requires write access to packages and content)
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Notify Slack of new release
-        uses: slackapi/slack-github-action@91efab103c0de0a537f72a35f6b8cda0ee76bf0a #v2.1.1
-        continue-on-error: true
-        with:
-          webhook: ${{ secrets.SLACK_TOOLBOX_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
-          payload: |
-            text: "A new Stereoscope release has been published: https://github.com/anchore/stereoscope/releases/tag/${{ github.event.inputs.version }}"
-            blocks:
-              - type: section
-                text:
-                  type: mrkdwn
-                  text: |
-                    *A new Stereoscope release has been published* :rocket:
-                    • Release: <https://github.com/anchore/stereoscope/releases/tag/${{ github.event.inputs.version }}|${{ github.event.inputs.version }}>
-                    • Repo: `${{ github.repository }}`
-                    • Workflow: `${{ github.workflow }}`
-                    • Event: `${{ github.event_name }}`
-        if: ${{ success() }}
