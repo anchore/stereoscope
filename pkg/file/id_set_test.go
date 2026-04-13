@@ -55,7 +55,7 @@ func TestIDSet_Add(t *testing.T) {
 			tt.s.Add(tt.args.ids...)
 			for _, id := range tt.args.ids {
 				if !tt.s.Contains(id) {
-					t.Errorf("expected set to contain %q", id)
+					t.Errorf("expected set to contain %d", id)
 				}
 			}
 		})
@@ -85,12 +85,12 @@ func TestIDSet_Remove(t *testing.T) {
 			tt.s.Remove(tt.args.ids...)
 			for _, id := range tt.args.ids {
 				if tt.s.Contains(id) {
-					t.Errorf("expected set to NOT contain %q", id)
+					t.Errorf("expected set to NOT contain %d", id)
 				}
 			}
 			for _, id := range tt.expected {
 				if !tt.s.Contains(id) {
-					t.Errorf("expected set to contain %q", id)
+					t.Errorf("expected set to contain %d", id)
 				}
 			}
 		})
