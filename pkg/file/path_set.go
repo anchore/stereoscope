@@ -2,7 +2,7 @@
 package file
 
 import (
-	"sort"
+	"slices"
 )
 
 type PathSet map[Path]struct{}
@@ -56,9 +56,7 @@ func (s PathSet) List() []Path {
 func (s PathSet) Sorted() []Path {
 	ids := s.List()
 
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i] < ids[j]
-	})
+	slices.Sort(ids)
 
 	return ids
 }

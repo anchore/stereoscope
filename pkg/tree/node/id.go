@@ -1,6 +1,6 @@
 package node
 
-import "sort"
+import "slices"
 
 type ID string
 
@@ -55,9 +55,7 @@ func (s IDSet) List() []ID {
 func (s IDSet) Sorted() []ID {
 	ids := s.List()
 
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i] < ids[j]
-	})
+	slices.Sort(ids)
 
 	return ids
 }

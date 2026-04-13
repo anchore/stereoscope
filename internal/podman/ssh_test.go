@@ -111,7 +111,7 @@ func TestSSHCallback(t *testing.T) {
 	tests := []struct {
 		name   string
 		config *sshClientConfig
-		want   interface{}
+		want   any
 	}{
 		{
 			name: "try to validate host key",
@@ -190,7 +190,7 @@ func TestHostKey(t *testing.T) {
 }
 
 func Test_newSSHConf(t *testing.T) {
-	pass := func(t assert.TestingT, err error, i ...interface{}) bool {
+	pass := func(t assert.TestingT, err error, i ...any) bool {
 		return true
 	}
 
@@ -207,7 +207,7 @@ func Test_newSSHConf(t *testing.T) {
 	}{
 		{
 			name: "empty address",
-			wantErr: func(t assert.TestingT, err error, i ...interface{}) bool {
+			wantErr: func(t assert.TestingT, err error, i ...any) bool {
 				return errors.Is(err, ErrNoHostAddress)
 			},
 		},

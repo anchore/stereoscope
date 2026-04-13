@@ -109,7 +109,7 @@ func TestHandlePullEventWithMockEmitter(t *testing.T) {
 				Error: "fetch failed",
 			},
 			expectOnEvent: false,
-			assertFunc: func(t require.TestingT, err error, args ...interface{}) {
+			assertFunc: func(t require.TestingT, err error, args ...any) {
 				require.Error(t, err)
 				var pErr *image.ErrPlatformMismatch
 				require.NotErrorAs(t, err, &pErr)
@@ -121,7 +121,7 @@ func TestHandlePullEventWithMockEmitter(t *testing.T) {
 				Error: "image with reference anchore/test_images:golang was found but its platform (linux/amd64) does not match the specified platform (linux/arm64)",
 			},
 			expectOnEvent: false,
-			assertFunc: func(t require.TestingT, err error, args ...interface{}) {
+			assertFunc: func(t require.TestingT, err error, args ...any) {
 				require.Error(t, err)
 				var pErr *image.ErrPlatformMismatch
 				require.ErrorAs(t, err, &pErr)
