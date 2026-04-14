@@ -1195,7 +1195,7 @@ func TestFileTree_MaximumLinkResolutionExceeded(t *testing.T) {
 	ref, err := tr.AddFile("/usr/bin/ksh")
 
 	// we hard code this in filetree to 100
-	for i := 0; i < maxLinkResolutionDepth; i++ {
+	for i := range maxLinkResolutionDepth {
 		_, err = tr.AddSymLink(
 			file.Path(fmt.Sprintf("/usr/bin/ksh%d", i)),
 			file.Path(fmt.Sprintf("/usr/bin/ksh%d", i+1)),

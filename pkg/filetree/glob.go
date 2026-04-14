@@ -259,6 +259,6 @@ func (a *fileinfoAdapter) IsDir() bool {
 }
 
 // Sys contains underlying data source (nothing in this case).
-func (a *fileinfoAdapter) Sys() interface{} {
+func (a *fileinfoAdapter) Sys() any {
 	panic("not implemented")
 }

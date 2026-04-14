@@ -13,11 +13,11 @@ type testNode struct {
 	Id node.ID
 }
 
-func toId(i interface{}) node.ID {
+func toId(i any) node.ID {
 	return node.ID(fmt.Sprintf("%v", i))
 }
 
-func newTestNode(id interface{}) *testNode {
+func newTestNode(id any) *testNode {
 	return &testNode{
 		Id: toId(id),
 	}

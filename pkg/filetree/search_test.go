@@ -414,7 +414,7 @@ func Test_complexSymlinkPerformance(t *testing.T) {
 
 	numPkgs := 30 // with this few packages, the allPathsToNode behavior would essentially hang
 
-	for num := 0; num < numPkgs; num++ {
+	for num := range numPkgs {
 		// add a concrete path
 		realPath := fmt.Sprintf("/pkgs/lib-%d/package.json", num)
 		realPaths = append(realPaths, realPath)

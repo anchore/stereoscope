@@ -1,11 +1,10 @@
 name: "Bootstrap"
-
 description: "Bootstrap all tools and dependencies"
 inputs:
   go-version:
     description: "Go version to install"
     required: true
-    default: ">= 1.24"
+    default: "1.26.2"
   go-dependencies:
     description: "Download go dependencies"
     required: true
@@ -21,8 +20,6 @@ inputs:
   bootstrap-apt-packages:
     description: "Space delimited list of tools to install via apt"
     default: ""
-
-
 runs:
   using: "composite"
   steps:
@@ -31,23 +28,19 @@ runs:
       if: inputs.go-version != ''
       with:
         go-version: ${{ inputs.go-version }}
-
     - name: Restore tool cache
       id: tool-cache
       uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 #v5.0.3
       with:
         path: ${{ github.workspace }}/.tool
         key: ${{ inputs.cache-key-prefix }}-${{ runner.os }}-tool-${{ hashFiles('.binny.yaml') }}
-
     - name: Install project tools
       shell: bash
       run: make tools
-
     - name: Install go dependencies
       if: inputs.go-dependencies == 'true'
       shell: bash
       run: make ci-bootstrap-go
-
     - name: Install apt packages
       if: inputs.bootstrap-apt-packages != ''
       shell: bash
@@ -59,7 +52,6 @@ runs:
         if [ ${#packages[@]} -gt 0 ]; then
           DEBIAN_FRONTEND=noninteractive sudo apt update && sudo -E apt install -y "${packages[@]}"
         fi
-
     - name: Create all cache fingerprints
       if: inputs.compute-fingerprints == 'true'
       shell: bash
