@@ -5,9 +5,9 @@ go 1.26.2
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
 	github.com/adrg/xdg v0.5.3
-	github.com/anchore/go-collections v0.0.0-20240216171411-9321230ce537
-	github.com/anchore/go-homedir v0.0.0-20250319154043-c29668562e4d
-	github.com/anchore/go-logger v0.0.0-20220728155337-03b66a5207d8
+	github.com/anchore/go-collections v0.0.0-20260302190843-dc98b39e97d0
+	github.com/anchore/go-homedir v0.0.0-20260305212341-13a3ebb9e637
+	github.com/anchore/go-logger v0.0.0-20260217144723-3bb369b8046c
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.12.0
 	github.com/becheran/wildmatch-go v1.0.0
 	github.com/bmatcuk/doublestar/v4 v4.10.0
@@ -18,7 +18,7 @@ require (
 	github.com/docker/go-connections v0.6.0
 	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/gkampitakis/go-snaps v0.5.20
-	github.com/go-test/deep v1.0.8
+	github.com/go-test/deep v1.1.1
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.21.2
 	github.com/moby/moby/client v0.3.0
@@ -32,7 +32,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/sylabs/sif/v2 v2.24.0
 	github.com/sylabs/squashfs v1.0.6
-	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
+	github.com/wagoodman/go-partybus v0.0.0-20230516145632-8ccac152c651
 	github.com/wagoodman/go-progress v0.0.0-20260303201901-10176f79b2c0
 	golang.org/x/crypto v0.48.0
 )
