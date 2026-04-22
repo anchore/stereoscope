@@ -17,6 +17,7 @@ import (
 func GetClient() (*client.Client, error) {
 	var clientOpts = []client.Opt{
 		client.FromEnv,
+		client.WithAPIVersionNegotiation(),
 	}
 
 	host := os.Getenv("DOCKER_HOST")
