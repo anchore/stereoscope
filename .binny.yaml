@@ -1,6 +1,5 @@
 # only pull in version updates that were released more than a week ago (low-pass filter for quickly-retracted releases)
 cooldown: 7d
-
 tools:
   ## internal tools ############################################################################
 
@@ -8,7 +7,7 @@ tools:
   - name: binny
     version:
       want: v0.13.0
-      cooldown: 0  # no cooldown period for internal tools
+      cooldown: 0 # no cooldown period for internal tools
     method: github-release
     with:
       repo: anchore/binny
@@ -16,16 +15,15 @@ tools:
   # used at release to generate the changelog
   - name: chronicle
     version:
-      want: v0.8.0
-      cooldown: 0  # no cooldown period for internal tools
+      want: v0.8.3
+      cooldown: 0 # no cooldown period for internal tools
     method: github-release
     with:
       repo: anchore/chronicle
 
-  ## external tools ############################################################################
-
   # used for linting
-  - name: golangci-lint
+  - name
+    ## external tools ############################################################################: golangci-lint
     version:
       want: v2.11.4
     method: github-release
@@ -96,7 +94,7 @@ tools:
   # used for signing the checksums file at release
   - name: cosign
     version:
-      want: v3.0.5
+      want: v3.0.6
     method: github-release
     with:
       repo: sigstore/cosign
