@@ -166,6 +166,7 @@ func newErrPlatformMismatch(platform *image.Platform, err error) *image.ErrPlatf
 func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
 	var options []name.Option
 	if registryOptions.InsecureUseHTTP {
+		log.Debug("HTTP transport is enabled for registry communication")
 		options = append(options, name.Insecure)
 	}
 	return options

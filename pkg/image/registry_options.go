@@ -82,6 +82,10 @@ func (r RegistryOptions) Authenticator(registry string) authn.Authenticator {
 
 // TLSConfig selects the tls.Config object for handling TLS authentication with a registry.
 func (r RegistryOptions) TLSConfig(registry string) (*tls.Config, error) {
+	if r.InsecureSkipTLSVerify {
+		log.Debugf("TLS verification is disabled for registry %q", registry)
+	}
+
 	tlsOptions := r.tlsOptions(registry)
 
 	if tlsOptions == nil {
