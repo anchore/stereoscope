@@ -7,54 +7,54 @@ import (
 
 var Log logger.Logger = discard.New()
 
-func Errorf(format string, args ...interface{}) {
+func Errorf(format string, args ...any) {
 	Log.Errorf(format, args...)
 }
 
-func Error(args ...interface{}) {
+func Error(args ...any) {
 	Log.Error(args...)
 }
 
-func Warn(args ...interface{}) {
+func Warn(args ...any) {
 	Log.Warn(args...)
 }
 
-func Warnf(format string, args ...interface{}) {
+func Warnf(format string, args ...any) {
 	Log.Warnf(format, args...)
 }
 
-func Infof(format string, args ...interface{}) {
+func Infof(format string, args ...any) {
 	Log.Infof(format, args...)
 }
 
-func Info(args ...interface{}) {
+func Info(args ...any) {
 	Log.Info(args...)
 }
 
-func Debugf(format string, args ...interface{}) {
+func Debugf(format string, args ...any) {
 	Log.Debugf(format, args...)
 }
 
-func Debug(args ...interface{}) {
+func Debug(args ...any) {
 	Log.Debug(args...)
 }
 
 // Tracef takes a formatted template string and template arguments for the trace logging level.
-func Tracef(format string, args ...interface{}) {
+func Tracef(format string, args ...any) {
 	Log.Tracef(format, args...)
 }
 
 // Trace logs the given arguments at the trace logging level.
-func Trace(args ...interface{}) {
+func Trace(args ...any) {
 	Log.Trace(args...)
 }
 
 // WithFields returns a message logger with multiple key-value fields.
-func WithFields(fields ...interface{}) logger.MessageLogger {
+func WithFields(fields ...any) logger.MessageLogger {
 	return Log.WithFields(fields...)
 }
 
 // Nested returns a new logger with hard coded key-value pairs
-func Nested(fields ...interface{}) logger.Logger {
+func Nested(fields ...any) logger.Logger {
 	return Log.Nested(fields...)
 }

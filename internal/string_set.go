@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"sort"
+	"slices"
 )
 
 type StringSet map[string]struct{}
@@ -55,9 +55,7 @@ func (s StringSet) List() []string {
 func (s StringSet) Sorted() []string {
 	ids := s.List()
 
-	sort.Slice(ids, func(i, j int) bool {
-		return ids[i] < ids[j]
-	})
+	slices.Sort(ids)
 
 	return ids
 }

@@ -70,8 +70,8 @@ func GetFixtureImage(t testing.TB, source, name string) *image.Image {
 		// if request is docker-archive, get a bit of extra info about the tar path
 		info := ""
 		const dockerArchivePrefix = "docker-archive:"
-		if strings.HasPrefix(request, dockerArchivePrefix) {
-			tarPath := strings.TrimPrefix(request, dockerArchivePrefix)
+		if after, ok := strings.CutPrefix(request, dockerArchivePrefix); ok {
+			tarPath := after
 			info = fmt.Sprintf(" (%s)", fileInfo(tarPath))
 		}
 		t.Fatalf("error getting fixture image: '%s' '%s' with request '%s'%s: %v", source, name, request, info, err)
