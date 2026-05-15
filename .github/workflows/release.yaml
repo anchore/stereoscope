@@ -1,7 +1,6 @@
 name: "Release"
 
-permissions:
-  contents: read
+permissions: {}
 
 # there should never be two releases in progress at the same time
 concurrency:
