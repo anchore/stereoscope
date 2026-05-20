@@ -1,16 +1,6 @@
 name: "Validations"
 on:
   workflow_dispatch:
-    inputs:
-      run-tmate:
-        description: "Start a tmate session"
-        required: false
-        default: ""
-      tmate-duration:
-        description: "Tmate session duration"
-        required: false
-        default: 5
-
   push:
     branches:
       - main
@@ -19,7 +9,6 @@ on:
 permissions: {}
 
 jobs:
-
   Static-Analysis:
     # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
     name: "Static analysis"
@@ -82,7 +71,7 @@ jobs:
         run: |
           set -x
           loginctl enable-linger $(whoami)
-          
+
           # we need to make certain that the bus instance is up and ready before systemctl attempts to use it.
           # if we can figure a non-racey way to do this, that would be nice.
           sleep 5
@@ -92,7 +81,7 @@ jobs:
           sudo systemctl enable --now podman.socket
           sudo systemctl start podman.socket
           sleep 1
-          
+
           # simple test to make sure the daemon is up and running
           podman images ls
           sudo podman images ls
@@ -103,29 +92,22 @@ jobs:
       - name: Configure rootless containerd
         run: |
           set -x
-          
+
           mkdir ~/.local/bin
           pushd ~/.local/bin
           curl -O https://raw.githubusercontent.com/containerd/nerdctl/v1.5.0/extras/rootless/containerd-rootless.sh
           curl -O https://raw.githubusercontent.com/containerd/nerdctl/v1.5.0/extras/rootless/containerd-rootless-setuptool.sh
           chmod 755 containerd-rootless.sh containerd-rootless-setuptool.sh
           popd
-          
+
           containerd-rootless-setuptool.sh install
           sleep 1
-          
+
           export CONTAINERD_ADDRESS=/proc/$(cat $XDG_RUNTIME_DIR/containerd-rootless/child_pid)/root/run/containerd/containerd.sock
-          
+
           # simple test to make sure the daemon is up and running
           ctr image ls
           sudo ctr image ls
-
-      - name: Setup tmate session
-        if: ${{ github.event.inputs.run-tmate == 'true' }}
-        uses: mxschmitt/action-tmate@c0afd6f790e3a5564914980036ebf83216678101 #v3
-        timeout-minutes: ${{ fromJSON(github.event.inputs.tmate-duration) }}
-        with:
-          limit-access-to-actor: true
 
       - name: Restore integration test-fixture cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #v5.0.5
@@ -163,4 +145,3 @@ jobs:
 
       - name: Build examples across all supported OS/arch combinations
         run: .github/scripts/build.sh ./snapshot
-
