@@ -2,7 +2,7 @@ module github.com/anchore/stereoscope/.make
 
 go 1.26.2
 
-require github.com/anchore/go-make v0.4.0
+require github.com/anchore/go-make v0.5.0
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
