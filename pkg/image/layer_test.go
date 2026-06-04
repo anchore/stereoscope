@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/random"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/require"
 )
@@ -53,6 +54,53 @@ func fakeLayer(mediaType v1Types.MediaType, err error) v1.Layer {
 		mediaType: mediaType,
 		err:       err,
 	}
+}
+
+// closeSpyLayer decorates a real v1.Layer, recording whether the reader returned by Uncompressed()
+// is closed. The reader still closes for real (Close is delegated), so only the observation is added.
+type closeSpyLayer struct {
+	v1.Layer
+	closed bool
+}
+
+func (l *closeSpyLayer) Uncompressed() (io.ReadCloser, error) {
+	rc, err := l.Layer.Uncompressed()
+	if err != nil {
+		return nil, err
+	}
+	return spyReadCloser{ReadCloser: rc, closed: &l.closed}, nil
+}
+
+type spyReadCloser struct {
+	io.ReadCloser
+	closed *bool
+}
+
+func (r spyReadCloser) Close() error {
+	*r.closed = true
+	return r.ReadCloser.Close()
+}
+
+// TestUncompressedCacheClosesReader guards against a regression where the reader returned by
+// layer.Uncompressed() was never closed.
+func TestUncompressedCacheClosesReader(t *testing.T) {
+	img, err := random.Image(1024, 1)
+	require.NoError(t, err)
+
+	layers, err := img.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+
+	digest, err := layers[0].Digest()
+	require.NoError(t, err)
+
+	spy := &closeSpyLayer{Layer: layers[0]}
+	layer := Layer{layer: spy}
+	layer.Metadata.Digest = digest.String()
+
+	_, err = layer.uncompressedCache(t.TempDir())
+	require.NoError(t, err)
+	require.True(t, spy.closed, "expected uncompressedCache to close the layer reader to release the pull-limiter token")
 }
 
 func TestRead(t *testing.T) {
