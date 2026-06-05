@@ -16,6 +16,9 @@ mise.toml
 .task
 .mise.toml
 .make/.make
+# the closecheck binary from `go build ./test/linter/closecheck`; anchored so it does
+# not also ignore the test/linter/closecheck/ source directory.
+/closecheck
 
 # release info
 /CHANGELOG.md

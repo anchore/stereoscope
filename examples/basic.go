@@ -94,6 +94,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer contentReader.Close()
 
 	content, err := io.ReadAll(contentReader)
 	if err != nil {
