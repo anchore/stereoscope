@@ -116,11 +116,13 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 	if err != nil {
 		return "", err
 	}
+	defer rawReader.Close()
 
 	fh, err := os.Create(path)
 	if err != nil {
 		return "", fmt.Errorf("unable to create layer cache dir=%q : %w", path, err)
 	}
+	defer fh.Close()
 
 	if _, err := io.Copy(fh, rawReader); err != nil {
 		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", path, err)
