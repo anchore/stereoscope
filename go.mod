@@ -34,8 +34,10 @@ require (
 	github.com/sylabs/squashfs v1.0.6
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20260303201901-10176f79b2c0
-	golang.org/x/crypto v0.50.0
+	golang.org/x/crypto v0.51.0
 )
+
+require golang.org/x/tools v0.45.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
@@ -116,12 +118,13 @@ require (
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
-	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/mod v0.36.0 // indirect
+	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/term v0.42.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260406210006-6f92a3bedf2d // indirect
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect

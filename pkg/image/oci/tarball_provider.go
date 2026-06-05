@@ -39,6 +39,7 @@ func (p *tarballImageProvider) Provide(ctx context.Context) (*image.Image, error
 	if err != nil {
 		return nil, fmt.Errorf("unable to open OCI tarball: %w", err)
 	}
+	defer f.Close()
 
 	tempDir, err := p.tmpDirGen.NewDirectory("oci-tarball-image")
 	if err != nil {

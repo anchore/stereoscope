@@ -180,6 +180,7 @@ func (p *daemonImageProvider) pull(ctx context.Context, client client.APIClient,
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
+	defer resp.Close()
 
 	var thePullEvent *pullEvent
 	decoder := json.NewDecoder(resp)

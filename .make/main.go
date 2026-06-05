@@ -14,6 +14,14 @@ func main() {
 		golint.Tasks(),
 		release.Tasks(),
 		Task{
+			Name:        "lint:closecheck",
+			Description: "run the closecheck SSA closer-leak analyzer",
+			RunsOn:      []string{"lint", "lint-fix", "static-analysis"},
+			Run: func() {
+				Run("go run ./test/linter/closecheck ./...")
+			},
+		},
+		Task{
 			Name:         "integration",
 			Description:  "run integration tests",
 			Dependencies: Deps("integration-tools"),
