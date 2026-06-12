@@ -16,7 +16,7 @@ on:
 
 jobs:
   version-available:
-    uses: anchore/workflows/.github/workflows/check-version-available.yaml@b3e328b5ae31ba96297e2ed9a6124e5e6352a4c5 # v0.7.0
+    uses: anchore/workflows/.github/workflows/check-version-available.yaml@b0c30a80409130d329aaa356fd64a34d8c0b3375 # v0.7.2
     permissions:
       contents: read # for listing tags
     with:
@@ -26,7 +26,7 @@ jobs:
     permissions:
       contents: read
       checks: read # required for getting the status of specific check names
-    uses: anchore/workflows/.github/workflows/check-gate.yaml@b3e328b5ae31ba96297e2ed9a6124e5e6352a4c5 # v0.7.0
+    uses: anchore/workflows/.github/workflows/check-gate.yaml@b0c30a80409130d329aaa356fd64a34d8c0b3375 # v0.7.2
     with:
       # these are checks that should be run on pull-request and merges to main.
       # we do NOT want to kick off a release if these have not been verified on main.
@@ -40,7 +40,7 @@ jobs:
     permissions:
       contents: write # needed for creating github release objects
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
         with:
           fetch-depth: 0 # we need the full history to reason about changelogs and tags
           persist-credentials: true # needed for pushing a tag
