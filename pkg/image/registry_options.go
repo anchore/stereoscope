@@ -109,7 +109,7 @@ func (r RegistryOptions) TLSConfig(registry string) (*tls.Config, error) {
 		// load all the files in the directory as CA certs
 		rootCAs := tlsConfig.RootCAs
 		if rootCAs == nil {
-			rootCAs, err = tlsconfig.SystemCertPool()
+			rootCAs, err = x509.SystemCertPool()
 			if err != nil {
 				log.Warnf("unable to load system cert pool: %w", err)
 				rootCAs = x509.NewCertPool()
