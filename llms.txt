@@ -1,0 +1,37 @@
+# Anchore Stereoscope
+
+A Go library for working with container image contents, layer file trees, and squashed file trees.
+
+## Project Overview
+
+Stereoscope is a container image analysis library that provides:
+- Parsing and reading images from multiple sources (Docker, OCI, Singularity)
+- Building file tree representations for each layer blob
+- Creating squashed file tree representations
+- Searching file trees for selected paths
+- Cataloging file metadata across layers
+- Querying underlying image archives for content
+
+## Key Components
+
+- `pkg/image/`: Core image handling for Docker, OCI, and Singularity formats
+- `pkg/filetree/`: File system tree operations and utilities
+- `pkg/file/`: File metadata, references, and content handling
+- `internal/`: Platform-specific clients for Docker, Containerd, and Podman
+- `examples/`: Basic usage examples
+
+## Usage
+
+This library is primarily used as a dependency in container security scanning tools and image analysis applications. It provides the foundational layer for tools that need to examine container image contents without running the containers.
+
+## Dependencies
+
+Built with Go 1.24+ and relies on container ecosystem libraries including:
+- containerd/containerd for container runtime integration
+- docker/docker for Docker daemon interaction
+- google/go-containerregistry for OCI registry operations
+- sylabs/sif for Singularity image format support
+
+## Development
+
+See DEVELOPING.md for build instructions and contribution guidelines.
