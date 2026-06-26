@@ -168,6 +168,16 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
+// The containers-storage provider pulls in containers/storage v1.59.1, whose
+// Linux code (userns.go) calls the root-level securejoin.OpenInRoot/Reopen that
+// only exist in filepath-securejoin v0.4.x. The rest of our graph (containerd
+// v2, hcsshim) requires filepath-securejoin v0.6.0, where those functions moved
+// into the pathrs-lite subpackage, which breaks the storage build on Linux. The
+// newer pathrs-lite requirement is dragged in transitively by selinux v1.13.1
+// (required by containerd), so we also pin selinux back to v1.12.0, which does
+// not use securejoin at all and is API-compatible for containerd's go-selinux
+// usage. These two pins keep both ecosystems building together on Linux.
+//
 // NOTE: replace directives are NOT inherited by downstream modules. Consumers
 // that build this library with the containers_image_openpgp tag on Linux (e.g.
 // syft) must add the same two replaces to their own go.mod.
