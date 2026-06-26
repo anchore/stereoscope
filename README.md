@@ -69,3 +69,14 @@ syft localhost/myimage:latest
 > Without that tag, a stub provider keeps the source registered but reports that support was not compiled in, so
 > default builds (and downstream consumers) are unaffected. On Linux you may additionally need to exclude the
 > cgo graph drivers you do not have headers for, e.g. `-tags "containers_image_openpgp exclude_graphdriver_btrfs exclude_graphdriver_devicemapper"`.
+>
+> On Linux, `containers/storage` requires the root-level `filepath-securejoin` API (v0.4.x), while other
+> dependencies (containerd, hcsshim) pull in v0.6.0 where that API moved into a subpackage. This library pins
+> the compatible versions via `replace` directives in its `go.mod`. Because `replace` directives are not
+> inherited by downstream modules, consumers that build the tagged provider on Linux must add the same pins to
+> their own `go.mod`:
+>
+> ```bash
+> go mod edit -replace github.com/cyphar/filepath-securejoin=github.com/cyphar/filepath-securejoin@v0.4.1
+> go mod edit -replace github.com/opencontainers/selinux=github.com/opencontainers/selinux@v1.12.0
+> ```
