@@ -5,6 +5,7 @@ import (
 	containerdClient "github.com/anchore/stereoscope/internal/containerd"
 	"github.com/anchore/stereoscope/pkg/image"
 	"github.com/anchore/stereoscope/pkg/image/containerd"
+	"github.com/anchore/stereoscope/pkg/image/containerstorage"
 	"github.com/anchore/stereoscope/pkg/image/docker"
 	"github.com/anchore/stereoscope/pkg/image/oci"
 	"github.com/anchore/stereoscope/pkg/image/podman"
@@ -39,6 +40,10 @@ func ImageProviders(cfg ImageProviderConfig) []collections.TaggedValue[image.Pro
 		taggedProvider(docker.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
 		taggedProvider(podman.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
 		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, cfg.Registry, containerdClient.Namespace(), cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
+
+		// daemonless local store providers (e.g. buildah / rootless podman); checked before the OCI registry so that
+		// locally built images resolve before falling back to a remote pull.
+		taggedProvider(containerstorage.NewProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), PullTag),
 
 		// registry providers
 		taggedProvider(oci.NewRegistryProvider(tempDirGenerator, cfg.Registry, cfg.UserInput, cfg.Platform), RegistryTag, PullTag),
