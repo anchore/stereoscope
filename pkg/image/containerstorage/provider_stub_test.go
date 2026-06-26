@@ -1,4 +1,3 @@
-package containerstorage
 //go:build !containers_image_openpgp
 
 package containerstorage

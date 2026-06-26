@@ -1,5 +1,4 @@
 package stereoscope
-package stereoscope
 
 import (
 	"slices"
