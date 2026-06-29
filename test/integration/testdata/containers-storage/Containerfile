@@ -1,0 +1,6 @@
+# Minimal image used by the optional containers-storage integration test.
+# It is built with buildah into the current user's containers-storage store and contains a
+# uniquely-named marker file so the test can assert it scanned the locally built image (and
+# not something accidentally pulled from a registry).
+FROM scratch
+COPY marker.txt /stereoscope-containers-storage-marker.txt
