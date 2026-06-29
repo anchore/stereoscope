@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	storagetransport "github.com/containers/image/v5/storage"
 	"github.com/containers/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -107,4 +108,19 @@ func TestProvider_provideFromStore_missingImage(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, img)
 	assert.ErrorContains(t, err, "unable to resolve image from containers-storage")
+}
+
+func TestProvider_additionalMetadata_missingImage(t *testing.T) {
+	store := newTestStore(t)
+
+	srcRef, err := storagetransport.Transport.ParseStoreReference(store, "localhost/does-not-exist:latest")
+	require.NoError(t, err)
+
+	p := newTestProvider("localhost/does-not-exist:latest", nil)
+
+	// when the image is absent the store lookup and inspect both fail; this must be non-fatal and yield no metadata
+	require.NotPanics(t, func() {
+		md := p.additionalMetadata(context.Background(), store, srcRef)
+		assert.Empty(t, md)
+	})
 }
