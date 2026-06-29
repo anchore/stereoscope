@@ -113,8 +113,48 @@ func (p *containersStorageProvider) provideFromStore(ctx context.Context, store 
 
 	log.WithFields("image", p.imageStr, "time", time.Since(startTime)).Debug("copied image from containers-storage")
 
+	// the docker-archive we generated above does not carry the store's tags or the config's OS/architecture,
+	// so gather them directly from the store image and pass them through as additional metadata
+	metadata := p.additionalMetadata(ctx, store, srcRef)
+
 	// reuse the existing docker archive provider to construct the final stereoscope image from the generated tar
-	return docker.NewArchiveProvider(p.tmpDirGen, archivePath).Provide(ctx)
+	return docker.NewArchiveProvider(p.tmpDirGen, archivePath, metadata...).Provide(ctx)
+}
+
+// additionalMetadata recovers tags from the store image and the OS/architecture/variant from the resolved image
+// config, since neither survives the copy into a tagless docker-archive. Failures are non-fatal: we log and return
+// whatever metadata could be gathered so the resulting image is still usable.
+func (p *containersStorageProvider) additionalMetadata(ctx context.Context, store storage.Store, srcRef types.ImageReference) (metadata []image.AdditionalMetadata) {
+	if storeImage, err := store.Image(p.imageStr); err == nil && len(storeImage.Names) > 0 {
+		metadata = append(metadata, image.WithTags(storeImage.Names...))
+	} else if err != nil {
+		log.Debugf("unable to look up containers-storage image %q for tags: %v", p.imageStr, err)
+	}
+
+	img, err := srcRef.NewImage(ctx, p.systemContext())
+	if err != nil {
+		log.Debugf("unable to inspect containers-storage image %q for metadata: %v", p.imageStr, err)
+		return metadata
+	}
+	defer func() {
+		if closeErr := img.Close(); closeErr != nil {
+			log.Debugf("failed to close containers-storage image source: %v", closeErr)
+		}
+	}()
+
+	info, err := img.Inspect(ctx)
+	if err != nil {
+		log.Debugf("unable to inspect containers-storage image %q for metadata: %v", p.imageStr, err)
+		return metadata
+	}
+
+	if info.Architecture != "" {
+		metadata = append(metadata, image.WithArchitecture(info.Architecture, info.Variant))
+	}
+	if info.Os != "" {
+		metadata = append(metadata, image.WithOS(info.Os))
+	}
+	return metadata
 }
 
 // systemContext builds a containers/image SystemContext carrying the requested platform selection (if any) so that
