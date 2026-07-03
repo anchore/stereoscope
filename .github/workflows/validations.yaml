@@ -110,14 +110,14 @@ jobs:
           sudo ctr image ls
 
       - name: Restore integration test-fixture cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 #v6.1.0
         with:
           path: ${{ github.workspace }}/test/integration/testdata/cache
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/testdata/cache.fingerprint') }}
 
       - name: Restore integration tool cache
         id: integration-tool-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 #v6.1.0
         with:
           path: ${{ github.workspace }}/test/integration/tools/cache
           key: ${{ runner.os }}-integration-tools-cache-${{ hashFiles('test/integration/tools/cache.fingerprint') }}
