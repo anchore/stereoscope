@@ -57,6 +57,7 @@ func extractManifest(tarPath string) (*dockerManifest, error) {
 		}
 	}()
 
+	//nolint:closecheck // ReaderFromTar's Close just forwards to f, which is closed by the deferred close above
 	manifestReader, err := file.ReaderFromTar(f, "manifest.json")
 	if err != nil {
 		return nil, err
@@ -87,6 +88,7 @@ func generateOCIManifest(tarPath string, manifest *dockerManifest) (*v1.Manifest
 		return nil, nil, ErrMultipleManifests
 	}
 
+	//nolint:closecheck // ReaderFromTar's Close just forwards to f, which is closed by the deferred close above
 	configReader, err := file.ReaderFromTar(f, manifest.parsed[0].Config)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to find docker config: %w", err)

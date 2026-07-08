@@ -93,7 +93,6 @@ func (s *apiState) update(ctx context.Context) {
 	s.lock.Unlock()
 }
 
-// nolint:funlen,gocognit
 func (s *apiState) fetchCurrentState(ctx context.Context) []statusInfo {
 	// note: this was HEAVILY derived from  https://github.com/containerd/containerd/blob/v1.7.0/cmd/ctr/commands/content/content.go
 	// and is Apache 2.0 licensed
@@ -142,11 +141,11 @@ func (s *apiState) fetchCurrentState(ctx context.Context) []statusInfo {
 		status, ok := s.statuses[key]
 		if !s.done && (!ok || status.Status == StatusDownloading) {
 			info, err := s.store.Info(ctx, j.Digest)
-			if err != nil { // nolint:gocritic
+			if err != nil { //nolint:gocritic
 				if !errdefs.IsNotFound(err) {
 					// TODO: log?
 					return nil
-				} else { // nolint:revive
+				} else { //nolint:revive
 					s.statuses[key] = statusInfo{
 						Ref:    key,
 						Status: StatusWaiting,

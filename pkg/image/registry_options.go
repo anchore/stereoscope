@@ -82,6 +82,10 @@ func (r RegistryOptions) Authenticator(registry string) authn.Authenticator {
 
 // TLSConfig selects the tls.Config object for handling TLS authentication with a registry.
 func (r RegistryOptions) TLSConfig(registry string) (*tls.Config, error) {
+	if r.InsecureSkipTLSVerify {
+		log.Debugf("TLS verification is disabled for registry %q", registry)
+	}
+
 	tlsOptions := r.tlsOptions(registry)
 
 	if tlsOptions == nil {
@@ -105,7 +109,7 @@ func (r RegistryOptions) TLSConfig(registry string) (*tls.Config, error) {
 		// load all the files in the directory as CA certs
 		rootCAs := tlsConfig.RootCAs
 		if rootCAs == nil {
-			rootCAs, err = tlsconfig.SystemCertPool()
+			rootCAs, err = x509.SystemCertPool()
 			if err != nil {
 				log.Warnf("unable to load system cert pool: %w", err)
 				rootCAs = x509.NewCertPool()

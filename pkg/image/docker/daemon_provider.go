@@ -180,6 +180,7 @@ func (p *daemonImageProvider) pull(ctx context.Context, client client.APIClient,
 	if err != nil {
 		return fmt.Errorf("pull failed: %w", err)
 	}
+	defer resp.Close()
 
 	var thePullEvent *pullEvent
 	decoder := json.NewDecoder(resp)
@@ -490,6 +491,7 @@ func encodeCredentials(authConfig configTypes.AuthConfig) (string, error) {
 	// note: the contents may contain characters that should not be escaped (such as password contents)
 	encoder.SetEscapeHTML(false)
 
+	//nolint:gosec // G117: encoding auth config with password is required for Docker registry authentication
 	if err := encoder.Encode(authConfig); err != nil {
 		return "", err
 	}

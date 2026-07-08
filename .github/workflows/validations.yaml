@@ -1,45 +1,39 @@
 name: "Validations"
 on:
   workflow_dispatch:
-    inputs:
-      run-tmate:
-        description: "Start a tmate session"
-        required: false
-        default: ""
-      tmate-duration:
-        description: "Tmate session duration"
-        required: false
-        default: 5
-
   push:
     branches:
       - main
   pull_request:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
-
   Static-Analysis:
+    # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
     name: "Static analysis"
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      with:
-        persist-credentials: false
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
-    - name: Bootstrap environment
-      uses: ./.github/actions/bootstrap
+      - name: Bootstrap environment
+        uses: ./.github/actions/bootstrap
 
-    - name: Run static analysis
-      run: make static-analysis
+      - name: Run static analysis
+        run: make static-analysis
 
   Unit-Test:
+    # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
     name: "Unit tests"
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -49,16 +43,19 @@ jobs:
       - name: Run unit tests
         run: make unit
 
-      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unit-test-results
           path: test/results/**/*
 
   Integration-Test:
+    # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
     name: "Integration tests"
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -67,12 +64,14 @@ jobs:
         with:
           # needed for rootless containerd
           bootstrap-apt-packages: "rootlesskit"
+          # needed to key the integration test/tool caches below
+          compute-fingerprints: "true"
 
       - name: Enable systemd for podman socket activation
         run: |
           set -x
           loginctl enable-linger $(whoami)
-          
+
           # we need to make certain that the bus instance is up and ready before systemctl attempts to use it.
           # if we can figure a non-racey way to do this, that would be nice.
           sleep 5
@@ -82,7 +81,7 @@ jobs:
           sudo systemctl enable --now podman.socket
           sudo systemctl start podman.socket
           sleep 1
-          
+
           # simple test to make sure the daemon is up and running
           podman images ls
           sudo podman images ls
@@ -93,39 +92,32 @@ jobs:
       - name: Configure rootless containerd
         run: |
           set -x
-          
+
           mkdir ~/.local/bin
           pushd ~/.local/bin
           curl -O https://raw.githubusercontent.com/containerd/nerdctl/v1.5.0/extras/rootless/containerd-rootless.sh
           curl -O https://raw.githubusercontent.com/containerd/nerdctl/v1.5.0/extras/rootless/containerd-rootless-setuptool.sh
           chmod 755 containerd-rootless.sh containerd-rootless-setuptool.sh
           popd
-          
+
           containerd-rootless-setuptool.sh install
           sleep 1
-          
+
           export CONTAINERD_ADDRESS=/proc/$(cat $XDG_RUNTIME_DIR/containerd-rootless/child_pid)/root/run/containerd/containerd.sock
-          
+
           # simple test to make sure the daemon is up and running
           ctr image ls
           sudo ctr image ls
 
-      - name: Setup tmate session
-        if: ${{ github.event.inputs.run-tmate == 'true' }}
-        uses: mxschmitt/action-tmate@c0afd6f790e3a5564914980036ebf83216678101 #v3
-        timeout-minutes: ${{ fromJSON(github.event.inputs.tmate-duration) }}
-        with:
-          limit-access-to-actor: true
-
       - name: Restore integration test-fixture cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 #v6.1.0
         with:
           path: ${{ github.workspace }}/test/integration/testdata/cache
           key: ${{ runner.os }}-integration-test-cache-${{ hashFiles('test/integration/testdata/cache.fingerprint') }}
 
       - name: Restore integration tool cache
         id: integration-tool-cache
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #v5.0.5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 #v6.1.0
         with:
           path: ${{ github.workspace }}/test/integration/tools/cache
           key: ${{ runner.os }}-integration-tools-cache-${{ hashFiles('test/integration/tools/cache.fingerprint') }}
@@ -137,17 +129,19 @@ jobs:
       - name: Run integration tests
         run: make integration
 
-  Build-Snapshot-Artifacts:
-    name: "Build snapshot artifacts"
+  Cross-Platform-Build-Test:
+    # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
+    name: "Cross-platform build test"
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
 
-      - name: Build snapshot artifacts
-        run: make snapshot
-
+      - name: Build examples across all supported OS/arch combinations
+        run: .github/scripts/build.sh ./snapshot

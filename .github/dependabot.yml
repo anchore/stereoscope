@@ -1,12 +1,18 @@
+# Dependabot configuration
+
 version: 2
 
 updates:
+
   - package-ecosystem: gomod
-    directory: "/"
-    schedule:
-      interval: "weekly"
+    directories:
+      - "/"
+      - "/.make"
     cooldown:
       default-days: 7
+    schedule:
+      interval: "weekly"
+      day: "friday"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
@@ -15,10 +21,11 @@ updates:
     directories:
       - "/"
       - "/.github/actions/*"
-    schedule:
-      interval: "weekly"
     cooldown:
       default-days: 7
+    schedule:
+      interval: "weekly"
+      day: "friday"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"

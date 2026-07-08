@@ -195,6 +195,7 @@ func hostKey(host, knownHostsPath string) ssh.PublicKey {
 		log.Errorf("openning known_hosts", err)
 		return nil
 	}
+	defer fd.Close()
 
 	// support -H parameter for ssh-keyscan
 	hashhost := knownhosts.HashHostname(host)

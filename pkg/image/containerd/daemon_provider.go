@@ -497,6 +497,7 @@ func (p *daemonImageProvider) trackSaveProgress(size int64) *daemonProvideProgre
 func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
 	var options []name.Option
 	if registryOptions.InsecureUseHTTP {
+		log.Debug("HTTP transport is enabled for registry communication")
 		options = append(options, name.Insecure)
 	}
 	return options

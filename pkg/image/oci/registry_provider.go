@@ -133,6 +133,7 @@ func (p *registryImageProvider) finalizePlatform(descriptor *remote.Descriptor, 
 func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Option {
 	var options []name.Option
 	if registryOptions.InsecureUseHTTP {
+		log.Debug("HTTP transport is enabled for registry communication")
 		options = append(options, name.Insecure)
 	}
 	return options
