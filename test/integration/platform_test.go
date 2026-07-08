@@ -150,6 +150,8 @@ func TestDefaultPlatformWithOciRegistry(t *testing.T) {
 }
 
 func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
+	remoteImage := "docker.io/library/busybox:1.31"
+
 	/*
 	   These expected digests differ from the registry/daemon tests above because the
 	   image configs change during format conversion. When skopeo converts from Docker v2
@@ -159,8 +161,12 @@ func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 	   image content (layers, filesystem) is identical.
 
 	   Digests were obtained by copying the actual values from the OCI layout directory.
+
+	   If skopeo is updated, the expected digests may need to be updated as well.
 	*/
-	remoteImage := "docker.io/library/busybox:1.31"
+	arm64Digest := "sha256:2299dc2c10bb4025cfa318583000ff8c00d17daedc1295d686fbd1a768d4eecc"
+	s390xDigest := "sha256:827ae065037a9eee053f9140fa971beb30f4c7c23b55769571e651974aa36cc1"
+	amd64Digest := "sha256:2f2d4db2ef818c1c897eb71421e8a250daf19e21a4ec4c00a549b16ed0c2b46b"
 
 	tests := []struct {
 		source         image.Source
@@ -172,37 +178,37 @@ func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 			source:         image.OciDirectorySource,
 			architecture:   "arm64",
 			os:             "linux",
-			expectedDigest: "sha256:7dab09c052ab69926c287ddbf1b0e5e0aefa9af660ca2125910f6034e6a59fca",
+			expectedDigest: arm64Digest,
 		},
 		{
 			source:         image.OciDirectorySource,
 			architecture:   "s390x",
 			os:             "linux",
-			expectedDigest: "sha256:3c0567d696f41bab6ae6c0cab3a48b88383541a49cc7c74877a4a2492b5d5653",
+			expectedDigest: s390xDigest,
 		},
 		{
 			source:         image.OciDirectorySource,
 			architecture:   "amd64",
 			os:             "linux",
-			expectedDigest: "sha256:213a9af84a4859684574404e3ad2457da2f6088338d3c777a5931441259c6a19",
+			expectedDigest: amd64Digest,
 		},
 		{
 			source:         image.OciTarballSource,
 			architecture:   "arm64",
 			os:             "linux",
-			expectedDigest: "sha256:7dab09c052ab69926c287ddbf1b0e5e0aefa9af660ca2125910f6034e6a59fca",
+			expectedDigest: arm64Digest,
 		},
 		{
 			source:         image.OciTarballSource,
 			architecture:   "s390x",
 			os:             "linux",
-			expectedDigest: "sha256:3c0567d696f41bab6ae6c0cab3a48b88383541a49cc7c74877a4a2492b5d5653",
+			expectedDigest: s390xDigest,
 		},
 		{
 			source:         image.OciTarballSource,
 			architecture:   "amd64",
 			os:             "linux",
-			expectedDigest: "sha256:213a9af84a4859684574404e3ad2457da2f6088338d3c777a5931441259c6a19",
+			expectedDigest: amd64Digest,
 		},
 	}
 
