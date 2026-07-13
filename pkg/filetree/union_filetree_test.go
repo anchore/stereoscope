@@ -93,6 +93,35 @@ func TestUnionFileTree_Squash(t *testing.T) {
 
 }
 
+func TestUnionFileTree_Squash_bareWhiteout(t *testing.T) {
+	// a bare .wh. (the whiteout prefix with no name after it) is not a valid whiteout
+	// marker. If it is treated as one, UnWhiteoutPath resolves to the parent directory
+	// itself and squashing deletes the whole parent instead of a single named sibling.
+	ut := NewUnionFileTree()
+	base := New()
+
+	base.AddFile("/etc/passwd")
+	base.AddFile("/etc/hostname")
+
+	top := New()
+	top.AddFile("/etc/" + file.WhiteoutPrefix)
+
+	ut.PushTree(base)
+	ut.PushTree(top)
+
+	squashed, err := ut.Squash()
+	if err != nil {
+		t.Fatal("could not squash trees", err)
+	}
+
+	if !squashed.HasPath(file.Path("/etc/passwd")) {
+		t.Error("expected /etc/passwd to survive a bare .wh. but it was deleted")
+	}
+	if !squashed.HasPath(file.Path("/etc/hostname")) {
+		t.Error("expected /etc/hostname to survive a bare .wh. but it was deleted")
+	}
+}
+
 func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 	ut := NewUnionFileTree()
 	base := New()

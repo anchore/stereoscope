@@ -132,6 +132,14 @@ func TestPath_Whiteout(t *testing.T) {
 	if !path.IsWhiteout() {
 		t.Fatal("path should be a whiteout")
 	}
+
+	// a bare .wh. (the prefix with nothing after it) is not a valid whiteout marker:
+	// treating it as one makes UnWhiteoutPath resolve to the parent directory itself
+	path = "/some/path/to/.wh."
+
+	if path.IsWhiteout() {
+		t.Fatal("a bare .wh. should not be treated as a whiteout")
+	}
 }
 
 func TestPath_UnWhiteoutPath(t *testing.T) {
