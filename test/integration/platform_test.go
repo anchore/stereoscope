@@ -150,23 +150,17 @@ func TestDefaultPlatformWithOciRegistry(t *testing.T) {
 }
 
 func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
-	remoteImage := "docker.io/library/busybox:1.31"
+	// Can't use docker.io/library/busybox:1.31 because it is not an OCI image.
+	// Skopeo would need to convert it to OCI format first, which would change the config digest and make the test flaky.
+	// It's safer to use an image already in an OCI format, like this one.
+	// `skopeo copy --preserve-digests` will error if the source image is not in OCI format.
+	remoteImage := "quay.io/skopeo/stable:v1.20.0-immutable"
 
-	/*
-	   These expected digests differ from the registry/daemon tests above because the
-	   image configs change during format conversion. When skopeo converts from Docker v2
-	   to OCI format, Docker-specific fields (container, container_config, docker_version)
-	   are stripped and the config mediaType changes. Since Metadata.ID is sha256 of the
-	   raw config JSON, the different bytes produce a different digest even though the
-	   image content (layers, filesystem) is identical.
-
-	   Digests were obtained by copying the actual values from the OCI layout directory.
-
-	   If skopeo is updated, the expected digests may need to be updated as well.
-	*/
-	arm64Digest := "sha256:2299dc2c10bb4025cfa318583000ff8c00d17daedc1295d686fbd1a768d4eecc"
-	s390xDigest := "sha256:827ae065037a9eee053f9140fa971beb30f4c7c23b55769571e651974aa36cc1"
-	amd64Digest := "sha256:2f2d4db2ef818c1c897eb71421e8a250daf19e21a4ec4c00a549b16ed0c2b46b"
+	// Digests were obtained by copying the actual values from the OCI layout directory.
+	arm64Digest := "sha256:59de7b16fa64a0a21873c02622c45259e89dbbe29e33afd77821f6106d537c95"
+	s390xDigest := "sha256:121427690da1f522eb73d58432b070a96c1b6be6b2aa0603dc76f029febdf2b1"
+	amd64Digest := "sha256:a8951deb17b620ff20ca25c0bfa82eca93560711def5bf096ee1e38a11742658"
+	ppc64leDigest := "sha256:642fb8a0ef786227bb12ad0da6326b97809c162b86329f5e39ad990672cee5da"
 
 	tests := []struct {
 		source         image.Source
@@ -193,6 +187,12 @@ func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 			expectedDigest: amd64Digest,
 		},
 		{
+			source:         image.OciDirectorySource,
+			architecture:   "ppc64le",
+			os:             "linux",
+			expectedDigest: ppc64leDigest,
+		},
+		{
 			source:         image.OciTarballSource,
 			architecture:   "arm64",
 			os:             "linux",
@@ -209,6 +209,12 @@ func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 			architecture:   "amd64",
 			os:             "linux",
 			expectedDigest: amd64Digest,
+		},
+		{
+			source:         image.OciTarballSource,
+			architecture:   "ppc64le",
+			os:             "linux",
+			expectedDigest: ppc64leDigest,
 		},
 	}
 
@@ -232,7 +238,7 @@ func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 }
 
 func TestDefaultPlatformWithOciDirectory(t *testing.T) {
-	remoteImage := "docker.io/library/busybox:1.31"
+	remoteImage := "quay.io/skopeo/stable:v1.20.0-immutable"
 	localPath := imagetest.PrepareMultiplatformFixtureImage(t, image.OciDirectorySource, remoteImage)
 
 	img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, image.OciDirectorySource)
@@ -244,7 +250,7 @@ func TestDefaultPlatformWithOciDirectory(t *testing.T) {
 }
 
 func TestDefaultPlatformWithOciTarball(t *testing.T) {
-	remoteImage := "docker.io/library/busybox:1.31"
+	remoteImage := "quay.io/skopeo/stable:v1.20.0-immutable"
 	localPath := imagetest.PrepareMultiplatformFixtureImage(t, image.OciTarballSource, remoteImage)
 
 	img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, image.OciTarballSource)

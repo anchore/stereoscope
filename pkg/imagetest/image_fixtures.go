@@ -155,7 +155,10 @@ func PrepareMultiplatformFixtureImage(t testing.TB, source, remoteImage string) 
 
 	if _, err := os.Stat(location); os.IsNotExist(err) {
 		src := fmt.Sprintf("docker://%s", remoteImage)
-		cmd := exec.Command("skopeo", "copy", "--insecure-policy", "--all", src, destination)
+		// --preserve-digests ensures that the image manifests will remaind the same.
+		// Skopeo will error if the source image is not in the OCI format, since it will
+		// have to convert it to OCI format, which would change the digests of the manifests.
+		cmd := exec.Command("skopeo", "copy", "--insecure-policy", "--all", "--preserve-digests", src, destination)
 		cmd.Env = os.Environ()
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
