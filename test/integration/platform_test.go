@@ -152,15 +152,15 @@ func TestDefaultPlatformWithOciRegistry(t *testing.T) {
 func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 	// Can't use docker.io/library/busybox:1.31 because it is not an OCI image.
 	// Skopeo would need to convert it to OCI format first, which would change the config digest and make the test flaky.
-	// It's safer to use an image already in an OCI format, like this one.
+	// It's safer to use an image already in an OCI format, like version 1.38.0 of busybox.
 	// `skopeo copy --preserve-digests` will error if the source image is not in OCI format.
-	remoteImage := "quay.io/skopeo/stable:v1.20.0-immutable"
+	remoteImage := "docker.io/library/busybox:1.38.0"
 
 	// Digests were obtained by copying the actual values from the OCI layout directory.
-	arm64Digest := "sha256:59de7b16fa64a0a21873c02622c45259e89dbbe29e33afd77821f6106d537c95"
-	s390xDigest := "sha256:121427690da1f522eb73d58432b070a96c1b6be6b2aa0603dc76f029febdf2b1"
-	amd64Digest := "sha256:a8951deb17b620ff20ca25c0bfa82eca93560711def5bf096ee1e38a11742658"
-	ppc64leDigest := "sha256:642fb8a0ef786227bb12ad0da6326b97809c162b86329f5e39ad990672cee5da"
+	arm64Digest := "sha256:e0e8b3cbfed68a90084781e2962f9c0deead51c5a3f11a488eef0283a4284bc2"
+	s390xDigest := "sha256:0cf160e720a8e4f20883b72276a6eaded83b79539f3f1d39e35a3336154b9960"
+	amd64Digest := "sha256:c6348fa86ba0fb2108c9334f5fe913ddc6d853313e655891f133a0127c30099f"
+	ppc64leDigest := "sha256:b144fc0e06537d07956cde340b878a81a717e394edb736d3110858a12a6635cb"
 
 	tests := []struct {
 		source         image.Source
@@ -238,7 +238,7 @@ func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 }
 
 func TestDefaultPlatformWithOciDirectory(t *testing.T) {
-	remoteImage := "quay.io/skopeo/stable:v1.20.0-immutable"
+	remoteImage := "docker.io/library/busybox:1.38.0"
 	localPath := imagetest.PrepareMultiplatformFixtureImage(t, image.OciDirectorySource, remoteImage)
 
 	img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, image.OciDirectorySource)
@@ -250,7 +250,7 @@ func TestDefaultPlatformWithOciDirectory(t *testing.T) {
 }
 
 func TestDefaultPlatformWithOciTarball(t *testing.T) {
-	remoteImage := "quay.io/skopeo/stable:v1.20.0-immutable"
+	remoteImage := "docker.io/library/busybox:1.38.0"
 	localPath := imagetest.PrepareMultiplatformFixtureImage(t, image.OciTarballSource, remoteImage)
 
 	img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, image.OciTarballSource)
