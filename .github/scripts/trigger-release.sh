@@ -7,7 +7,7 @@ normal=$(tput sgr0)
 GH_CLI=.tool/gh
 
 if ! [ -x "$(command -v $GH_CLI)" ]; then
-    echo "The GitHub CLI could not be found. run: make bootstrap"
+    echo "The GitHub CLI could not be found. Please install it to trigger a release."
     exit 1
 fi
 
