@@ -12,6 +12,7 @@ import (
 
 	"github.com/anchore/stereoscope"
 	"github.com/anchore/stereoscope/pkg/image"
+	"github.com/anchore/stereoscope/pkg/imagetest"
 )
 
 func TestPlatformSelection(t *testing.T) {
@@ -145,6 +146,118 @@ func TestDigestThatNarrowsToOnePlatform(t *testing.T) {
 func TestDefaultPlatformWithOciRegistry(t *testing.T) {
 	img, err := stereoscope.GetImageFromSource(context.TODO(), "busybox:1.31", image.OciRegistrySource)
 	require.NoError(t, err)
+	assertArchAndOs(t, img, "linux", runtime.GOARCH)
+}
+
+func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
+	// Can't use docker.io/library/busybox:1.31 because it is not an OCI image.
+	// Skopeo would need to convert it to OCI format first, which would change the config digest and make the test flaky.
+	// It's safer to use an image already in an OCI format, like version 1.38.0 of busybox.
+	// `skopeo copy --preserve-digests` will error if the source image is not in OCI format.
+	remoteImage := "docker.io/library/busybox:1.38.0"
+
+	// Digests were obtained by copying the actual values from the OCI layout directory.
+	arm64Digest := "sha256:e0e8b3cbfed68a90084781e2962f9c0deead51c5a3f11a488eef0283a4284bc2"
+	s390xDigest := "sha256:0cf160e720a8e4f20883b72276a6eaded83b79539f3f1d39e35a3336154b9960"
+	amd64Digest := "sha256:c6348fa86ba0fb2108c9334f5fe913ddc6d853313e655891f133a0127c30099f"
+	ppc64leDigest := "sha256:b144fc0e06537d07956cde340b878a81a717e394edb736d3110858a12a6635cb"
+
+	tests := []struct {
+		source         image.Source
+		architecture   string
+		os             string
+		expectedDigest string
+	}{
+		{
+			source:         image.OciDirectorySource,
+			architecture:   "arm64",
+			os:             "linux",
+			expectedDigest: arm64Digest,
+		},
+		{
+			source:         image.OciDirectorySource,
+			architecture:   "s390x",
+			os:             "linux",
+			expectedDigest: s390xDigest,
+		},
+		{
+			source:         image.OciDirectorySource,
+			architecture:   "amd64",
+			os:             "linux",
+			expectedDigest: amd64Digest,
+		},
+		{
+			source:         image.OciDirectorySource,
+			architecture:   "ppc64le",
+			os:             "linux",
+			expectedDigest: ppc64leDigest,
+		},
+		{
+			source:         image.OciTarballSource,
+			architecture:   "arm64",
+			os:             "linux",
+			expectedDigest: arm64Digest,
+		},
+		{
+			source:         image.OciTarballSource,
+			architecture:   "s390x",
+			os:             "linux",
+			expectedDigest: s390xDigest,
+		},
+		{
+			source:         image.OciTarballSource,
+			architecture:   "amd64",
+			os:             "linux",
+			expectedDigest: amd64Digest,
+		},
+		{
+			source:         image.OciTarballSource,
+			architecture:   "ppc64le",
+			os:             "linux",
+			expectedDigest: ppc64leDigest,
+		},
+	}
+
+	for _, tt := range tests {
+		platform := fmt.Sprintf("%s/%s", tt.os, tt.architecture)
+		t.Run(fmt.Sprintf("%s/%s", tt.source, platform), func(t *testing.T) {
+			localPath := imagetest.PrepareMultiplatformFixtureImage(t, tt.source, remoteImage)
+
+			platformOpt := stereoscope.WithPlatform(platform)
+			img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, tt.source, platformOpt)
+			require.NoError(t, err)
+			require.NotNil(t, img)
+			t.Cleanup(func() {
+				require.NoError(t, img.Cleanup())
+			})
+
+			assertArchAndOs(t, img, tt.os, tt.architecture)
+			assert.Equal(t, tt.expectedDigest, img.Metadata.ID)
+		})
+	}
+}
+
+func TestDefaultPlatformWithOciDirectory(t *testing.T) {
+	remoteImage := "docker.io/library/busybox:1.38.0"
+	localPath := imagetest.PrepareMultiplatformFixtureImage(t, image.OciDirectorySource, remoteImage)
+
+	img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, image.OciDirectorySource)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
+	})
+	assertArchAndOs(t, img, "linux", runtime.GOARCH)
+}
+
+func TestDefaultPlatformWithOciTarball(t *testing.T) {
+	remoteImage := "docker.io/library/busybox:1.38.0"
+	localPath := imagetest.PrepareMultiplatformFixtureImage(t, image.OciTarballSource, remoteImage)
+
+	img, err := stereoscope.GetImageFromSource(context.TODO(), localPath, image.OciTarballSource)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
+	})
 	assertArchAndOs(t, img, "linux", runtime.GOARCH)
 }
 
