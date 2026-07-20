@@ -24,7 +24,7 @@ const Registry image.Source = image.OciRegistrySource
 
 // effectiveURLTransport is a custom transport that captures the effective URL after following redirects
 type effectiveURLTransport struct {
-	base       http.RoundTripper
+	base          http.RoundTripper
 	effectiveURLs map[string]string // maps original host to effective host
 	mutex         sync.RWMutex
 }
@@ -81,10 +81,10 @@ func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image
 
 // registryImageProvider is an image.Provider capable of fetching and representing a container image fetched from a remote registry (described by the OCI distribution spec).
 type registryImageProvider struct {
-	tmpDirGen       *file.TempDirGenerator
-	imageStr        string
-	platform        *image.Platform
-	registryOptions image.RegistryOptions
+	tmpDirGen          *file.TempDirGenerator
+	imageStr           string
+	platform           *image.Platform
+	registryOptions    image.RegistryOptions
 	effectiveTransport *effectiveURLTransport
 }
 
@@ -229,7 +229,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	if err != nil {
 		log.Warn("unable to configure TLS transport: %w", err)
 	}
-	
+
 	// Use our custom transport that captures effective URLs after redirects
 	transport := getTransportWithEffectiveURL(tlsConfig, effectiveTransport)
 	options = append(options, remote.WithTransport(transport))

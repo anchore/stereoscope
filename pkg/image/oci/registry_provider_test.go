@@ -337,10 +337,10 @@ func makeRegistry(t *testing.T) (registryHost string) {
 
 func TestEffectiveURLTransport(t *testing.T) {
 	tests := []struct {
-		name             string
-		originalHost     string
-		redirectHost     string
-		expectRedirect   bool
+		name           string
+		originalHost   string
+		redirectHost   string
+		expectRedirect bool
 	}{
 		{
 			name:           "no redirect",
