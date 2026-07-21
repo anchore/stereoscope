@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
-	storagetransport "github.com/containers/image/v5/storage"
-	"github.com/containers/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	storagetransport "go.podman.io/image/v5/storage"
+	"go.podman.io/storage"
 
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
