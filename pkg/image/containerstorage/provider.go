@@ -13,19 +13,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/containers/image/v5/copy"
-	dockerarchive "github.com/containers/image/v5/docker/archive"
-	"github.com/containers/image/v5/signature"
-	storagetransport "github.com/containers/image/v5/storage"
-	"github.com/containers/image/v5/types"
-
-	// NOTE: github.com/containers/storage has moved to go.podman.io/storage as part of the containers monorepo
-	// migration (https://blog.podman.io/2025/08/upcoming-migration-of-three-containers-repositories-to-monorepo/).
-	// We intentionally stay on github.com/containers/storage because the released containers/image/v5 (v5.36.2) still
-	// imports it; the storage transport above (containers/image/v5/storage) expects a storage.Store from this exact
-	// module. Switching to go.podman.io/storage now would pull two incompatible storage modules into the build graph.
-	// When containers/image ships a release that imports go.podman.io/storage, bump both together and update this import.
-	"github.com/containers/storage"
+	"go.podman.io/image/v5/copy"
+	dockerarchive "go.podman.io/image/v5/docker/archive"
+	"go.podman.io/image/v5/signature"
+	storagetransport "go.podman.io/image/v5/storage"
+	"go.podman.io/image/v5/types"
+	"go.podman.io/storage"
 
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
