@@ -16,7 +16,7 @@ require (
 	github.com/containerd/platforms v1.0.0-rc.4
 	github.com/docker/cli v29.6.2+incompatible
 	github.com/docker/go-connections v0.7.0
-	github.com/gabriel-vasile/mimetype v1.4.13
+	github.com/gabriel-vasile/mimetype v1.4.15
 	github.com/gkampitakis/go-snaps v0.5.23
 	github.com/go-test/deep v1.1.1
 	github.com/google/go-cmp v0.7.0
