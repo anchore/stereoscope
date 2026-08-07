@@ -158,7 +158,7 @@ func PrepareMultiplatformFixtureImage(t testing.TB, source, remoteImage string) 
 		// --preserve-digests ensures that the image manifests will remain the same.
 		// Skopeo will error if the source image is not in the OCI format, since it will
 		// have to convert it to OCI format, which would change the digests of the manifests.
-		cmd := exec.Command("skopeo", "copy", "--insecure-policy", "--all", "--preserve-digests", src, destination)
+		cmd := exec.Command("skopeo", "copy", "--insecure-policy", "--all", "--preserve-digests", "--retry-times=3", src, destination)
 		cmd.Env = os.Environ()
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
