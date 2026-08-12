@@ -9,10 +9,11 @@ import (
 )
 
 type FileNode struct {
-	RealPath  file.Path // all constituent paths cannot have links (the base may be a link however)
-	FileType  file.Type
-	LinkPath  file.Path // a relative or absolute path to another file
-	Reference *file.Reference
+	RealPath       file.Path // all constituent paths cannot have links (the base may be a link however)
+	FileType       file.Type
+	LinkPath       file.Path // a relative or absolute path to another file
+	Reference      *file.Reference
+	HardLinkTarget *file.Reference
 }
 
 func NewDir(p file.Path, ref *file.Reference) *FileNode {
@@ -57,10 +58,11 @@ func (n *FileNode) ID() node.ID {
 
 func (n *FileNode) Copy() node.Node {
 	return &FileNode{
-		RealPath:  n.RealPath,
-		FileType:  n.FileType,
-		LinkPath:  n.LinkPath,
-		Reference: n.Reference,
+		RealPath:       n.RealPath,
+		FileType:       n.FileType,
+		LinkPath:       n.LinkPath,
+		Reference:      n.Reference,
+		HardLinkTarget: n.HardLinkTarget,
 	}
 }
 

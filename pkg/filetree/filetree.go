@@ -372,6 +372,20 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 			return nil, ErrLinkCycleDetected
 		}
 
+		// a hardlink names a file, not a path to be looked up again later. Return the file it was bound to when the
+		// link was created. If we follow LinkPath here could instead re-resolve to a symlink (created at another layer).
+		// In the squashed case this symlink could point back at us causing an incorrect cycle detection
+		if currentNodeAccess.FileNode.FileType == file.TypeHardLink && currentNodeAccess.FileNode.HardLinkTarget != nil {
+			bound := *currentNodeAccess.FileNode
+			bound.Reference = bound.HardLinkTarget
+			currentNodeAccess = &nodeAccess{
+				RequestPath:        currentNodeAccess.RequestPath,
+				FileNode:           &bound,
+				LeafLinkResolution: currentNodeAccess.LeafLinkResolution,
+			}
+			break
+		}
+
 		if !currentNodeAccess.FileNode.IsLink() {
 			// no resolution and there is no next link (pseudo dead link)... return what you found
 			// any content fetches will fail, but that's ok
@@ -569,6 +583,13 @@ func (t *FileTree) AddHardLink(realPath file.Path, linkPath file.Path) (*file.Re
 	}
 
 	newFn := filenode.NewHardLink(realPath, linkPath, file.NewFileReference(realPath))
+
+	// bind the HardLink to the file that exists right now.
+	// If its not in the layer (a malformed archive) the binding is left empty and
+	// resolution falls back to following LinkPath.
+	if target, terr := t.node(newFn.LinkPath, linkResolutionStrategy{}); terr == nil && target.HasFileNode() && target.FileNode.Reference != nil {
+		newFn.HardLinkTarget = target.FileNode.Reference
+	}
 
 	return newFn.Reference, t.setFileNode(newFn)
 }
