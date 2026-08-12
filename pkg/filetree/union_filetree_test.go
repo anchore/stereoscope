@@ -3,6 +3,9 @@ package filetree
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
@@ -170,4 +173,66 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 		}
 	}
 
+}
+
+// uv and pip install can write a  file and then hardlink it into a content-addressed cache,
+// so two names share one inode. A later layer can replace the installed name with a
+// symlink aimed at the cache name:
+//
+//	layer 40:  /opt/venv/.../cli-32.exe    -+-> inode X   (two names, one file)
+//	           /root/.cache/.../cli-32.exe -+
+//	layer 43:  /opt/venv/.../cli-32.exe    ---> symlink --> /root/.cache/.../cli-32.exe
+//
+// A hardlink is bound to the file itself, not to the other name, so replacing the
+// other name cannot redirect it: the cache path still names inode X. Reading either
+// path reaches inode X in at most one hop. There is no cycle here.
+const (
+	installedExe = "/opt/venv/lib/python3.13/site-packages/setuptools/cli-32.exe"
+	cachedExe    = "/root/.cache/uv/archive-v0/zdWisgG0ZvHnkidb/setuptools/cli-32.exe"
+)
+
+func TestUnionFileTree_Squash_hardLinkTargetReplacedBySymlink(t *testing.T) {
+	lower := New()
+	installedRef, err := lower.AddFile(installedExe)
+	require.NoError(t, err)
+	_, err = lower.AddHardLink(cachedExe, installedExe)
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddSymLink(installedExe, cachedExe)
+	require.NoError(t, err)
+
+	ut := NewUnionFileTree()
+	ut.PushTree(lower)
+	ut.PushTree(upper)
+
+	squashed, err := ut.Squash()
+	require.NoError(t, err)
+
+	t.Run("hardlink keeps referring to the file from the layer that created it", func(t *testing.T) {
+		exists, resolution, err := squashed.File(cachedExe, FollowBasenameLinks)
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.True(t, resolution.HasReference())
+		assert.Equal(t, installedRef.ID(), resolution.ID())
+	})
+
+	t.Run("symlink resolves through the hardlink to that same file", func(t *testing.T) {
+		exists, resolution, err := squashed.File(installedExe, FollowBasenameLinks)
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.True(t, resolution.HasReference())
+		assert.Equal(t, installedRef.ID(), resolution.ID())
+	})
+
+	t.Run("both names are reachable by glob", func(t *testing.T) {
+		resolutions, err := squashed.FilesByGlob("**/*.exe")
+		require.NoError(t, err)
+
+		var requested []string
+		for _, r := range resolutions {
+			requested = append(requested, string(r.RequestPath))
+		}
+		assert.ElementsMatch(t, []string{installedExe, cachedExe}, requested)
+	})
 }
