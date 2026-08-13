@@ -9,10 +9,19 @@ import (
 )
 
 type FileNode struct {
-	RealPath       file.Path // all constituent paths cannot have links (the base may be a link however)
-	FileType       file.Type
-	LinkPath       file.Path // a relative or absolute path to another file
-	Reference      *file.Reference
+	RealPath  file.Path // all constituent paths cannot have links (the base may be a link however)
+	FileType  file.Type
+	LinkPath  file.Path // a relative or absolute path to another file
+	Reference *file.Reference
+
+	// HardLinkTarget is the file this node was bound to when the hardlink was created.
+	// a hardlink's link path is always a real path to a file that exists in the same layer,
+	// A symlink's link path is just text; which file it names depends on the layer topology
+	// it's important to note a later layer can replace the destination
+	//
+	// Holding the reference (pointed to the contents at the layer is was created)
+	// rather than only LinkPath (a path with no layer information) is what
+	// lets later callers reach the file the link was bound to, even once another layer has replaced that path.
 	HardLinkTarget *file.Reference
 }
 

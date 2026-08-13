@@ -186,6 +186,16 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 // A hardlink is bound to the file itself, not to the other name, so replacing the
 // other name cannot redirect it: the cache path still names inode X. Reading either
 // path reaches inode X in at most one hop. There is no cycle here.
+//
+// A layer is a tar archive, and inodes only exist once the final
+// filesystem is assembled. In this example layer 40 really gives us is two tar headers, the first carrying the contents
+// and the second naming the first:
+//
+//	header: name=opt/venv/.../cli-32.exe     typeflag='0' size=20   [20 bytes of contents]
+//	header: name=root/.cache/.../cli-32.exe  typeflag='1' size=0    linkname=opt/venv/.../cli-32.exe
+//
+// Binding at AddHardLink time is what turns that pair back into "two names, one file", and it leans on the
+// ordering above: the file a link names is expected to already exist in the layer being built.
 const (
 	installedExe = "/opt/venv/lib/python3.13/site-packages/setuptools/cli-32.exe"
 	cachedExe    = "/root/.cache/uv/archive-v0/zdWisgG0ZvHnkidb/setuptools/cli-32.exe"

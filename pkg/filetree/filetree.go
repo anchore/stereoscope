@@ -374,7 +374,13 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 
 		// a hardlink names a file, not a path to be looked up again later. Return the file it was bound to when the
 		// link was created. If we follow LinkPath here could instead re-resolve to a symlink (created at another layer).
-		// In the squashed case this symlink could point back at us causing an incorrect cycle detection
+		// In the squashed case this symlink could end up pointing back at us causing an incorrect cycle detection.
+		//
+		// note: this means a resolution for a hardlink path carries the reference for the file it names
+		// the catalog metadata for that path still describes the tar header we read (type hardlink, size 0)
+		// this resolution: a layer tar records a hardlink as a header with no data section, and the contents live with
+		// the name that was written first. We raise up what the layer actually contains rather than a cycle
+		// See TestUnionFileTree_Squash_hardLinkTargetReplacedBySymlink for details
 		if currentNodeAccess.FileNode.FileType == file.TypeHardLink && currentNodeAccess.FileNode.HardLinkTarget != nil {
 			bound := *currentNodeAccess.FileNode
 			bound.Reference = bound.HardLinkTarget
@@ -588,7 +594,11 @@ func (t *FileTree) AddHardLink(realPath file.Path, linkPath file.Path) (*file.Re
 	// If its not in the layer (a malformed archive) the binding is left empty and
 	// resolution falls back to following LinkPath.
 	if target, terr := t.node(newFn.LinkPath, linkResolutionStrategy{}); terr == nil && target.HasFileNode() && target.FileNode.Reference != nil {
-		newFn.HardLinkTarget = target.FileNode.Reference
+		if target.FileNode.FileType == file.TypeHardLink && target.FileNode.HardLinkTarget != nil {
+			newFn.HardLinkTarget = target.FileNode.HardLinkTarget
+		} else {
+			newFn.HardLinkTarget = target.FileNode.Reference
+		}
 	}
 
 	return newFn.Reference, t.setFileNode(newFn)
