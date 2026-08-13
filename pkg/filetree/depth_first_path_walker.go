@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 )
@@ -78,6 +79,10 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 		currentPath = w.pathStack.Pop()
 
 		currentNode, err = w.tree.node(currentPath, linkStrat)
+		if errors.Is(err, ErrLinkCycleDetected) {
+			log.WithFields("path", currentPath, "error", err).Warn("skipping path with link cycle during file tree walk")
+			continue
+		}
 		if err != nil {
 			return "", nil, err
 		}

@@ -1,6 +1,7 @@
 package filetree
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -223,6 +224,10 @@ func (sc searchContext) firstMatchingReferences(glob string, entries []IndexEntr
 	var references []file.Resolution
 	for _, entry := range entries {
 		ref, err := sc.firstMatchingReference(glob, string(entry.RealPath))
+		if errors.Is(err, ErrLinkCycleDetected) {
+			log.WithFields("path", entry.RealPath, "error", err).Warn("skipping path with link cycle during file tree search")
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

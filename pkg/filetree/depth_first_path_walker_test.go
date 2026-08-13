@@ -120,6 +120,48 @@ func TestDFS_WalkAll(t *testing.T) {
 	assertExpectedTraversal(t, possiblePaths, actualPaths)
 }
 
+func TestDFS_WalkAll_SkipsLinkCycles(t *testing.T) {
+	tr := New()
+
+	for _, p := range []file.Path{
+		"/usr/bin/a-before",
+		"/usr/bin/zz-after",
+	} {
+		_, err := tr.AddFile(p)
+		if err != nil {
+			t.Fatalf("failed to add path %q: %+v", p, err)
+		}
+	}
+
+	_, err := tr.AddSymLink("/usr/bin/xz", "/usr/bin/xzcat")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+	_, err = tr.AddSymLink("/usr/bin/xzcat", "/usr/bin/xz")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	visited := file.NewPathSet()
+	walker := NewDepthFirstPathWalker(tr, func(path file.Path, _ filenode.FileNode) error {
+		visited.Add(path)
+		return nil
+	}, nil)
+
+	if err := walker.WalkAll(); err != nil {
+		t.Fatalf("could not walk: %+v", err)
+	}
+
+	for _, p := range []file.Path{
+		"/usr/bin/a-before",
+		"/usr/bin/zz-after",
+	} {
+		if !visited.Contains(p) {
+			t.Errorf("did not visit path %q", p)
+		}
+	}
+}
+
 func TestDFS_WalkAll_EarlyTermination(t *testing.T) {
 	tr, possiblePaths := dfsTestTree(t)
 
