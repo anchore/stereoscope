@@ -16,10 +16,12 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/scylladb/go-set/strset"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
 func TestImageAdditionalMetadata(t *testing.T) {
@@ -147,19 +149,15 @@ func TestImage_SquashedTree(t *testing.T) {
 	})
 }
 
-// a layer is a tar archive, so there are no inodes to share until the final filesystem is assembled: a hardlink
-// reaches us as a header with typeflag '1' naming another header in the archive, carrying no data section of its own.
-// Conventional writers emit the first name for a file as a regular header with the contents, and every later name as
-// a link header with nothing after it:
+// uv and pip can write a file and then hardlink it into a content-addressed cache
+// a later layer can replace the installed name with a symlink aimed at the cache name
+// See TestUnionFileTree_Squash_hardLinkTargetReplacedBySymlink.
 //
-//	header: name=a.txt  typeflag='0' size=20   [20 bytes of contents]
-//	header: name=b.txt  typeflag='1' size=0    linkname=a.txt
+//	header: name=opt/venv/.../cli-32.exe     typeflag='0' size=20   [20 bytes of contents]
+//	header: name=root/.cache/.../cli-32.exe  typeflag='1' size=0    linkname=opt/venv/.../cli-32.exe
 //
-// FileTree.AddHardLink binds the link to the file that already exists in the layer being built, so contents for both
-// names come from the regular header. Nothing in the tar format enforces that ordering, so these cases also cover
-// the header configurations we assume we will not see.
-// note: the layers are written with archive/tar rather than generated with tar(1) (see testdata/generators) because
-// some of these header configurations cannot be produced by a real tar writer.
+// Binding at FileTree.AddHardLink time is what turns them back into two names for one file, and these tests exercise
+// that from real layer tars through each public content and link resolution API.
 const (
 	installedExe = "opt/venv/lib/python3.13/site-packages/setuptools/cli-32.exe"
 	cachedExe    = "root/.cache/uv/archive-v0/zdWisgG0ZvHnkidb/setuptools/cli-32.exe"
@@ -167,105 +165,34 @@ const (
 	exeContents  = "cli-32.exe contents\n"
 )
 
-func TestImage_OpenPathFromSquash_hardLinkTarHeaderOrdering(t *testing.T) {
-	tests := []struct {
-		name string
-		// entries are the tar headers of the top layer. The layer below always holds installedExe as a regular
-		// file, which only matters for the case where the top layer has no regular header at all.
-		entries   []tarEntry
-		wantPaths []string
-	}{
-		{
-			name: "regular header, then link header (what container builds emit)",
-			entries: []tarEntry{
-				{path: installedExe, typeFlag: tar.TypeReg, contents: exeContents},
-				{path: cachedExe, typeFlag: tar.TypeLink, linkPath: installedExe},
-			},
-			wantPaths: []string{installedExe, cachedExe},
-		},
-		{
-			// the link header is read before the file it names, so there is nothing in the layer to bind to and
-			// resolution falls back to following the link path
-			name: "link header, then regular header",
-			entries: []tarEntry{
-				{path: cachedExe, typeFlag: tar.TypeLink, linkPath: installedExe},
-				{path: installedExe, typeFlag: tar.TypeReg, contents: exeContents},
-			},
-			wantPaths: []string{installedExe, cachedExe},
-		},
-		{
-			// reading the link entry's own bytes would yield whatever follows it in the archive (padding, or the
-			// next header), so the only safe contents for that path are the ones belonging to the file it names.
-			// note: the malformed header is written last on purpose. A tar reader consumes the claimed data section
-			// before looking for the next header, so this entry placed first would swallow the header that follows
-			// it and that file would be absent from the layer entirely.
-			name: "link header claiming a data section it does not have",
-			entries: []tarEntry{
-				{path: installedExe, typeFlag: tar.TypeReg, contents: exeContents},
-				{path: cachedExe, typeFlag: tar.TypeLink, linkPath: installedExe, claimedSize: int64(len(exeContents))},
-			},
-			wantPaths: []string{installedExe, cachedExe},
-		},
-		{
-			// no regular header at all: neither name can bind within the layer, both fall back to following the
-			// link path into the layer below
-			name: "only link headers, naming a file from a lower layer",
-			entries: []tarEntry{
-				{path: cachedExe, typeFlag: tar.TypeLink, linkPath: installedExe},
-				{path: sharedExe, typeFlag: tar.TypeLink, linkPath: installedExe},
-			},
-			wantPaths: []string{installedExe, cachedExe, sharedExe},
-		},
-		{
-			// conventional writers never do this (every name after the first links back to the first). Binding to
-			// the intermediate link would name a tar entry that carries no contents.
-			name: "link header naming another link header",
-			entries: []tarEntry{
-				{path: installedExe, typeFlag: tar.TypeReg, contents: exeContents},
-				{path: sharedExe, typeFlag: tar.TypeLink, linkPath: installedExe},
-				{path: cachedExe, typeFlag: tar.TypeLink, linkPath: sharedExe},
-			},
-			wantPaths: []string{installedExe, cachedExe, sharedExe},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			img := readImageFromLayers(t,
-				layerFromTarEntries(t, tarEntry{path: installedExe, typeFlag: tar.TypeReg, contents: exeContents}),
-				layerFromTarEntries(t, tt.entries...),
-			)
-
-			for _, p := range tt.wantPaths {
-				assert.Equal(t, exeContents, contentsFromSquash(t, img, "/"+p), "unexpected contents for %q", p)
-			}
-		})
-	}
-}
-
-// TestImage_OpenPathFromSquash_hardLinkTargetReplacedBySymlink is the scenario from
-// TestUnionFileTree_Squash_hardLinkTargetReplacedBySymlink read from real layer tars: uv installs a file and
-// hardlinks it into its cache, and a later layer replaces the installed name with a symlink aimed at the cache name.
 func TestImage_OpenPathFromSquash_hardLinkTargetReplacedBySymlink(t *testing.T) {
-	img := readImageFromLayers(t,
-		layerFromTarEntries(t,
-			tarEntry{path: installedExe, typeFlag: tar.TypeReg, contents: exeContents},
-			tarEntry{path: cachedExe, typeFlag: tar.TypeLink, linkPath: installedExe},
-		),
-		layerFromTarEntries(t,
-			tarEntry{path: installedExe, typeFlag: tar.TypeSymlink, linkPath: "/" + cachedExe},
-		),
-	)
+	img := readImageWithHardLinkReplacedBySymlink(t)
 
 	t.Run("contents are fetched through the hardlink name", func(t *testing.T) {
-		assert.Equal(t, exeContents, contentsFromSquash(t, img, "/"+cachedExe))
+		assert.Equal(t, exeContents, contentsFromPath(t, img.OpenPathFromSquash, "/"+cachedExe))
 	})
 
 	t.Run("contents are fetched through the symlink that replaced the file", func(t *testing.T) {
-		assert.Equal(t, exeContents, contentsFromSquash(t, img, "/"+installedExe))
+		assert.Equal(t, exeContents, contentsFromPath(t, img.OpenPathFromSquash, "/"+installedExe))
 	})
+}
 
-	t.Run("both names resolve to the reference for the original file", func(t *testing.T) {
+func TestLayer_OpenPathFromSquash_hardLinkTargetReplacedBySymlink(t *testing.T) {
+	img := readImageWithHardLinkReplacedBySymlink(t)
+	require.Len(t, img.Layers, 2)
+
+	// the squashed tree of the layer that replaced the file is where the two names would point at each other
+	for _, p := range []string{installedExe, cachedExe} {
+		assert.Equal(t, exeContents, contentsFromPath(t, img.Layers[1].OpenPathFromSquash, "/"+p), "unexpected contents for %q", p)
+	}
+}
+
+// TestImage_SquashedSearchContext_hardLinkTargetReplacedBySymlink covers the index-backed search paths, which resolve
+// each candidate path found in the catalog against the squashed tree.
+func TestImage_SquashedSearchContext_hardLinkTargetReplacedBySymlink(t *testing.T) {
+	img := readImageWithHardLinkReplacedBySymlink(t)
+
+	t.Run("by path", func(t *testing.T) {
 		installed, err := img.SquashedSearchContext.SearchByPath("/" + installedExe)
 		require.NoError(t, err)
 		require.True(t, installed.HasReference())
@@ -274,30 +201,95 @@ func TestImage_OpenPathFromSquash_hardLinkTargetReplacedBySymlink(t *testing.T) 
 		require.NoError(t, err)
 		require.True(t, cached.HasReference())
 
-		assert.Equal(t, file.Path("/"+installedExe), installed.Reference.RealPath)
-		assert.Equal(t, installed.Reference.ID(), cached.Reference.ID())
+		assert.Equal(t, file.Path("/"+installedExe), installed.RealPath)
+		assert.Equal(t, installed.ID(), cached.ID())
 	})
 
-	t.Run("catalog metadata for the hardlink name still describes the tar header", func(t *testing.T) {
-		// reading the hardlink path yields the contents of the file it names, while the metadata for that path is
-		// what the tar header said: a hardlink of size zero. That belongs to tar layers rather than to stereoscope,
-		// which reports what the layer contained.
-		entries, err := img.FileCatalog.GetByBasename("cli-32.exe")
+	t.Run("by glob", func(t *testing.T) {
+		resolutions, err := img.SquashedSearchContext.SearchByGlob("**/*.exe")
 		require.NoError(t, err)
 
-		var found bool
-		for _, entry := range entries {
-			if string(entry.RealPath) != "/"+cachedExe {
-				continue
-			}
-			found = true
-			assert.Equal(t, file.TypeHardLink, entry.Metadata.Type)
-			assert.Equal(t, int64(0), entry.Metadata.Size())
-			// the link destination is the raw tar header value, which is archive-relative
-			assert.Equal(t, installedExe, entry.Metadata.LinkDestination)
+		// note: the catalog holds an entry per tar header, so the installed name is searched twice (once for the
+		// regular header, once for the symlink header that replaced it) and resolves to the same file both times
+		requestPaths := strset.New()
+		for _, resolution := range resolutions {
+			requestPaths.Add(string(resolution.RequestPath))
+			require.True(t, resolution.HasReference(), "no reference for %q", resolution.RequestPath)
+			assert.Equal(t, exeContents, contentsFromReference(t, img, *resolution.Reference), "unexpected contents for %q", resolution.RequestPath)
 		}
-		require.True(t, found, "no catalog entry for the hardlink path")
+		assert.ElementsMatch(t, []string{"/" + installedExe, "/" + cachedExe}, requestPaths.List())
 	})
+
+	t.Run("by MIME type", func(t *testing.T) {
+		// only the regular header carries contents, so it is the only entry with a MIME type: a link header has no
+		// data section to sniff. The path recorded for that entry is the installed name, which the upper layer has
+		// replaced with a symlink, so the search still has to resolve it.
+		installedEntry := catalogEntryForPath(t, img, "/"+installedExe, file.TypeRegular)
+		require.NotEmpty(t, installedEntry.MIMEType)
+		assert.Empty(t, catalogEntryForPath(t, img, "/"+cachedExe, file.TypeHardLink).MIMEType)
+
+		resolutions, err := img.SquashedSearchContext.SearchByMIMEType(installedEntry.MIMEType)
+		require.NoError(t, err)
+		require.Len(t, resolutions, 1)
+		require.True(t, resolutions[0].HasReference())
+
+		assert.Equal(t, exeContents, contentsFromReference(t, img, *resolutions[0].Reference))
+	})
+}
+
+// TestImage_ResolveLink_hardLinkTargetReplacedBySymlink covers the public link resolution API for a reference to the
+// hardlink name, relative to both the image squash and the squash of the layer that replaced the file it names.
+func TestImage_ResolveLink_hardLinkTargetReplacedBySymlink(t *testing.T) {
+	img := readImageWithHardLinkReplacedBySymlink(t)
+	require.Len(t, img.Layers, 2)
+
+	cachedRef := catalogEntryForPath(t, img, "/"+cachedExe, file.TypeHardLink).Reference
+	installedRef := catalogEntryForPath(t, img, "/"+installedExe, file.TypeRegular).Reference
+
+	t.Run("by image squash", func(t *testing.T) {
+		resolution, err := img.ResolveLinkByImageSquash(cachedRef)
+		require.NoError(t, err)
+		require.True(t, resolution.HasReference())
+		assert.Equal(t, installedRef.ID(), resolution.ID())
+	})
+
+	t.Run("by layer squash", func(t *testing.T) {
+		resolution, err := img.ResolveLinkByLayerSquash(cachedRef, 1)
+		require.NoError(t, err)
+		require.True(t, resolution.HasReference())
+		assert.Equal(t, installedRef.ID(), resolution.ID())
+	})
+}
+
+// TestImage_OpenPathFromSquash_hardLinkNamingAnotherHardLink covers a link header naming another link header rather
+// than the regular one. Conventional tar writers do not emit this (every name after the first links back to the
+// first), but binding to the intermediate link would name a tar entry that carries no contents.
+func TestImage_OpenPathFromSquash_hardLinkNamingAnotherHardLink(t *testing.T) {
+	img := readImageFromLayers(t, layerFromTarEntries(t,
+		tarEntry{path: installedExe, typeFlag: tar.TypeReg, contents: exeContents},
+		tarEntry{path: sharedExe, typeFlag: tar.TypeLink, linkPath: installedExe},
+		tarEntry{path: cachedExe, typeFlag: tar.TypeLink, linkPath: sharedExe},
+	))
+
+	for _, p := range []string{installedExe, sharedExe, cachedExe} {
+		assert.Equal(t, exeContents, contentsFromPath(t, img.OpenPathFromSquash, "/"+p), "unexpected contents for %q", p)
+	}
+}
+
+// readImageWithHardLinkReplacedBySymlink builds the two layers of the uv scenario: the file and the hardlink naming
+// it, then a layer replacing the installed name with a symlink aimed at the hardlink name.
+func readImageWithHardLinkReplacedBySymlink(t *testing.T) *Image {
+	t.Helper()
+
+	return readImageFromLayers(t,
+		layerFromTarEntries(t,
+			tarEntry{path: installedExe, typeFlag: tar.TypeReg, contents: exeContents},
+			tarEntry{path: cachedExe, typeFlag: tar.TypeLink, linkPath: installedExe},
+		),
+		layerFromTarEntries(t,
+			tarEntry{path: installedExe, typeFlag: tar.TypeSymlink, linkPath: "/" + cachedExe},
+		),
+	)
 }
 
 // tarEntry is a single tar header and the data section that follows it, if any.
@@ -306,9 +298,6 @@ type tarEntry struct {
 	typeFlag byte
 	linkPath string
 	contents string
-	// claimedSize overrides the size written into the header, describing a header that claims a data section larger
-	// than the bytes that actually follow it.
-	claimedSize int64
 }
 
 func layerFromTarEntries(t *testing.T, entries ...tarEntry) v1.Layer {
@@ -320,17 +309,13 @@ func layerFromTarEntries(t *testing.T, entries ...tarEntry) v1.Layer {
 
 	tw := tar.NewWriter(fh)
 	for _, entry := range entries {
-		hdr := &tar.Header{
+		require.NoError(t, tw.WriteHeader(&tar.Header{
 			Name:     entry.path,
 			Typeflag: entry.typeFlag,
 			Linkname: entry.linkPath,
 			Mode:     0o644,
 			Size:     int64(len(entry.contents)),
-		}
-		if entry.claimedSize != 0 {
-			hdr.Size = entry.claimedSize
-		}
-		require.NoError(t, tw.WriteHeader(hdr))
+		}))
 		if entry.contents != "" {
 			_, err := io.WriteString(tw, entry.contents)
 			require.NoError(t, err)
@@ -360,11 +345,29 @@ func readImageFromLayers(t *testing.T, layers ...v1.Layer) *Image {
 	return img
 }
 
-func contentsFromSquash(t *testing.T, img *Image, path string) string {
+// contentsFromPath fetches contents with any of the path-based content APIs (Image.OpenPathFromSquash,
+// Layer.OpenPath, Layer.OpenPathFromSquash).
+func contentsFromPath(t *testing.T, open func(file.Path) (io.ReadCloser, error), path string) string {
 	t.Helper()
 
-	reader, err := img.OpenPathFromSquash(file.Path(path))
+	reader, err := open(file.Path(path))
 	require.NoError(t, err)
+
+	return contentsFromReader(t, reader)
+}
+
+func contentsFromReference(t *testing.T, img *Image, ref file.Reference) string {
+	t.Helper()
+
+	reader, err := img.OpenReference(ref)
+	require.NoError(t, err)
+
+	return contentsFromReader(t, reader)
+}
+
+func contentsFromReader(t *testing.T, reader io.ReadCloser) string {
+	t.Helper()
+
 	t.Cleanup(func() {
 		require.NoError(t, reader.Close())
 	})
@@ -373,4 +376,23 @@ func contentsFromSquash(t *testing.T, img *Image, path string) string {
 	require.NoError(t, err)
 
 	return string(contents)
+}
+
+// catalogEntryForPath returns the catalog entry recorded for the given real path and file type (built from that
+// path's own tar header, with no link resolution). The type is needed because a path has an entry per layer that
+// wrote it, and the layers here write the installed name as both a regular file and a symlink.
+func catalogEntryForPath(t *testing.T, img *Image, path string, fileType file.Type) filetree.IndexEntry {
+	t.Helper()
+
+	entries, err := img.FileCatalog.GetByBasename(file.Path(path).Basename())
+	require.NoError(t, err)
+
+	for _, entry := range entries {
+		if string(entry.RealPath) == path && entry.Metadata.Type == fileType {
+			return entry
+		}
+	}
+
+	t.Fatalf("no catalog entry for path=%q type=%q", path, fileType)
+	return filetree.IndexEntry{}
 }
