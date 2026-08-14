@@ -280,7 +280,71 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
+// adoptHardLinkInode rewrites metadata for a hardlink tar header to describe the file it names, and
+// returns that file's opener. Returns false if that file is not in this layer (a malformed archive),
+// leaving the entry to be indexed from its own header.
+//
+// a hardlink is a second name for an inode already in this layer, not a path to resolve later, and
+// its header carries no data section:
+//
+//   - adopted from the target: size, MIME type, type, link destination. A hardlink naming a symlink
+//     is itself a symlink.
+//   - kept from this header: mode, uid, gid, mtime, which tar already records correctly.
+//
+// "inode" is an analogy. There is no such object here: each name keeps its own file.Reference, ID
+// and catalog entry, and what is shared is the opener plus a copy of the values above. Pointing both
+// names at one reference would model the filesystem more literally, but it would leave a node's
+// RealPath disagreeing with its reference's, and drop the second name as a location callers can
+// address at all.
+//
+// Binding here rather than at resolution time is what makes the name immune to later layers: the
+// catalog is keyed by file.ID and is never squashed or merged, so replacing or deleting the other
+// name cannot change what this one refers to, which is what the filesystem does.
+//
+// where this model bends the truth:
+//
+//   - on disk neither name is "the hardlink". Which one a tar marks is an artifact of directory walk
+//     order (alphabetical in practice), so it is often the one a person would call the original.
+//   - adopting erases that mark, so the names come out symmetric. But nothing can then answer "is
+//     this path also known as something else", the way nlink would.
+//   - we trust the headers. Data on a link header with an empty regular header would be adopted
+//     backwards and serve nothing.
+//   - when adoption fails, that one name keeps TypeHardLink, size 0 and an empty data section: the
+//     lopsided picture this function exists to avoid.
+func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *file.Metadata) (file.Opener, bool) {
+	// a hardlink's link name refers to an earlier member of this same archive, verbatim
+	linkPath := file.Path(path.Clean(file.DirSeparator + metadata.LinkDestination))
+
+	exists, resolution, err := ft.File(linkPath)
+	if err != nil || !exists || resolution == nil || resolution.Reference == nil {
+		return nil, false
+	}
+
+	target, err := fileCatalog.Get(*resolution.Reference)
+	if err != nil {
+		return nil, false
+	}
+
+	opener := fileCatalog.openerByID[resolution.ID()]
+	if opener == nil {
+		return nil, false
+	}
+
+	metadata.FileInfo = file.ManualInfo{
+		NameValue:    path.Base(metadata.Path),
+		SizeValue:    target.Size(),
+		ModeValue:    metadata.Mode(),
+		ModTimeValue: metadata.ModTime(),
+		SysValue:     metadata.Sys(),
+	}
+	metadata.MIMEType = target.MIMEType
+	metadata.Type = target.Type
+	metadata.LinkDestination = target.LinkDestination
+
+	return opener, true
+}
+
+func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
 	builder := filetree.NewBuilder(ft, fileCatalog.Index)
 
 	return func(index file.TarIndexEntry) error {
@@ -294,6 +358,20 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 			}
 		}()
 		metadata := file.NewMetadata(entry.Header, contents)
+
+		// a hardlink names a file already present in this layer; describe it as that file and read
+		// its contents through that file's opener rather than this header's empty data section
+		var hardLinkOpener file.Opener
+		if metadata.Type == file.TypeHardLink {
+			var adopted bool
+			hardLinkOpener, adopted = adoptHardLinkInode(ft, fileCatalog, &metadata)
+			if !adopted {
+				// trace, not warn: resolution still works via the link path, and a per-header warning
+				// would be noisy on any archive that trips this
+				log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination).
+					Trace("hardlink names a file that is not in this layer, indexing it from its own header")
+			}
+		}
 
 		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
 		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
@@ -313,9 +391,13 @@ func layerTarIndexer(ft filetree.Writer, fileCatalog *FileCatalog, size *int64, 
 		if size != nil {
 			*(size) += metadata.Size()
 		}
-		fileCatalog.addImageReferences(ref.ID(), layerRef, func() (io.ReadCloser, error) {
-			return index.Open(), nil
-		})
+		opener := hardLinkOpener
+		if opener == nil {
+			opener = func() (io.ReadCloser, error) {
+				return index.Open(), nil
+			}
+		}
+		fileCatalog.addImageReferences(ref.ID(), layerRef, opener)
 
 		if monitor != nil {
 			monitor.Increment()
