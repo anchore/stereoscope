@@ -314,3 +314,46 @@ func hardlinkContentsForTest(img *Image, path string) (string, error) {
 
 	return string(contents), nil
 }
+
+// TestHardLinkSemantics_LayerSizeExcludesHardLinkHeaders asserts that a hardlinked name adds nothing
+// to the reported layer size. A hardlink header carries no data section, so counting the size of the
+// inode it names counts those bytes once per name: busybox:latest has 410 hardlink headers over 16
+// regular ones, which turns a 4 MB layer into a reported 431 MB.
+func TestHardLinkSemantics_LayerSizeExcludesHardLinkHeaders(t *testing.T) {
+	const payload = "0123456789"
+
+	img := readImageFromLayers(t,
+		layerFromTarEntries(t,
+			tarEntry{path: "a.txt", typeFlag: tar.TypeReg, contents: payload},
+			tarEntry{path: "b.txt", typeFlag: tar.TypeLink, linkPath: "a.txt"},
+			tarEntry{path: "c.txt", typeFlag: tar.TypeLink, linkPath: "a.txt"},
+		),
+	)
+
+	require.Len(t, img.Layers, 1)
+	assert.Equal(t, int64(len(payload)), img.Layers[0].Metadata.Size,
+		"layer size must count tar data sections, and only the regular header has one")
+	assert.Equal(t, int64(len(payload)), img.Metadata.Size, "image size is the sum of its layer sizes")
+
+	// ...while the entry for a hardlinked name still describes the inode it names, so this cannot be
+	// "fixed" by dropping adoption
+	entry := catalogEntryForTest(t, img, "/b.txt")
+	assert.Equal(t, int64(len(payload)), entry.Metadata.Size(),
+		"a hardlinked name still reports the size of the file it names")
+}
+
+// catalogEntryForTest returns the catalog entry for a path's OWN node in the squashed tree, with no
+// link following.
+func catalogEntryForTest(t *testing.T, img *Image, path string) filetree.IndexEntry {
+	t.Helper()
+
+	exists, resolution, err := img.SquashedTree().File(file.Path(path))
+	require.NoError(t, err)
+	require.True(t, exists, "%s is not in the squashed tree", path)
+	require.NotNil(t, resolution.Reference)
+
+	entry, err := img.FileCatalog.Get(*resolution.Reference)
+	require.NoError(t, err)
+
+	return entry
+}

@@ -389,7 +389,9 @@ func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int
 		}
 
 		if size != nil {
-			*(size) += metadata.Size()
+			// what this entry contributes to the layer blob, which is its own header's data section.
+			// NOT metadata.Size(), which for an adopted hardlink is the size of the file it names
+			*(size) += entry.Header.Size
 		}
 		opener := hardLinkOpener
 		if opener == nil {
