@@ -362,10 +362,16 @@ func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int
 		// a hardlink names a file already present in this layer; describe it as that file and read
 		// its contents through that file's opener rather than this header's empty data section
 		var hardLinkOpener file.Opener
+		var preAdoptionMetadata *file.Metadata
 		if metadata.Type == file.TypeHardLink {
+			original := metadata
 			var adopted bool
 			hardLinkOpener, adopted = adoptHardLinkInode(ft, fileCatalog, &metadata)
-			if !adopted {
+			if adopted {
+				// keep the un-adopted description to fall back to: adoption changes the node type this
+				// entry claims, which can conflict with what an earlier header put at the same path
+				preAdoptionMetadata = &original
+			} else {
 				// trace, not warn: resolution still works via the link path, and a per-header warning
 				// would be noisy on any archive that trips this
 				log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination).
@@ -385,7 +391,22 @@ func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int
 		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
 		ref, err := builder.Add(metadata)
 		if err != nil {
-			return err
+			if preAdoptionMetadata == nil {
+				return err
+			}
+			// only an adopted hardlink can be described here as something other than what its own
+			// header says, so a malformed archive should cost this one entry its adoption rather than
+			// the whole image. errors on the un-adopted retry are still fatal, as they were before.
+			log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination, "error", err).
+				Trace("adopted hardlink conflicts with an existing entry, indexing it from its own header")
+
+			metadata = *preAdoptionMetadata
+			hardLinkOpener = nil
+
+			ref, err = builder.Add(metadata)
+			if err != nil {
+				return err
+			}
 		}
 
 		if size != nil {

@@ -342,6 +342,35 @@ func TestHardLinkSemantics_LayerSizeExcludesHardLinkHeaders(t *testing.T) {
 		"a hardlinked name still reports the size of the file it names")
 }
 
+// TestHardLinkSemantics_AdoptedTypeConflictDoesNotAbortRead asserts that a hardlink whose adopted
+// type collides with a node already at that path costs only that entry its adoption. Linkname is
+// attacker-controlled on an untrusted image, so a shape docker will never emit must not be able to
+// fail the whole read.
+func TestHardLinkSemantics_AdoptedTypeConflictDoesNotAbortRead(t *testing.T) {
+	img, err := tryReadImageFromLayers(t,
+		layerFromTarEntries(t,
+			// dangling, so nothing is adopted and /p is indexed as the hardlink its header describes
+			tarEntry{path: "p", typeFlag: tar.TypeLink, linkPath: "does-not-exist"},
+			tarEntry{path: "t", typeFlag: tar.TypeReg, contents: "DATA"},
+			// a duplicate member for the same path, this one adopting a regular file, which cannot be
+			// added over the hardlink node already at /p
+			tarEntry{path: "p", typeFlag: tar.TypeLink, linkPath: "t"},
+		),
+	)
+	require.NoError(t, err, "a malformed archive must cost one entry its adoption, not the whole image")
+
+	// the conflicting entry falls back to what it was before adoption
+	entry := catalogEntryForTest(t, img, "/p")
+	assert.Equal(t, file.TypeHardLink, entry.Metadata.Type)
+	assert.Equal(t, "t", entry.Metadata.LinkDestination)
+	assert.Equal(t, int64(0), entry.Metadata.Size(), "an un-adopted hardlink header has no data section")
+
+	// the rest of the layer is unaffected
+	contents, err := hardlinkContentsForTest(img, "/t")
+	require.NoError(t, err)
+	assert.Equal(t, "DATA", contents)
+}
+
 // catalogEntryForTest returns the catalog entry for a path's OWN node in the squashed tree, with no
 // link following.
 func catalogEntryForTest(t *testing.T, img *Image, path string) filetree.IndexEntry {

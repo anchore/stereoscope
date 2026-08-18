@@ -61,14 +61,24 @@ func layerFromTarEntries(t *testing.T, entries ...tarEntry) v1.Layer {
 func readImageFromLayers(t *testing.T, layers ...v1.Layer) *Image {
 	t.Helper()
 
+	img, err := tryReadImageFromLayers(t, layers...)
+	require.NoError(t, err)
+
+	return img
+}
+
+// tryReadImageFromLayers is readImageFromLayers for tests that need to assert on the read error
+// itself, rather than have it fail the test.
+func tryReadImageFromLayers(t *testing.T, layers ...v1.Layer) (*Image, error) {
+	t.Helper()
+
 	v1Img, err := mutate.AppendLayers(empty.Image, layers...)
 	require.NoError(t, err)
 
 	img := New(v1Img, file.NewTempDirGenerator("image-test"), t.TempDir())
-	require.NoError(t, img.Read())
 	t.Cleanup(func() {
 		require.NoError(t, img.Cleanup())
 	})
 
-	return img
+	return img, img.Read()
 }
