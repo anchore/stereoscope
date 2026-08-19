@@ -313,6 +313,12 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 //   - when adoption fails, or is undone by the caller because the adopted type collides with a node
 //     already at that path, that one name keeps TypeHardLink, size 0 and an empty data section: the
 //     lopsided picture this function exists to avoid.
+//   - only this layer is searched. extraction resolves a link name against everything applied so
+//     far, so a name pointing into a lower layer does work in a real runtime and is not adopted
+//     here. matching that needs the squash as of the previous layer, not a walk of each lower tree,
+//     which would resolve names that an intervening whiteout had already deleted. squashing runs
+//     after all layers are read, so threading it in would make every layer's indexing wait on the
+//     one below it. no mainstream builder emits these: they keep the inode table per archive.
 func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *file.Metadata) (file.Opener, bool) {
 	// a hardlink's link name refers to an earlier member of this same archive, relative to its root.
 	// the lookup below is not literal: a miss retries following ancestor symlinks, which is what
@@ -354,7 +360,9 @@ func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *
 		// records no type bits on a link header, and two names for one inode share a mode
 		ModeValue:    metadata.Mode()&^fs.ModeType | target.Mode()&fs.ModeType,
 		ModTimeValue: metadata.ModTime(),
-		SysValue:     metadata.Sys(),
+		// deliberately the un-adopted header: it is the escape hatch to what the tar actually said,
+		// so it still reports TypeLink, size 0 and this name's own link name
+		SysValue: metadata.Sys(),
 	}
 	metadata.MIMEType = target.MIMEType
 	metadata.Type = target.Type
