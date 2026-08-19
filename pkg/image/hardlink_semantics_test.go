@@ -456,3 +456,49 @@ func TestLayerRead_ConcurrentReadsShareCatalogSafely(t *testing.T) {
 		require.NoErrorf(t, err, "layer %d failed to read", i)
 	}
 }
+
+// TestHardLinkSemantics_AdoptionFallsBackOnMalformedArchives covers the shapes docker will never
+// emit but an untrusted image can still carry. None of them can be honoured, so each name must fall
+// back to what its own header says rather than adopt something it cannot be.
+func TestHardLinkSemantics_AdoptionFallsBackOnMalformedArchives(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []tarEntry
+	}{
+		{
+			name: "link name is not in this layer",
+			entries: []tarEntry{
+				{path: "hard", typeFlag: tar.TypeLink, linkPath: "does-not-exist"},
+			},
+		},
+		{
+			// "" cleans to the tree root, which the "./" member below gives a reference to adopt
+			name: "empty link name",
+			entries: []tarEntry{
+				{path: "./", typeFlag: tar.TypeDir},
+				{path: "a.txt", typeFlag: tar.TypeReg, contents: "CONTENTS"},
+				{path: "hard", typeFlag: tar.TypeLink, linkPath: ""},
+			},
+		},
+		{
+			// link(2) returns EPERM for a directory, so no real filesystem holds this
+			name: "link name is a directory",
+			entries: []tarEntry{
+				{path: "d/", typeFlag: tar.TypeDir},
+				{path: "hard", typeFlag: tar.TypeLink, linkPath: "d"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			img, err := tryReadImageFromLayers(t, layerFromTarEntries(t, tt.entries...))
+			require.NoError(t, err, "a malformed archive must not fail the read")
+
+			entry := catalogEntryForTest(t, img, "/hard")
+			assert.Equal(t, file.TypeHardLink, entry.Metadata.Type, "must keep the type its own header gives it")
+			assert.Equal(t, int64(0), entry.Metadata.Size(), "an un-adopted hardlink header has no data section")
+			assert.False(t, entry.Metadata.IsDir(), "a hardlink is never a directory")
+		})
+	}
+}

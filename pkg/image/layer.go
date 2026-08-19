@@ -319,6 +319,11 @@ func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *
 	// link(2) does when extracting the archive for real
 	linkPath := file.Path(path.Clean(file.DirSeparator + metadata.LinkDestination))
 
+	// an empty link name cleans to the tree root, which would otherwise adopt the root directory
+	if metadata.LinkDestination == "" || linkPath == file.Path(file.DirSeparator) {
+		return nil, false
+	}
+
 	exists, resolution, err := ft.File(linkPath)
 	if err != nil || !exists || resolution == nil || resolution.Reference == nil {
 		return nil, false
@@ -326,6 +331,12 @@ func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *
 
 	target, err := fileCatalog.Get(*resolution.Reference)
 	if err != nil {
+		return nil, false
+	}
+
+	// link(2) refuses a directory, so an archive naming one is malformed. adopting it anyway would
+	// describe this name as a directory that cannot be listed or walked
+	if target.Type == file.TypeDirectory {
 		return nil, false
 	}
 
