@@ -310,10 +310,13 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 //     this path also known as something else", the way nlink would.
 //   - we trust the headers. Data on a link header with an empty regular header would be adopted
 //     backwards and serve nothing.
-//   - when adoption fails, that one name keeps TypeHardLink, size 0 and an empty data section: the
+//   - when adoption fails, or is undone by the caller because the adopted type collides with a node
+//     already at that path, that one name keeps TypeHardLink, size 0 and an empty data section: the
 //     lopsided picture this function exists to avoid.
 func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *file.Metadata) (file.Opener, bool) {
-	// a hardlink's link name refers to an earlier member of this same archive, verbatim
+	// a hardlink's link name refers to an earlier member of this same archive, relative to its root.
+	// the lookup below is not literal: a miss retries following ancestor symlinks, which is what
+	// link(2) does when extracting the archive for real
 	linkPath := file.Path(path.Clean(file.DirSeparator + metadata.LinkDestination))
 
 	exists, resolution, err := ft.File(linkPath)
