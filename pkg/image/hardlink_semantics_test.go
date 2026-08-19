@@ -488,6 +488,14 @@ func TestHardLinkSemantics_AdoptionFallsBackOnMalformedArchives(t *testing.T) {
 				{path: "hard", typeFlag: tar.TypeLink, linkPath: "d"},
 			},
 		},
+		{
+			// the name it points at failed to adopt, so there is nothing to adopt from it either
+			name: "link name is itself an un-adopted hardlink",
+			entries: []tarEntry{
+				{path: "first", typeFlag: tar.TypeLink, linkPath: "does-not-exist"},
+				{path: "hard", typeFlag: tar.TypeLink, linkPath: "first"},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -499,6 +507,8 @@ func TestHardLinkSemantics_AdoptionFallsBackOnMalformedArchives(t *testing.T) {
 			assert.Equal(t, file.TypeHardLink, entry.Metadata.Type, "must keep the type its own header gives it")
 			assert.Equal(t, int64(0), entry.Metadata.Size(), "an un-adopted hardlink header has no data section")
 			assert.False(t, entry.Metadata.IsDir(), "a hardlink is never a directory")
+			assert.Equal(t, tt.entries[len(tt.entries)-1].linkPath, entry.Metadata.LinkDestination,
+				"must keep the link destination its own header gives it")
 		})
 	}
 }

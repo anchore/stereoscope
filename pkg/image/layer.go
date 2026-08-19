@@ -335,8 +335,10 @@ func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *
 	}
 
 	// link(2) refuses a directory, so an archive naming one is malformed. adopting it anyway would
-	// describe this name as a directory that cannot be listed or walked
-	if target.Type == file.TypeDirectory {
+	// describe this name as a directory that cannot be listed or walked.
+	// a target that is still a hardlink is one that failed to adopt, and taking its description would
+	// spread that failure while reporting success, down to its link destination
+	if target.Type == file.TypeDirectory || target.Type == file.TypeHardLink {
 		return nil, false
 	}
 
