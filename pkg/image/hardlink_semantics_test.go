@@ -2,9 +2,13 @@ package image
 
 import (
 	"archive/tar"
+	"fmt"
 	"io"
 	"io/fs"
+	"sync"
 	"testing"
+
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -416,4 +420,39 @@ func TestHardLinkSemantics_AdoptedModeMatchesTarget(t *testing.T) {
 	// ...so nothing deriving a type from the mode can disagree with Type
 	assert.Equal(t, hardSym.Metadata.Type, file.TypeFromMode(hardSym.Metadata.Mode()),
 		"Type and TypeFromMode(Mode()) must describe the same thing")
+}
+
+// TestLayerRead_ConcurrentReadsShareCatalogSafely pins that Layer.Read may be called concurrently
+// against one shared FileCatalog, which is what the catalog's mutex is for. Indexing a hardlink
+// reads the catalog's openers, and a bare map read there races the writes from other layers: in Go
+// that is a fatal throw, not a recoverable error. Only meaningful under -race.
+func TestLayerRead_ConcurrentReadsShareCatalogSafely(t *testing.T) {
+	const layerCount = 8
+
+	layers := make([]v1.Layer, 0, layerCount)
+	for i := 0; i < layerCount; i++ {
+		// each layer both writes openers and, via the hardlink, reads them back
+		layers = append(layers, layerFromTarEntries(t,
+			tarEntry{path: fmt.Sprintf("file-%d.txt", i), typeFlag: tar.TypeReg, contents: fmt.Sprintf("CONTENTS-%d", i)},
+			tarEntry{path: fmt.Sprintf("hard-%d.txt", i), typeFlag: tar.TypeLink, linkPath: fmt.Sprintf("file-%d.txt", i)},
+		))
+	}
+
+	catalog := NewFileCatalog()
+	cacheDir := t.TempDir()
+
+	var wg sync.WaitGroup
+	errs := make([]error, layerCount)
+	for i, l := range layers {
+		wg.Add(1)
+		go func(idx int, v1Layer v1.Layer) {
+			defer wg.Done()
+			errs[idx] = NewLayer(v1Layer).Read(catalog, idx, cacheDir)
+		}(i, l)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoErrorf(t, err, "layer %d failed to read", i)
+	}
 }

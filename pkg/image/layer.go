@@ -326,7 +326,7 @@ func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *
 		return nil, false
 	}
 
-	opener := fileCatalog.openerByID[resolution.ID()]
+	opener := fileCatalog.opener(resolution.ID())
 	if opener == nil {
 		return nil, false
 	}
