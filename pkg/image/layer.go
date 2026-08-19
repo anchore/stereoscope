@@ -287,9 +287,10 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 // a hardlink is a second name for an inode already in this layer, not a path to resolve later, and
 // its header carries no data section:
 //
-//   - adopted from the target: size, MIME type, type, link destination. A hardlink naming a symlink
-//     is itself a symlink.
-//   - kept from this header: mode, uid, gid, mtime, which tar already records correctly.
+//   - adopted from the target: size, MIME type, type, link destination, and the file type bits of
+//     the mode, which tar does not record on a link header. A hardlink naming a symlink is itself a
+//     symlink.
+//   - kept from this header: permission bits, uid, gid, mtime, which tar already records correctly.
 //
 // "inode" is an analogy. There is no such object here: each name keeps its own file.Reference, ID
 // and catalog entry, and what is shared is the opener plus a copy of the values above. Pointing both
@@ -331,9 +332,11 @@ func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *
 	}
 
 	metadata.FileInfo = file.ManualInfo{
-		NameValue:    path.Base(metadata.Path),
-		SizeValue:    target.Size(),
-		ModeValue:    metadata.Mode(),
+		NameValue: path.Base(metadata.Path),
+		SizeValue: target.Size(),
+		// permission bits stay from this header, but the file type bits come from the target: tar
+		// records no type bits on a link header, and two names for one inode share a mode
+		ModeValue:    metadata.Mode()&^fs.ModeType | target.Mode()&fs.ModeType,
 		ModTimeValue: metadata.ModTime(),
 		SysValue:     metadata.Sys(),
 	}

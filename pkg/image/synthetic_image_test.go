@@ -26,6 +26,9 @@ type tarEntry struct {
 	typeFlag byte
 	linkPath string
 	contents string
+	// mode is the header's permission bits, defaulting to 0o644 when left unset. Set it only when a
+	// test needs to tell the mode of one entry apart from another's.
+	mode int64
 }
 
 func layerFromTarEntries(t *testing.T, entries ...tarEntry) v1.Layer {
@@ -37,11 +40,15 @@ func layerFromTarEntries(t *testing.T, entries ...tarEntry) v1.Layer {
 
 	tw := tar.NewWriter(fh)
 	for _, entry := range entries {
+		mode := entry.mode
+		if mode == 0 {
+			mode = 0o644
+		}
 		require.NoError(t, tw.WriteHeader(&tar.Header{
 			Name:     entry.path,
 			Typeflag: entry.typeFlag,
 			Linkname: entry.linkPath,
-			Mode:     0o644,
+			Mode:     mode,
 			Size:     int64(len(entry.contents)),
 		}))
 		if entry.contents != "" {

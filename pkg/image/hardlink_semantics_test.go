@@ -3,6 +3,7 @@ package image
 import (
 	"archive/tar"
 	"io"
+	"io/fs"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -385,4 +386,34 @@ func catalogEntryForTest(t *testing.T, img *Image, path string) filetree.IndexEn
 	require.NoError(t, err)
 
 	return entry
+}
+
+// TestHardLinkSemantics_AdoptedModeMatchesTarget asserts that a hardlinked name reports the same
+// mode as the name it shares an inode with. Tar records no file type bits on a link header, so
+// adopting the target's type without its type bits leaves Type and Mode() describing different
+// things, and file.TypeFromMode disagreeing with Type.
+func TestHardLinkSemantics_AdoptedModeMatchesTarget(t *testing.T) {
+	img := readImageFromLayers(t,
+		layerFromTarEntries(t,
+			tarEntry{path: "target.txt", typeFlag: tar.TypeReg, contents: "TARGET", mode: 0o600},
+			tarEntry{path: "sym", typeFlag: tar.TypeSymlink, linkPath: "target.txt", mode: 0o777},
+			// deliberately not 0o777, so the permission bits below can only have come from this header
+			tarEntry{path: "hardsym", typeFlag: tar.TypeLink, linkPath: "sym", mode: 0o644},
+		),
+	)
+
+	sym := catalogEntryForTest(t, img, "/sym")
+	hardSym := catalogEntryForTest(t, img, "/hardsym")
+
+	require.Equal(t, file.TypeSymLink, hardSym.Metadata.Type, "a hardlink naming a symlink is a symlink")
+
+	// the type bits come from the inode, the permission bits from this name's own header
+	assert.Equal(t, sym.Metadata.Mode()&fs.ModeType, hardSym.Metadata.Mode()&fs.ModeType,
+		"two names for one inode must agree on file type bits")
+	assert.Equal(t, fs.FileMode(0o644), hardSym.Metadata.Mode().Perm(),
+		"permission bits stay from the hardlink's own header")
+
+	// ...so nothing deriving a type from the mode can disagree with Type
+	assert.Equal(t, hardSym.Metadata.Type, file.TypeFromMode(hardSym.Metadata.Mode()),
+		"Type and TypeFromMode(Mode()) must describe the same thing")
 }
