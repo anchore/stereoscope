@@ -152,11 +152,15 @@ func assertImageSymlinkLinkResolution(t *testing.T, i *image.Image) {
 
 	tests := []linkFetchConfig{
 		// LAYER 0 > FROM busybox:latest (hardlink test)
+		// /bin/busybox and /bin/[ are two names for one inode. the tar gives the data section to
+		// /bin/[ (alphabetically first) and emits /bin/busybox as a hardlink header, but neither name
+		// is a link to the other: both are the file. So /bin/busybox resolves to itself, not to
+		// /bin/[, and reading either name returns the same bytes.
 		{
 			linkLayer:        0,
 			linkPath:         "/bin/busybox",
 			resolveLayer:     0,
-			expectedPath:     "/bin/[",
+			expectedPath:     "/bin/busybox",
 			perspectiveLayer: 0,
 		},
 
