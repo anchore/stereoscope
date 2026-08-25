@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -76,6 +77,25 @@ func TestTempDirGenerator(t *testing.T) {
 
 		})
 	}
+}
+
+func TestTempDirGenerator_concurrent(t *testing.T) {
+	root := NewTempDirGenerator("concurrent-prefix")
+	t.Cleanup(func() { _ = root.Cleanup() })
+
+	const n = 50
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			gen := root.NewGenerator()
+			if _, err := gen.NewDirectory("d"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func doesGlobExist(t *testing.T, pattern string) bool {

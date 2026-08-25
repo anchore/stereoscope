@@ -4,9 +4,11 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 )
 
 type TempDirGenerator struct {
+	lock         sync.Mutex
 	rootPrefix   string
 	rootLocation string
 	children     []*TempDirGenerator
@@ -19,6 +21,9 @@ func NewTempDirGenerator(name string) *TempDirGenerator {
 }
 
 func (t *TempDirGenerator) getOrCreateRootLocation() (string, error) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
 	if t.rootLocation == "" {
 		location, err := os.MkdirTemp("", t.rootPrefix+"-")
 		if err != nil {
@@ -33,6 +38,9 @@ func (t *TempDirGenerator) getOrCreateRootLocation() (string, error) {
 // NewGenerator creates a child generator capable of making sibling temp directories.
 func (t *TempDirGenerator) NewGenerator() *TempDirGenerator {
 	gen := NewTempDirGenerator(t.rootPrefix)
+
+	t.lock.Lock()
+	defer t.lock.Unlock()
 	t.children = append(t.children, gen)
 	return gen
 }
@@ -49,6 +57,9 @@ func (t *TempDirGenerator) NewDirectory(name ...string) (string, error) {
 
 // Cleanup deletes all temp dirs created by this generator and any child generator.
 func (t *TempDirGenerator) Cleanup() error {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
 	var errs []error
 	for _, gen := range t.children {
 		if err := gen.Cleanup(); err != nil {
