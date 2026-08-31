@@ -287,8 +287,11 @@ func Test_getTransport_haxProxyCfg(t *testing.T) {
 	assert.NotNil(t, transport.Proxy)
 	assert.NotNil(t, transport.DialContext)
 
+	// idle connections per host are raised so concurrent layer fetches are not throttled to two
+	assert.Equal(t, registryMaxIdleConnsPerHost, transport.MaxIdleConnsPerHost)
+
 	if d := cmp.Diff(defTransport, transport,
-		cmpopts.IgnoreFields(http.Transport{}, "TLSClientConfig", "Proxy", "DialContext", "TLSNextProto"),
+		cmpopts.IgnoreFields(http.Transport{}, "TLSClientConfig", "Proxy", "DialContext", "TLSNextProto", "MaxIdleConnsPerHost"),
 		cmpopts.IgnoreUnexported(http.Transport{})); d != "" {
 		t.Errorf("unexpected proxy config (-want +got):\n%s", d)
 	}
@@ -425,4 +428,23 @@ type mockRoundTripper struct {
 
 func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m.resp, m.err
+}
+
+type staticRoundTripper struct{}
+
+func (staticRoundTripper) RoundTrip(*http.Request) (*http.Response, error) { return nil, nil }
+
+func Test_getTransportWithEffectiveURL_customTransportUsedVerbatim(t *testing.T) {
+	custom := staticRoundTripper{}
+	et := newEffectiveURLTransport(nil)
+	got := getTransportWithEffectiveURL(nil, et, custom)
+	require.Same(t, et, got)
+	assert.Equal(t, custom, et.base, "a caller-supplied transport must be the base, untouched")
+
+	// and without one, the default transport (with the raised idle pool) is built
+	et2 := newEffectiveURLTransport(nil)
+	_ = getTransportWithEffectiveURL(nil, et2, nil)
+	base, ok := et2.base.(*http.Transport)
+	require.True(t, ok)
+	assert.Equal(t, registryMaxIdleConnsPerHost, base.MaxIdleConnsPerHost)
 }

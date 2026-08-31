@@ -230,25 +230,40 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		log.Warn("unable to configure TLS transport: %w", err)
 	}
 
-	// Use our custom transport that captures effective URLs after redirects
-	transport := getTransportWithEffectiveURL(tlsConfig, effectiveTransport)
+	// Use our custom transport that captures effective URLs after redirects. A caller-supplied
+	// transport is used verbatim as its base (bring your own proxy/TLS/pool settings); otherwise
+	// the default transport is built from the TLS options.
+	transport := getTransportWithEffectiveURL(tlsConfig, effectiveTransport, registryOptions.Transport)
 	options = append(options, remote.WithTransport(transport))
 
 	return options
 }
 
+// registryMaxIdleConnsPerHost mirrors go-containerregistry's own default transport ("we usually are
+// dealing with 2 hosts at most, split MaxIdleConns between them"). http.DefaultTransport allows 2,
+// which makes bursts of manifest and blob requests against one registry host re-do the TCP + TLS
+// handshake for every request beyond the two kept-alive connections.
+const registryMaxIdleConnsPerHost = 50
+
 func getTransport(tlsConfig *tls.Config) *http.Transport {
 	// use the default transport to inherit existing default options (including proxy options)
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = tlsConfig
+	if transport.MaxIdleConnsPerHost < registryMaxIdleConnsPerHost {
+		transport.MaxIdleConnsPerHost = registryMaxIdleConnsPerHost
+	}
 	return transport
 }
 
-func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *effectiveURLTransport) http.RoundTripper {
-	// create base transport with TLS config
-	baseTransport := getTransport(tlsConfig)
+func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *effectiveURLTransport, custom http.RoundTripper) http.RoundTripper {
+	// the caller's transport, when given, is the base as-is; otherwise build the default with the
+	// TLS config applied
+	base := custom
+	if base == nil {
+		base = getTransport(tlsConfig)
+	}
 
 	// wrap it with our effective URL capturing transport
-	effectiveTransport.base = baseTransport
+	effectiveTransport.base = base
 	return effectiveTransport
 }
