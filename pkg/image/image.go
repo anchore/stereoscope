@@ -375,6 +375,12 @@ func (i *Image) Cleanup() error {
 		return nil
 	}
 	var errs []error
+	// release the unpacked layer tars before removing them
+	for _, layer := range i.Layers {
+		if err := layer.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if i.tmpDirGen != nil {
 		if err := i.tmpDirGen.Cleanup(); err != nil {
 			errs = append(errs, err)

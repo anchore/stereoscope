@@ -1,0 +1,83 @@
+package file
+
+import (
+	"archive/tar"
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func writeTestTar(t *testing.T, entries map[string]string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "layer.tar")
+	fh, err := os.Create(path)
+	require.NoError(t, err)
+	tw := tar.NewWriter(fh)
+	for name, content := range entries {
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(content))}))
+		_, err := tw.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	require.NoError(t, fh.Close())
+	return path
+}
+
+func TestTarIndexEntry_OpenIsPositionalAndConcurrent(t *testing.T) {
+	entries := map[string]string{
+		"a.txt": "alpha contents",
+		"b.txt": "bravo contents which are longer",
+		"c.txt": "",
+	}
+	index, err := NewTarIndex(writeTestTar(t, entries), nil)
+	require.NoError(t, err)
+	defer index.Close()
+
+	// every entry reads its own bytes through the shared descriptor, concurrently
+	var wg sync.WaitGroup
+	for name, want := range entries {
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func(name, want string) {
+				defer wg.Done()
+				entries := index.indexByName[name]
+				require.Len(t, entries, 1)
+				rc := entries[0].Open()
+				got, err := io.ReadAll(rc)
+				require.NoError(t, err)
+				assert.Equal(t, want, string(got), name)
+				require.NoError(t, rc.Close())
+			}(name, want)
+		}
+	}
+	wg.Wait()
+
+	// the reader is seekable and supports ReadAt, as syft's union reader expects
+	r := index.indexByName["b.txt"][0].Open().(interface {
+		io.ReadCloser
+		io.ReaderAt
+		io.Seeker
+	})
+	buf := make([]byte, 5)
+	_, err = r.ReadAt(buf, 6)
+	require.NoError(t, err)
+	assert.Equal(t, "conte", string(buf))
+	_, err = r.Seek(-3, io.SeekEnd)
+	require.NoError(t, err)
+	rest, err := io.ReadAll(r)
+	require.NoError(t, err)
+	assert.Equal(t, "ger", string(rest))
+
+	// a reader past the index's Close fails rather than reading garbage
+	require.NoError(t, index.Close())
+	_, err = io.ReadAll(bytes.NewReader(nil)) // sanity
+	require.NoError(t, err)
+	_, err = r.Read(buf)
+	assert.Error(t, err)
+}

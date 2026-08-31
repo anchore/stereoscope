@@ -132,6 +132,14 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 	return path, nil
 }
 
+// Close releases the layer's unpacked tar. Readers opened from this layer fail afterwards.
+func (l *Layer) Close() error {
+	if l == nil || l.indexedContent == nil {
+		return nil
+	}
+	return l.indexedContent.Close()
+}
+
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree.
 func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir string) error {
