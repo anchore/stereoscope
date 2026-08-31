@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -105,6 +106,11 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 
 	path := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest)
 
+	// two layers of one image may share a digest (empty layers do); only one populates the cache
+	// path, anyone else waits and then finds it complete
+	unlock := lockCachePath(path)
+	defer unlock()
+
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return path, nil
 	}
@@ -118,18 +124,43 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 	}
 	defer rawReader.Close()
 
-	fh, err := os.Create(path)
+	// write to a temporary name and rename into place, so a reader never sees a partial layer
+	fh, err := os.CreateTemp(uncompressedLayersCacheDir, l.Metadata.Digest+".*.partial")
 	if err != nil {
 		return "", fmt.Errorf("unable to create layer cache dir=%q : %w", path, err)
 	}
-	defer fh.Close()
-
+	tmpPath := fh.Name()
 	if _, err := io.Copy(fh, rawReader); err != nil {
+		_ = fh.Close()
+		_ = os.Remove(tmpPath)
 		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", path, err)
+	}
+	if err := fh.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("unable to finish layer cache dir=%q : %w", path, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("unable to place layer cache dir=%q : %w", path, err)
 	}
 	log.WithFields("index", l.Metadata.Index, "path", path, "time", time.Since(startTime)).Trace("completed uncompressed layer cache")
 
 	return path, nil
+}
+
+// cachePathLocks serializes population of one cache path across layers read concurrently. The
+// locks are in-process mutexes on purpose: they die with the process, so a crash can never leave a
+// stale lock a later run would have to reason about (the liveness problem on-disk lock files have).
+// Cross-process safety comes from the write protocol instead - a writer only ever exposes a
+// complete layer via rename, and a crash leaves at most an orphaned *.partial temp file that no
+// reader ever looks at.
+var cachePathLocks sync.Map
+
+func lockCachePath(path string) (unlock func()) {
+	mu, _ := cachePathLocks.LoadOrStore(path, &sync.Mutex{})
+	m := mu.(*sync.Mutex)
+	m.Lock()
+	return m.Unlock
 }
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
