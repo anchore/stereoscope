@@ -132,8 +132,12 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 	return path, nil
 }
 
-// Close releases the layer's unpacked tar. Readers opened from this layer fail afterwards.
-func (l *Layer) Close() error {
+// close releases the layer's unpacked tar. Readers opened from this layer fail afterwards.
+//
+// unexported on purpose: FileCatalog.Layer hands a *Layer to any consumer, so an exported Close would
+// let one of them shut the tar for every other reader of the same image. Layer lifetime belongs to the
+// Image that read it.
+func (l *Layer) close() error {
 	if l == nil || l.indexedContent == nil {
 		return nil
 	}
