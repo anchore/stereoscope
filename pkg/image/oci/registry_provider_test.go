@@ -2,6 +2,7 @@ package oci
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -447,4 +448,32 @@ func Test_getTransportWithEffectiveURL_customTransportUsedVerbatim(t *testing.T)
 	base, ok := et2.base.(*http.Transport)
 	require.True(t, ok)
 	assert.Equal(t, registryMaxIdleConnsPerHost, base.MaxIdleConnsPerHost)
+}
+
+func Test_getTransport_appliesTLSConfigAndPool(t *testing.T) {
+	tlsCfg := &tls.Config{InsecureSkipVerify: true}
+	transport := getTransport(tlsCfg)
+
+	// the default transport gets the TLS options and the registry-sized idle pool, and keeps the
+	// environment proxy behavior it inherits from http.DefaultTransport
+	assert.Same(t, tlsCfg, transport.TLSClientConfig)
+	assert.Equal(t, registryMaxIdleConnsPerHost, transport.MaxIdleConnsPerHost)
+	assert.NotNil(t, transport.Proxy)
+}
+
+func Test_getTransportWithEffectiveURL_customTransportOwnership(t *testing.T) {
+	// a caller-supplied transport is the caller's to configure: neither the TLS options nor the
+	// idle-pool bump may be applied to it
+	callersTLS := &tls.Config{ServerName: "callers-choice"}
+	custom := &http.Transport{MaxIdleConnsPerHost: 1, TLSClientConfig: callersTLS}
+
+	et := newEffectiveURLTransport(nil)
+	got := getTransportWithEffectiveURL(&tls.Config{ServerName: "ignored"}, et, custom)
+
+	require.Same(t, et, got)
+	base, ok := et.base.(*http.Transport)
+	require.True(t, ok)
+	require.Same(t, custom, base)
+	assert.Equal(t, 1, base.MaxIdleConnsPerHost, "the pool bump must not touch a caller-supplied transport")
+	assert.Same(t, callersTLS, base.TLSClientConfig, "the TLS options must not touch a caller-supplied transport")
 }
