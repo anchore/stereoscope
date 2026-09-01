@@ -81,3 +81,43 @@ func TestTarIndexEntry_OpenIsPositionalAndConcurrent(t *testing.T) {
 	_, err = r.Read(buf)
 	assert.Error(t, err)
 }
+
+func TestTarIndex_CloseIsIdempotentAndRaceFree(t *testing.T) {
+	index, err := NewTarIndex(writeTestTar(t, map[string]string{"a.txt": "alpha contents"}), nil)
+	require.NoError(t, err)
+
+	entry := index.indexByName["a.txt"][0]
+
+	// readers and closers overlap deliberately: this is the window Image.Cleanup hits when a consumer
+	// cancels mid-scan, and it must be free of data races as well as panics
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 25; j++ {
+				rc := entry.Open()
+				_, err := io.ReadAll(rc)
+				if err != nil {
+					// only tolerable failure is losing the race with Close
+					assert.ErrorIs(t, err, os.ErrClosed)
+				}
+				assert.NoError(t, rc.Close())
+			}
+		}()
+	}
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			assert.NoError(t, index.Close())
+		}()
+	}
+	wg.Wait()
+
+	// closing again is a no-op rather than an error, and an entry opened strictly after Close reports
+	// os.ErrClosed with the tar path attached rather than a bare "invalid argument"
+	require.NoError(t, index.Close())
+	_, err = io.ReadAll(entry.Open())
+	require.ErrorIs(t, err, os.ErrClosed)
+}

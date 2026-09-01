@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 )
 
 type TarIndexVisitor func(TarIndexEntry) error
@@ -16,7 +17,11 @@ type TarIndexVisitor func(TarIndexEntry) error
 // the indexer's MIME sniff, again by syft's digest cataloger, again by every other consumer -
 // added up to hundreds of thousands of open/close pairs that serialized on the file's vnode.
 type TarIndex struct {
+	// file is immutable after construction: entry readers hold positional views onto it from any
+	// goroutine, so Close must not write to it. *os.File already refcounts its own descriptor, which
+	// is what makes reads racing a Close safe rather than us guarding the field.
 	file        *os.File
+	closeOnce   sync.Once
 	indexByName map[string][]TarIndexEntry
 }
 
@@ -67,13 +72,15 @@ func NewTarIndex(tarFilePath string, onIndex TarIndexVisitor) (*TarIndex, error)
 	return t, nil
 }
 
-// Close releases the tar file. Entries opened afterwards fail to read.
+// Close releases the tar file. Reads through entry readers, whether opened before or after this call,
+// then fail with os.ErrClosed. Zero-size entries are the exception: they never touch the descriptor, so
+// they keep returning a clean io.EOF.
 func (t *TarIndex) Close() error {
 	if t == nil || t.file == nil {
 		return nil
 	}
-	err := t.file.Close()
-	t.file = nil
+	var err error
+	t.closeOnce.Do(func() { err = t.file.Close() })
 	return err
 }
 
