@@ -121,3 +121,25 @@ func TestTarIndex_CloseIsIdempotentAndRaceFree(t *testing.T) {
 	_, err = io.ReadAll(entry.Open())
 	require.ErrorIs(t, err, os.ErrClosed)
 }
+
+func TestTarIndexEntry_OpenDoesNotLeakTheDescriptor(t *testing.T) {
+	index, err := NewTarIndex(writeTestTar(t, map[string]string{"a.txt": "alpha contents"}), nil)
+	require.NoError(t, err)
+	defer index.Close()
+
+	rc := index.indexByName["a.txt"][0].Open()
+
+	// guards against embedding *io.SectionReader again: Outer would hand the caller the index's live
+	// *os.File plus this entry's absolute offset, enough to read the whole tar and to close the
+	// descriptor out from under every other reader
+	_, escaped := rc.(interface {
+		Outer() (io.ReaderAt, int64, int64)
+	})
+	assert.False(t, escaped, "entry reader must not expose the shared descriptor")
+
+	// closing an entry reader is not observable, the index still owns the descriptor
+	require.NoError(t, rc.Close())
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, "alpha contents", string(got))
+}
