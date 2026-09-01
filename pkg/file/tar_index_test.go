@@ -21,6 +21,11 @@ func BenchmarkTarIndex(b *testing.B) {
 		if err != nil {
 			b.Fatalf("failure during benchmark: %+v", err)
 		}
+		// an index holds the tar open, so without this the benchmark leans on finalizers to stay
+		// under the fd limit and dies with EMFILE once it cannot keep up
+		if err = ti.Close(); err != nil {
+			b.Fatalf("failure during benchmark: %+v", err)
+		}
 	}
 }
 
@@ -31,6 +36,7 @@ func TestIndexedTarIndex_GoCase(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not get file reader from tar:", err)
 	}
+	t.Cleanup(func() { _ = reader.Close() })
 
 	expected := map[string]string{
 		"path/branch/one/file-1.txt": "first file\n",
@@ -73,6 +79,7 @@ func TestIndexedTarReader_DuplicateEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not get file reader from tar:", err)
 	}
+	t.Cleanup(func() { _ = reader.Close() })
 
 	// all contents are below the block size, so accounting for padding will be necessary
 	path := "a/file.path"

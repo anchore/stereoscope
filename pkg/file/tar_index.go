@@ -9,17 +9,15 @@ import (
 
 type TarIndexVisitor func(TarIndexEntry) error
 
-// TarIndex is a tar reader capable of O(1) fetching of entry contents after the first read.
+// TarIndex is a tar reader capable of O(1) fetching of entry contents.
 //
 // The tar file stays open for the life of the index and every entry reads through that one
-// descriptor with positional reads (pread), so opening an entry costs no syscalls. Previously each
-// Open() re-opened the tar, which on an image with tens of thousands of files - each opened by
-// the indexer's MIME sniff, again by syft's digest cataloger, again by every other consumer -
-// added up to hundreds of thousands of open/close pairs that serialized on the file's vnode.
+// descriptor with positional reads (pread), so opening an entry costs no syscalls. Call Close to
+// release the descriptor; an index holds one open until then.
 type TarIndex struct {
-	// file is immutable after construction: entry readers hold positional views onto it from any
-	// goroutine, so Close must not write to it. *os.File already refcounts its own descriptor, which
-	// is what makes reads racing a Close safe rather than us guarding the field.
+	// file is written once at construction and never again: Open reads it from any goroutine, so
+	// writing it here would race them. Closing it is safe by contrast, because *os.File refcounts its
+	// own descriptor and fails in-flight reads with os.ErrClosed rather than reusing the fd.
 	file        *os.File
 	closeOnce   sync.Once
 	indexByName map[string][]TarIndexEntry
@@ -73,8 +71,8 @@ func NewTarIndex(tarFilePath string, onIndex TarIndexVisitor) (*TarIndex, error)
 }
 
 // Close releases the tar file. Reads through entry readers, whether opened before or after this call,
-// then fail with os.ErrClosed. Zero-size entries are the exception: they never touch the descriptor, so
-// they keep returning a clean io.EOF.
+// will then fail with os.ErrClosed. Zero-size entries are the exception: they never touch the
+// descriptor, so they keep returning a clean io.EOF.
 func (t *TarIndex) Close() error {
 	if t == nil || t.file == nil {
 		return nil
@@ -86,6 +84,9 @@ func (t *TarIndex) Close() error {
 
 // EntriesByName fetches all TarFileEntries for the given tar header name.
 func (t *TarIndex) EntriesByName(name string) ([]TarFileEntry, error) {
+	if t == nil {
+		return nil, nil
+	}
 	if indexes, exists := t.indexByName[name]; exists {
 		entries := make([]TarFileEntry, len(indexes))
 		for i, index := range indexes {
