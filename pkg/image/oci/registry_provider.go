@@ -162,6 +162,9 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		)
 	}
 
+	// registry layers arrive over the network: download them one at a time (a second stream only
+	// splits the link) while already-fetched layers are indexed in parallel
+	metadata = append([]image.AdditionalMetadata{image.WithLayerReadConcurrency(image.RegistryLayerReadConcurrency)}, metadata...)
 	out := image.New(img, p.tmpDirGen, imageTempDir, metadata...)
 	err = out.Read()
 	if err != nil {
