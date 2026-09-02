@@ -229,8 +229,12 @@ func (i *Image) Read() error {
 
 	fileCatalog := NewFileCatalog()
 
+	diffIDs := i.configDiffIDs(len(v1Layers))
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
+		if diffIDs != nil {
+			layer.knownDiffID = diffIDs[idx]
+		}
 		err := layer.Read(fileCatalog, idx, i.contentCacheDir)
 		if err != nil {
 			return err
@@ -259,6 +263,21 @@ func (i *Image) Read() error {
 	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime)).Info("completed image read")
 
 	return err
+}
+
+// configDiffIDs returns the layer diff IDs recorded in the image config when the config lists exactly
+// one per layer, so layers need not compute them (which for an OCI layout means decompressing the
+// layer). Nil when the config is unavailable or does not line up.
+func (i *Image) configDiffIDs(layerCount int) []string {
+	cfg, err := i.image.ConfigFile()
+	if err != nil || cfg == nil || len(cfg.RootFS.DiffIDs) != layerCount {
+		return nil
+	}
+	ids := make([]string, layerCount)
+	for idx, h := range cfg.RootFS.DiffIDs {
+		ids[idx] = h.String()
+	}
+	return ids
 }
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =

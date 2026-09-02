@@ -89,6 +89,9 @@ type Layer struct {
 	fileCatalog           *FileCatalog
 	SquashedSearchContext filetree.Searcher
 	SearchContext         filetree.Searcher
+	// knownDiffID is the layer's diff ID as recorded in the image config, when the image could
+	// supply it; it saves computing the diff ID from the layer contents.
+	knownDiffID string
 }
 
 // NewLayer provides a new, unread layer object.
@@ -165,7 +168,7 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 
 func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
 	var err error
-	l.Metadata, err = newLayerMetadata(l.layer, idx)
+	l.Metadata, err = newLayerMetadata(l.layer, idx, l.knownDiffID)
 	monitor := trackReadProgress(l.Metadata)
 	if err != nil {
 		return err
@@ -194,7 +197,7 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 
 func (l *Layer) readSingularityImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
 	var err error
-	l.Metadata, err = newLayerMetadata(l.layer, idx)
+	l.Metadata, err = newLayerMetadata(l.layer, idx, l.knownDiffID)
 	if err != nil {
 		return err
 	}
