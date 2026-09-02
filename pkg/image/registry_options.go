@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,6 +25,11 @@ type RegistryOptions struct {
 	Credentials           []RegistryCredentials
 	Keychain              authn.Keychain
 	CAFileOrDir           string
+	// Transport, when set, is used verbatim as the HTTP transport for registry requests: the
+	// caller owns its proxy, TLS, and connection-pool configuration, and the TLS-related options
+	// above are not applied to it. When nil, a clone of http.DefaultTransport is used with the TLS
+	// options applied and the idle connection pool sized for registry traffic.
+	Transport http.RoundTripper
 }
 
 type credentialSelection struct {
