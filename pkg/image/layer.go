@@ -96,8 +96,15 @@ type Layer struct {
 
 // NewLayer provides a new, unread layer object.
 func NewLayer(layer v1.Layer) *Layer {
+	return newLayer(layer, "")
+}
+
+// newLayer provides a new, unread layer object with the diff ID the image already knows for it,
+// if any. See Layer.knownDiffID.
+func newLayer(layer v1.Layer, knownDiffID string) *Layer {
 	return &Layer{
-		layer: layer,
+		layer:       layer,
+		knownDiffID: knownDiffID,
 	}
 }
 

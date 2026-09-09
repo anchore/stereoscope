@@ -235,12 +235,21 @@ func (i *Image) Read() error {
 	}
 	i.Layers = nil
 
-	diffIDs := i.configDiffIDs(len(v1Layers))
+	// the config already records every layer's diff ID, which saves each layer computing its own
+	// (for an OCI layout that means decompressing the entire layer just to hash it). When the
+	// config does not list exactly one per layer we cannot line them up, so let each layer answer.
+	diffIDs := i.Metadata.Config.RootFS.DiffIDs
+	if len(diffIDs) != len(v1Layers) {
+		diffIDs = nil
+	}
+
 	for idx, v1Layer := range v1Layers {
-		layer := NewLayer(v1Layer)
+		var knownDiffID string
 		if diffIDs != nil {
-			layer.knownDiffID = diffIDs[idx]
+			knownDiffID = diffIDs[idx].String()
 		}
+
+		layer := newLayer(v1Layer, knownDiffID)
 		if err := layer.Read(fileCatalog, idx, i.contentCacheDir); err != nil {
 			// release the layers that did read. The caller has an error and may never reach Cleanup,
 			// and a half-built layer set must not be left visible either: accessors like SquashedTree
@@ -274,21 +283,6 @@ func (i *Image) Read() error {
 	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime)).Info("completed image read")
 
 	return err
-}
-
-// configDiffIDs returns the layer diff IDs recorded in the image config when the config lists exactly
-// one per layer, so layers need not compute them (which for an OCI layout means decompressing the
-// layer). Nil when the config is unavailable or does not line up.
-func (i *Image) configDiffIDs(layerCount int) []string {
-	cfg, err := i.image.ConfigFile()
-	if err != nil || cfg == nil || len(cfg.RootFS.DiffIDs) != layerCount {
-		return nil
-	}
-	ids := make([]string, layerCount)
-	for idx, h := range cfg.RootFS.DiffIDs {
-		ids[idx] = h.String()
-	}
-	return ids
 }
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =

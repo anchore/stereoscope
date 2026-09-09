@@ -3,7 +3,9 @@ package image
 import (
 	"testing"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/random"
+	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,4 +26,19 @@ func Test_newLayerMetadata_diffIDSource(t *testing.T) {
 	md, err = newLayerMetadata(layer, 0, "sha256:1111111111111111111111111111111111111111111111111111111111111111")
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:1111111111111111111111111111111111111111111111111111111111111111", md.Digest)
+}
+
+// diffIDPanicLayer proves a known diff ID is trusted as-is: computing one from the layer contents
+// (which for an OCI layout means decompressing the whole layer) must never happen.
+type diffIDPanicLayer struct{ mockLayer }
+
+func (diffIDPanicLayer) DiffID() (v1.Hash, error) {
+	panic("DiffID must not be computed when the image config already supplies it")
+}
+
+func Test_newLayerMetadata_knownDiffIDSkipsComputingIt(t *testing.T) {
+	md, err := newLayerMetadata(diffIDPanicLayer{mockLayer{mediaType: v1Types.DockerLayer}}, 7, "sha256:1111111111111111111111111111111111111111111111111111111111111111")
+	require.NoError(t, err)
+	assert.Equal(t, "sha256:1111111111111111111111111111111111111111111111111111111111111111", md.Digest)
+	assert.Equal(t, uint(7), md.Index)
 }
