@@ -124,6 +124,7 @@ func TestFileCatalog_Open(t *testing.T) {
 	}
 
 	tr, err := file.NewTarIndex(fixtureFile.Name(), nil)
+	t.Cleanup(func() { _ = tr.Close() })
 	require.NoError(t, err)
 
 	layer := &Layer{
@@ -211,12 +212,13 @@ func TestFileCatalog_GetByExtension(t *testing.T) {
 	fileCatalog := NewFileCatalog()
 	var size int64
 
-	// we don't need the index itself, just the side effect on the file catalog after indexing
-	_, err := file.NewTarIndex(
+	// the catalog is what this test is after, but the index owns the tar descriptor until it is closed
+	index, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
 		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = index.Close() })
 
 	tests := []struct {
 		name    string
@@ -378,12 +380,13 @@ func TestFileCatalog_GetByBasename(t *testing.T) {
 	fileCatalog := NewFileCatalog()
 	var size int64
 
-	// we don't need the index itself, just the side effect on the file catalog after indexing
-	_, err := file.NewTarIndex(
+	// the catalog is what this test is after, but the index owns the tar descriptor until it is closed
+	index, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
 		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = index.Close() })
 
 	tests := []struct {
 		name    string
@@ -482,12 +485,13 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 	fileCatalog := NewFileCatalog()
 	var size int64
 
-	// we don't need the index itself, just the side effect on the file catalog after indexing
-	_, err := file.NewTarIndex(
+	// the catalog is what this test is after, but the index owns the tar descriptor until it is closed
+	index, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
 		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = index.Close() })
 
 	tests := []struct {
 		name    string
@@ -597,12 +601,13 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 	fileCatalog := NewFileCatalog()
 	var size int64
 
-	// we don't need the index itself, just the side effect on the file catalog after indexing
-	_, err := file.NewTarIndex(
+	// the catalog is what this test is after, but the index owns the tar descriptor until it is closed
+	index, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
 		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = index.Close() })
 
 	tests := []struct {
 		name    string
@@ -698,12 +703,13 @@ func TestFileCatalog_GetBasenames(t *testing.T) {
 	fileCatalog := NewFileCatalog()
 	var size int64
 
-	// we don't need the index itself, just the side effect on the file catalog after indexing
-	_, err := file.NewTarIndex(
+	// the catalog is what this test is after, but the index owns the tar descriptor until it is closed
+	index, err := file.NewTarIndex(
 		fixtureTarFile.Name(),
 		layerTarIndexer(ft, fileCatalog, &size, nil, nil),
 	)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = index.Close() })
 
 	tests := []struct {
 		name string

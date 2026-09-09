@@ -197,7 +197,6 @@ func (i *Image) applyOverrideMetadata() error {
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
 func (i *Image) Read() error {
-	var layers = make([]*Layer, 0)
 	var err error
 	i.Metadata, err = readImageMetadata(i.image)
 	if err != nil {
@@ -229,19 +228,31 @@ func (i *Image) Read() error {
 
 	fileCatalog := NewFileCatalog()
 
+	// this rebuilds every layer, so release what a previous Read left open. Deferred to here rather
+	// than the top of Read so that a failure before this point leaves the existing layers usable
+	for _, closeErr := range i.closeLayers() {
+		log.WithFields("error", closeErr).Trace("unable to release a layer tar from a previous read")
+	}
+	i.Layers = nil
+
 	for idx, v1Layer := range v1Layers {
 		layer := NewLayer(v1Layer)
-		err := layer.Read(fileCatalog, idx, i.contentCacheDir)
-		if err != nil {
+		if err := layer.Read(fileCatalog, idx, i.contentCacheDir); err != nil {
+			// release the layers that did read. The caller has an error and may never reach Cleanup,
+			// and a half-built layer set must not be left visible either: accessors like SquashedTree
+			// read the last layer, which here was never squashed.
+			// A failed Layer.Read holds nothing itself, NewTarIndex closes its own handle
+			for _, closeErr := range i.closeLayers() {
+				log.WithFields("error", closeErr).Trace("unable to release a layer tar after a failed read")
+			}
+			i.Layers = nil
 			return err
 		}
+		i.Layers = append(i.Layers, layer)
 		i.Metadata.Size += layer.Metadata.Size
-		layers = append(layers, layer)
 
 		readProg.Increment()
 	}
-
-	i.Layers = layers
 
 	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image layer copy")
 	lapTime = time.Now()
@@ -369,12 +380,24 @@ func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree
 	return resolvedRef, err
 }
 
+// closeLayers releases every layer tar descriptor this image is holding open.
+func (i *Image) closeLayers() []error {
+	var errs []error
+	for _, l := range i.Layers {
+		if err := l.close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
 // Cleanup removes all temporary files created from parsing the image. Future calls to image will not function correctly after this call.
 func (i *Image) Cleanup() error {
 	if i == nil {
 		return nil
 	}
-	var errs []error
+	// descriptors before dirs: on Windows an open handle makes RemoveAll fail outright
+	errs := i.closeLayers()
 	if i.tmpDirGen != nil {
 		if err := i.tmpDirGen.Cleanup(); err != nil {
 			errs = append(errs, err)

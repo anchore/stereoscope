@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -88,4 +89,35 @@ func doesGlobExist(t *testing.T, pattern string) bool {
 		return true
 	}
 	return false
+}
+
+func TestTempDirGenerator_ConcurrentUse(t *testing.T) {
+	root := NewTempDirGenerator("concurrent")
+	defer func() {
+		if err := root.Cleanup(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// stereoscope.GetImage builds a child generator per call off one shared root, so concurrent
+	// callers land in NewGenerator and NewDirectory at the same time
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			gen := root.NewGenerator()
+			if _, err := gen.NewDirectory("content"); err != nil {
+				t.Error(err)
+			}
+			if _, err := root.NewDirectory("root-content"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if len(root.children) != 16 {
+		t.Errorf("expected 16 children, got %d", len(root.children))
+	}
 }
