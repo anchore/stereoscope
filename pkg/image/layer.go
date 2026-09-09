@@ -106,7 +106,10 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 		return "", fmt.Errorf("no cache directory given")
 	}
 
-	path := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest)
+	// the digest is what the image claims about the layer, not something we verified, so two layers
+	// can claim the same one. Key on the index as well so a layer can never be handed another
+	// layer's unpacked content.
+	path := path.Join(uncompressedLayersCacheDir, fmt.Sprintf("%d-%s", l.Metadata.Index, l.Metadata.Digest))
 
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return path, nil

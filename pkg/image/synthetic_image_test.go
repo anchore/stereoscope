@@ -89,3 +89,37 @@ func tryReadImageFromLayers(t *testing.T, layers ...v1.Layer) (*Image, error) {
 
 	return img, img.Read()
 }
+
+// readImageFromLayersWithConfig is readImageFromLayers with the image config rewritten before the
+// read, for tests that need the config to disagree with the layers it describes.
+func readImageFromLayersWithConfig(t *testing.T, override func(*v1.ConfigFile), layers ...v1.Layer) *Image {
+	t.Helper()
+
+	v1Img, err := mutate.AppendLayers(empty.Image, layers...)
+	require.NoError(t, err)
+
+	img := New(configOverrideImage{Image: v1Img, override: override}, file.NewTempDirGenerator("image-test"), t.TempDir())
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
+	})
+	require.NoError(t, img.Read())
+
+	return img
+}
+
+// configOverrideImage is a v1.Image that reports a modified config file, so a test can express the
+// configs an untrusted image can carry but a real build will never produce.
+type configOverrideImage struct {
+	v1.Image
+	override func(*v1.ConfigFile)
+}
+
+func (i configOverrideImage) ConfigFile() (*v1.ConfigFile, error) {
+	cfg, err := i.Image.ConfigFile()
+	if err != nil {
+		return nil, err
+	}
+	cfg = cfg.DeepCopy()
+	i.override(cfg)
+	return cfg, nil
+}
