@@ -1,6 +1,7 @@
 package image
 
 import (
+	"archive/tar"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
@@ -218,5 +220,43 @@ func TestImage_PartialReadReleasesEarlierLayers(t *testing.T) {
 	require.NotPanics(t, func() {
 		_, _, err := img.SquashedTree().File("/a.txt")
 		require.NoError(t, err)
+	})
+}
+
+// TestImageRead_DiffIDsMatchLayerContents pins the optimization that has Image.Read take layer
+// diff IDs from the image config: what it reports must be what the layers would have computed.
+func TestImageRead_DiffIDsMatchLayerContents(t *testing.T) {
+	layers := []v1.Layer{
+		layerFromTarEntries(t, tarEntry{path: "a.txt", typeFlag: tar.TypeReg, contents: "aaa"}),
+		layerFromTarEntries(t, tarEntry{path: "b.txt", typeFlag: tar.TypeReg, contents: "bbb"}),
+		layerFromTarEntries(t, tarEntry{path: "c.txt", typeFlag: tar.TypeReg, contents: "ccc"}),
+	}
+
+	t.Run("from the config", func(t *testing.T) {
+		img := readImageFromLayers(t, layers...)
+
+		require.Len(t, img.Layers, len(layers))
+		for idx, l := range layers {
+			want, err := l.DiffID()
+			require.NoError(t, err)
+			require.Equal(t, want.String(), img.Layers[idx].Metadata.Digest, "layer %d", idx)
+		}
+	})
+
+	t.Run("falls back to the layer when the config does not line up", func(t *testing.T) {
+		// one fewer diff ID than there are layers, so they cannot be matched up by position
+		img := readImageFromLayersWithConfig(t,
+			func(cfg *v1.ConfigFile) {
+				cfg.RootFS.DiffIDs = cfg.RootFS.DiffIDs[:len(cfg.RootFS.DiffIDs)-1]
+			},
+			layers...,
+		)
+
+		require.Len(t, img.Layers, len(layers))
+		for idx, l := range layers {
+			want, err := l.DiffID()
+			require.NoError(t, err)
+			require.Equal(t, want.String(), img.Layers[idx].Metadata.Digest, "layer %d", idx)
+		}
 	})
 }
