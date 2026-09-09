@@ -8,7 +8,10 @@ import (
 // LayerMetadata represents container layer metadata.
 type LayerMetadata struct {
 	Index uint
-	// Digest is the sha256 digest of the layer contents (the docker "diff id")
+	// Digest is the layer's diff ID: the sha256 of the uncompressed layer contents. Taken from the
+	// image config's rootfs.diff_ids when it lists exactly one per layer (as ggcr itself does for
+	// registry and docker images), otherwise computed from the layer. It is what the image claims
+	// about its contents, not a verification of them.
 	Digest    string
 	MediaType v1Types.MediaType
 	// Size in bytes of the layer content size
