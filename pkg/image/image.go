@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"maps"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -352,6 +354,31 @@ func (i *Image) Read(ctx context.Context) error {
 func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual, gates *layerGates) error {
 	ctx = withLayerExecutors(ctx, len(layers))
 
+	// errors are recorded by layer index and reported in that order. Both stages run every layer
+	// they were given, so several can fail, and go-sync joins its own errors in completion order -
+	// which would name a different layer first from one run to the next.
+	var (
+		errMu     sync.Mutex
+		layerErrs = map[int]error{}
+	)
+	recordErr := func(idx int, err error) {
+		errMu.Lock()
+		defer errMu.Unlock()
+		if _, seen := layerErrs[idx]; !seen {
+			layerErrs[idx] = err
+		}
+	}
+	orderedErrs := func() []error {
+		errMu.Lock()
+		defer errMu.Unlock()
+		idxs := slices.Sorted(maps.Keys(layerErrs))
+		out := make([]error, 0, len(idxs))
+		for _, idx := range idxs {
+			out = append(out, layerErrs[idx])
+		}
+		return out
+	}
+
 	idxs := make([]int, len(layers))
 	for n := range idxs {
 		idxs[n] = n
@@ -370,7 +397,10 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 				if err := layers[idx].fetch(idx, i.contentCacheDir); err != nil {
 					// the index stage will never see this layer, so open its gate here
 					gates.done(idx, false)
-					return idx, fmt.Errorf("failed to fetch layer %d: %w", idx, err)
+					// reported through recordErr rather than back to Collect, so that what Collect
+					// returns is only ever a panic it recovered
+					recordErr(idx, fmt.Errorf("failed to fetch layer %d: %w", idx, err))
+					return idx, nil
 				}
 				fetched <- idx
 				return idx, nil
@@ -386,7 +416,8 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 			// open the gate either way: squash decides what to do with the outcome
 			gates.done(idx, err == nil)
 			if err != nil {
-				return idx, fmt.Errorf("failed to index layer %d: %w", idx, err)
+				recordErr(idx, fmt.Errorf("failed to index layer %d: %w", idx, err))
+				return idx, nil
 			}
 			readProg.Increment()
 			return idx, nil
@@ -396,7 +427,8 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 			i.Metadata.Size += layers[idx].Metadata.Size
 		})
 
-	return errors.Join(<-fetchDone, indexErr)
+	// what the stages report, lowest layer first, then anything go-sync recovered on its own
+	return errors.Join(append(orderedErrs(), <-fetchDone, indexErr)...)
 }
 
 // LayerFetchExecutor and LayerIndexExecutor name the go-sync executors bounding each stage of a

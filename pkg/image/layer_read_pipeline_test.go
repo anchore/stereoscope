@@ -112,15 +112,46 @@ func TestImage_readLayers_failedLayerFailsTheReadWithoutHanging(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "layer 1"), "error should name the failed layer: %v", err)
 }
 
-func TestImage_readLayers_firstErrorWinsUnderManyFailures(t *testing.T) {
-	layers := randomLayers(t, 5)
-	for idx := range layers {
-		layers[idx] = NewLayer(fakeLayer("garbage/media-type", nil))
+func TestImage_readLayers_reportsFailuresLowestLayerFirst(t *testing.T) {
+	// several layers can fail, and go-sync joins in completion order, so without ordering the
+	// reported error names a different layer from one run to the next - enough to flake a
+	// downstream test over a corrupt-image fixture
+	layers := randomLayers(t, 6)
+	for _, bad := range []int{4, 1, 3} {
+		layers[bad] = NewLayer(fakeLayer("garbage/media-type", nil))
 	}
+
 	i := &Image{contentCacheDir: t.TempDir()}
 	err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to fetch layer")
+
+	msg := err.Error()
+	assert.Contains(t, msg, "failed to fetch layer 1")
+	// every failure is reported, and layer 1 before layer 3 before layer 4
+	one, three, four := strings.Index(msg, "layer 1"), strings.Index(msg, "layer 3"), strings.Index(msg, "layer 4")
+	require.NotEqual(t, -1, three)
+	require.NotEqual(t, -1, four)
+	assert.Less(t, one, three, "layer 1 should be reported before layer 3")
+	assert.Less(t, three, four, "layer 3 should be reported before layer 4")
+}
+
+func TestImage_readLayers_errorOrderIsStableAcrossRuns(t *testing.T) {
+	// the ordering above must not just happen to hold on one scheduling
+	var first string
+	for run := 0; run < 25; run++ {
+		layers := randomLayers(t, 6)
+		for _, bad := range []int{5, 2, 4} {
+			layers[bad] = NewLayer(fakeLayer("garbage/media-type", nil))
+		}
+		i := &Image{contentCacheDir: t.TempDir()}
+		err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
+		require.Error(t, err)
+		if run == 0 {
+			first = err.Error()
+			continue
+		}
+		require.Equal(t, first, err.Error(), "error text changed between runs")
+	}
 }
 
 // countingLayer records the high-water mark of concurrent Uncompressed calls, which is what a
