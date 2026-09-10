@@ -235,8 +235,21 @@ func (i *Image) Read() error {
 	}
 	i.Layers = nil
 
+	// the config already records every layer's diff ID, which saves each layer computing its own
+	// (for an OCI layout that means decompressing the entire layer just to hash it). When the
+	// config does not list exactly one per layer we cannot line them up, so let each layer answer.
+	diffIDs := i.Metadata.Config.RootFS.DiffIDs
+	if len(diffIDs) != len(v1Layers) {
+		diffIDs = nil
+	}
+
 	for idx, v1Layer := range v1Layers {
-		layer := NewLayer(v1Layer)
+		var knownDiffID string
+		if diffIDs != nil {
+			knownDiffID = diffIDs[idx].String()
+		}
+
+		layer := newLayer(v1Layer, knownDiffID)
 		if err := layer.Read(fileCatalog, idx, i.contentCacheDir); err != nil {
 			// release the layers that did read. The caller has an error and may never reach Cleanup,
 			// and a half-built layer set must not be left visible either: accessors like SquashedTree

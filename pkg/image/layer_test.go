@@ -1,6 +1,7 @@
 package image
 
 import (
+	"archive/tar"
 	"errors"
 	"io"
 	"strings"
@@ -312,4 +313,35 @@ func TestValidateLayerMediaTypes(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// TestLayerRead_ClaimedDiffIDsDoNotShareCache covers an image config that claims the same diff ID
+// for two different layers. The diff ID is what the image says about a layer, not something we
+// verified, so it cannot be the only thing keying the unpacked-layer cache: doing that lets one
+// layer be indexed from another layer's content, silently dropping files from the image.
+func TestLayerRead_ClaimedDiffIDsDoNotShareCache(t *testing.T) {
+	claimed := v1.Hash{Algorithm: "sha256", Hex: strings.Repeat("2", 64)}
+
+	img := readImageFromLayersWithConfig(t,
+		func(cfg *v1.ConfigFile) {
+			for idx := range cfg.RootFS.DiffIDs {
+				cfg.RootFS.DiffIDs[idx] = claimed
+			}
+		},
+		layerFromTarEntries(t, tarEntry{path: "only-in-layer-1.txt", typeFlag: tar.TypeReg, contents: "one"}),
+		layerFromTarEntries(t, tarEntry{path: "only-in-layer-2.txt", typeFlag: tar.TypeReg, contents: "two"}),
+	)
+
+	require.Len(t, img.Layers, 2)
+	require.Equal(t, claimed.String(), img.Layers[0].Metadata.Digest)
+	require.Equal(t, claimed.String(), img.Layers[1].Metadata.Digest)
+
+	// each layer must still be indexed from its own tar
+	require.True(t, img.Layers[0].Tree.HasPath("/only-in-layer-1.txt"))
+	require.False(t, img.Layers[0].Tree.HasPath("/only-in-layer-2.txt"))
+	require.True(t, img.Layers[1].Tree.HasPath("/only-in-layer-2.txt"))
+	require.False(t, img.Layers[1].Tree.HasPath("/only-in-layer-1.txt"))
+
+	require.True(t, img.SquashedTree().HasPath("/only-in-layer-1.txt"))
+	require.True(t, img.SquashedTree().HasPath("/only-in-layer-2.txt"))
 }

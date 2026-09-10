@@ -89,12 +89,22 @@ type Layer struct {
 	fileCatalog           *FileCatalog
 	SquashedSearchContext filetree.Searcher
 	SearchContext         filetree.Searcher
+	// knownDiffID is the layer's diff ID as recorded in the image config, when the image could
+	// supply it; it saves computing the diff ID from the layer contents.
+	knownDiffID string
 }
 
 // NewLayer provides a new, unread layer object.
 func NewLayer(layer v1.Layer) *Layer {
+	return newLayer(layer, "")
+}
+
+// newLayer provides a new, unread layer object with the diff ID the image already knows for it,
+// if any. See Layer.knownDiffID.
+func newLayer(layer v1.Layer, knownDiffID string) *Layer {
 	return &Layer{
-		layer: layer,
+		layer:       layer,
+		knownDiffID: knownDiffID,
 	}
 }
 
@@ -103,7 +113,10 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 		return "", fmt.Errorf("no cache directory given")
 	}
 
-	path := path.Join(uncompressedLayersCacheDir, l.Metadata.Digest)
+	// the digest is what the image claims about the layer, not something we verified, so two layers
+	// can claim the same one. Key on the index as well so a layer can never be handed another
+	// layer's unpacked content.
+	path := path.Join(uncompressedLayersCacheDir, fmt.Sprintf("%d-%s", l.Metadata.Index, l.Metadata.Digest))
 
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return path, nil
@@ -177,7 +190,7 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 
 func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
 	var err error
-	l.Metadata, err = newLayerMetadata(l.layer, idx)
+	l.Metadata, err = newLayerMetadata(l.layer, idx, l.knownDiffID)
 	monitor := trackReadProgress(l.Metadata)
 	if err != nil {
 		return err
@@ -206,7 +219,7 @@ func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir strin
 
 func (l *Layer) readSingularityImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
 	var err error
-	l.Metadata, err = newLayerMetadata(l.layer, idx)
+	l.Metadata, err = newLayerMetadata(l.layer, idx, l.knownDiffID)
 	if err != nil {
 		return err
 	}
