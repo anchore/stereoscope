@@ -15,6 +15,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	containerregistryV1Types "github.com/google/go-containerregistry/pkg/v1/types"
 
+	async "github.com/anchore/go-sync"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
@@ -162,9 +163,14 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		)
 	}
 
-	// registry layers arrive over the network: download them one at a time (a second stream only
-	// splits the link) while already-fetched layers are indexed in parallel
-	metadata = append([]image.AdditionalMetadata{image.WithLayerReadConcurrency(image.RegistryLayerReadConcurrency)}, metadata...)
+	// registry layers arrive over the network: download them one at a time, since a second stream
+	// only splits a link a single stream already saturates, while already-fetched layers are
+	// indexed in parallel at the default bound. A caller that installed its own fetch executor
+	// knows better than we do, so leave theirs alone.
+	if !async.HasContextExecutor(ctx, image.LayerFetchExecutor) {
+		ctx = async.SetContextExecutor(ctx, image.LayerFetchExecutor, async.NewExecutor(1))
+	}
+
 	out := image.New(img, p.tmpDirGen, imageTempDir, metadata...)
 	err = out.Read(ctx)
 	if err != nil {

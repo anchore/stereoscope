@@ -30,29 +30,32 @@ func Test_layerReadWorkers(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		layers   int
-		override int
-		want     int
+		name   string
+		layers int
+		want   int
 	}{
-		{name: "override wins", layers: 10, override: 3, want: 3},
-		{name: "override capped at layer count", layers: 2, override: 8, want: 2},
-		{name: "registry-style single fetch", layers: 10, override: 1, want: 1},
-		{name: "default is CPUs capped at 8 and the layer count", layers: 1000, override: 0, want: cpuDefault},
-		{name: "default capped by layer count", layers: 1, override: 0, want: 1},
-		{name: "never below one worker", layers: 0, override: 3, want: 1},
+		{name: "CPUs capped at 8", layers: 1000, want: cpuDefault},
+		{name: "capped by layer count", layers: 1, want: 1},
+		{name: "never below one worker", layers: 0, want: 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, layerReadWorkers(tt.layers, tt.override))
+			assert.Equal(t, tt.want, layerReadWorkers(tt.layers))
 		})
 	}
 }
 
-func TestWithLayerReadConcurrency(t *testing.T) {
-	i := &Image{}
-	require.NoError(t, WithLayerReadConcurrency(2)(i))
-	assert.Equal(t, 2, i.layerReadConcurrency)
+// layerConcurrency installs stage executors the way a caller would. A bound of 0 leaves that
+// stage out, so Read fills in the default.
+func layerConcurrency(fetch, index int) context.Context {
+	ctx := context.Background()
+	if fetch > 0 {
+		ctx = async.SetContextExecutor(ctx, LayerFetchExecutor, async.NewExecutor(fetch))
+	}
+	if index > 0 {
+		ctx = async.SetContextExecutor(ctx, LayerIndexExecutor, async.NewExecutor(index))
+	}
+	return ctx
 }
 
 // randomLayers builds n small, well-formed docker layers.
@@ -71,8 +74,8 @@ func TestImage_readLayers_concurrentReadKeepsManifestOrder(t *testing.T) {
 	const layerCount = 6
 	layers := randomLayers(t, layerCount)
 
-	i := &Image{contentCacheDir: t.TempDir(), layerReadConcurrency: 3}
-	require.NoError(t, i.readLayers(context.Background(), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
+	i := &Image{contentCacheDir: t.TempDir()}
+	require.NoError(t, i.readLayers(layerConcurrency(3, 3), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 
 	// completion order is up to the pools; the layer set must still be manifest-ordered and
 	// fully indexed before readLayers returns (the squash that follows depends on both)
@@ -87,8 +90,8 @@ func TestImage_readLayers_sequentialMatchesConcurrent(t *testing.T) {
 	// a registry-style single-fetch run must produce the same layer set shape as a parallel one
 	for _, concurrency := range []int{1, 4} {
 		layers := randomLayers(t, 4)
-		i := &Image{contentCacheDir: t.TempDir(), layerReadConcurrency: concurrency}
-		require.NoError(t, i.readLayers(context.Background(), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
+		i := &Image{contentCacheDir: t.TempDir()}
+		require.NoError(t, i.readLayers(layerConcurrency(concurrency, concurrency), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 		for idx, layer := range layers {
 			require.Equal(t, uint(idx), layer.Metadata.Index)
 			require.NotNil(t, layer.Tree)
@@ -102,8 +105,8 @@ func TestImage_readLayers_failedLayerFailsTheReadWithoutHanging(t *testing.T) {
 	// return - with workers still draining - rather than deadlock or panic
 	layers[1] = NewLayer(fakeLayer("garbage/media-type", nil))
 
-	i := &Image{contentCacheDir: t.TempDir(), layerReadConcurrency: 2}
-	err := i.readLayers(context.Background(), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
+	i := &Image{contentCacheDir: t.TempDir()}
+	err := i.readLayers(layerConcurrency(2, 2), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "layer 1"), "error should name the failed layer: %v", err)
 }
@@ -113,8 +116,8 @@ func TestImage_readLayers_firstErrorWinsUnderManyFailures(t *testing.T) {
 	for idx := range layers {
 		layers[idx] = NewLayer(fakeLayer("garbage/media-type", nil))
 	}
-	i := &Image{contentCacheDir: t.TempDir(), layerReadConcurrency: 4}
-	err := i.readLayers(context.Background(), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
+	i := &Image{contentCacheDir: t.TempDir()}
+	err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to fetch layer")
 }
@@ -180,30 +183,44 @@ func TestImage_readLayers_callerSuppliedExecutorBoundsTheFetchStage(t *testing.T
 	}
 }
 
-func TestImage_readLayers_perImageDefaultAppliesWhenCallerSuppliesNothing(t *testing.T) {
+func TestImage_readLayers_defaultAppliesWhenCallerSuppliesNothing(t *testing.T) {
 	var inFlight, maxSeen atomic.Int64
 	layers := countingLayers(t, 8, &inFlight, &maxSeen)
 
-	// WithLayerReadConcurrency is the fallback the registry provider relies on
-	i := &Image{contentCacheDir: t.TempDir(), layerReadConcurrency: 1}
+	// no executors installed at all: both stages must still get a working bound rather than
+	// falling back to go-sync's inline serial executor, which would collapse the two stages
+	i := &Image{contentCacheDir: t.TempDir()}
 	require.NoError(t, i.readLayers(context.Background(), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 
-	assert.Equal(t, int64(1), maxSeen.Load(), "per-image fetch bound was not applied")
+	assert.LessOrEqual(t, maxSeen.Load(), int64(layerReadWorkers(len(layers))), "default fetch bound was exceeded")
+	for idx, layer := range layers {
+		assert.NotNilf(t, layer.Tree, "layer %d was not indexed", idx)
+	}
 }
 
 func TestImage_readLayers_stageBoundsAreIndependent(t *testing.T) {
-	// the point of two executors rather than one: pinning fetch must not serialise indexing,
-	// which is the registry configuration and what a fused work unit cannot express
-	const layerCount = 6
-	i := &Image{layerReadConcurrency: 1}
+	// the point of two executors rather than one over a fused per-layer unit: pinning fetch must
+	// not serialise indexing. This is the registry configuration, and a single bound cannot
+	// express it.
+	const layerCount = 8
+	var inFlight, maxSeen atomic.Int64
+	layers := countingLayers(t, layerCount, &inFlight, &maxSeen)
 
-	assert.Equal(t, 1, layerReadWorkers(layerCount, i.layerReadConcurrency), "fetch bound follows the per-image option")
-	assert.Greater(t, layerReadWorkers(layerCount, 0), 1, "index bound stays at the default")
+	// only a fetch executor, so Read must fill in the index default rather than reusing this one
+	ctx := layerConcurrency(1, 0)
+	i := &Image{contentCacheDir: t.TempDir()}
+	require.NoError(t, i.readLayers(ctx, layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 
-	// and both executors are installed, so neither stage silently falls back to inline execution
-	ctx := i.withLayerExecutors(context.Background(), layerCount)
-	assert.True(t, async.HasContextExecutor(ctx, LayerFetchExecutor))
-	assert.True(t, async.HasContextExecutor(ctx, LayerIndexExecutor))
+	assert.Equal(t, int64(1), maxSeen.Load(), "the caller's fetch bound was not honoured")
+	for idx, layer := range layers {
+		assert.NotNilf(t, layer.Tree, "layer %d was not indexed", idx)
+	}
+
+	// and the default filled in for the stage the caller left out
+	filled := withLayerExecutors(layerConcurrency(1, 0), layerCount)
+	assert.True(t, async.HasContextExecutor(filled, LayerFetchExecutor))
+	assert.True(t, async.HasContextExecutor(filled, LayerIndexExecutor))
+	assert.Greater(t, layerReadWorkers(layerCount), 1, "the index default should not be serial")
 }
 
 func TestImage_readLayers_cancelledContextStopsTheRead(t *testing.T) {

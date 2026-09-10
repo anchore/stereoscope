@@ -47,26 +47,9 @@ type Image struct {
 	SquashedSearchContext filetree.Searcher
 
 	overrideMetadata []AdditionalMetadata
-
-	// layerReadConcurrency is the per-image override for how many layers are read at once (0 = default)
-	layerReadConcurrency int
 }
 
 type AdditionalMetadata func(*Image) error
-
-// WithLayerReadConcurrency bounds how many layers this image fetches (downloads and decompresses)
-// at once; indexing of fetched layers always proceeds in parallel alongside. Providers that read
-// from a network source pass 1: even two concurrent downloads split a link that a single stream
-// already saturates (measured against nvcr.io: one stream ~62 MB/s, two ~20% slower overall, four
-// ~27 MB/s in aggregate), and the overlap worth having - indexing the previous layer while the next
-// downloads - does not need a second download. Local sources - daemon tarballs, OCI layouts - are
-// disk-bound and use the default.
-func WithLayerReadConcurrency(n int) AdditionalMetadata {
-	return func(image *Image) error {
-		image.layerReadConcurrency = n
-		return nil
-	}
-}
 
 func WithTags(tags ...string) AdditionalMetadata {
 	return func(image *Image) error {
@@ -347,15 +330,16 @@ func (i *Image) Read(ctx context.Context) error {
 //
 // Each stage is bounded by its own go-sync executor pulled from the context, which is what lets a
 // caller fold stereoscope into a process-wide concurrency budget: install executors under
-// LayerFetchExecutor and LayerIndexExecutor and they win. Read installs defaults when they are
-// absent, so the two bounds stay independent - the registry provider wants one download at a time
-// and eight indexers, which a single fused bound cannot express.
+// LayerFetchExecutor and LayerIndexExecutor and they win. Read fills in the default for whichever
+// stage the caller left out, so the two bounds stay independent - the registry provider installs a
+// fetch executor of one and leaves indexing at the default, which a single fused bound cannot
+// express.
 //
 // Errors from both stages are joined. Panics inside either stage are captured as errors rather
 // than taking down the process, and a cancelled context stops either stage from starting more
 // work.
 func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual, gates *layerGates) error {
-	ctx = i.withLayerExecutors(ctx, len(layers))
+	ctx = withLayerExecutors(ctx, len(layers))
 
 	idxs := make([]int, len(layers))
 	for n := range idxs {
@@ -418,14 +402,12 @@ const (
 // withLayerExecutors fills in the stage executors this image should use for any the caller has not
 // supplied. Never bounded at zero: a zero-concurrency go-sync executor runs inline on the caller's
 // goroutine, which would collapse the two stages back into one and lose the overlap.
-func (i *Image) withLayerExecutors(ctx context.Context, layers int) context.Context {
+func withLayerExecutors(ctx context.Context, layers int) context.Context {
 	if !async.HasContextExecutor(ctx, LayerFetchExecutor) {
-		ctx = async.SetContextExecutor(ctx, LayerFetchExecutor,
-			async.NewExecutor(layerReadWorkers(layers, i.layerReadConcurrency)))
+		ctx = async.SetContextExecutor(ctx, LayerFetchExecutor, async.NewExecutor(layerReadWorkers(layers)))
 	}
 	if !async.HasContextExecutor(ctx, LayerIndexExecutor) {
-		ctx = async.SetContextExecutor(ctx, LayerIndexExecutor,
-			async.NewExecutor(layerReadWorkers(layers, 0)))
+		ctx = async.SetContextExecutor(ctx, LayerIndexExecutor, async.NewExecutor(layerReadWorkers(layers)))
 	}
 	return ctx
 }
@@ -489,25 +471,12 @@ func seqOfChannel[T any](ch <-chan T) iter.Seq[T] {
 	}
 }
 
-// LayerReadConcurrency is the default bound on how many layers are fetched at once (and on how many
-// are indexed at once) while an image is read; WithLayerReadConcurrency overrides the fetch bound
-// per image. Zero selects the number of CPUs, at most 8.
-var LayerReadConcurrency int
-
-// RegistryLayerReadConcurrency is what the registry provider asks for: one download at a time, with
-// indexing of already-fetched layers overlapping it.
-const RegistryLayerReadConcurrency = 1
-
-func layerReadWorkers(layers int, override int) int {
-	n := override
-	if n <= 0 {
-		n = LayerReadConcurrency
-	}
-	if n <= 0 {
-		n = runtime.NumCPU()
-		if n > 8 {
-			n = 8
-		}
+// layerReadWorkers is the default bound for a layer-read stage when the caller has not installed
+// an executor of its own: the number of CPUs, capped at 8, and never more workers than layers.
+func layerReadWorkers(layers int) int {
+	n := runtime.NumCPU()
+	if n > 8 {
+		n = 8
 	}
 	if n > layers {
 		n = layers
