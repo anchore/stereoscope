@@ -131,14 +131,26 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 	}
 	defer rawReader.Close()
 
-	fh, err := os.Create(path)
+	// write to a unique temp name and rename into place, so this path only ever holds a complete
+	// layer: a write that dies partway leaves nothing for a later os.Stat to trust
+	fh, err := os.CreateTemp(uncompressedLayersCacheDir, "partial-")
 	if err != nil {
-		return "", fmt.Errorf("unable to create layer cache dir=%q : %w", path, err)
+		return "", fmt.Errorf("unable to create layer cache path=%q : %w", path, err)
 	}
-	defer fh.Close()
+	tmpPath := fh.Name()
+	defer func() {
+		fh.Close()         // no-op once already closed
+		os.Remove(tmpPath) // no-op once renamed away
+	}()
 
 	if _, err := io.Copy(fh, rawReader); err != nil {
-		return "", fmt.Errorf("unable to populate layer cache dir=%q : %w", path, err)
+		return "", fmt.Errorf("unable to populate layer cache path=%q : %w", path, err)
+	}
+	if err := fh.Close(); err != nil {
+		return "", fmt.Errorf("unable to finish layer cache path=%q : %w", path, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return "", fmt.Errorf("unable to place layer cache path=%q : %w", path, err)
 	}
 	log.WithFields("index", l.Metadata.Index, "path", path, "time", time.Since(startTime)).Trace("completed uncompressed layer cache")
 
