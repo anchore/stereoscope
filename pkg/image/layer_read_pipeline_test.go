@@ -364,3 +364,45 @@ func TestImage_squashLayers_reportsAnUnindexedLayer(t *testing.T) {
 	assert.Contains(t, err.Error(), "layer 1")
 	assert.Contains(t, err.Error(), "not indexed")
 }
+
+// panickingLayer panics where a stage will run it, with a media type that passes Read's
+// up-front validation so the panic actually reaches the pool.
+type panickingLayer struct {
+	v1.Layer
+}
+
+func (panickingLayer) MediaType() (v1Types.MediaType, error) { return v1Types.DockerLayer, nil }
+func (panickingLayer) Uncompressed() (io.ReadCloser, error) {
+	panic("boom from a fetch worker")
+}
+
+func TestImage_Read_panicInAStageBecomesAnError(t *testing.T) {
+	// stereoscope reads untrusted images inside long-running services, so a panic in a worker
+	// must not take the process down. Before the stages were driven by go-sync the panic
+	// happened on a goroutine the caller could not recover from at all.
+	//
+	// What this pins is containment: no crash, no hang, and the panic reaches the caller as an
+	// error. It is deliberately not a regression test for go-sync losing the error it recovered
+	// (fixed in v0.1.2) - two layers do not reliably open that window, and go-sync covers it
+	// directly in Test_CollectHandlesPanicsConcurrently.
+	good := layerFromTarEntries(t, tarEntry{path: "a.txt", typeFlag: tar.TypeReg, contents: "ok"})
+	bad := layerFromTarEntries(t, tarEntry{path: "b.txt", typeFlag: tar.TypeReg, contents: "different digest"})
+	v1Img, err := mutate.AppendLayers(empty.Image, good, panickingLayer{Layer: bad})
+	require.NoError(t, err)
+
+	img := New(v1Img, file.NewTempDirGenerator("panic-test"), t.TempDir())
+	t.Cleanup(func() { _ = img.Cleanup() })
+
+	done := make(chan error, 1)
+	go func() { done <- img.Read(context.Background()) }()
+
+	select {
+	case readErr := <-done:
+		require.Error(t, readErr, "a panicking layer must surface as an error, not a crash")
+		assert.Contains(t, readErr.Error(), "boom from a fetch worker")
+	case <-time.After(30 * time.Second):
+		// a panic skips the stage's gates.done, so this also pins that Read's releaseAll
+		// safety net opens the gate the squash is waiting on
+		t.Fatal("Read hung after a panic: the squash gate was never released")
+	}
+}
