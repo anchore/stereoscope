@@ -166,7 +166,7 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 	// splits the link) while already-fetched layers are indexed in parallel
 	metadata = append([]image.AdditionalMetadata{image.WithLayerReadConcurrency(image.RegistryLayerReadConcurrency)}, metadata...)
 	out := image.New(img, p.tmpDirGen, imageTempDir, metadata...)
-	err = out.Read()
+	err = out.Read(ctx)
 	if err != nil {
 		cleanErr := out.Cleanup()
 		return nil, errors.Join(err, cleanErr)

@@ -2,6 +2,7 @@ package image
 
 import (
 	"archive/tar"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -186,7 +187,7 @@ func TestImage_SecondReadReleasesTheFirstReadsTars(t *testing.T) {
 	// Read() looks idempotent and is called twice in the wild: pkg/image/sif/archive_provider_test.go
 	// and test/integration/oci_registry_source_test.go both re-read an already-read image
 	firstIndex := img.Layers[0].indexedContent
-	require.NoError(t, img.Read())
+	require.NoError(t, img.Read(context.Background()))
 	require.NotSame(t, firstIndex, img.Layers[0].indexedContent, "second Read builds a fresh index")
 
 	// the second Read replaced the first one's layers, so it had to release them on the way past:
@@ -211,7 +212,7 @@ func TestImage_PartialReadReleasesEarlierLayers(t *testing.T) {
 	// layer one reads fine and opens its tar, layer two fails. Counting descriptors rather than
 	// reaching for the index, because a failed Read must not leave the half-built layer set behind
 	before := testutil.OpenDescriptorCount(t)
-	require.Error(t, img.Read(), "expected the second layer to fail the read")
+	require.Error(t, img.Read(context.Background()), "expected the second layer to fail the read")
 	require.Equal(t, before, testutil.OpenDescriptorCount(t), "a partial read leaked the first layer's tar")
 
 	// and the image must stay safe to touch: accessors read the last layer, which on a partial read

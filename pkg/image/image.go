@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -215,7 +216,10 @@ func (i *Image) applyOverrideMetadata() error {
 
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
-func (i *Image) Read() error {
+//
+// The context bounds the read: cancelling it abandons work that has not started and stops the
+// layer pools from picking up more.
+func (i *Image) Read(ctx context.Context) error {
 	var err error
 	i.Metadata, err = readImageMetadata(i.image)
 	if err != nil {

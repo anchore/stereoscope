@@ -38,7 +38,7 @@ func TestOciRegistrySourceMetadata(t *testing.T) {
 		require.NoError(t, img.Cleanup())
 	})
 
-	require.NoError(t, img.Read())
+	require.NoError(t, img.Read(context.Background()))
 
 	assert.Len(t, img.Metadata.RepoDigests, 1)
 	assert.Equal(t, "index.docker.io/"+ref, img.Metadata.RepoDigests[0])
