@@ -8,8 +8,9 @@ import (
 )
 
 type TempDirGenerator struct {
-	// lock guards every field below it: one generator is shared by all providers in an
-	// ImageProviders() call, so concurrent GetImage calls reach NewGenerator and NewDirectory at once
+	// lock guards rootLocation and children; rootPrefix is write-once at construction.
+	// One generator is shared by all providers in an ImageProviders() call, so concurrent
+	// GetImage calls reach NewDirectory and NewGenerator at once.
 	lock         sync.Mutex
 	rootPrefix   string
 	rootLocation string
@@ -22,7 +23,21 @@ func NewTempDirGenerator(name string) *TempDirGenerator {
 	}
 }
 
-func (t *TempDirGenerator) getOrCreateRootLocation() (string, error) {
+// NewGenerator creates a child generator capable of making sibling temp directories.
+func (t *TempDirGenerator) NewGenerator() *TempDirGenerator {
+	gen := NewTempDirGenerator(t.rootPrefix)
+
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.children = append(t.children, gen)
+	return gen
+}
+
+// NewDirectory creates a new temp dir within the generators prefix temp dir.
+func (t *TempDirGenerator) NewDirectory(name ...string) (string, error) {
+	// the lock is held across MkdirTemp so a concurrent Cleanup cannot remove the root
+	// between resolving it and creating the dir under it. This is one mkdirat, unlike
+	// Cleanup's RemoveAll, so the hold is constant and does not scale with the tree.
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -34,33 +49,19 @@ func (t *TempDirGenerator) getOrCreateRootLocation() (string, error) {
 
 		t.rootLocation = location
 	}
-	return t.rootLocation, nil
-}
 
-// NewGenerator creates a child generator capable of making sibling temp directories.
-func (t *TempDirGenerator) NewGenerator() *TempDirGenerator {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
-	gen := NewTempDirGenerator(t.rootPrefix)
-	t.children = append(t.children, gen)
-	return gen
-}
-
-// NewDirectory creates a new temp dir within the generators prefix temp dir.
-func (t *TempDirGenerator) NewDirectory(name ...string) (string, error) {
-	location, err := t.getOrCreateRootLocation()
-	if err != nil {
-		return "", err
-	}
-
-	return os.MkdirTemp(location, strings.Join(name, "-")+"-")
+	return os.MkdirTemp(t.rootLocation, strings.Join(name, "-")+"-")
 }
 
 // Cleanup deletes all temp dirs created by this generator and any child generator.
+// The generator stays usable afterwards: a later NewDirectory starts a fresh root.
 func (t *TempDirGenerator) Cleanup() error {
+	// detach everything under the lock, then do the slow removal outside it. A caller that
+	// races us gets a fresh root rather than a half-deleted one, and a generator attached
+	// after this point is tracked for the next Cleanup instead of being orphaned.
 	t.lock.Lock()
 	children, rootLocation := t.children, t.rootLocation
+	t.children, t.rootLocation = nil, ""
 	t.lock.Unlock()
 
 	var errs []error

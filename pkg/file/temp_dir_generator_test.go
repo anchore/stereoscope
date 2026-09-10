@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTempDirGenerator(t *testing.T) {
@@ -120,4 +121,76 @@ func TestTempDirGenerator_ConcurrentUse(t *testing.T) {
 	if len(root.children) != 16 {
 		t.Errorf("expected 16 children, got %d", len(root.children))
 	}
+}
+
+// Cleanup detaches the root before removing it, so a NewDirectory that races the removal
+// builds a fresh root rather than creating a dir inside one being deleted (which would
+// leave an orphan behind and fail the removal with ENOTEMPTY).
+func TestTempDirGenerator_cleanupDuringNewDirectory(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		gen := NewTempDirGenerator("cleanup-race-prefix")
+		// enough entries that RemoveAll's readdir pass takes a while
+		for j := 0; j < 64; j++ {
+			_, err := gen.NewDirectory("fill")
+			require.NoError(t, err)
+		}
+
+		var dirs []string
+		var mu sync.Mutex
+		var cleanupErr error
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			cleanupErr = gen.Cleanup()
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			for k := 0; k < 16; k++ {
+				d, err := gen.NewDirectory("racer")
+				require.NoError(t, err, "a NewDirectory racing Cleanup must get a usable dir")
+				mu.Lock()
+				dirs = append(dirs, d)
+				mu.Unlock()
+			}
+		}()
+		close(start)
+		wg.Wait()
+
+		require.NoError(t, cleanupErr, "cleanup must not trip over a concurrently created dir")
+
+		// whatever the racer created is still tracked, so a shutdown cleanup reclaims it
+		require.NoError(t, gen.Cleanup())
+		for _, d := range dirs {
+			assert.NoDirExists(t, d, "cleanup left an orphaned dir behind")
+			assert.NoDirExists(t, path.Dir(d), "cleanup left an orphaned root behind")
+		}
+	}
+}
+
+// Cleanup is not a one-way door: providers share one generator (see providers.go), and one
+// provider cleaning up on failure must not poison the generator for the providers after it.
+func TestTempDirGenerator_reuseAfterCleanup(t *testing.T) {
+	gen := NewTempDirGenerator("reuse-prefix")
+	t.Cleanup(func() { assert.NoError(t, gen.Cleanup()) })
+
+	first, err := gen.NewDirectory("first")
+	require.NoError(t, err)
+	require.DirExists(t, first)
+
+	require.NoError(t, gen.Cleanup())
+	assert.NoDirExists(t, first)
+
+	second, err := gen.NewDirectory("second")
+	require.NoError(t, err, "generator must be reusable after cleanup")
+	require.DirExists(t, second)
+	assert.NotContains(t, second, path.Dir(first), "reuse must start a fresh root")
+
+	// cleanup is idempotent
+	require.NoError(t, gen.Cleanup())
+	require.NoError(t, gen.Cleanup())
+	assert.NoDirExists(t, second)
 }
