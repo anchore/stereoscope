@@ -216,14 +216,9 @@ func (l *Layer) index(catalog *FileCatalog) error {
 		// no index to report: Metadata is only populated by fetch, so it is zeroed here
 		return fmt.Errorf("layer contents have not been fetched")
 	}
-	mediaType, err := l.layer.MediaType()
-	if err != nil {
-		return err
-	}
 	tree := filetree.New()
 	l.Tree = tree
 	l.fileCatalog = catalog
-	idx := int(l.Metadata.Index)
 
 	// published here rather than in fetch: the monitor counts tar entries, which is entirely
 	// index-stage work. Publishing it at fetch time also meant a layer that failed to fetch left a
@@ -231,14 +226,15 @@ func (l *Layer) index(catalog *FileCatalog) error {
 	// completion rather than the layer order consumers expect.
 	l.readMonitor = trackReadProgress(l.Metadata)
 
+	// l.Metadata.MediaType was already validated against these same sets by fetch (and, before
+	// that, validateLayerMediaTypes for every layer up front), so there is no unknown case left
+	// to handle here.
 	var readErr error
 	switch {
-	case standardLayerMediaTypes.Has(string(mediaType)):
+	case standardLayerMediaTypes.Has(string(l.Metadata.MediaType)):
 		readErr = l.indexStandardImageLayer(tree)
-	case singularityLayerMediaTypes.Has(string(mediaType)):
+	case singularityLayerMediaTypes.Has(string(l.Metadata.MediaType)):
 		readErr = l.indexSingularityImageLayer(tree)
-	default:
-		return fmt.Errorf("unknown layer media type: %+v", mediaType)
 	}
 	if readErr != nil {
 		return readErr
@@ -246,7 +242,7 @@ func (l *Layer) index(catalog *FileCatalog) error {
 
 	startTime := time.Now()
 	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
-	log.WithFields("index", idx, "time", time.Since(startTime)).Trace("completed layer search context")
+	log.WithFields("index", l.Metadata.Index, "time", time.Since(startTime)).Trace("completed layer search context")
 
 	return nil
 }
