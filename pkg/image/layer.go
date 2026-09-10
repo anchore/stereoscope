@@ -174,18 +174,23 @@ func (l *Layer) close() error {
 }
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
-// file tree, and the layer squash tree. It is Fetch followed by Index.
+// file tree, and the layer squash tree. It is fetch followed by index.
 func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir string) error {
-	if err := l.Fetch(idx, uncompressedLayersCacheDir); err != nil {
+	if err := l.fetch(idx, uncompressedLayersCacheDir); err != nil {
 		return err
 	}
-	return l.Index(catalog)
+	return l.index(catalog)
 }
 
-// Fetch resolves the layer's metadata and materializes its uncompressed contents in the cache
+// fetch resolves the layer's metadata and materializes its uncompressed contents in the cache
 // directory - the network download and decompression, for a registry layer. It does no indexing, so
 // an image can keep one layer's download going while other layers are indexed (see Image.Read).
-func (l *Layer) Fetch(idx int, uncompressedLayersCacheDir string) error {
+//
+// Unexported deliberately: fetch must run before index, and that ordering is not something the
+// type can enforce for an outside caller. FileCatalog.Layer hands a *Layer to any consumer, so an
+// exported pair would let one of them rebuild a layer out from under every other reader of the
+// same image. Layer lifetime belongs to the Image that read it; Layer.Read is the entry point.
+func (l *Layer) fetch(idx int, uncompressedLayersCacheDir string) error {
 	mediaType, err := l.layer.MediaType()
 	if err != nil {
 		return err
@@ -205,10 +210,12 @@ func (l *Layer) Fetch(idx int, uncompressedLayersCacheDir string) error {
 	return err
 }
 
-// Index builds the layer's file tree and catalog entries from the contents Fetch materialized.
-func (l *Layer) Index(catalog *FileCatalog) error {
+// index builds the layer's file tree and catalog entries from the contents fetch materialized.
+// See fetch for why this is not exported.
+func (l *Layer) index(catalog *FileCatalog) error {
 	if l.contentPath == "" {
-		return fmt.Errorf("layer %d has not been fetched", l.Metadata.Index)
+		// no index to report: Metadata is only populated by fetch, so it is zeroed here
+		return fmt.Errorf("layer contents have not been fetched")
 	}
 	mediaType, err := l.layer.MediaType()
 	if err != nil {

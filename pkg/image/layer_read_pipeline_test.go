@@ -356,8 +356,8 @@ func TestImage_squashLayers_reportsAnUnindexedLayer(t *testing.T) {
 
 	i := &Image{contentCacheDir: t.TempDir()}
 	// layer 0 needs a tree for the idx==0 branch to work at all
-	require.NoError(t, layers[0].Fetch(0, i.contentCacheDir))
-	require.NoError(t, layers[0].Index(NewFileCatalog()))
+	require.NoError(t, layers[0].fetch(0, i.contentCacheDir))
+	require.NoError(t, layers[0].index(NewFileCatalog()))
 
 	err := i.squashLayers(layers, gates, &progress.Manual{})
 	require.Error(t, err)

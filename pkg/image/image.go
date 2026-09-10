@@ -372,7 +372,7 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 	go func() {
 		err := async.Collect(&fetchCtx, LayerFetchExecutor, async.ToSeq(idxs),
 			func(idx int) (int, error) {
-				if err := layers[idx].Fetch(idx, i.contentCacheDir); err != nil {
+				if err := layers[idx].fetch(idx, i.contentCacheDir); err != nil {
 					// the index stage will never see this layer, so open its gate here
 					gates.done(idx, false)
 					return idx, fmt.Errorf("failed to fetch layer %d: %w", idx, err)
@@ -387,7 +387,7 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 	indexCtx := ctx
 	indexErr := async.Collect(&indexCtx, LayerIndexExecutor, seqOfChannel(fetched),
 		func(idx int) (int, error) {
-			err := layers[idx].Index(fileCatalog)
+			err := layers[idx].index(fileCatalog)
 			// open the gate either way: squash decides what to do with the outcome
 			gates.done(idx, err == nil)
 			if err != nil {
