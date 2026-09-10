@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"io"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -88,16 +89,97 @@ func TestImage_readLayers_concurrentReadKeepsManifestOrder(t *testing.T) {
 	}
 }
 
-func TestImage_readLayers_sequentialMatchesConcurrent(t *testing.T) {
-	// a registry-style single-fetch run must produce the same layer set shape as a parallel one
-	for _, concurrency := range []int{1, 4} {
-		layers := randomLayers(t, 4)
-		i := &Image{contentCacheDir: t.TempDir()}
-		require.NoError(t, i.readLayers(layerConcurrency(concurrency, concurrency), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
-		for idx, layer := range layers {
-			require.Equal(t, uint(idx), layer.Metadata.Index)
-			require.NotNil(t, layer.Tree)
+// fileTuple is the part of a file's identity that must survive indexing unchanged, regardless of
+// how many workers raced to produce it.
+type fileTuple struct {
+	RealPath        string
+	Type            file.Type
+	Size            int64
+	LinkDestination string
+}
+
+// fileTuples walks every file in tree (including dirs and links, not just regulars) and resolves
+// each against catalog, so the comparison covers exactly what the tree/catalog pair actually
+// recorded rather than just path names.
+func fileTuples(t *testing.T, tree filetree.Reader, catalog FileCatalogReader) []fileTuple {
+	t.Helper()
+	var tuples []fileTuple
+	for _, ref := range tree.AllFiles(file.AllTypes()...) {
+		entry, err := catalog.Get(ref)
+		require.NoErrorf(t, err, "no catalog entry for %s", ref.RealPath)
+		tuples = append(tuples, fileTuple{
+			RealPath:        string(entry.RealPath),
+			Type:            entry.Type,
+			Size:            entry.Size(),
+			LinkDestination: entry.LinkDestination,
+		})
+	}
+	sort.Slice(tuples, func(i, j int) bool { return tuples[i].RealPath < tuples[j].RealPath })
+	return tuples
+}
+
+func TestImage_Read_concurrentMatchesSequential(t *testing.T) {
+	// output parity between the serial and concurrent read paths is the core correctness claim of
+	// the fetch/index pipeline. Build one layer set, read it twice - once with both stages bounded
+	// to 1, once bounded well above the layer count - and require the two images to be identical,
+	// not just individually well-formed.
+	const layerCount = 6
+	reg, lnk, sym := byte(tar.TypeReg), byte(tar.TypeLink), byte(tar.TypeSymlink)
+
+	var v1Layers []v1.Layer
+	for idx := 0; idx < layerCount; idx++ {
+		entries := []tarEntry{
+			{path: fmt.Sprintf("only-in-%d.txt", idx), typeFlag: reg, contents: fmt.Sprintf("unique-%d", idx)},
+			// every layer overwrites this, so squash order matters
+			{path: "shared.txt", typeFlag: reg, contents: fmt.Sprintf("v%d", idx)},
+			{path: fmt.Sprintf("link-to-%d", idx), typeFlag: sym, linkPath: fmt.Sprintf("only-in-%d.txt", idx)},
 		}
+		if idx == 0 {
+			// a same-layer hardlink pair: the data-carrying name must precede the hardlink header
+			entries = append(entries,
+				tarEntry{path: "hard-target.txt", typeFlag: reg, contents: "hardlink-payload"},
+				tarEntry{path: "hard-link.txt", typeFlag: lnk, linkPath: "hard-target.txt"},
+			)
+		}
+		v1Layers = append(v1Layers, layerFromTarEntries(t, entries...))
+	}
+
+	read := func(ctx context.Context) *Image {
+		t.Helper()
+		v1Img, err := mutate.AppendLayers(empty.Image, v1Layers...)
+		require.NoError(t, err)
+		img := New(v1Img, file.NewTempDirGenerator("concurrency-parity-test"), t.TempDir())
+		t.Cleanup(func() { require.NoError(t, img.Cleanup()) })
+		require.NoError(t, img.Read(ctx))
+		return img
+	}
+
+	serial := read(layerConcurrency(1, 1))
+	concurrent := read(layerConcurrency(4, 4))
+
+	require.Equal(t, serial.Metadata.Size, concurrent.Metadata.Size, "image size")
+	require.Len(t, concurrent.Layers, len(serial.Layers))
+
+	for idx := range serial.Layers {
+		s, c := serial.Layers[idx], concurrent.Layers[idx]
+		require.Equalf(t, s.Metadata.Index, c.Metadata.Index, "layer %d index", idx)
+		require.Equalf(t, s.Metadata.Digest, c.Metadata.Digest, "layer %d digest", idx)
+		require.Equalf(t, s.Metadata.Size, c.Metadata.Size, "layer %d size", idx)
+
+		require.Equalf(t, fileTuples(t, s.Tree, serial.FileCatalog), fileTuples(t, c.Tree, concurrent.FileCatalog),
+			"layer %d tree", idx)
+		require.Equalf(t, fileTuples(t, s.SquashedTree, serial.FileCatalog), fileTuples(t, c.SquashedTree, concurrent.FileCatalog),
+			"layer %d squashed tree", idx)
+	}
+
+	// and both must resolve the overwritten path to the top layer's value
+	for name, img := range map[string]*Image{"serial": serial, "concurrent": concurrent} {
+		rc, err := img.OpenPathFromSquash("/shared.txt")
+		require.NoErrorf(t, err, "%s image", name)
+		contents, err := io.ReadAll(rc)
+		require.NoErrorf(t, err, "%s image", name)
+		require.NoErrorf(t, rc.Close(), "%s image", name)
+		require.Equalf(t, fmt.Sprintf("v%d", layerCount-1), string(contents), "%s image resolved the wrong layer", name)
 	}
 }
 
