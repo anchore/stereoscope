@@ -6,6 +6,7 @@ import (
 	"fmt"
 	async "github.com/anchore/go-sync"
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -466,5 +467,35 @@ func TestImage_Read_panicInAStageBecomesAnError(t *testing.T) {
 		// a panic skips the stage's gates.done, so this also pins that Read's releaseAll
 		// safety net opens the gate the squash is waiting on
 		t.Fatal("Read hung after a panic: the squash gate was never released")
+	}
+}
+
+func TestImage_Read_squashedSearchContextMatchesAFreshlyBuiltOne(t *testing.T) {
+	// Read hands back the top layer's squashed search context rather than rebuilding one over the
+	// same tree and index. That is only safe if the two are interchangeable, so pin it: symlinks
+	// are what NewSearchContext actually indexes, so the fixture carries some.
+	var layers []v1.Layer
+	for idx := 0; idx < 4; idx++ {
+		layers = append(layers, layerFromTarEntries(t,
+			tarEntry{path: fmt.Sprintf("f%d.txt", idx), typeFlag: tar.TypeReg, contents: "x"},
+			tarEntry{path: fmt.Sprintf("s%d", idx), typeFlag: tar.TypeSymlink, linkPath: fmt.Sprintf("f%d.txt", idx)},
+			tarEntry{path: "shared.txt", typeFlag: tar.TypeReg, contents: fmt.Sprintf("v%d", idx)},
+		))
+	}
+	img := readImageFromLayers(t, layers...)
+
+	reused := img.SquashedSearchContext
+	fresh := filetree.NewSearchContext(img.SquashedTree(), img.FileCatalog)
+
+	for _, glob := range []string{"**/*.txt", "**/s*", "**"} {
+		fromReused, err := reused.SearchByGlob(glob)
+		require.NoErrorf(t, err, "glob %q", glob)
+		fromFresh, err := fresh.SearchByGlob(glob)
+		require.NoErrorf(t, err, "glob %q", glob)
+
+		require.Lenf(t, fromReused, len(fromFresh), "glob %q returned a different count", glob)
+		for i := range fromReused {
+			assert.Equalf(t, fromFresh[i].RequestPath, fromReused[i].RequestPath, "glob %q result %d", glob, i)
+		}
 	}
 }

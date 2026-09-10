@@ -319,7 +319,15 @@ func (i *Image) Read(ctx context.Context) error {
 	lapTime = time.Now()
 
 	i.FileCatalog = fileCatalog
-	i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
+	// the top layer's squash IS the image squash, and squashLayers already built a search context
+	// over that same tree and index. Rebuilding it here walked every symlink and hardlink in the
+	// whole catalog a second time, which with the squash now overlapped was the largest piece of
+	// serial work left in Read.
+	if len(i.Layers) > 0 {
+		i.SquashedSearchContext = i.Layers[len(i.Layers)-1].SquashedSearchContext
+	} else {
+		i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
+	}
 
 	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image search context")
 	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime)).Info("completed image read")
