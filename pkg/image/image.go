@@ -409,14 +409,17 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 		}
 	}
 
-	// fetched hands layer indexes from the fetch stage to the index stage. Small and bounded on
-	// purpose: a fetch worker blocking here is backpressure, not a bug, so decompressed-but-
-	// unindexed layers cannot pile up unbounded while indexing lags behind. This cannot deadlock -
-	// index tasks never submit work back to the fetch stage or this channel, so the index side
-	// always keeps draining until it is done or ctx is cancelled, and a fetch worker that is
-	// blocked on the handoff when the caller cancels bails out via ctx rather than blocking
-	// forever on a stage that has stopped reading.
-	fetched := make(chan int, 1)
+	// fetched hands layer indexes from the fetch stage to the index stage, buffered so that a send
+	// can never block: there are at most len(layers) of them.
+	//
+	// Do not shrink this to bound the fetch-ahead. The two stages can share one bounded executor -
+	// go-sync resolves a missing named executor to ExecutorDefault, and errGroupExecutor.Go blocks
+	// once its limit is reached, and its ChildExecutor caches a single child that both stages then
+	// resolve to. A fetch worker parked on a full channel is holding a slot the index stage needs
+	// to drain it, and with a limit of one that is a deadlock, reproducible today. Bounding the
+	// fetch-ahead has to happen where no worker slot is held: in fetchIdxs, which runs on the
+	// submitting goroutine, gated on how many layers are fetched but not yet indexed.
+	fetched := make(chan int, len(layers))
 	fetchDone := make(chan error, 1)
 
 	fetchCtx := ctx
