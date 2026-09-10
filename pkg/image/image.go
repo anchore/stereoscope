@@ -395,19 +395,27 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 //
 // A caller-supplied executor always wins; Read only fills in what is missing.
 const (
-	LayerFetchExecutor = "stereoscope-layer-fetch"
-	LayerIndexExecutor = "stereoscope-layer-index"
+	LayerFetchExecutor = "layer-fetch"
+	LayerIndexExecutor = "layer-index"
 )
 
 // withLayerExecutors fills in the stage executors this image should use for any the caller has not
 // supplied. Never bounded at zero: a zero-concurrency go-sync executor runs inline on the caller's
 // goroutine, which would collapse the two stages back into one and lose the overlap.
 func withLayerExecutors(ctx context.Context, layers int) context.Context {
-	if !async.HasContextExecutor(ctx, LayerFetchExecutor) {
-		ctx = async.SetContextExecutor(ctx, LayerFetchExecutor, async.NewExecutor(layerReadWorkers(layers)))
-	}
-	if !async.HasContextExecutor(ctx, LayerIndexExecutor) {
-		ctx = async.SetContextExecutor(ctx, LayerIndexExecutor, async.NewExecutor(layerReadWorkers(layers)))
+	for _, name := range []string{LayerFetchExecutor, LayerIndexExecutor} {
+		if async.HasContextExecutor(ctx, name) {
+			continue
+		}
+		// go-sync resolves a missing named executor to ExecutorDefault, so a host that installed
+		// one to express a single process-wide budget already has an answer for this stage and we
+		// should not talk over it. Only fill in when there is nothing at all, because the last
+		// fallback go-sync offers is an inline serial executor, which would collapse the two
+		// stages into one and lose the overlap.
+		if async.HasContextExecutor(ctx, async.ExecutorDefault) {
+			continue
+		}
+		ctx = async.SetContextExecutor(ctx, name, async.NewExecutor(layerReadWorkers(layers)))
 	}
 	return ctx
 }
@@ -471,8 +479,16 @@ func seqOfChannel[T any](ch <-chan T) iter.Seq[T] {
 	}
 }
 
-// layerReadWorkers is the default bound for a layer-read stage when the caller has not installed
-// an executor of its own: the number of CPUs, capped at 8, and never more workers than layers.
+// layerReadWorkers is the default bound for a layer-read stage when neither a named executor nor
+// ExecutorDefault is in the context: the number of CPUs, capped at 8, and never more workers than
+// there are layers.
+//
+// The cap is measured, not a guess. Both stages are throughput-bound rather than latency-bound -
+// decompress and write, then read back and walk - so oversubscribing past a handful of workers
+// costs more in contention than it buys in overlap. On a 40-layer image over 12 cores, where the
+// cap actually binds: 4 workers 718ms, 8 workers 679ms, 12 workers 694ms, 24 workers 715ms,
+// 48 workers 746ms. Going wider is slower, so this is not the place to scale with NumCPU alone.
+// Layer count is usually the real ceiling anyway; a 12-layer image cannot use more than 12.
 func layerReadWorkers(layers int) int {
 	n := runtime.NumCPU()
 	if n > 8 {

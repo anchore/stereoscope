@@ -198,6 +198,51 @@ func TestImage_readLayers_defaultAppliesWhenCallerSuppliesNothing(t *testing.T) 
 	}
 }
 
+func TestWithLayerExecutors_defaultsFillInOnlyWhenNothingIsInstalled(t *testing.T) {
+	const layerCount = 6
+
+	t.Run("nothing installed", func(t *testing.T) {
+		// both stages need a bound, because go-sync's last fallback is an inline serial executor
+		// and that would collapse the pipeline into one stage
+		ctx := withLayerExecutors(context.Background(), layerCount)
+		assert.True(t, async.HasContextExecutor(ctx, LayerFetchExecutor))
+		assert.True(t, async.HasContextExecutor(ctx, LayerIndexExecutor))
+	})
+
+	t.Run("ExecutorDefault installed", func(t *testing.T) {
+		// a host that installed a single process-wide budget already answered for both stages;
+		// go-sync resolves the missing names to it, so we must not talk over it
+		base := async.SetContextExecutor(context.Background(), async.ExecutorDefault, async.NewExecutor(3))
+		ctx := withLayerExecutors(base, layerCount)
+		assert.False(t, async.HasContextExecutor(ctx, LayerFetchExecutor), "overrode the host's default")
+		assert.False(t, async.HasContextExecutor(ctx, LayerIndexExecutor), "overrode the host's default")
+	})
+
+	t.Run("one stage named, plus ExecutorDefault", func(t *testing.T) {
+		// the registry provider's shape: it pins fetch and leaves indexing to whatever the host set
+		base := async.SetContextExecutor(context.Background(), async.ExecutorDefault, async.NewExecutor(3))
+		base = async.SetContextExecutor(base, LayerFetchExecutor, async.NewExecutor(1))
+		ctx := withLayerExecutors(base, layerCount)
+		assert.True(t, async.HasContextExecutor(ctx, LayerFetchExecutor), "the pinned stage must survive")
+		assert.False(t, async.HasContextExecutor(ctx, LayerIndexExecutor), "the other stage falls back to the host's default")
+	})
+}
+
+func TestImage_readLayers_honoursExecutorDefault(t *testing.T) {
+	// end to end: a host budget of one must actually bound fetching, not just be recorded
+	var inFlight, maxSeen atomic.Int64
+	layers := countingLayers(t, 8, &inFlight, &maxSeen)
+
+	ctx := async.SetContextExecutor(context.Background(), async.ExecutorDefault, async.NewExecutor(1))
+	i := &Image{contentCacheDir: t.TempDir()}
+	require.NoError(t, i.readLayers(ctx, layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
+
+	assert.Equal(t, int64(1), maxSeen.Load(), "the host's ExecutorDefault did not bound the fetch stage")
+	for idx, layer := range layers {
+		assert.NotNilf(t, layer.Tree, "layer %d was not indexed", idx)
+	}
+}
+
 func TestImage_readLayers_stageBoundsAreIndependent(t *testing.T) {
 	// the point of two executors rather than one over a fused per-layer unit: pinning fetch must
 	// not serialise indexing. This is the registry configuration, and a single bound cannot
