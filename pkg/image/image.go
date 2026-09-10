@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -18,6 +18,7 @@ import (
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 
+	async "github.com/anchore/go-sync"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -282,7 +283,7 @@ func (i *Image) Read(ctx context.Context) error {
 		layers[idx] = newLayer(v1Layer, knownDiffID)
 	}
 
-	if err := i.readLayers(layers, fileCatalog, readProg); err != nil {
+	if err := i.readLayers(ctx, layers, fileCatalog, readProg); err != nil {
 		// release the layers that did read. The caller has an error and may never reach Cleanup,
 		// and a half-built layer set must not be left visible either: accessors like SquashedTree
 		// read the last layer, which here was never squashed. i.Layers is not assigned until
@@ -291,9 +292,6 @@ func (i *Image) Read(ctx context.Context) error {
 			log.WithFields("error", closeErr).Trace("unable to release a layer tar after a failed read")
 		}
 		return err
-	}
-	for _, layer := range layers {
-		i.Metadata.Size += layer.Metadata.Size
 	}
 	i.Layers = layers
 
@@ -315,82 +313,100 @@ func (i *Image) Read(ctx context.Context) error {
 	return err
 }
 
-// readLayers drives the two stages of a layer read over the image's layers: a fetch pool
-// (download + decompress into the cache) sized by the provider's concurrency choice, and an index
-// pool (tar walk into the file catalog) that always runs alongside, so the previous layer is
-// indexed while the next is still being fetched. It returns the first error any layer hit.
-func (i *Image) readLayers(layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual) error {
-	fetchWorkers := layerReadWorkers(len(layers), i.layerReadConcurrency)
-	indexWorkers := layerReadWorkers(len(layers), 0)
+// readLayers drives the two stages of a layer read: a fetch stage (download + decompress into the
+// cache) and an index stage (tar walk into the file catalog) that runs alongside it, so the
+// previous layer is indexed while the next is still being fetched.
+//
+// Each stage is bounded by its own go-sync executor pulled from the context, which is what lets a
+// caller fold stereoscope into a process-wide concurrency budget: install executors under
+// LayerFetchExecutor and LayerIndexExecutor and they win. Read installs defaults when they are
+// absent, so the two bounds stay independent - the registry provider wants one download at a time
+// and eight indexers, which a single fused bound cannot express.
+//
+// Errors from both stages are joined. Panics inside either stage are captured as errors rather
+// than taking down the process, and a cancelled context stops either stage from starting more
+// work.
+func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual) error {
+	ctx = i.withLayerExecutors(ctx, len(layers))
 
-	var (
-		errMu    sync.Mutex
-		firstErr error
-	)
-	fail := func(stage string, idx int, err error) {
-		errMu.Lock()
-		defer errMu.Unlock()
-		if firstErr == nil {
-			firstErr = fmt.Errorf("failed to %s layer %d: %w", stage, idx, err)
-		}
-	}
-	failed := func() bool {
-		errMu.Lock()
-		defer errMu.Unlock()
-		return firstErr != nil
+	idxs := make([]int, len(layers))
+	for n := range idxs {
+		idxs[n] = n
 	}
 
-	toFetch := make(chan int)
-	toIndex := make(chan int, len(layers))
+	// fetched hands layer indexes from the fetch stage to the index stage. Buffered to the layer
+	// count so a fetch worker can never block on the handoff, which keeps the two stages free of
+	// any ordering dependency on each other.
+	fetched := make(chan int, len(layers))
+	fetchDone := make(chan error, 1)
 
-	var fetchWG sync.WaitGroup
-	for w := 0; w < fetchWorkers; w++ {
-		fetchWG.Add(1)
-		go func() {
-			defer fetchWG.Done()
-			for idx := range toFetch {
-				if failed() {
-					continue
-				}
+	fetchCtx := ctx
+	go func() {
+		err := async.Collect(&fetchCtx, LayerFetchExecutor, async.ToSeq(idxs),
+			func(idx int) (int, error) {
 				if err := layers[idx].Fetch(idx, i.contentCacheDir); err != nil {
-					fail("fetch", idx, err)
-					continue
+					return idx, fmt.Errorf("failed to fetch layer %d: %w", idx, err)
 				}
-				toIndex <- idx
+				fetched <- idx
+				return idx, nil
+			}, nil)
+		close(fetched)
+		fetchDone <- err
+	}()
+
+	indexCtx := ctx
+	indexErr := async.Collect(&indexCtx, LayerIndexExecutor, seqOfChannel(fetched),
+		func(idx int) (int, error) {
+			if err := layers[idx].Index(fileCatalog); err != nil {
+				return idx, fmt.Errorf("failed to index layer %d: %w", idx, err)
 			}
-		}()
+			readProg.Increment()
+			return idx, nil
+		},
+		// the accumulator is serialised by Collect, so this needs no lock of its own
+		func(idx int, _ int) {
+			i.Metadata.Size += layers[idx].Metadata.Size
+		})
+
+	return errors.Join(<-fetchDone, indexErr)
+}
+
+// LayerFetchExecutor and LayerIndexExecutor name the go-sync executors bounding each stage of a
+// layer read. Install one under either name to take over that stage's concurrency:
+//
+//	ctx = sync.SetContextExecutor(ctx, image.LayerFetchExecutor, sync.NewExecutor(2))
+//
+// A caller-supplied executor always wins; Read only fills in what is missing.
+const (
+	LayerFetchExecutor = "stereoscope-layer-fetch"
+	LayerIndexExecutor = "stereoscope-layer-index"
+)
+
+// withLayerExecutors fills in the stage executors this image should use for any the caller has not
+// supplied. Never bounded at zero: a zero-concurrency go-sync executor runs inline on the caller's
+// goroutine, which would collapse the two stages back into one and lose the overlap.
+func (i *Image) withLayerExecutors(ctx context.Context, layers int) context.Context {
+	if !async.HasContextExecutor(ctx, LayerFetchExecutor) {
+		ctx = async.SetContextExecutor(ctx, LayerFetchExecutor,
+			async.NewExecutor(layerReadWorkers(layers, i.layerReadConcurrency)))
 	}
-	go func() {
-		for idx := range layers {
-			toFetch <- idx
+	if !async.HasContextExecutor(ctx, LayerIndexExecutor) {
+		ctx = async.SetContextExecutor(ctx, LayerIndexExecutor,
+			async.NewExecutor(layerReadWorkers(layers, 0)))
+	}
+	return ctx
+}
+
+// seqOfChannel adapts a channel to an iter.Seq so a go-sync Collect can consume a stage's output
+// as it is produced rather than waiting for all of it.
+func seqOfChannel[T any](ch <-chan T) iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for v := range ch {
+			if !yield(v) {
+				return
+			}
 		}
-		close(toFetch)
-	}()
-	go func() {
-		fetchWG.Wait()
-		close(toIndex)
-	}()
-
-	var indexWG sync.WaitGroup
-	for w := 0; w < indexWorkers; w++ {
-		indexWG.Add(1)
-		go func() {
-			defer indexWG.Done()
-			for idx := range toIndex {
-				if failed() {
-					continue
-				}
-				if err := layers[idx].Index(fileCatalog); err != nil {
-					fail("index", idx, err)
-					continue
-				}
-				readProg.Increment()
-			}
-		}()
 	}
-	indexWG.Wait()
-
-	return firstErr
 }
 
 // LayerReadConcurrency is the default bound on how many layers are fetched at once (and on how many
