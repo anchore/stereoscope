@@ -384,10 +384,14 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 		idxs[n] = n
 	}
 
-	// fetched hands layer indexes from the fetch stage to the index stage. Buffered to the layer
-	// count so a fetch worker can never block on the handoff, which keeps the two stages free of
-	// any ordering dependency on each other.
-	fetched := make(chan int, len(layers))
+	// fetched hands layer indexes from the fetch stage to the index stage. Small and bounded on
+	// purpose: a fetch worker blocking here is backpressure, not a bug, so decompressed-but-
+	// unindexed layers cannot pile up unbounded while indexing lags behind. This cannot deadlock -
+	// index tasks never submit work back to the fetch stage or this channel, so the index side
+	// always keeps draining until it is done or ctx is cancelled, and a fetch worker that is
+	// blocked on the handoff when the caller cancels bails out via ctx rather than blocking
+	// forever on a stage that has stopped reading.
+	fetched := make(chan int, 1)
 	fetchDone := make(chan error, 1)
 
 	fetchCtx := ctx
@@ -402,15 +406,28 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 					recordErr(idx, fmt.Errorf("failed to fetch layer %d: %w", idx, err))
 					return idx, nil
 				}
-				fetched <- idx
+				// ctx may already be cancelled by the caller by the time this fetch finishes;
+				// bail via Done rather than block forever on a handoff nothing is reading anymore
+				select {
+				case fetched <- idx:
+				case <-fetchCtx.Done():
+					gates.done(idx, false)
+				}
 				return idx, nil
 			}, nil)
-		close(fetched)
+		// only safe once every fetch worker above has actually returned. Collect can return here
+		// while a worker is still parked in the select above, but only by taking its ctx.Done
+		// branch - and that branch can only fire once ctx is cancelled, which is permanent, so if
+		// we observe no cancellation here Collect must have waited for all of them (its ctx.Done
+		// alternative never became ready)
+		if fetchCtx.Err() == nil {
+			close(fetched)
+		}
 		fetchDone <- err
 	}()
 
 	indexCtx := ctx
-	indexErr := async.Collect(&indexCtx, LayerIndexExecutor, seqOfChannel(fetched),
+	indexErr := async.Collect(&indexCtx, LayerIndexExecutor, seqOfChannel(indexCtx, fetched),
 		func(idx int) (int, error) {
 			err := layers[idx].index(fileCatalog)
 			// open the gate either way: squash decides what to do with the outcome
@@ -511,11 +528,23 @@ func (g *layerGates) releaseAll() {
 }
 
 // seqOfChannel adapts a channel to an iter.Seq so a go-sync Collect can consume a stage's output
-// as it is produced rather than waiting for all of it.
-func seqOfChannel[T any](ch <-chan T) iter.Seq[T] {
+// as it is produced rather than waiting for all of it. Also watches ctx directly: Collect's own
+// cancellation check only runs between values it already received, so a plain channel range would
+// hang forever waiting on a value that a cancelled upstream stage has stopped sending (and may
+// never close, since closing an unclosed channel here is what a concurrent, still-in-flight sender
+// could panic on).
+func seqOfChannel[T any](ctx context.Context, ch <-chan T) iter.Seq[T] {
 	return func(yield func(T) bool) {
-		for v := range ch {
-			if !yield(v) {
+		for {
+			select {
+			case v, ok := <-ch:
+				if !ok {
+					return
+				}
+				if !yield(v) {
+					return
+				}
+			case <-ctx.Done():
 				return
 			}
 		}
