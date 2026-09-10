@@ -349,17 +349,27 @@ func (i *Image) Read(ctx context.Context) error {
 // express.
 //
 // Errors from both stages are joined. Panics inside either stage are captured as errors rather
-// than taking down the process, and a cancelled context stops either stage from starting more
-// work.
+// than taking down the process. A cancelled context stops either stage from starting more work,
+// and the first layer failure sets an internal flag that does the same to its peers' fetches -
+// no sense downloading layer 7 after layer 2 is already known to be corrupt.
 func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual, gates *layerGates) error {
 	ctx = withLayerExecutors(ctx, len(layers))
 
-	// errors are recorded by layer index and reported in that order. Both stages run every layer
-	// they were given, so several can fail, and go-sync joins its own errors in completion order -
-	// which would name a different layer first from one run to the next.
+	// errors are recorded by layer index and reported in that order. Both stages can run several
+	// layers before either one fails, so more than one can fail, and go-sync joins its own errors
+	// in completion order - which would name a different layer first from one run to the next.
+	//
+	// aborted is deliberately not a cancelled context: ctx keeps meaning only "the caller gave
+	// up", checked by Collect itself before queueing and inside each task. Cancelling an internal
+	// context here instead would let Collect's own early return (it does not wait for stragglers
+	// once its context is done) abandon a peer's fetch mid-flight before that peer's own recordErr
+	// call - the very call whose result we are about to read - had a chance to run. aborted only
+	// stops fetchIdxs from handing out layers nothing has started on yet; anything already
+	// dispatched is always run to completion.
 	var (
 		errMu     sync.Mutex
 		layerErrs = map[int]error{}
+		aborted   atomic.Bool
 	)
 	recordErr := func(idx int, err error) {
 		errMu.Lock()
@@ -367,6 +377,7 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 		if _, seen := layerErrs[idx]; !seen {
 			layerErrs[idx] = err
 		}
+		aborted.Store(true)
 	}
 	orderedErrs := func() []error {
 		errMu.Lock()
@@ -384,6 +395,20 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 		idxs[n] = n
 	}
 
+	// fetchIdxs stops handing out new layer indices once aborted is set, so Collect never starts
+	// a fetch for a layer we already know we will not need. Whatever it already started keeps
+	// running to completion regardless - see the aborted comment above for why that matters.
+	fetchIdxs := func(yield func(int) bool) {
+		for _, idx := range idxs {
+			if aborted.Load() {
+				return
+			}
+			if !yield(idx) {
+				return
+			}
+		}
+	}
+
 	// fetched hands layer indexes from the fetch stage to the index stage. Small and bounded on
 	// purpose: a fetch worker blocking here is backpressure, not a bug, so decompressed-but-
 	// unindexed layers cannot pile up unbounded while indexing lags behind. This cannot deadlock -
@@ -396,7 +421,7 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 
 	fetchCtx := ctx
 	go func() {
-		err := async.Collect(&fetchCtx, LayerFetchExecutor, async.ToSeq(idxs),
+		err := async.Collect(&fetchCtx, LayerFetchExecutor, fetchIdxs,
 			func(idx int) (int, error) {
 				if err := layers[idx].fetch(idx, i.contentCacheDir); err != nil {
 					// the index stage will never see this layer, so open its gate here
@@ -444,8 +469,12 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 			i.Metadata.Size += layers[idx].Metadata.Size
 		})
 
+	// fetchDone is read before orderedErrs, not inline in the Join call: Collect only guarantees
+	// the fetch stage's own recordErr calls are visible once it has actually signalled done, and
+	// argument evaluation order would otherwise let orderedErrs run first and race them.
+	fetchErr := <-fetchDone
 	// what the stages report, lowest layer first, then anything go-sync recovered on its own
-	return errors.Join(append(orderedErrs(), <-fetchDone, indexErr)...)
+	return errors.Join(append(orderedErrs(), fetchErr, indexErr)...)
 }
 
 // LayerFetchExecutor and LayerIndexExecutor name the go-sync executors bounding each stage of a

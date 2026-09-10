@@ -13,6 +13,7 @@ import (
 	"io"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -112,14 +113,36 @@ func TestImage_readLayers_failedLayerFailsTheReadWithoutHanging(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "layer 1"), "error should name the failed layer: %v", err)
 }
 
+// barrierLayer's MediaType call blocks until every simultaneously-bad layer sharing its barrier
+// has also reached this point, then releases them all together. readLayers now cancels its
+// peers' still-queued work on the first recorded failure, so a synthetic failure that's fast
+// enough to win the race could otherwise stop a peer's fetch from ever being attempted - and an
+// error nobody ever discovered can hardly be reported.
+type barrierLayer struct {
+	v1.Layer
+	barrier *sync.WaitGroup
+}
+
+func (b barrierLayer) MediaType() (v1Types.MediaType, error) {
+	b.barrier.Done()
+	b.barrier.Wait()
+	return b.Layer.MediaType()
+}
+
+func badLayersWithBarrier(layers []*Layer, bad ...int) {
+	var barrier sync.WaitGroup
+	barrier.Add(len(bad))
+	for _, idx := range bad {
+		layers[idx] = NewLayer(barrierLayer{Layer: fakeLayer("garbage/media-type", nil), barrier: &barrier})
+	}
+}
+
 func TestImage_readLayers_reportsFailuresLowestLayerFirst(t *testing.T) {
 	// several layers can fail, and go-sync joins in completion order, so without ordering the
 	// reported error names a different layer from one run to the next - enough to flake a
 	// downstream test over a corrupt-image fixture
 	layers := randomLayers(t, 6)
-	for _, bad := range []int{4, 1, 3} {
-		layers[bad] = NewLayer(fakeLayer("garbage/media-type", nil))
-	}
+	badLayersWithBarrier(layers, 4, 1, 3)
 
 	i := &Image{contentCacheDir: t.TempDir()}
 	err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
@@ -140,9 +163,7 @@ func TestImage_readLayers_errorOrderIsStableAcrossRuns(t *testing.T) {
 	var first string
 	for run := 0; run < 25; run++ {
 		layers := randomLayers(t, 6)
-		for _, bad := range []int{5, 2, 4} {
-			layers[bad] = NewLayer(fakeLayer("garbage/media-type", nil))
-		}
+		badLayersWithBarrier(layers, 5, 2, 4)
 		i := &Image{contentCacheDir: t.TempDir()}
 		err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 		require.Error(t, err)
@@ -318,6 +339,20 @@ func TestImage_readLayers_cancelledContextStopsTheRead(t *testing.T) {
 	assert.Lessf(t, indexed, len(layers), "cancellation should have stopped some work, indexed %d/%d", indexed, len(layers))
 }
 
+func TestImage_readLayers_internalAbortReportsTheLayerErrorNotCancellation(t *testing.T) {
+	// layer 2 fails, which cancels readLayers' internal context so its peers stop starting more
+	// work. That internal cancellation is our own bookkeeping, not the caller's, and must not
+	// leak out as context.Canceled.
+	layers := randomLayers(t, 6)
+	layers[2] = NewLayer(fakeLayer("garbage/media-type", nil))
+
+	i := &Image{contentCacheDir: t.TempDir()}
+	err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to fetch layer 2")
+	assert.NotErrorIs(t, err, context.Canceled, "an internal abort must not surface as cancellation")
+}
+
 // failingFetchLayer has a valid media type, so Image.Read's up-front validation passes and the
 // failure lands in the fetch stage where the pipeline has to cope with it.
 type failingFetchLayer struct {
@@ -422,6 +457,59 @@ func TestImage_Read_cancelledContextDoesNotHangTheSquash(t *testing.T) {
 		assert.ErrorIs(t, readErr, context.Canceled)
 	case <-time.After(30 * time.Second):
 		t.Fatal("Read hung on a cancelled context: gates were never released")
+	}
+}
+
+// blockingLayer's Uncompressed call reports itself started and then waits to be released, so a
+// test can cancel the read while this layer's fetch worker is provably still in flight rather
+// than racing to catch it with a sleep.
+type blockingLayer struct {
+	v1.Layer
+	started chan<- struct{}
+	release <-chan struct{}
+}
+
+func (b blockingLayer) Uncompressed() (io.ReadCloser, error) {
+	close(b.started)
+	<-b.release
+	return b.Layer.Uncompressed()
+}
+
+func TestImage_Read_midFlightCancellationIsReportedAsCancellation(t *testing.T) {
+	// this is also the regression case for the fetch/index handoff: cancelling while a fetch
+	// worker is genuinely mid-flight is what could race the handoff channel's close against a
+	// worker still trying to hand a layer off to indexing
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	var layers []v1.Layer
+	for idx := 0; idx < 6; idx++ {
+		l := layerFromTarEntries(t, tarEntry{path: fmt.Sprintf("f%d.txt", idx), typeFlag: tar.TypeReg, contents: "ok"})
+		if idx == 3 {
+			l = blockingLayer{Layer: l, started: started, release: release}
+		}
+		layers = append(layers, l)
+	}
+	v1Img, err := mutate.AppendLayers(empty.Image, layers...)
+	require.NoError(t, err)
+
+	img := New(v1Img, file.NewTempDirGenerator("cancel-midflight-test"), t.TempDir())
+	t.Cleanup(func() { _ = img.Cleanup() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- img.Read(ctx) }()
+
+	<-started
+	cancel()
+	close(release) // let the blocked worker proceed now that it is already cancelled
+
+	select {
+	case readErr := <-done:
+		require.Error(t, readErr)
+		assert.ErrorIs(t, readErr, context.Canceled, "a mid-flight caller cancellation must be reported as cancellation")
+	case <-time.After(30 * time.Second):
+		t.Fatal("Read hung after a mid-flight cancellation")
 	}
 }
 
