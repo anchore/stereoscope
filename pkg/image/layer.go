@@ -203,7 +203,6 @@ func (l *Layer) fetch(idx int, uncompressedLayersCacheDir string) error {
 	if err != nil {
 		return err
 	}
-	l.readMonitor = trackReadProgress(l.Metadata)
 
 	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Trace("fetching image layer")
 	l.contentPath, err = l.uncompressedCache(uncompressedLayersCacheDir)
@@ -225,6 +224,12 @@ func (l *Layer) index(catalog *FileCatalog) error {
 	l.Tree = tree
 	l.fileCatalog = catalog
 	idx := int(l.Metadata.Index)
+
+	// published here rather than in fetch: the monitor counts tar entries, which is entirely
+	// index-stage work. Publishing it at fetch time also meant a layer that failed to fetch left a
+	// monitor behind that nothing would ever complete, and that the event order followed fetch
+	// completion rather than the layer order consumers expect.
+	l.readMonitor = trackReadProgress(l.Metadata)
 
 	var readErr error
 	switch {

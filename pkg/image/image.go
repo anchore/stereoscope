@@ -234,6 +234,9 @@ func (i *Image) Read(ctx context.Context) error {
 
 	// let consumers know of a monitorable event (image save + copy stages)
 	readProg := i.trackReadProgress(i.Metadata)
+	// deferred rather than completed at the end of the squash: every early return between here and
+	// there used to leave a consumer's bar stuck at whatever it had reached
+	defer readProg.SetCompleted()
 
 	fileCatalog := NewFileCatalog()
 
@@ -538,8 +541,6 @@ func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.
 
 		prog.Increment()
 	}
-
-	prog.SetCompleted()
 
 	return nil
 }
