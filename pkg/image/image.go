@@ -208,27 +208,14 @@ func (i *Image) applyOverrideMetadata() error {
 // The context bounds the read: cancelling it abandons work that has not started and stops the
 // layer pools from picking up more.
 func (i *Image) Read(ctx context.Context) error {
-	var err error
-	i.Metadata, err = readImageMetadata(i.image)
-	if err != nil {
-		return err
-	}
-
-	// override any metadata with what the user has provided manually
-	if err = i.applyOverrideMetadata(); err != nil {
-		return err
-	}
-
 	startTime := time.Now()
-	lapTime := startTime
 
-	v1Layers, err := i.image.Layers()
-	if err != nil {
+	if err := i.readMetadata(); err != nil {
 		return err
 	}
 
-	// validate all layer media types before processing
-	if err := validateLayerMediaTypes(v1Layers); err != nil {
+	layers, err := i.buildLayers()
+	if err != nil {
 		return err
 	}
 
@@ -240,37 +227,74 @@ func (i *Image) Read(ctx context.Context) error {
 	// there used to leave a consumer's bar stuck at whatever it had reached
 	defer readProg.SetCompleted()
 
+	// this rebuilds every layer, so release what a previous Read left open. Done here rather than
+	// at the top of Read so that a failure before this point leaves the existing layers usable
+	i.releasePreviousLayers()
+
 	fileCatalog := NewFileCatalog()
 
-	// this rebuilds every layer, so release what a previous Read left open. Deferred to here rather
-	// than the top of Read so that a failure before this point leaves the existing layers usable
+	lapTime := time.Now()
+	if err := i.readAndSquashLayers(ctx, layers, fileCatalog, readProg); err != nil {
+		// i.Layers is not assigned until this succeeds, so a failure releases the local slice
+		// rather than i.Layers - the caller has an error and may never reach Cleanup, and a
+		// half-built layer set must not be left visible either: accessors like SquashedTree read
+		// the last layer, which here was never squashed.
+		for _, closeErr := range closeLayers(layers) {
+			log.WithFields("error", closeErr).Trace("unable to release a layer tar after a failed read")
+		}
+		return err
+	}
+
+	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image layer read and squash")
+	lapTime = time.Now()
+
+	i.Layers = layers
+	i.FileCatalog = fileCatalog
+	i.SquashedSearchContext = i.squashedSearchContext()
+
+	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image search context")
+	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime)).Info("completed image read")
+
+	return nil
+}
+
+// readMetadata populates i.Metadata from the image, then lets the caller's overrides have the
+// final word on it.
+func (i *Image) readMetadata() error {
+	var err error
+	i.Metadata, err = readImageMetadata(i.image)
+	if err != nil {
+		return err
+	}
+	return i.applyOverrideMetadata()
+}
+
+// buildLayers resolves the layer set this read will work through, rejecting media types we cannot
+// process up front rather than partway through a read of an image we were never going to finish.
+func (i *Image) buildLayers() ([]*Layer, error) {
+	v1Layers, err := i.image.Layers()
+	if err != nil {
+		return nil, err
+	}
+	if err := validateLayerMediaTypes(v1Layers); err != nil {
+		return nil, err
+	}
+	return newLayers(v1Layers, i.Metadata.Config.RootFS.DiffIDs), nil
+}
+
+// releasePreviousLayers releases every layer tar a previous Read left open and forgets the layers.
+func (i *Image) releasePreviousLayers() {
 	for _, closeErr := range i.closeLayers() {
 		log.WithFields("error", closeErr).Trace("unable to release a layer tar from a previous read")
 	}
 	i.Layers = nil
+}
 
-	// the config already records every layer's diff ID, which saves each layer computing its own
-	// (for an OCI layout that means decompressing the entire layer just to hash it). When the
-	// config does not list exactly one per layer we cannot line them up, so let each layer answer.
-	diffIDs := i.Metadata.Config.RootFS.DiffIDs
-	if len(diffIDs) != len(v1Layers) {
-		diffIDs = nil
-	}
-
-	// fetch, index and squash all run concurrently from here; see readLayers for how the stages
-	// are bounded and squashLayers for why consuming in manifest order keeps it correct
-	layers := make([]*Layer, len(v1Layers))
-	for idx, v1Layer := range v1Layers {
-		var knownDiffID string
-		if diffIDs != nil {
-			knownDiffID = diffIDs[idx].String()
-		}
-		layers[idx] = newLayer(v1Layer, knownDiffID)
-	}
-
-	// squash runs alongside the read stages rather than after them. It consumes layers in
-	// manifest order, blocking on each layer's gate until that layer is indexed, so layer 0 is
-	// being squashed while layer 3 is still downloading.
+// readAndSquashLayers runs the squash alongside the read stages rather than after them: squash
+// consumes layers in manifest order, blocking on each layer's gate until that layer is indexed, so
+// layer 0 is being squashed while layer 3 is still downloading. See readLayers for how the read
+// stages are bounded and squashLayers for why consuming in manifest order keeps it correct.
+func (i *Image) readAndSquashLayers(ctx context.Context, layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual) error {
 	gates := newLayerGates(len(layers))
 	squashDone := make(chan error, 1)
 	// capture what the goroutine logs, and send last: once Read receives from squashDone it may
@@ -290,51 +314,27 @@ func (i *Image) Read(ctx context.Context) error {
 	gates.releaseAll()
 	squashErr := <-squashDone
 
-	// i.Layers is not assigned until every one of these succeeds, so each failure releases the
-	// local slice rather than i.Layers - the caller has an error and may never reach Cleanup, and
-	// a half-built layer set must not be left visible either: accessors like SquashedTree read the
-	// last layer, which here was never squashed.
 	if readErr != nil {
-		for _, closeErr := range closeLayers(layers) {
-			log.WithFields("error", closeErr).Trace("unable to release a layer tar after a failed read")
-		}
 		return readErr
 	}
 	if err := ctx.Err(); err != nil {
 		// checked before squashErr because cancellation is the root cause a caller wants to see:
 		// the stages stop starting queued work, so neither raises a per-layer failure and the
 		// squash just finds layers that were never indexed
-		for _, closeErr := range closeLayers(layers) {
-			log.WithFields("error", closeErr).Trace("unable to release a layer tar after a cancelled read")
-		}
 		return fmt.Errorf("unable to read image: %w", err)
 	}
-	if squashErr != nil {
-		for _, closeErr := range closeLayers(layers) {
-			log.WithFields("error", closeErr).Trace("unable to release a layer tar after a failed squash")
-		}
-		return squashErr
-	}
-	i.Layers = layers
+	return squashErr
+}
 
-	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image layer read and squash")
-	lapTime = time.Now()
-
-	i.FileCatalog = fileCatalog
-	// the top layer's squash IS the image squash, and squashLayers already built a search context
-	// over that same tree and index. Rebuilding it here walked every symlink and hardlink in the
-	// whole catalog a second time, which with the squash now overlapped was the largest piece of
-	// serial work left in Read.
+// squashedSearchContext returns the search context for the image squash. The top layer's squash IS
+// the image squash, and squashLayers already built a search context over that same tree and index.
+// Rebuilding it here walked every symlink and hardlink in the whole catalog a second time, which
+// with the squash now overlapped was the largest piece of serial work left in Read.
+func (i *Image) squashedSearchContext() filetree.Searcher {
 	if len(i.Layers) > 0 {
-		i.SquashedSearchContext = i.Layers[len(i.Layers)-1].SquashedSearchContext
-	} else {
-		i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
+		return i.Layers[len(i.Layers)-1].SquashedSearchContext
 	}
-
-	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image search context")
-	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime)).Info("completed image read")
-
-	return nil
+	return filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
 }
 
 // readLayers drives the two stages of a layer read: a fetch stage (download + decompress into the

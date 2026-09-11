@@ -112,6 +112,27 @@ func newLayer(layer v1.Layer, knownDiffID string) *Layer {
 	}
 }
 
+// newLayers builds the layer objects in manifest order.
+//
+// The image config already records every layer's diff ID, which saves each layer computing its own
+// (for an OCI layout that means decompressing the entire layer just to hash it). When the config
+// does not list exactly one per layer we cannot line them up, so let each layer answer for itself.
+func newLayers(v1Layers []v1.Layer, diffIDs []v1.Hash) []*Layer {
+	if len(diffIDs) != len(v1Layers) {
+		diffIDs = nil
+	}
+
+	layers := make([]*Layer, len(v1Layers))
+	for idx, v1Layer := range v1Layers {
+		var knownDiffID string
+		if diffIDs != nil {
+			knownDiffID = diffIDs[idx].String()
+		}
+		layers[idx] = newLayer(v1Layer, knownDiffID)
+	}
+	return layers
+}
+
 func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, error) {
 	if uncompressedLayersCacheDir == "" {
 		return "", fmt.Errorf("no cache directory given")

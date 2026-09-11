@@ -4,12 +4,6 @@ import (
 	"archive/tar"
 	"context"
 	"fmt"
-	async "github.com/anchore/go-sync"
-	"github.com/anchore/stereoscope/pkg/file"
-	"github.com/anchore/stereoscope/pkg/filetree"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/empty"
-	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"io"
 	"runtime"
 	"sort"
@@ -19,11 +13,18 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/empty"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wagoodman/go-progress"
+
+	async "github.com/anchore/go-sync"
+	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
 func Test_layerReadWorkers(t *testing.T) {
