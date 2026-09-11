@@ -406,6 +406,45 @@ func Test_searchContext_SearchByMIMEType(t *testing.T) {
 	}
 }
 
+func Test_searchContext_SearchByMIMEType_SkipsLinkCycles(t *testing.T) {
+	tree := New()
+	idx := NewIndex()
+	const mimeType = "application/x-executable"
+
+	for _, p := range []file.Path{
+		"/usr/bin/a-before",
+		"/usr/bin/zz-after",
+	} {
+		ref, err := tree.AddFile(p)
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		idx.Add(*ref, file.Metadata{MIMEType: mimeType})
+	}
+
+	for path, destination := range map[file.Path]file.Path{
+		"/usr/bin/xz":    "/usr/bin/xzcat",
+		"/usr/bin/xzcat": "/usr/bin/xz",
+	} {
+		ref, err := tree.AddSymLink(path, destination)
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		idx.Add(*ref, file.Metadata{MIMEType: mimeType, Type: file.TypeSymLink})
+	}
+
+	results, err := NewSearchContext(tree, idx).SearchByMIMEType(mimeType)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	var paths []string
+	for _, result := range results {
+		paths = append(paths, string(result.RealPath))
+	}
+	require.ElementsMatch(t, []string{
+		"/usr/bin/a-before",
+		"/usr/bin/zz-after",
+	}, paths)
+}
+
 func Test_complexSymlinkPerformance(t *testing.T) {
 	tr := New()
 	idx := NewIndex()
