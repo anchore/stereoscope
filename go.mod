@@ -14,7 +14,7 @@ require (
 	github.com/containerd/containerd/v2 v2.3.5
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/platforms v1.0.0-rc.5
-	github.com/docker/cli v29.7.2+incompatible
+	github.com/docker/cli v29.8.0+incompatible
 	github.com/docker/go-connections v0.8.1
 	github.com/gabriel-vasile/mimetype v1.4.15
 	github.com/gkampitakis/go-snaps v0.5.23
