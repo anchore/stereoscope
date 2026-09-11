@@ -92,6 +92,10 @@ type Layer struct {
 	// knownDiffID is the layer's diff ID as recorded in the image config, when the image could
 	// supply it; it saves computing the diff ID from the layer contents.
 	knownDiffID string
+	// contentPath is where Fetch materialized the uncompressed layer
+	contentPath string
+	// readMonitor reports indexing progress for this layer
+	readMonitor *progress.Manual
 }
 
 // NewLayer provides a new, unread layer object.
@@ -106,6 +110,27 @@ func newLayer(layer v1.Layer, knownDiffID string) *Layer {
 		layer:       layer,
 		knownDiffID: knownDiffID,
 	}
+}
+
+// newLayers builds the layer objects in manifest order.
+//
+// The image config already records every layer's diff ID, which saves each layer computing its own
+// (for an OCI layout that means decompressing the entire layer just to hash it). When the config
+// does not list exactly one per layer we cannot line them up, so let each layer answer for itself.
+func newLayers(v1Layers []v1.Layer, diffIDs []v1.Hash) []*Layer {
+	if len(diffIDs) != len(v1Layers) {
+		diffIDs = nil
+	}
+
+	layers := make([]*Layer, len(v1Layers))
+	for idx, v1Layer := range v1Layers {
+		var knownDiffID string
+		if diffIDs != nil {
+			knownDiffID = diffIDs[idx].String()
+		}
+		layers[idx] = newLayer(v1Layer, knownDiffID)
+	}
+	return layers
 }
 
 func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, error) {
@@ -170,24 +195,67 @@ func (l *Layer) close() error {
 }
 
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
-// file tree, and the layer squash tree.
+// file tree, and the layer squash tree. It is fetch followed by index.
 func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir string) error {
+	if err := l.fetch(idx, uncompressedLayersCacheDir); err != nil {
+		return err
+	}
+	return l.index(catalog)
+}
+
+// fetch resolves the layer's metadata and materializes its uncompressed contents in the cache
+// directory - the network download and decompression, for a registry layer. It does no indexing, so
+// an image can keep one layer's download going while other layers are indexed (see Image.Read).
+//
+// Unexported deliberately: fetch must run before index, and that ordering is not something the
+// type can enforce for an outside caller. FileCatalog.Layer hands a *Layer to any consumer, so an
+// exported pair would let one of them rebuild a layer out from under every other reader of the
+// same image. Layer lifetime belongs to the Image that read it; Layer.Read is the entry point.
+func (l *Layer) fetch(idx int, uncompressedLayersCacheDir string) error {
 	mediaType, err := l.layer.MediaType()
 	if err != nil {
 		return err
+	}
+	if !standardLayerMediaTypes.Has(string(mediaType)) && !singularityLayerMediaTypes.Has(string(mediaType)) {
+		return fmt.Errorf("unknown layer media type: %+v", mediaType)
+	}
+
+	l.Metadata, err = newLayerMetadata(l.layer, idx, l.knownDiffID)
+	if err != nil {
+		return err
+	}
+
+	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Trace("fetching image layer")
+	l.contentPath, err = l.uncompressedCache(uncompressedLayersCacheDir)
+	return err
+}
+
+// index builds the layer's file tree and catalog entries from the contents fetch materialized.
+// See fetch for why this is not exported.
+func (l *Layer) index(catalog *FileCatalog) error {
+	if l.contentPath == "" {
+		// no index to report: Metadata is only populated by fetch, so it is zeroed here
+		return fmt.Errorf("layer contents have not been fetched")
 	}
 	tree := filetree.New()
 	l.Tree = tree
 	l.fileCatalog = catalog
 
+	// published here rather than in fetch: the monitor counts tar entries, which is entirely
+	// index-stage work. Publishing it at fetch time also meant a layer that failed to fetch left a
+	// monitor behind that nothing would ever complete, and that the event order followed fetch
+	// completion rather than the layer order consumers expect.
+	l.readMonitor = trackReadProgress(l.Metadata)
+
+	// l.Metadata.MediaType was already validated against these same sets by fetch (and, before
+	// that, validateLayerMediaTypes for every layer up front), so there is no unknown case left
+	// to handle here.
 	var readErr error
 	switch {
-	case standardLayerMediaTypes.Has(string(mediaType)):
-		readErr = l.readStandardImageLayer(idx, uncompressedLayersCacheDir, tree)
-	case singularityLayerMediaTypes.Has(string(mediaType)):
-		readErr = l.readSingularityImageLayer(idx, uncompressedLayersCacheDir, tree)
-	default:
-		return fmt.Errorf("unknown layer media type: %+v", mediaType)
+	case standardLayerMediaTypes.Has(string(l.Metadata.MediaType)):
+		readErr = l.indexStandardImageLayer(tree)
+	case singularityLayerMediaTypes.Has(string(l.Metadata.MediaType)):
+		readErr = l.indexSingularityImageLayer(tree)
 	}
 	if readErr != nil {
 		return readErr
@@ -195,63 +263,35 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 
 	startTime := time.Now()
 	l.SearchContext = filetree.NewSearchContext(l.Tree, l.fileCatalog.Index)
-	log.WithFields("index", idx, "time", time.Since(startTime)).Trace("completed layer search context")
+	log.WithFields("index", l.Metadata.Index, "time", time.Since(startTime)).Trace("completed layer search context")
 
 	return nil
 }
 
-func (l *Layer) readStandardImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
+func (l *Layer) indexStandardImageLayer(tree *filetree.FileTree) error {
 	var err error
-	l.Metadata, err = newLayerMetadata(l.layer, idx, l.knownDiffID)
-	monitor := trackReadProgress(l.Metadata)
-	if err != nil {
-		return err
-	}
-
-	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Trace("reading uncompressed image layer")
-
-	tarFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)
-	if err != nil {
-		return err
-	}
-
 	startTime := time.Now()
 	l.indexedContent, err = file.NewTarIndex(
-		tarFilePath,
-		layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, monitor),
+		l.contentPath,
+		layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, l.readMonitor),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 	}
 	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType, "time", time.Since(startTime)).Trace("completed indexing image layer")
 
-	monitor.SetCompleted()
+	l.readMonitor.SetCompleted()
 	return nil
 }
 
-func (l *Layer) readSingularityImageLayer(idx int, uncompressedLayersCacheDir string, tree *filetree.FileTree) error {
-	var err error
-	l.Metadata, err = newLayerMetadata(l.layer, idx, l.knownDiffID)
-	if err != nil {
-		return err
+func (l *Layer) indexSingularityImageLayer(tree *filetree.FileTree) error {
+	startTime := time.Now()
+	if err := file.WalkSquashFS(l.contentPath, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, l.readMonitor)); err != nil {
+		return fmt.Errorf("failed to walk layer=%q squashfs : %w", l.Metadata.Digest, err)
 	}
+	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType, "time", time.Since(startTime)).Trace("completed indexing image layer")
 
-	log.Debugf("layer metadata: index=%+v digest=%+v mediaType=%+v",
-		l.Metadata.Index,
-		l.Metadata.Digest,
-		l.Metadata.MediaType)
-
-	monitor := trackReadProgress(l.Metadata)
-	sqfsFilePath, err := l.uncompressedCache(uncompressedLayersCacheDir)
-	if err != nil {
-		return err
-	}
-
-	if err := file.WalkSquashFS(sqfsFilePath, squashfsVisitor(tree, l.fileCatalog, &l.Metadata.Size, l, monitor)); err != nil {
-		return fmt.Errorf("failed to walk layer=%q: %w", l.Metadata.Digest, err)
-	}
-
-	monitor.SetCompleted()
+	l.readMonitor.SetCompleted()
 	return nil
 }
 
