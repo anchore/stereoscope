@@ -232,6 +232,8 @@ func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 			})
 
 			assertArchAndOs(t, img, tt.os, tt.architecture)
+			assert.Equal(t, tt.architecture, img.Metadata.Architecture)
+			assert.Equal(t, tt.os, img.Metadata.OS)
 			assert.Equal(t, tt.expectedDigest, img.Metadata.ID)
 		})
 	}
@@ -247,6 +249,8 @@ func TestDefaultPlatformWithOciDirectory(t *testing.T) {
 		require.NoError(t, img.Cleanup())
 	})
 	assertArchAndOs(t, img, "linux", runtime.GOARCH)
+	assert.Equal(t, runtime.GOARCH, img.Metadata.Architecture)
+	assert.Equal(t, "linux", img.Metadata.OS)
 }
 
 func TestDefaultPlatformWithOciTarball(t *testing.T) {

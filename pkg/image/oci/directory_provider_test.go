@@ -2,6 +2,7 @@ package oci
 
 import (
 	"context"
+	"runtime"
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -31,16 +32,17 @@ func Test_NewProviderFromPath(t *testing.T) {
 func Test_Directory_Provider_no_platform(t *testing.T) {
 	//GIVEN
 	tests := []struct {
-		name        string
-		fixturePath string
-		expectedErr string
+		name                     string
+		fixturePath              string
+		expectedErr              string
+		expectedPlatformMetadata *image.Platform
 	}{
-		{"fails to read from path", "", "unable to read image from OCI directory path"},
-		{"fails to read invalid oci manifest", "invalid_file", "unable to parse OCI directory indexManifest"},
-		{"fails to read valid oci manifest with no images", "no_manifests", "no images found in OCI directory at path"},
-		{"fails to read an invalid oci directory", "valid_manifest", "EOF"},
-		{"reads a valid oci directory", "valid_oci_dir", ""},
-		{"reads a multiplatform oci directory", "multiplatform_oci_dir", ""},
+		{"fails to read from path", "", "unable to read image from OCI directory path", nil},
+		{"fails to read invalid oci manifest", "invalid_file", "unable to parse OCI directory indexManifest", nil},
+		{"fails to read valid oci manifest with no images", "no_manifests", "no images found in OCI directory at path", nil},
+		{"fails to read an invalid oci directory", "valid_manifest", "EOF", nil},
+		{"reads a valid oci directory", "valid_oci_dir", "", nil},
+		{"reads a multiplatform oci directory", "multiplatform_oci_dir", "", &image.Platform{Architecture: runtime.GOARCH, OS: "linux"}},
 	}
 
 	for _, tc := range tests {
@@ -52,6 +54,10 @@ func Test_Directory_Provider_no_platform(t *testing.T) {
 		provider := NewDirectoryProvider(tmpDirGen, path)
 		t.Run(tc.name, func(t *testing.T) {
 			defer tmpDirGen.Cleanup()
+			if tc.fixturePath == "multiplatform_oci_dir" &&
+				!(runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
+				t.Skipf("unsupported architecture for test: %s", runtime.GOARCH)
+			}
 			//WHEN
 			image, err := provider.Provide(context.Background())
 
@@ -63,6 +69,15 @@ func Test_Directory_Provider_no_platform(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, image)
+				if tc.expectedPlatformMetadata == nil {
+					assert.Empty(t, image.Metadata.Architecture)
+					assert.Empty(t, image.Metadata.Variant)
+					assert.Empty(t, image.Metadata.OS)
+				} else {
+					assert.Equal(t, tc.expectedPlatformMetadata.Architecture, image.Metadata.Architecture)
+					assert.Equal(t, tc.expectedPlatformMetadata.Variant, image.Metadata.Variant)
+					assert.Equal(t, tc.expectedPlatformMetadata.OS, image.Metadata.OS)
+				}
 			}
 
 		})
@@ -71,42 +86,74 @@ func Test_Directory_Provider_no_platform(t *testing.T) {
 
 func Test_Directory_Provider_with_platform(t *testing.T) {
 	//GIVEN
+	singlePlatformDigest := "sha256:c1ed04a3da941a5dd09b58b16c37f065557863d382ef97995ddac885a8452ebb"
+	multiplatformAmd64Digest := "sha256:e7c26a4b4d156fd9947ee82295b7b78acf7aa54b93b8f3e4b9f608179ffb20e8"
+	multiplatformArm64Digest := "sha256:5ed07065bcbc6c52e3ad28526557d7b6833613fc79257b1a786de85e37c03b05"
 	tests := []struct {
 		name           string
 		fixturePath    string
 		platform       *image.Platform
 		expectedDigest string
+		expectedOS     string
+		expectedArch   string
 		expectedErr    string
 	}{
 		{
 			"reads a single platform oci directory with correct platform",
 			"valid_oci_dir",
 			&image.Platform{Architecture: "amd64", OS: "linux"},
-			"sha256:c1ed04a3da941a5dd09b58b16c37f065557863d382ef97995ddac885a8452ebb",
+			singlePlatformDigest,
+			"linux",
+			"amd64",
 			"",
 		},
 		{
 			"reads a single platform oci directory with different platform",
 			"valid_oci_dir",
 			&image.Platform{Architecture: "arm64", OS: "linux"},
-			"sha256:c1ed04a3da941a5dd09b58b16c37f065557863d382ef97995ddac885a8452ebb",
+			"",
+			"",
+			"",
+			"unexpected number of images matching platform \"linux/arm64\" in OCI directory (expected 1, found 0)",
+		},
+		{
+			"reads a single platform oci directory with no specified platform",
+			"valid_oci_dir",
+			nil,
+			singlePlatformDigest,
+			"",
+			"",
 			"",
 		},
 		{
 			"reads a multiplatform oci directory for linux/amd64", "multiplatform_oci_dir",
 			&image.Platform{Architecture: "amd64", OS: "linux"},
-			"sha256:e7c26a4b4d156fd9947ee82295b7b78acf7aa54b93b8f3e4b9f608179ffb20e8",
+			multiplatformAmd64Digest,
+			"linux",
+			"amd64",
 			"",
 		},
 		{
 			"reads a multiplatform oci directory for linux/arm64", "multiplatform_oci_dir",
 			&image.Platform{Architecture: "arm64", OS: "linux"},
-			"sha256:5ed07065bcbc6c52e3ad28526557d7b6833613fc79257b1a786de85e37c03b05",
+			multiplatformArm64Digest,
+			"linux",
+			"arm64",
+			"",
+		},
+		{
+			"reads a multiplatform oci directory with no specified platform", "multiplatform_oci_dir",
+			nil,
+			"",
+			"linux",
+			runtime.GOARCH,
 			"",
 		},
 		{
 			"reads a multiplatform oci directory for an unlisted platform", "multiplatform_oci_dir",
 			&image.Platform{Architecture: "ppc64le", OS: "linux"},
+			"",
+			"",
 			"",
 			"unexpected number of images matching platform \"linux/ppc64le\" in OCI directory (expected 1, found 0)",
 		},
@@ -118,6 +165,17 @@ func Test_Directory_Provider_with_platform(t *testing.T) {
 		provider := NewDirectoryProviderWithPlatform(tmpDirGen, path, tc.platform)
 		t.Run(tc.name, func(t *testing.T) {
 			defer tmpDirGen.Cleanup()
+			if tc.fixturePath == "multiplatform_oci_dir" && tc.platform == nil {
+				switch runtime.GOARCH {
+				case "amd64":
+					tc.expectedDigest = multiplatformAmd64Digest
+				case "arm64":
+					tc.expectedDigest = multiplatformArm64Digest
+				default:
+					t.Skipf("unsupported architecture for test: %s", runtime.GOARCH)
+				}
+			}
+
 			//WHEN
 			imageResult, err := provider.Provide(context.Background())
 
@@ -130,6 +188,8 @@ func Test_Directory_Provider_with_platform(t *testing.T) {
 				assert.NoError(t, err)
 				require.NotNil(t, imageResult)
 				assert.Equal(t, tc.expectedDigest, imageResult.Metadata.ManifestDigest)
+				assert.Equal(t, tc.expectedOS, imageResult.Metadata.OS)
+				assert.Equal(t, tc.expectedArch, imageResult.Metadata.Architecture)
 			}
 		})
 	}

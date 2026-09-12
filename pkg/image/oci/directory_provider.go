@@ -68,21 +68,25 @@ func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error
 	}
 
 	var selectedImage v1.Image
-	if len(allImages) == 1 {
-		// if there is only one image, use it regardless of platform
+	var platformForMetadata *image.Platform
+	if p.platform == nil && len(allImages) == 1 {
+		// if no platform was requested and there is only one image, use it regardless of platform
 		for _, image := range allImages {
 			selectedImage = image.image
 		}
+		platformForMetadata = nil
 	} else {
-		platform := toContainerRegistryPlatform(defaultPlatformIfNil(p.platform))
-		if platform == nil {
+		platform := defaultPlatformIfNil(p.platform)
+		registryPlatform := toContainerRegistryPlatform(platform)
+		if registryPlatform == nil {
 			return nil, fmt.Errorf("error converting platform: %v", p.platform)
 		}
-		matchedImages := imagesForPlatform(allImages, *platform)
+		matchedImages := imagesForPlatform(allImages, *registryPlatform)
 		if len(matchedImages) != 1 {
-			return nil, fmt.Errorf("unexpected number of images matching platform %q in OCI directory (expected 1, found %d)", platform.String(), len(matchedImages))
+			return nil, fmt.Errorf("unexpected number of images matching platform %q in OCI directory (expected 1, found %d)", registryPlatform, len(matchedImages))
 		}
 		selectedImage = matchedImages[0]
+		platformForMetadata = platform
 	}
 
 	selectedImageDigest, err := selectedImage.Digest()
@@ -100,6 +104,13 @@ func (p *directoryImageProvider) Provide(_ context.Context) (*image.Image, error
 	rawManifest, err := selectedImage.RawManifest()
 	if err == nil {
 		metadata = append(metadata, image.WithManifest(rawManifest))
+	}
+
+	if platformForMetadata != nil {
+		metadata = append(metadata,
+			image.WithArchitecture(platformForMetadata.Architecture, platformForMetadata.Variant),
+			image.WithOS(platformForMetadata.OS),
+		)
 	}
 
 	contentTempDir, err := p.tmpDirGen.NewDirectory("oci-dir-image")
