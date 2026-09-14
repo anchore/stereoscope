@@ -21,6 +21,7 @@ import (
 
 	"github.com/anchore/stereoscope/internal/testutil"
 	"github.com/anchore/stereoscope/pkg/file"
+	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
 func TestImageAdditionalMetadata(t *testing.T) {
@@ -259,5 +260,46 @@ func TestImageRead_DiffIDsMatchLayerContents(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, want.String(), img.Layers[idx].Metadata.Digest, "layer %d", idx)
 		}
+	})
+}
+
+func TestImage_ResolveLink_MalformedLinks(t *testing.T) {
+	// a link cycle can be split across layers: it is healthy in the lower layer and only closes in a
+	// higher one, so the reference handed to us here resolves fine where it was found and not here.
+	healthy := filetree.New()
+	realRef, err := healthy.AddFile("/usr/bin/xzcat")
+	require.NoError(t, err)
+	_, err = healthy.AddSymLink("/usr/bin/xz", "/usr/bin/xzcat")
+	require.NoError(t, err)
+
+	cycled := filetree.New()
+	_, err = cycled.AddSymLink("/usr/bin/xz", "/usr/bin/xzcat")
+	require.NoError(t, err)
+	_, err = cycled.AddSymLink("/usr/bin/xzcat", "/usr/bin/xz")
+	require.NoError(t, err)
+
+	img := Image{
+		Layers: []*Layer{
+			{SquashedTree: healthy},
+			{SquashedTree: cycled},
+		},
+	}
+
+	t.Run("layer squash resolves a healthy link", func(t *testing.T) {
+		resolved, err := img.ResolveLinkByLayerSquash(*realRef, 0)
+		require.NoError(t, err)
+		require.True(t, resolved.HasReference())
+	})
+
+	t.Run("layer squash skips a cycle instead of failing the caller", func(t *testing.T) {
+		resolved, err := img.ResolveLinkByLayerSquash(*realRef, 1)
+		require.NoError(t, err)
+		require.False(t, resolved.HasReference())
+	})
+
+	t.Run("image squash skips a cycle instead of failing the caller", func(t *testing.T) {
+		resolved, err := img.ResolveLinkByImageSquash(*realRef)
+		require.NoError(t, err)
+		require.False(t, resolved.HasReference())
 	})
 }
