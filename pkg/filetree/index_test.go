@@ -3,10 +3,13 @@
 package filetree
 
 import (
+	"fmt"
 	"io/fs"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -802,5 +805,54 @@ func TestFileCatalog_GetBasenames(t *testing.T) {
 			actual := fileIndex.(*index).basenames.List()
 			assert.ElementsMatchf(t, tt.want, actual, "diff: %s", cmp.Diff(tt.want, actual))
 		})
+	}
+}
+
+// TestIndex_GetByBasenameGlob_concurrentAddDoesNotDeadlock guards against a nested RLock: sync.RWMutex
+// is not reentrant, so a reader that takes RLock and then, from inside that critical section, takes
+// RLock again deadlocks as soon as a writer's Lock call is pending in between (the pending writer
+// blocks new readers, including the reader's own nested one). GetByBasenameGlob used to call the
+// exported, locking GetByBasename from inside its own RLock, which was only safe while Add ran from a
+// single goroutine after all reads finished. This is no longer true, so Add and searches now race.
+func TestIndex_GetByBasenameGlob_concurrentAddDoesNotDeadlock(t *testing.T) {
+	idx := NewIndex()
+
+	// many basenames so a single GetByBasenameGlob call spends real time inside its RLock, widening
+	// the window for a concurrent Add's Lock() to land in between
+	const seedCount = 2000
+	for i := 0; i < seedCount; i++ {
+		ref := file.NewFileReference(file.Path(fmt.Sprintf("/dir/file-%d.txt", i)))
+		idx.Add(*ref, file.Metadata{Path: string(ref.RealPath), Type: file.TypeRegular})
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 300; i++ {
+				_, _ = idx.GetByBasenameGlob("file-*.txt")
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 300; i++ {
+				ref := file.NewFileReference(file.Path(fmt.Sprintf("/dir/extra-%d.txt", i)))
+				idx.Add(*ref, file.Metadata{Path: string(ref.RealPath), Type: file.TypeRegular})
+			}
+		}()
+
+		wg.Wait()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("GetByBasenameGlob and Add deadlocked: a nested RLock inside GetByBasenameGlob blocked behind a pending writer")
 	}
 }

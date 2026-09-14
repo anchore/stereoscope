@@ -2,6 +2,7 @@ package image
 
 import (
 	"archive/tar"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -87,7 +88,7 @@ func tryReadImageFromLayers(t *testing.T, layers ...v1.Layer) (*Image, error) {
 		require.NoError(t, img.Cleanup())
 	})
 
-	return img, img.Read()
+	return img, img.Read(context.Background())
 }
 
 // readImageFromLayersWithConfig is readImageFromLayers with the image config rewritten before the
@@ -102,7 +103,7 @@ func readImageFromLayersWithConfig(t *testing.T, override func(*v1.ConfigFile), 
 	t.Cleanup(func() {
 		require.NoError(t, img.Cleanup())
 	})
-	require.NoError(t, img.Read())
+	require.NoError(t, img.Read(context.Background()))
 
 	return img
 }

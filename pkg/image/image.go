@@ -1,12 +1,19 @@
 package image
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
+	"iter"
+	"maps"
 	"os"
+	"runtime"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -15,6 +22,7 @@ import (
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 
+	async "github.com/anchore/go-sync"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -196,28 +204,18 @@ func (i *Image) applyOverrideMetadata() error {
 
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
-func (i *Image) Read() error {
-	var err error
-	i.Metadata, err = readImageMetadata(i.image)
-	if err != nil {
-		return err
-	}
-
-	// override any metadata with what the user has provided manually
-	if err = i.applyOverrideMetadata(); err != nil {
-		return err
-	}
-
+//
+// The context bounds the read: cancelling it abandons work that has not started and stops the
+// layer pools from picking up more.
+func (i *Image) Read(ctx context.Context) error {
 	startTime := time.Now()
-	lapTime := startTime
 
-	v1Layers, err := i.image.Layers()
-	if err != nil {
+	if err := i.readMetadata(); err != nil {
 		return err
 	}
 
-	// validate all layer media types before processing
-	if err := validateLayerMediaTypes(v1Layers); err != nil {
+	layers, err := i.buildLayers()
+	if err != nil {
 		return err
 	}
 
@@ -225,72 +223,403 @@ func (i *Image) Read() error {
 
 	// let consumers know of a monitorable event (image save + copy stages)
 	readProg := i.trackReadProgress(i.Metadata)
+	// deferred rather than completed at the end of the squash: every early return between here and
+	// there used to leave a consumer's bar stuck at whatever it had reached
+	defer readProg.SetCompleted()
+
+	// this rebuilds every layer, so release what a previous Read left open. Done here rather than
+	// at the top of Read so that a failure before this point leaves the existing layers usable
+	i.releasePreviousLayers()
 
 	fileCatalog := NewFileCatalog()
 
-	// this rebuilds every layer, so release what a previous Read left open. Deferred to here rather
-	// than the top of Read so that a failure before this point leaves the existing layers usable
-	for _, closeErr := range i.closeLayers() {
-		log.WithFields("error", closeErr).Trace("unable to release a layer tar from a previous read")
-	}
-	i.Layers = nil
-
-	// the config already records every layer's diff ID, which saves each layer computing its own
-	// (for an OCI layout that means decompressing the entire layer just to hash it). When the
-	// config does not list exactly one per layer we cannot line them up, so let each layer answer.
-	diffIDs := i.Metadata.Config.RootFS.DiffIDs
-	if len(diffIDs) != len(v1Layers) {
-		diffIDs = nil
-	}
-
-	for idx, v1Layer := range v1Layers {
-		var knownDiffID string
-		if diffIDs != nil {
-			knownDiffID = diffIDs[idx].String()
+	lapTime := time.Now()
+	if err := i.readAndSquashLayers(ctx, layers, fileCatalog, readProg); err != nil {
+		// i.Layers is not assigned until this succeeds, so a failure releases the local slice
+		// rather than i.Layers - the caller has an error and may never reach Cleanup, and a
+		// half-built layer set must not be left visible either: accessors like SquashedTree read
+		// the last layer, which here was never squashed.
+		for _, closeErr := range closeLayers(layers) {
+			log.WithFields("error", closeErr).Trace("unable to release a layer tar after a failed read")
 		}
-
-		layer := newLayer(v1Layer, knownDiffID)
-		if err := layer.Read(fileCatalog, idx, i.contentCacheDir); err != nil {
-			// release the layers that did read. The caller has an error and may never reach Cleanup,
-			// and a half-built layer set must not be left visible either: accessors like SquashedTree
-			// read the last layer, which here was never squashed.
-			// A failed Layer.Read holds nothing itself, NewTarIndex closes its own handle
-			for _, closeErr := range i.closeLayers() {
-				log.WithFields("error", closeErr).Trace("unable to release a layer tar after a failed read")
-			}
-			i.Layers = nil
-			return err
-		}
-		i.Layers = append(i.Layers, layer)
-		i.Metadata.Size += layer.Metadata.Size
-
-		readProg.Increment()
+		return err
 	}
 
-	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image layer copy")
+	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image layer read and squash")
 	lapTime = time.Now()
 
-	// in order to resolve symlinks all squashed trees must be available
-	err = i.squash(readProg)
-
-	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image squash")
-	lapTime = time.Now()
-
+	i.Layers = layers
 	i.FileCatalog = fileCatalog
-	i.SquashedSearchContext = filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
+	i.SquashedSearchContext = i.squashedSearchContext()
 
 	log.WithFields("digest", i.Metadata.ID, "time", time.Since(lapTime)).Trace("completed image search context")
 	log.WithFields("digest", i.Metadata.ID, "mediaType", i.Metadata.MediaType, "tags", i.Metadata.Tags, "time", time.Since(startTime)).Info("completed image read")
 
-	return err
+	return nil
+}
+
+// readMetadata populates i.Metadata from the image, then lets the caller's overrides have the
+// final word on it.
+func (i *Image) readMetadata() error {
+	var err error
+	i.Metadata, err = readImageMetadata(i.image)
+	if err != nil {
+		return err
+	}
+	return i.applyOverrideMetadata()
+}
+
+// buildLayers resolves the layer set this read will work through, rejecting media types we cannot
+// process up front rather than partway through a read of an image we were never going to finish.
+func (i *Image) buildLayers() ([]*Layer, error) {
+	v1Layers, err := i.image.Layers()
+	if err != nil {
+		return nil, err
+	}
+	if err := validateLayerMediaTypes(v1Layers); err != nil {
+		return nil, err
+	}
+	return newLayers(v1Layers, i.Metadata.Config.RootFS.DiffIDs), nil
+}
+
+// releasePreviousLayers releases every layer tar a previous Read left open and forgets the layers.
+func (i *Image) releasePreviousLayers() {
+	for _, closeErr := range i.closeLayers() {
+		log.WithFields("error", closeErr).Trace("unable to release a layer tar from a previous read")
+	}
+	i.Layers = nil
+}
+
+// readAndSquashLayers runs the squash alongside the read stages rather than after them: squash
+// consumes layers in manifest order, blocking on each layer's gate until that layer is indexed, so
+// layer 0 is being squashed while layer 3 is still downloading. See readLayers for how the read
+// stages are bounded and squashLayers for why consuming in manifest order keeps it correct.
+func (i *Image) readAndSquashLayers(ctx context.Context, layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual) error {
+	gates := newLayerGates(len(layers))
+	squashDone := make(chan error, 1)
+	// capture what the goroutine logs, and send last: once Read receives from squashDone it may
+	// return, and a caller is free to call Read again, which rewrites i.Metadata
+	squashDigest := i.Metadata.ID
+	go func() {
+		squashStart := time.Now()
+		err := i.squashLayers(layers, gates, readProg)
+		log.WithFields("digest", squashDigest, "time", time.Since(squashStart)).Trace("completed image squash")
+		squashDone <- err
+	}()
+
+	readErr := i.readLayers(ctx, layers, fileCatalog, readProg, gates)
+
+	// release any layer the read never reached, so squash cannot block on a gate that will
+	// never open (a cancelled context stops the stages from starting queued work)
+	gates.releaseAll()
+	squashErr := <-squashDone
+
+	if readErr != nil {
+		return readErr
+	}
+	if err := ctx.Err(); err != nil {
+		// checked before squashErr because cancellation is the root cause a caller wants to see:
+		// the stages stop starting queued work, so neither raises a per-layer failure and the
+		// squash just finds layers that were never indexed
+		return fmt.Errorf("unable to read image: %w", err)
+	}
+	return squashErr
+}
+
+// squashedSearchContext returns the search context for the image squash. The top layer's squash IS
+// the image squash, and squashLayers already built a search context over that same tree and index.
+// Rebuilding it here walked every symlink and hardlink in the whole catalog a second time, which
+// with the squash now overlapped was the largest piece of serial work left in Read.
+func (i *Image) squashedSearchContext() filetree.Searcher {
+	if len(i.Layers) > 0 {
+		return i.Layers[len(i.Layers)-1].SquashedSearchContext
+	}
+	return filetree.NewSearchContext(i.SquashedTree(), i.FileCatalog)
+}
+
+// readLayers drives the two stages of a layer read: a fetch stage (download + decompress into the
+// cache) and an index stage (tar walk into the file catalog) that runs alongside it, so the
+// previous layer is indexed while the next is still being fetched.
+//
+// Each stage is bounded by its own go-sync executor pulled from the context, which is what lets a
+// caller fold stereoscope into a process-wide concurrency budget: install executors under
+// LayerFetchExecutor and LayerIndexExecutor and they win. Read fills in the default for whichever
+// stage the caller left out, so the two bounds stay independent - the registry provider installs a
+// fetch executor of one and leaves indexing at the default, which a single fused bound cannot
+// express.
+//
+// Errors from both stages are joined. Panics inside either stage are captured as errors rather
+// than taking down the process. A cancelled context stops either stage from starting more work,
+// and the first layer failure sets an internal flag that does the same to its peers' fetches -
+// no sense downloading layer 7 after layer 2 is already known to be corrupt.
+func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual, gates *layerGates) error {
+	ctx = withLayerExecutors(ctx, len(layers))
+
+	// errors are recorded by layer index and reported in that order. Both stages can run several
+	// layers before either one fails, so more than one can fail, and go-sync joins its own errors
+	// in completion order - which would name a different layer first from one run to the next.
+	//
+	// aborted is deliberately not a cancelled context: ctx keeps meaning only "the caller gave
+	// up", checked by Collect itself before queueing and inside each task. Cancelling an internal
+	// context here instead would let Collect's own early return (it does not wait for stragglers
+	// once its context is done) abandon a peer's fetch mid-flight before that peer's own recordErr
+	// call - the very call whose result we are about to read - had a chance to run. aborted only
+	// stops fetchIdxs from handing out layers nothing has started on yet; anything already
+	// dispatched is always run to completion.
+	var (
+		errMu     sync.Mutex
+		layerErrs = map[int]error{}
+		aborted   atomic.Bool
+	)
+	recordErr := func(idx int, err error) {
+		errMu.Lock()
+		defer errMu.Unlock()
+		if _, seen := layerErrs[idx]; !seen {
+			layerErrs[idx] = err
+		}
+		aborted.Store(true)
+	}
+	orderedErrs := func() []error {
+		errMu.Lock()
+		defer errMu.Unlock()
+		idxs := slices.Sorted(maps.Keys(layerErrs))
+		out := make([]error, 0, len(idxs))
+		for _, idx := range idxs {
+			out = append(out, layerErrs[idx])
+		}
+		return out
+	}
+
+	idxs := make([]int, len(layers))
+	for n := range idxs {
+		idxs[n] = n
+	}
+
+	// fetchIdxs stops handing out new layer indices once aborted is set, so Collect never starts
+	// a fetch for a layer we already know we will not need. Whatever it already started keeps
+	// running to completion regardless - see the aborted comment above for why that matters.
+	fetchIdxs := func(yield func(int) bool) {
+		for _, idx := range idxs {
+			if aborted.Load() {
+				return
+			}
+			if !yield(idx) {
+				return
+			}
+		}
+	}
+
+	// fetched hands layer indexes from the fetch stage to the index stage, buffered so that a send
+	// can never block: there are at most len(layers) of them.
+	//
+	// Do not shrink this to bound the fetch-ahead. The two stages can share one bounded executor -
+	// go-sync resolves a missing named executor to ExecutorDefault, and errGroupExecutor.Go blocks
+	// once its limit is reached, and its ChildExecutor caches a single child that both stages then
+	// resolve to. A fetch worker parked on a full channel is holding a slot the index stage needs
+	// to drain it, and with a limit of one that is a deadlock, reproducible today. Bounding the
+	// fetch-ahead has to happen where no worker slot is held: in fetchIdxs, which runs on the
+	// submitting goroutine, gated on how many layers are fetched but not yet indexed.
+	fetched := make(chan int, len(layers))
+	fetchDone := make(chan error, 1)
+
+	fetchCtx := ctx
+	go func() {
+		err := async.Collect(&fetchCtx, LayerFetchExecutor, fetchIdxs,
+			func(idx int) (int, error) {
+				if err := layers[idx].fetch(idx, i.contentCacheDir); err != nil {
+					// the index stage will never see this layer, so open its gate here
+					gates.done(idx, false)
+					// reported through recordErr rather than back to Collect, so that what Collect
+					// returns is only ever a panic it recovered
+					recordErr(idx, fmt.Errorf("failed to fetch layer %d: %w", idx, err))
+					return idx, nil
+				}
+				// ctx may already be cancelled by the caller by the time this fetch finishes;
+				// bail via Done rather than block forever on a handoff nothing is reading anymore
+				select {
+				case fetched <- idx:
+				case <-fetchCtx.Done():
+					gates.done(idx, false)
+				}
+				return idx, nil
+			}, nil)
+		// only safe once every fetch worker above has actually returned. Collect can return here
+		// while a worker is still parked in the select above, but only by taking its ctx.Done
+		// branch - and that branch can only fire once ctx is cancelled, which is permanent, so if
+		// we observe no cancellation here Collect must have waited for all of them (its ctx.Done
+		// alternative never became ready)
+		if fetchCtx.Err() == nil {
+			close(fetched)
+		}
+		fetchDone <- err
+	}()
+
+	indexCtx := ctx
+	indexErr := async.Collect(&indexCtx, LayerIndexExecutor, seqOfChannel(indexCtx, fetched),
+		func(idx int) (int, error) {
+			err := layers[idx].index(fileCatalog)
+			// open the gate either way: squash decides what to do with the outcome
+			gates.done(idx, err == nil)
+			if err != nil {
+				recordErr(idx, fmt.Errorf("failed to index layer %d: %w", idx, err))
+				return idx, nil
+			}
+			readProg.Increment()
+			return idx, nil
+		},
+		// the accumulator is serialised by Collect, so this needs no lock of its own
+		func(idx int, _ int) {
+			i.Metadata.Size += layers[idx].Metadata.Size
+		})
+
+	// fetchDone is read before orderedErrs, not inline in the Join call: Collect only guarantees
+	// the fetch stage's own recordErr calls are visible once it has actually signalled done, and
+	// argument evaluation order would otherwise let orderedErrs run first and race them.
+	fetchErr := <-fetchDone
+	// what the stages report, lowest layer first, then anything go-sync recovered on its own
+	return errors.Join(append(orderedErrs(), fetchErr, indexErr)...)
+}
+
+// LayerFetchExecutor and LayerIndexExecutor name the go-sync executors bounding each stage of a
+// layer read. Install one under either name to take over that stage's concurrency:
+//
+//	ctx = sync.SetContextExecutor(ctx, image.LayerFetchExecutor, sync.NewExecutor(2))
+//
+// A caller-supplied executor always wins; Read only fills in what is missing.
+const (
+	LayerFetchExecutor = "layer-fetch"
+	LayerIndexExecutor = "layer-index"
+)
+
+// withLayerExecutors fills in the stage executors this image should use for any the caller has not
+// supplied. Never bounded at zero: a zero-concurrency go-sync executor runs inline on the caller's
+// goroutine, which would collapse the two stages back into one and lose the overlap.
+func withLayerExecutors(ctx context.Context, layers int) context.Context {
+	for _, name := range []string{LayerFetchExecutor, LayerIndexExecutor} {
+		if async.HasContextExecutor(ctx, name) {
+			continue
+		}
+		// go-sync resolves a missing named executor to ExecutorDefault, so a host that installed
+		// one to express a single process-wide budget already has an answer for this stage and we
+		// should not talk over it. Only fill in when there is nothing at all, because the last
+		// fallback go-sync offers is an inline serial executor, which would collapse the two
+		// stages into one and lose the overlap.
+		if async.HasContextExecutor(ctx, async.ExecutorDefault) {
+			continue
+		}
+		ctx = async.SetContextExecutor(ctx, name, async.NewExecutor(layerReadWorkers(layers)))
+	}
+	return ctx
+}
+
+// layerGates lets the squash stage consume layers in manifest order while the read stages
+// complete them in any order: squash blocks on gate idx until the read stages are done with that
+// layer, and learns from the gate whether it is safe to squash.
+//
+// Release is idempotent so the read stages and the caller's cleanup pass can both call it. A
+// layer the read never reached is released as not-ok, which is what stops squash blocking
+// forever on a cancelled read.
+type layerGates struct {
+	wg   []sync.WaitGroup
+	once []sync.Once
+	ok   []atomic.Bool
+}
+
+func newLayerGates(layers int) *layerGates {
+	g := &layerGates{
+		wg:   make([]sync.WaitGroup, layers),
+		once: make([]sync.Once, layers),
+		ok:   make([]atomic.Bool, layers),
+	}
+	for idx := range g.wg {
+		g.wg[idx].Add(1)
+	}
+	return g
+}
+
+// done opens a layer's gate, reporting whether that layer is indexed and safe to squash.
+func (g *layerGates) done(idx int, ok bool) {
+	g.once[idx].Do(func() {
+		g.ok[idx].Store(ok)
+		g.wg[idx].Done()
+	})
+}
+
+// wait blocks until the layer's gate opens and reports whether it is safe to squash.
+func (g *layerGates) wait(idx int) bool {
+	g.wg[idx].Wait()
+	return g.ok[idx].Load()
+}
+
+// releaseAll opens every gate that is still closed, so nothing is left waiting on a layer the
+// read stages never got to.
+func (g *layerGates) releaseAll() {
+	for idx := range g.wg {
+		g.done(idx, false)
+	}
+}
+
+// seqOfChannel adapts a channel to an iter.Seq so a go-sync Collect can consume a stage's output
+// as it is produced rather than waiting for all of it. Also watches ctx directly: Collect's own
+// cancellation check only runs between values it already received, so a plain channel range would
+// hang forever waiting on a value that a cancelled upstream stage has stopped sending (and may
+// never close, since closing an unclosed channel here is what a concurrent, still-in-flight sender
+// could panic on).
+func seqOfChannel[T any](ctx context.Context, ch <-chan T) iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for {
+			select {
+			case v, ok := <-ch:
+				if !ok {
+					return
+				}
+				if !yield(v) {
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+}
+
+// layerReadWorkers is the default bound for a layer-read stage when neither a named executor nor
+// ExecutorDefault is in the context: the number of CPUs, capped at 8, and never more workers than
+// there are layers.
+//
+// The cap is measured, not a guess. Both stages are throughput-bound rather than latency-bound -
+// decompress and write, then read back and walk - so oversubscribing past a handful of workers
+// costs more in contention than it buys in overlap. On a 40-layer image over 12 cores, where the
+// cap actually binds: 4 workers 718ms, 8 workers 679ms, 12 workers 694ms, 24 workers 715ms,
+// 48 workers 746ms. Going wider is slower, so this is not the place to scale with NumCPU alone.
+// Layer count is usually the real ceiling anyway; a 12-layer image cannot use more than 12.
+func layerReadWorkers(layers int) int {
+	n := runtime.NumCPU()
+	if n > 8 {
+		n = 8
+	}
+	if n > layers {
+		n = layers
+	}
+	if n < 1 {
+		n = 1
+	}
+	return n
 }
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
-func (i *Image) squash(prog *progress.Manual) error {
+func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.Manual) error {
 	var lastSquashTree filetree.ReadWriter
 
-	for idx, layer := range i.Layers {
+	for idx, layer := range layers {
+		if !gates.wait(idx) {
+			// the read stages gave up on this layer, so there is no tree to squash. Report it
+			// rather than returning nil and trusting the read stages to raise something: if their
+			// error is ever lost, a nil return here lets Read carry on and build the image search
+			// context over a layer that was never squashed, which panics on the nil tree.
+			return fmt.Errorf("unable to squash: layer %d was not indexed", idx)
+		}
 		if idx == 0 {
 			lastSquashTree = layer.Tree.(filetree.ReadWriter)
 			layer.SquashedTree = layer.Tree
@@ -313,8 +642,6 @@ func (i *Image) squash(prog *progress.Manual) error {
 
 		prog.Increment()
 	}
-
-	prog.SetCompleted()
 
 	return nil
 }
@@ -393,15 +720,21 @@ func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree
 	return resolvedRef, err
 }
 
-// closeLayers releases every layer tar descriptor this image is holding open.
-func (i *Image) closeLayers() []error {
+// closeLayers releases every layer tar descriptor in the given slice. Free-standing so a layer
+// set that never became i.Layers (an in-flight Read that failed) can be released too.
+func closeLayers(layers []*Layer) []error {
 	var errs []error
-	for _, l := range i.Layers {
+	for _, l := range layers {
 		if err := l.close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errs
+}
+
+// closeLayers releases every layer tar descriptor this image is holding open.
+func (i *Image) closeLayers() []error {
+	return closeLayers(i.Layers)
 }
 
 // Cleanup removes all temporary files created from parsing the image. Future calls to image will not function correctly after this call.
