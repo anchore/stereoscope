@@ -2,6 +2,7 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"testing"
 
@@ -41,43 +42,42 @@ func Test_Directory_Provider_no_platform(t *testing.T) {
 		{"fails to read invalid oci manifest", "invalid_file", "unable to parse OCI directory indexManifest", nil},
 		{"fails to read valid oci manifest with no images", "no_manifests", "no images found in OCI directory at path", nil},
 		{"fails to read an invalid oci directory", "valid_manifest", "EOF", nil},
-		{"reads a valid oci directory", "valid_oci_dir", "", nil},
+		// platform metadata is always reported, sourced from the image config rather than the index descriptor
+		{"reads a valid oci directory", "valid_oci_dir", "", &image.Platform{Architecture: "amd64", OS: "linux"}},
+		{"reads a single image with no platform descriptor", "single_image_no_platform_oci_dir", "", &image.Platform{Architecture: "amd64", OS: "linux"}},
+		{"reads a single image referenced by several descriptors", "duplicate_platform_oci_dir", "", &image.Platform{Architecture: "amd64", OS: "linux"}},
+		{"ignores buildx attestation manifests", "attestation_oci_dir", "", &image.Platform{Architecture: "amd64", OS: "linux"}},
 		{"reads a multiplatform oci directory", "multiplatform_oci_dir", "", &image.Platform{Architecture: runtime.GOARCH, OS: "linux"}},
 	}
 
 	for _, tc := range tests {
-		tmpDirGen := file.NewTempDirGenerator("tempDir")
-		path := tc.fixturePath
-		if path != "" {
-			path = testutil.GetFixturePath(t, tc.fixturePath)
-		}
-		provider := NewDirectoryProvider(tmpDirGen, path)
 		t.Run(tc.name, func(t *testing.T) {
-			defer tmpDirGen.Cleanup()
 			if tc.fixturePath == "multiplatform_oci_dir" &&
 				!(runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
 				t.Skipf("unsupported architecture for test: %s", runtime.GOARCH)
 			}
+			tmpDirGen := file.NewTempDirGenerator("tempDir")
+			defer tmpDirGen.Cleanup()
+			path := tc.fixturePath
+			if path != "" {
+				path = testutil.GetFixturePath(t, tc.fixturePath)
+			}
+			provider := NewDirectoryProvider(tmpDirGen, path)
+
 			//WHEN
 			image, err := provider.Provide(context.Background())
 
 			//THEN
 			if tc.expectedErr != "" {
-				assert.Error(t, err)
+				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedErr)
 				assert.Nil(t, image)
 			} else {
 				assert.NoError(t, err)
-				assert.NotNil(t, image)
-				if tc.expectedPlatformMetadata == nil {
-					assert.Empty(t, image.Metadata.Architecture)
-					assert.Empty(t, image.Metadata.Variant)
-					assert.Empty(t, image.Metadata.OS)
-				} else {
-					assert.Equal(t, tc.expectedPlatformMetadata.Architecture, image.Metadata.Architecture)
-					assert.Equal(t, tc.expectedPlatformMetadata.Variant, image.Metadata.Variant)
-					assert.Equal(t, tc.expectedPlatformMetadata.OS, image.Metadata.OS)
-				}
+				require.NotNil(t, image)
+				assert.Equal(t, tc.expectedPlatformMetadata.Architecture, image.Metadata.Architecture)
+				assert.Equal(t, tc.expectedPlatformMetadata.Variant, image.Metadata.Variant)
+				assert.Equal(t, tc.expectedPlatformMetadata.OS, image.Metadata.OS)
 			}
 
 		})
@@ -90,106 +90,163 @@ func Test_Directory_Provider_with_platform(t *testing.T) {
 	multiplatformAmd64Digest := "sha256:e7c26a4b4d156fd9947ee82295b7b78acf7aa54b93b8f3e4b9f608179ffb20e8"
 	multiplatformArm64Digest := "sha256:5ed07065bcbc6c52e3ad28526557d7b6833613fc79257b1a786de85e37c03b05"
 	tests := []struct {
-		name           string
-		fixturePath    string
-		platform       *image.Platform
-		expectedDigest string
-		expectedOS     string
-		expectedArch   string
-		expectedErr    string
+		name string
+		// fixturePath is relative to testdata
+		fixturePath string
+		platform    *image.Platform
+		// expectedDigest is the manifest digest of the image that should be selected
+		expectedDigest  string
+		expectedOS      string
+		expectedArch    string
+		expectedVariant string
+		expectedErr     string
+		// expectPlatformMismatch asserts the error is a *image.ErrPlatformMismatch, which is how callers
+		// tell "wrong platform" apart from "could not read this input at all"
+		expectPlatformMismatch bool
 	}{
 		{
-			"reads a single platform oci directory with correct platform",
-			"valid_oci_dir",
-			&image.Platform{Architecture: "amd64", OS: "linux"},
-			singlePlatformDigest,
-			"linux",
-			"amd64",
-			"",
+			name:           "reads a single platform oci directory with correct platform",
+			fixturePath:    "valid_oci_dir",
+			platform:       &image.Platform{Architecture: "amd64", OS: "linux"},
+			expectedDigest: singlePlatformDigest,
+			expectedOS:     "linux",
+			expectedArch:   "amd64",
 		},
 		{
-			"reads a single platform oci directory with different platform",
-			"valid_oci_dir",
-			&image.Platform{Architecture: "arm64", OS: "linux"},
-			"",
-			"",
-			"",
-			"unexpected number of images matching platform \"linux/arm64\" in OCI directory (expected 1, found 0)",
+			name:                   "rejects a single platform oci directory with a different platform",
+			fixturePath:            "valid_oci_dir",
+			platform:               &image.Platform{Architecture: "arm64", OS: "linux"},
+			expectedErr:            `image platform="linux/amd64" does not match user specified platform="linux/arm64"`,
+			expectPlatformMismatch: true,
 		},
 		{
-			"reads a single platform oci directory with no specified platform",
-			"valid_oci_dir",
-			nil,
-			singlePlatformDigest,
-			"",
-			"",
-			"",
+			name:           "reads a single platform oci directory with no specified platform",
+			fixturePath:    "valid_oci_dir",
+			platform:       nil,
+			expectedDigest: singlePlatformDigest,
+			expectedOS:     "linux",
+			expectedArch:   "amd64",
 		},
 		{
-			"reads a multiplatform oci directory for linux/amd64", "multiplatform_oci_dir",
-			&image.Platform{Architecture: "amd64", OS: "linux"},
-			multiplatformAmd64Digest,
-			"linux",
-			"amd64",
-			"",
+			// regression: the index descriptor platform is optional and is absent for images written by
+			// `skopeo copy ... oci:<dir>`. The image config is what decides the match.
+			name:           "reads a single image with no platform descriptor for a matching platform",
+			fixturePath:    "single_image_no_platform_oci_dir",
+			platform:       &image.Platform{Architecture: "amd64", OS: "linux"},
+			expectedDigest: singlePlatformDigest,
+			expectedOS:     "linux",
+			expectedArch:   "amd64",
 		},
 		{
-			"reads a multiplatform oci directory for linux/arm64", "multiplatform_oci_dir",
-			&image.Platform{Architecture: "arm64", OS: "linux"},
-			multiplatformArm64Digest,
-			"linux",
-			"arm64",
-			"",
+			name:                   "rejects a single image with no platform descriptor for a different platform",
+			fixturePath:            "single_image_no_platform_oci_dir",
+			platform:               &image.Platform{Architecture: "arm64", OS: "linux"},
+			expectedErr:            `image platform="linux/amd64" does not match user specified platform="linux/arm64"`,
+			expectPlatformMismatch: true,
 		},
 		{
-			"reads a multiplatform oci directory with no specified platform", "multiplatform_oci_dir",
-			nil,
-			"",
-			"linux",
-			runtime.GOARCH,
-			"",
+			// regression: one image referenced by several index entries is still one image
+			name:           "reads a single image referenced by several descriptors",
+			fixturePath:    "duplicate_platform_oci_dir",
+			platform:       &image.Platform{Architecture: "amd64", OS: "linux"},
+			expectedDigest: singlePlatformDigest,
+			expectedOS:     "linux",
+			expectedArch:   "amd64",
 		},
 		{
-			"reads a multiplatform oci directory for an unlisted platform", "multiplatform_oci_dir",
-			&image.Platform{Architecture: "ppc64le", OS: "linux"},
-			"",
-			"",
-			"",
-			"unexpected number of images matching platform \"linux/ppc64le\" in OCI directory (expected 1, found 0)",
+			// regression: buildx attestation manifests must not count towards the image total
+			name:           "ignores buildx attestation manifests",
+			fixturePath:    "attestation_oci_dir",
+			platform:       &image.Platform{Architecture: "amd64", OS: "linux"},
+			expectedDigest: singlePlatformDigest,
+			expectedOS:     "linux",
+			expectedArch:   "amd64",
+		},
+		{
+			// the descriptor claims linux/amd64 but the config says linux/arm64/v8. Trusting the
+			// descriptor would report an architecture the image does not have.
+			name:                   "rejects an index descriptor that disagrees with the image config",
+			fixturePath:            "mismatched_descriptor_oci_dir",
+			platform:               &image.Platform{Architecture: "amd64", OS: "linux"},
+			expectedErr:            `image platform="linux/arm64/v8" does not match user specified platform="linux/amd64"`,
+			expectPlatformMismatch: true,
+		},
+		{
+			// variant comes from the config, not from the (variant-less) request
+			name:            "reports the variant the image config declares",
+			fixturePath:     "mismatched_descriptor_oci_dir",
+			platform:        &image.Platform{Architecture: "arm64", OS: "linux"},
+			expectedDigest:  "sha256:0a1332ee2b470d4fbfaae974cded394406b9aae094682e0d4113f27f6c3545fc",
+			expectedOS:      "linux",
+			expectedArch:    "arm64",
+			expectedVariant: "v8",
+		},
+		{
+			name:           "reads a multiplatform oci directory for linux/amd64",
+			fixturePath:    "multiplatform_oci_dir",
+			platform:       &image.Platform{Architecture: "amd64", OS: "linux"},
+			expectedDigest: multiplatformAmd64Digest,
+			expectedOS:     "linux",
+			expectedArch:   "amd64",
+		},
+		{
+			name:           "reads a multiplatform oci directory for linux/arm64",
+			fixturePath:    "multiplatform_oci_dir",
+			platform:       &image.Platform{Architecture: "arm64", OS: "linux"},
+			expectedDigest: multiplatformArm64Digest,
+			expectedOS:     "linux",
+			expectedArch:   "arm64",
+		},
+		{
+			name:         "reads a multiplatform oci directory with no specified platform",
+			fixturePath:  "multiplatform_oci_dir",
+			platform:     nil,
+			expectedOS:   "linux",
+			expectedArch: runtime.GOARCH,
+		},
+		{
+			name:        "reads a multiplatform oci directory for an unlisted platform",
+			fixturePath: "multiplatform_oci_dir",
+			platform:    &image.Platform{Architecture: "ppc64le", OS: "linux"},
+			expectedErr: "unexpected number of images matching platform \"linux/ppc64le\" in OCI directory (expected 1, found 0)",
 		},
 	}
 
 	for _, tc := range tests {
-		tmpDirGen := file.NewTempDirGenerator("tempDir")
-		path := testutil.GetFixturePath(t, tc.fixturePath)
-		provider := NewDirectoryProviderWithPlatform(tmpDirGen, path, tc.platform)
 		t.Run(tc.name, func(t *testing.T) {
-			defer tmpDirGen.Cleanup()
+			expectedDigest := tc.expectedDigest
 			if tc.fixturePath == "multiplatform_oci_dir" && tc.platform == nil {
 				switch runtime.GOARCH {
 				case "amd64":
-					tc.expectedDigest = multiplatformAmd64Digest
+					expectedDigest = multiplatformAmd64Digest
 				case "arm64":
-					tc.expectedDigest = multiplatformArm64Digest
+					expectedDigest = multiplatformArm64Digest
 				default:
 					t.Skipf("unsupported architecture for test: %s", runtime.GOARCH)
 				}
 			}
+			tmpDirGen := file.NewTempDirGenerator("tempDir")
+			defer tmpDirGen.Cleanup()
+			path := testutil.GetFixturePath(t, tc.fixturePath)
+			provider := NewDirectoryProviderWithPlatform(tmpDirGen, path, tc.platform)
 
 			//WHEN
 			imageResult, err := provider.Provide(context.Background())
 
 			//THEN
 			if tc.expectedErr != "" {
-				assert.Error(t, err)
+				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedErr)
 				assert.Nil(t, imageResult)
+				var pErr *image.ErrPlatformMismatch
+				assert.Equal(t, tc.expectPlatformMismatch, errors.As(err, &pErr))
 			} else {
 				assert.NoError(t, err)
 				require.NotNil(t, imageResult)
-				assert.Equal(t, tc.expectedDigest, imageResult.Metadata.ManifestDigest)
+				assert.Equal(t, expectedDigest, imageResult.Metadata.ManifestDigest)
 				assert.Equal(t, tc.expectedOS, imageResult.Metadata.OS)
 				assert.Equal(t, tc.expectedArch, imageResult.Metadata.Architecture)
+				assert.Equal(t, tc.expectedVariant, imageResult.Metadata.Variant)
 			}
 		})
 	}
