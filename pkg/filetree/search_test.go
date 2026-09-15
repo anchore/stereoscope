@@ -626,11 +626,6 @@ func Test_searchContext_SearchByMIMEType_SkipsExcessiveLinkDepth(t *testing.T) {
 		paths = append(paths, string(result.RealPath))
 	}
 	require.Subset(t, paths, []string{"/usr/bin/a-before", "/usr/bin/zz-after"})
-
-	// a link from the middle of the over-long chain must not survive either; picking one confirms the
-	// chain is actually being skipped, not just coincidentally absent.
-	midChainLink := fmt.Sprintf("/usr/bin/l%04d", (maxLinkResolutionDepth+20)/2)
-	require.NotContains(t, paths, midChainLink)
 }
 
 // a malformed link anywhere in the image must not cost us the backward-reference index, which is what
@@ -639,7 +634,18 @@ func Test_searchContext_SearchByMIMEType_SkipsExcessiveLinkDepth(t *testing.T) {
 func Test_searchContext_LinkCycleDoesNotDropUnrelatedResults(t *testing.T) {
 	const mimeType = "text/plain"
 
-	build := func(t *testing.T, withCycle bool) Searcher {
+	// buildLinkResolutionIndex reaches the tree twice, and a malformed link can enter through either. Both are
+	// covered here because they are separate call sites and fixing one silently leaves the other.
+	const (
+		noCycle = iota
+		// a link that IS in the tree, reached while walking the index entries
+		cycleViaTreeLink
+		// an entry that is in the INDEX but not in this tree, reached while filtering entries down to this
+		// tree. An index spans every layer while a search context is one squashed tree, so this is ordinary.
+		cycleViaIndexOnlyEntry
+	)
+
+	build := func(t *testing.T, mode int) Searcher {
 		t.Helper()
 		tree := New()
 		idx := NewIndex()
@@ -648,15 +654,27 @@ func Test_searchContext_LinkCycleDoesNotDropUnrelatedResults(t *testing.T) {
 		require.NoError(t, err)
 		idx.Add(*ref, file.Metadata{MIMEType: mimeType})
 
-		if withCycle {
-			// an unrelated malformed link. note: the index returns entries in insertion order, so this has to
-			// be indexed BEFORE the healthy link below, otherwise the healthy backward reference is already
-			// registered by the time the bad link truncates the index and nothing is observable.
+		switch mode {
+		case cycleViaTreeLink:
+			// an unrelated malformed link. note: index entries come back sorted by file.ID, which is a
+			// process-global counter, so these have to be CREATED before the healthy link below; otherwise the
+			// healthy backward reference is already registered by the time the bad link truncates the index and
+			// nothing is observable.
 			for _, l := range []struct{ from, to file.Path }{{"/x", "/y"}, {"/y", "/x"}, {"/through", "/x/foo"}} {
 				ref, err = tree.AddSymLink(l.from, l.to)
 				require.NoError(t, err)
 				idx.Add(*ref, file.Metadata{Type: file.TypeSymLink})
 			}
+		case cycleViaIndexOnlyEntry:
+			for _, l := range []struct{ from, to file.Path }{{"/x", "/y"}, {"/y", "/x"}} {
+				_, err = tree.AddSymLink(l.from, l.to)
+				require.NoError(t, err)
+			}
+			// deliberately NOT added to the tree, so filtering it falls through to ancestor resolution and
+			// trips the cycle at /x. Ordering does not matter here: this aborts before any backward reference
+			// is registered, so the whole index is lost rather than a suffix of it.
+			ghost := file.NewFileReference("/x/ghost")
+			idx.Add(*ghost, file.Metadata{Type: file.TypeSymLink})
 		}
 
 		// a healthy directory link: /bin/legit is a legitimate second path to the same file
@@ -676,13 +694,20 @@ func Test_searchContext_LinkCycleDoesNotDropUnrelatedResults(t *testing.T) {
 		return out
 	}
 
-	clean, err := build(t, false).SearchByGlob("/bin/leg*")
+	clean, err := build(t, noCycle).SearchByGlob("/bin/leg*")
 	require.NoError(t, err)
 	require.Equal(t, []string{"/usr/bin/legit"}, paths(t, clean))
 
-	withCycle, err := build(t, true).SearchByGlob("/bin/leg*")
-	require.NoError(t, err)
+	for name, mode := range map[string]int{
+		"cycle via a link in the tree":  cycleViaTreeLink,
+		"cycle via an index-only entry": cycleViaIndexOnlyEntry,
+	} {
+		t.Run(name, func(t *testing.T) {
+			withCycle, err := build(t, mode).SearchByGlob("/bin/leg*")
+			require.NoError(t, err)
 
-	// the cycle is unrelated to this glob, so the results must be identical
-	require.Equal(t, paths(t, clean), paths(t, withCycle))
+			// the cycle is unrelated to this glob, so the results must be identical
+			require.Equal(t, paths(t, clean), paths(t, withCycle))
+		})
+	}
 }

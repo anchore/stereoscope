@@ -368,7 +368,13 @@ func walkCollect(t *testing.T, tr *FileTree, from file.Path) (file.PathSet, erro
 func TestDFS_WalkAll_SkipsLinkCycleAsLastEntry(t *testing.T) {
 	tr := linkCycleTree(t, "/usr/bin/zz-x", "/usr/bin/zz-y", "/usr/bin/a-before", "/usr/bin/zz-after")
 
-	visited, err := walkCollect(t, tr, "/")
+	visited := file.NewPathSet()
+	w := NewDepthFirstPathWalker(tr, func(p file.Path, _ filenode.FileNode) error {
+		visited.Add(p)
+		return nil
+	}, nil)
+
+	lastPath, lastNode, err := w.Walk("/")
 	if err != nil {
 		t.Fatalf("could not walk: %+v", err)
 	}
@@ -376,6 +382,12 @@ func TestDFS_WalkAll_SkipsLinkCycleAsLastEntry(t *testing.T) {
 		if !visited.Contains(p) {
 			t.Errorf("did not visit path %q", p)
 		}
+	}
+
+	// the cycle sorts last, so the last path popped is one that was skipped. The returned node must be nil
+	// rather than a node belonging to some earlier path, otherwise the pair is a lie the caller cannot detect.
+	if lastNode != nil {
+		t.Errorf("expected a nil FileNode paired with skipped path %q, got node for %q", lastPath, lastNode.RealPath)
 	}
 }
 
@@ -438,11 +450,13 @@ func TestDFS_WalkAll_SkipsExcessiveLinkDepth(t *testing.T) {
 // a visitor error must still abort the walk; the new "missing node" skip logic only swallows
 // unresolved paths, not errors returned from the visitor itself.
 func TestDFS_Walk_VisitorErrorsAreNotSwallowed(t *testing.T) {
-	tr := linkCycleTree(t, "/usr/bin/xz", "/usr/bin/xzcat", "/usr/bin/a-before")
+	// note: the cycle must sort BEFORE the erroring path, otherwise the walk returns on the visitor error
+	// before the skip branch is ever reached and the cycle in this fixture is decorative.
+	tr := linkCycleTree(t, "/usr/bin/m-x", "/usr/bin/m-y", "/usr/bin/a-before", "/usr/bin/zz-after")
 
 	expected := errors.New("visitor blew up")
 	w := NewDepthFirstPathWalker(tr, func(p file.Path, _ filenode.FileNode) error {
-		if p == "/usr/bin/a-before" {
+		if p == "/usr/bin/zz-after" {
 			return expected
 		}
 		return nil

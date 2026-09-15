@@ -705,26 +705,27 @@ func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 
 // ResolveLinkByLayerSquash resolves a symlink for the given file reference relative to the result from
 // the layer squash of the given layer index argument.
-// If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
-// A link that is malformed in the image (a cycle, or a chain too deep to follow) resolves to nothing rather than an
-// error, since callers are resolving one file out of many and one bad link should not fail the whole set.
+// If the given file reference is not a link type it resolves to itself. A dead link, or a link that is malformed in
+// the image (a cycle, or a chain too deep to follow), resolves to nil with a nil error: callers are resolving one
+// file out of many and one bad link should not fail the whole set.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)
-	if skipUnresolvableLink(ref, err) {
+	if filetree.IsUnresolvableLink(err) {
+		log.WithFields("path", ref.RealPath, "error", err).Trace("unable to resolve link in image, skipping")
 		return nil, nil
 	}
 	return resolvedRef, err
 }
 
 // ResolveLinkByImageSquash resolves a symlink for the given file reference relative to the result from the image squash.
-// If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
-// A link that is malformed in the image (a cycle, or a chain too deep to follow) resolves to nothing rather than an
-// error, see ResolveLinkByLayerSquash.
+// If the given file reference is not a link type it resolves to itself. A dead link, or a link that is malformed in
+// the image (a cycle, or a chain too deep to follow), resolves to nil with a nil error, see ResolveLinkByLayerSquash.
 func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, allOptions...)
-	if skipUnresolvableLink(ref, err) {
+	if filetree.IsUnresolvableLink(err) {
+		log.WithFields("path", ref.RealPath, "error", err).Trace("unable to resolve link in image, skipping")
 		return nil, nil
 	}
 	return resolvedRef, err
@@ -745,20 +746,6 @@ func closeLayers(layers []*Layer) []error {
 // closeLayers releases every layer tar descriptor this image is holding open.
 func (i *Image) closeLayers() []error {
 	return closeLayers(i.Layers)
-}
-
-// skipUnresolvableLink reports whether a link resolution failure is the image's fault rather than the caller's.
-// note: the tree resolves a single path strictly, so these two are surfaced as errors there and are downgraded
-// here, where the caller is walking many references and cannot abandon all of them over one bad link.
-func skipUnresolvableLink(ref file.Reference, err error) bool {
-	if err == nil {
-		return false
-	}
-	if !errors.Is(err, filetree.ErrLinkCycleDetected) && !errors.Is(err, filetree.ErrLinkResolutionDepth) {
-		return false
-	}
-	log.WithFields("path", ref.RealPath, "error", err).Debug("unable to resolve link in image, skipping")
-	return true
 }
 
 // Cleanup removes all temporary files created from parsing the image. Future calls to image will not function correctly after this call.

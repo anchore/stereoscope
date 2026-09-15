@@ -57,6 +57,10 @@ func NewDepthFirstPathWalker(tree *FileTree, visitor FileNodeVisitor, conditions
 	return w
 }
 
+// Walk traverses the tree depth-first from the given path, returning the last path considered and its node.
+// Note: the returned path is the last path POPPED, not the last path visited, and the returned FileNode is nil
+// (with a nil error) when that path could not be resolved because of a malformed link. Check the node for nil
+// before dereferencing it; a nil error alone no longer implies a node.
 func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNode, error) {
 	w.pathStack.Push(from)
 
@@ -79,8 +83,12 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 		currentPath = w.pathStack.Pop()
 
 		currentNode, err = w.tree.node(currentPath, linkStrat)
-		if isUnresolvableLink(err) {
-			log.WithFields("path", currentPath, "error", err).Debug("skipping path with malformed link during file tree walk")
+		if IsUnresolvableLink(err) {
+			log.WithFields("path", currentPath, "error", err).Trace("skipping path with malformed link during file tree walk")
+			// note: node() already returns a nil access alongside these errors, but do not lean on that -- the
+			// nil check on the way out pairs the returned node with the returned path, and this keeps the two
+			// in sync locally rather than by way of a callee's undocumented behavior.
+			currentNode = nil
 			continue
 		}
 		if err != nil {
@@ -128,7 +136,8 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 	}
 
 	if currentNode == nil {
-		// every path popped was skipped (e.g. the walk started at a link cycle), so there is no node to report
+		// the last path popped was skipped (e.g. the cycle sorts last, or the walk started at one), so the
+		// path we are about to report has no node to go with it
 		return currentPath, nil, nil
 	}
 
