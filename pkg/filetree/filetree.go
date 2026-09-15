@@ -11,6 +11,7 @@ import (
 	"github.com/scylladb/go-set/iset"
 	"github.com/scylladb/go-set/strset"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/tree"
@@ -21,6 +22,15 @@ var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the Fil
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
 var ErrLinkResolutionDepth = errors.New("maximum link resolution stack depth exceeded")
 var maxLinkResolutionDepth = 100
+
+// IsUnresolvableLink indicates a link that cannot be followed because the image itself is malformed, as
+// opposed to a lookup that legitimately failed. Callers enumerating the tree should treat these paths as
+// unresolved and keep going; callers resolving or mutating one specific path still want the error.
+// This is exported so that callers wrapping the single-path resolution API (which still returns these
+// errors) can make the same distinction without restating which sentinels mean "malformed image".
+func IsUnresolvableLink(err error) bool {
+	return errors.Is(err, ErrLinkCycleDetected) || errors.Is(err, ErrLinkResolutionDepth)
+}
 
 // FileTree represents a file/directory Tree
 type FileTree struct {
@@ -90,6 +100,10 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
+	if IsUnresolvableLink(err) {
+		log.WithFields("path", dir, "error", err).Trace("skipping path with malformed link while listing")
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -465,6 +479,10 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 			FollowBasenameLinks:          true,
 			DoNotFollowDeadBasenameLinks: doNotFollowDeadBasenameLinks,
 		})
+		if IsUnresolvableLink(err) {
+			log.WithFields("path", matchPath, "error", err).Trace("skipping glob match with malformed link")
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -802,6 +820,13 @@ func (t *FileTree) Merge(upper Reader) error {
 		// opaque directories must be processed first
 		if hasOpaqueDirectory(upper, upperNode.RealPath) {
 			err := t.RemoveChildPaths(upperNode.RealPath)
+			// a merge enumerates the upper tree, so one malformed link in the lower tree must not cost the
+			// whole squash. there are no resolvable children behind an unresolvable link, so there is nothing
+			// for the opaque directory to remove anyway.
+			if IsUnresolvableLink(err) {
+				log.WithFields("path", upperNode.RealPath, "error", err).Trace("skipping opaque directory with malformed link during merge")
+				err = nil
+			}
 			if err != nil {
 				return fmt.Errorf("filetree Merge failed to remove child paths (upperPath=%s): %w", upperNode.RealPath, err)
 			}

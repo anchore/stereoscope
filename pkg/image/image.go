@@ -705,18 +705,29 @@ func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 
 // ResolveLinkByLayerSquash resolves a symlink for the given file reference relative to the result from
 // the layer squash of the given layer index argument.
-// If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
+// If the given file reference is not a link type it resolves to itself. A dead link, or a link that is malformed in
+// the image (a cycle, or a chain too deep to follow), resolves to nil with a nil error: callers are resolving one
+// file out of many and one bad link should not fail the whole set.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)
+	if filetree.IsUnresolvableLink(err) {
+		log.WithFields("path", ref.RealPath, "error", err).Trace("unable to resolve link in image, skipping")
+		return nil, nil
+	}
 	return resolvedRef, err
 }
 
 // ResolveLinkByImageSquash resolves a symlink for the given file reference relative to the result from the image squash.
-// If the given file reference is not a link type, or is a unresolvable (dead) link, then the given file reference is returned.
+// If the given file reference is not a link type it resolves to itself. A dead link, or a link that is malformed in
+// the image (a cycle, or a chain too deep to follow), resolves to nil with a nil error, see ResolveLinkByLayerSquash.
 func (i *Image) ResolveLinkByImageSquash(ref file.Reference, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[len(i.Layers)-1].SquashedTree.File(ref.RealPath, allOptions...)
+	if filetree.IsUnresolvableLink(err) {
+		log.WithFields("path", ref.RealPath, "error", err).Trace("unable to resolve link in image, skipping")
+		return nil, nil
+	}
 	return resolvedRef, err
 }
 

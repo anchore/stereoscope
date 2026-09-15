@@ -14,8 +14,11 @@ import (
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
 
-// Searcher is a facade for searching a file tree with optional indexing support.
+// Searcher is a facade for searching a file tree with optional indexing support. All three methods skip paths
+// whose links are malformed (see IsUnresolvableLink) rather than failing the search, so a nil or absent result
+// means "absent or unresolvable".
 type Searcher interface {
+	// SearchByPath returns nil with a nil error when the path is absent OR its link cannot be resolved.
 	SearchByPath(path string, options ...LinkResolutionOption) (*file.Resolution, error)
 	SearchByGlob(patterns string, options ...LinkResolutionOption) ([]file.Resolution, error)
 	SearchByMIMEType(mimeTypes ...string) ([]file.Resolution, error)
@@ -59,6 +62,10 @@ func (sc *searchContext) buildLinkResolutionIndex() error {
 
 	for _, fn := range nodes {
 		destinationFna, err := sc.tree.file(fn.RenderLinkDestination())
+		if IsUnresolvableLink(err) {
+			log.WithFields("path", fn.RealPath, "error", err).Trace("skipping malformed link while building link resolution index")
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("unable to get node for path=%q: %w", fn.RealPath, err)
 		}
@@ -85,6 +92,10 @@ func (sc searchContext) SearchByPath(path string, options ...LinkResolutionOptio
 	// TODO: one day this could leverage indexes outside of the tree, but today this is not implemented
 	options = append(options, FollowBasenameLinks)
 	_, ref, err := sc.tree.File(file.Path(path), options...)
+	if IsUnresolvableLink(err) {
+		log.WithFields("path", path, "error", err).Trace("skipping path with malformed link during search")
+		return nil, nil
+	}
 	return ref, err
 }
 
@@ -268,6 +279,10 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 
 	// first, test the path against the glob and return it if matches
 	_, ref, err := sc.tree.File(fullPath, FollowBasenameLinks)
+	if IsUnresolvableLink(err) {
+		log.WithFields("path", fullPath, "error", err).Trace("skipping path with malformed link during search")
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +313,10 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 		observedPaths.Add(dir)
 
 		na, err := sc.tree.file(dir) // do not follow symlinks here; this call is effectively following symlinks manually
+		// note: unlike the fullPath lookup above, this one needs no malformed-link guard. dir is a prefix of
+		// symlinkCheckedPath, so its ancestors are a subset of fullPath's, and the only way the lookup above
+		// returns without doing ancestor resolution is fullPath existing as a real node -- which implies every
+		// prefix exists as a real node too. So if dir could cycle here, fullPath already did and we returned.
 		if err != nil {
 			return nil, fmt.Errorf("unable to get ref for path=%q: %w", fullPath, err)
 		}
@@ -334,6 +353,14 @@ allFileEntries:
 	for _, entry := range fileEntries {
 		// note: it is important that we don't enable any basename link resolution
 		na, err := sc.tree.file(entry.RealPath)
+		// the index spans multiple trees, so an entry's real path need not exist in this one. When it does not,
+		// file() falls through to ancestor resolution, which is where a malformed link surfaces. Aborting here
+		// would leave the caller with an empty link resolution index (see NewSearchContext) rather than a
+		// missing entry, so every symlink-reached path in the image would silently disappear.
+		if IsUnresolvableLink(err) {
+			log.WithFields("path", entry.RealPath, "error", err).Trace("skipping malformed link while filtering index entries")
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.RealPath, err)
 		}

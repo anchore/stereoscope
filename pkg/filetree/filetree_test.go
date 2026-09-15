@@ -1302,3 +1302,58 @@ func TestFileTree_AllFiles(t *testing.T) {
 	}
 
 }
+
+func TestFileTree_FilesByGlob_SkipsLinkCycles(t *testing.T) {
+	tr := New()
+	for _, p := range []file.Path{"/usr/bin/a-before", "/usr/bin/zz-after"} {
+		_, err := tr.AddFile(p)
+		require.NoError(t, err)
+	}
+	_, err := tr.AddSymLink("/usr/bin/xz", "/usr/bin/xzcat")
+	require.NoError(t, err)
+	_, err = tr.AddSymLink("/usr/bin/xzcat", "/usr/bin/xz")
+	require.NoError(t, err)
+
+	refs, err := tr.FilesByGlob("/usr/bin/*")
+	require.NoError(t, err)
+
+	var paths []string
+	for _, ref := range refs {
+		paths = append(paths, string(ref.RealPath))
+	}
+	require.ElementsMatch(t, []string{"/usr/bin/a-before", "/usr/bin/zz-after"}, paths)
+}
+
+// resolving one specific path is not enumeration: these callers still need to know the image is malformed.
+func TestFileTree_File_StillErrorsOnLinkCycle(t *testing.T) {
+	tr := New()
+	_, err := tr.AddSymLink("/usr/bin/xz", "/usr/bin/xzcat")
+	require.NoError(t, err)
+	_, err = tr.AddSymLink("/usr/bin/xzcat", "/usr/bin/xz")
+	require.NoError(t, err)
+
+	_, _, err = tr.File("/usr/bin/xz", FollowBasenameLinks)
+	require.ErrorIs(t, err, ErrLinkCycleDetected)
+}
+
+// ListPaths is enumeration and is on the exported Reader interface, so a malformed link must yield an empty
+// listing rather than an error that the caller has to know how to classify.
+func TestFileTree_ListPaths_SkipsLinkCycles(t *testing.T) {
+	tr := New()
+	for from, to := range map[file.Path]file.Path{"/x": "/y", "/y": "/x"} {
+		_, err := tr.AddSymLink(from, to)
+		require.NoError(t, err)
+	}
+	_, err := tr.AddFile("/usr/bin/keep")
+	require.NoError(t, err)
+
+	// the cycle itself resolves to nothing, but must not fail the caller...
+	paths, err := tr.ListPaths("/x")
+	require.NoError(t, err)
+	require.Empty(t, paths)
+
+	// ...and an unrelated directory must still list normally
+	paths, err = tr.ListPaths("/usr/bin")
+	require.NoError(t, err)
+	require.Equal(t, []file.Path{"/usr/bin/keep"}, paths)
+}

@@ -2,6 +2,7 @@ package filetree
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -118,6 +119,48 @@ func TestDFS_WalkAll(t *testing.T) {
 	}
 
 	assertExpectedTraversal(t, possiblePaths, actualPaths)
+}
+
+func TestDFS_WalkAll_SkipsLinkCycles(t *testing.T) {
+	tr := New()
+
+	for _, p := range []file.Path{
+		"/usr/bin/a-before",
+		"/usr/bin/zz-after",
+	} {
+		_, err := tr.AddFile(p)
+		if err != nil {
+			t.Fatalf("failed to add path %q: %+v", p, err)
+		}
+	}
+
+	_, err := tr.AddSymLink("/usr/bin/xz", "/usr/bin/xzcat")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+	_, err = tr.AddSymLink("/usr/bin/xzcat", "/usr/bin/xz")
+	if err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	visited := file.NewPathSet()
+	walker := NewDepthFirstPathWalker(tr, func(path file.Path, _ filenode.FileNode) error {
+		visited.Add(path)
+		return nil
+	}, nil)
+
+	if err := walker.WalkAll(); err != nil {
+		t.Fatalf("could not walk: %+v", err)
+	}
+
+	for _, p := range []file.Path{
+		"/usr/bin/a-before",
+		"/usr/bin/zz-after",
+	} {
+		if !visited.Contains(p) {
+			t.Errorf("did not visit path %q", p)
+		}
+	}
 }
 
 func TestDFS_WalkAll_EarlyTermination(t *testing.T) {
@@ -288,5 +331,138 @@ func assertExpectedTraversal(t *testing.T, expected, actual map[string]*file.Ref
 
 	for _, d := range deep.Equal(expected, actual) {
 		t.Errorf("   diff: %s", d)
+	}
+}
+
+// linkCycleTree builds a tree with a two-node symlink cycle plus regular files on either side of it.
+func linkCycleTree(t *testing.T, cycleA, cycleB file.Path, regular ...file.Path) *FileTree {
+	t.Helper()
+	tr := New()
+	for _, p := range regular {
+		if _, err := tr.AddFile(p); err != nil {
+			t.Fatalf("failed to add path %q: %+v", p, err)
+		}
+	}
+	if _, err := tr.AddSymLink(cycleA, cycleB); err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+	if _, err := tr.AddSymLink(cycleB, cycleA); err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+	return tr
+}
+
+func walkCollect(t *testing.T, tr *FileTree, from file.Path) (file.PathSet, error) {
+	t.Helper()
+	visited := file.NewPathSet()
+	w := NewDepthFirstPathWalker(tr, func(p file.Path, _ filenode.FileNode) error {
+		visited.Add(p)
+		return nil
+	}, nil)
+	_, _, err := w.Walk(from)
+	return visited, err
+}
+
+// a link cycle must not hide files that sort before or after it in traversal order, and the walk must
+// return cleanly rather than dereferencing the unresolved cycle node.
+func TestDFS_WalkAll_SkipsLinkCycleAsLastEntry(t *testing.T) {
+	tr := linkCycleTree(t, "/usr/bin/zz-x", "/usr/bin/zz-y", "/usr/bin/a-before", "/usr/bin/zz-after")
+
+	visited := file.NewPathSet()
+	w := NewDepthFirstPathWalker(tr, func(p file.Path, _ filenode.FileNode) error {
+		visited.Add(p)
+		return nil
+	}, nil)
+
+	lastPath, lastNode, err := w.Walk("/")
+	if err != nil {
+		t.Fatalf("could not walk: %+v", err)
+	}
+	for _, p := range []file.Path{"/usr/bin/a-before", "/usr/bin/zz-after"} {
+		if !visited.Contains(p) {
+			t.Errorf("did not visit path %q", p)
+		}
+	}
+
+	// the cycle sorts last, so the last path popped is one that was skipped. The returned node must be nil
+	// rather than a node belonging to some earlier path, otherwise the pair is a lie the caller cannot detect.
+	if lastNode != nil {
+		t.Errorf("expected a nil FileNode paired with skipped path %q, got node for %q", lastPath, lastNode.RealPath)
+	}
+}
+
+// walking from the cycle itself means the very first pop is unresolvable and the stack drains immediately,
+// so Walk must return a nil FileNode alongside a nil error rather than dereferencing it.
+func TestDFS_Walk_StartingAtLinkCycle(t *testing.T) {
+	tr := linkCycleTree(t, "/usr/bin/xz", "/usr/bin/xzcat", "/usr/bin/a-before")
+
+	w := NewDepthFirstPathWalker(tr, func(file.Path, filenode.FileNode) error {
+		return nil
+	}, nil)
+
+	_, node, err := w.Walk("/usr/bin/xz")
+	if err != nil {
+		t.Fatalf("could not walk: %+v", err)
+	}
+	if node != nil {
+		t.Errorf("expected a nil FileNode for an unresolved final path, got: %+v", node)
+	}
+}
+
+func TestDFS_WalkAll_SkipsSelfReferentialLink(t *testing.T) {
+	tr := New()
+	if _, err := tr.AddSymLink("/a", "/a"); err != nil {
+		t.Fatalf("could not setup link: %+v", err)
+	}
+
+	if _, err := walkCollect(t, tr, "/"); err != nil {
+		t.Fatalf("could not walk: %+v", err)
+	}
+}
+
+// a link chain too deep to follow denies a scan exactly like a cycle does, so it must be skipped too.
+func TestDFS_WalkAll_SkipsExcessiveLinkDepth(t *testing.T) {
+	tr := New()
+	for _, p := range []file.Path{"/usr/bin/a-before", "/usr/bin/zz-after"} {
+		if _, err := tr.AddFile(p); err != nil {
+			t.Fatalf("failed to add path %q: %+v", p, err)
+		}
+	}
+	for i := 0; i < maxLinkResolutionDepth+20; i++ {
+		from := file.Path(fmt.Sprintf("/usr/bin/l%04d", i))
+		to := file.Path(fmt.Sprintf("/usr/bin/l%04d", i+1))
+		if _, err := tr.AddSymLink(from, to); err != nil {
+			t.Fatalf("could not setup link: %+v", err)
+		}
+	}
+
+	visited, err := walkCollect(t, tr, "/")
+	if err != nil {
+		t.Fatalf("could not walk: %+v", err)
+	}
+	for _, p := range []file.Path{"/usr/bin/a-before", "/usr/bin/zz-after"} {
+		if !visited.Contains(p) {
+			t.Errorf("did not visit path %q", p)
+		}
+	}
+}
+
+// a visitor error must still abort the walk; the new "missing node" skip logic only swallows
+// unresolved paths, not errors returned from the visitor itself.
+func TestDFS_Walk_VisitorErrorsAreNotSwallowed(t *testing.T) {
+	// note: the cycle must sort BEFORE the erroring path, otherwise the walk returns on the visitor error
+	// before the skip branch is ever reached and the cycle in this fixture is decorative.
+	tr := linkCycleTree(t, "/usr/bin/m-x", "/usr/bin/m-y", "/usr/bin/a-before", "/usr/bin/zz-after")
+
+	expected := errors.New("visitor blew up")
+	w := NewDepthFirstPathWalker(tr, func(p file.Path, _ filenode.FileNode) error {
+		if p == "/usr/bin/zz-after" {
+			return expected
+		}
+		return nil
+	}, nil)
+
+	if _, _, err := w.Walk("/"); !errors.Is(err, expected) {
+		t.Fatalf("expected the visitor error to propagate, got: %+v", err)
 	}
 }
