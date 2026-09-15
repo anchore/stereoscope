@@ -141,30 +141,40 @@ func PrepareMultiplatformFixtureImage(t testing.TB, source, remoteImage string) 
 	// create a safe filename from the remote image reference
 	safeName := strings.NewReplacer("/", "_", ":", "-", ".", "_").Replace(remoteImage)
 
-	var location, destination string
+	var location, transport string
 	switch source {
 	case image.OciDirectorySource:
 		location = path.Join(cacheDir, "multiplatform-oci-dir-"+safeName)
-		destination = fmt.Sprintf("oci:%s", location)
+		transport = "oci"
 	case image.OciTarballSource:
 		location = path.Join(cacheDir, "multiplatform-oci-archive-"+safeName+".tar")
-		destination = fmt.Sprintf("oci-archive:%s", location)
+		transport = "oci-archive"
 	default:
 		t.Fatalf("PrepareMultiplatformFixtureImage does not support source: %s", source)
 	}
 
 	if _, err := os.Stat(location); os.IsNotExist(err) {
 		src := fmt.Sprintf("docker://%s", remoteImage)
+		// copy to a staging path and rename on success, so an interrupted copy can't leave a partial
+		// fixture behind that every later run would treat as a valid cache hit
+		staging := location + ".tmp"
+		if err := os.RemoveAll(staging); err != nil {
+			t.Fatalf("could not clear staging path (%s): %+v", staging, err)
+		}
 		// --preserve-digests ensures that the image manifests will remain the same.
 		// Skopeo will error if the source image is not in the OCI format, since it will
 		// have to convert it to OCI format, which would change the digests of the manifests.
-		cmd := exec.Command("skopeo", "copy", "--insecure-policy", "--all", "--preserve-digests", src, destination)
+		cmd := exec.Command("skopeo", "copy", "--insecure-policy", "--all", "--preserve-digests", "--retry-times=3", src, fmt.Sprintf("%s:%s", transport, staging))
 		cmd.Env = os.Environ()
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
 		if err := cmd.Run(); err != nil {
+			_ = os.RemoveAll(staging)
 			t.Fatalf("skopeo copy failed for multiplatform image %q: %+v", remoteImage, err)
+		}
+		if err := os.Rename(staging, location); err != nil {
+			t.Fatalf("could not move multiplatform fixture into place (%s): %+v", location, err)
 		}
 	} else {
 		t.Logf("using cached multiplatform fixture: %s", location)

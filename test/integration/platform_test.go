@@ -271,4 +271,8 @@ func assertArchAndOs(t *testing.T, img *image.Image, os string, architecture str
 	require.NoError(t, err)
 	assert.Equal(t, os, got.Os)
 	assert.Equal(t, architecture, got.Architecture)
+
+	// the reported metadata must agree with the image config it was derived from
+	assert.Equal(t, got.Os, img.Metadata.OS)
+	assert.Equal(t, got.Architecture, img.Metadata.Architecture)
 }
