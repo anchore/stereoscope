@@ -11,6 +11,7 @@ import (
 	"github.com/scylladb/go-set/iset"
 	"github.com/scylladb/go-set/strset"
 
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 	"github.com/anchore/stereoscope/pkg/tree"
@@ -21,6 +22,13 @@ var ErrRemovingRoot = errors.New("cannot remove the root path (`/`) from the Fil
 var ErrLinkCycleDetected = errors.New("cycle during symlink resolution")
 var ErrLinkResolutionDepth = errors.New("maximum link resolution stack depth exceeded")
 var maxLinkResolutionDepth = 100
+
+// isUnresolvableLink indicates a link that cannot be followed because the image itself is malformed, as
+// opposed to a lookup that legitimately failed. Callers enumerating the tree should treat these paths as
+// unresolved and keep going; callers resolving or mutating one specific path still want the error.
+func isUnresolvableLink(err error) bool {
+	return errors.Is(err, ErrLinkCycleDetected) || errors.Is(err, ErrLinkResolutionDepth)
+}
 
 // FileTree represents a file/directory Tree
 type FileTree struct {
@@ -90,6 +98,10 @@ func (t *FileTree) ListPaths(dir file.Path) ([]file.Path, error) {
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
+	if isUnresolvableLink(err) {
+		log.WithFields("path", dir, "error", err).Debug("skipping directory with malformed link")
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -465,6 +477,10 @@ func (t *FileTree) FilesByGlob(query string, options ...LinkResolutionOption) ([
 			FollowBasenameLinks:          true,
 			DoNotFollowDeadBasenameLinks: doNotFollowDeadBasenameLinks,
 		})
+		if isUnresolvableLink(err) {
+			log.WithFields("path", matchPath, "error", err).Debug("skipping glob match with malformed link")
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

@@ -1,7 +1,6 @@
 package filetree
 
 import (
-	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -60,6 +59,10 @@ func (sc *searchContext) buildLinkResolutionIndex() error {
 
 	for _, fn := range nodes {
 		destinationFna, err := sc.tree.file(fn.RenderLinkDestination())
+		if isUnresolvableLink(err) {
+			log.WithFields("path", fn.RealPath, "error", err).Debug("skipping malformed link while building link resolution index")
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("unable to get node for path=%q: %w", fn.RealPath, err)
 		}
@@ -86,6 +89,10 @@ func (sc searchContext) SearchByPath(path string, options ...LinkResolutionOptio
 	// TODO: one day this could leverage indexes outside of the tree, but today this is not implemented
 	options = append(options, FollowBasenameLinks)
 	_, ref, err := sc.tree.File(file.Path(path), options...)
+	if isUnresolvableLink(err) {
+		log.WithFields("path", path, "error", err).Debug("skipping path with malformed link during search")
+		return nil, nil
+	}
 	return ref, err
 }
 
@@ -224,10 +231,6 @@ func (sc searchContext) firstMatchingReferences(glob string, entries []IndexEntr
 	var references []file.Resolution
 	for _, entry := range entries {
 		ref, err := sc.firstMatchingReference(glob, string(entry.RealPath))
-		if errors.Is(err, ErrLinkCycleDetected) {
-			log.WithFields("path", entry.RealPath, "error", err).Warn("skipping path with link cycle during file tree search")
-			continue
-		}
 		if err != nil {
 			return nil, err
 		}
@@ -273,6 +276,10 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 
 	// first, test the path against the glob and return it if matches
 	_, ref, err := sc.tree.File(fullPath, FollowBasenameLinks)
+	if isUnresolvableLink(err) {
+		log.WithFields("path", fullPath, "error", err).Debug("skipping path with malformed link during search")
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

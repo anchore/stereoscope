@@ -529,3 +529,160 @@ func Test_nextSegment(t *testing.T) {
 		})
 	}
 }
+
+// cycleSearchFixture builds a tree+index with a two-node symlink cycle among regular indexed files.
+func cycleSearchFixture(t *testing.T, dir string, mimeType string) (*FileTree, Index) {
+	t.Helper()
+	tree := New()
+	idx := NewIndex()
+
+	for _, d := range file.Path(dir).AllPaths() {
+		if d == "/" {
+			continue
+		}
+		ref, err := tree.AddDir(d)
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		idx.Add(*ref, file.Metadata{Type: file.TypeDirectory})
+	}
+
+	for _, name := range []string{"a-before", "zz-after"} {
+		ref, err := tree.AddFile(file.Path(dir + "/" + name))
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		idx.Add(*ref, file.Metadata{MIMEType: mimeType})
+	}
+
+	for from, to := range map[file.Path]file.Path{
+		file.Path(dir + "/xz"):    file.Path(dir + "/xzcat"),
+		file.Path(dir + "/xzcat"): file.Path(dir + "/xz"),
+	} {
+		ref, err := tree.AddSymLink(from, to)
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		idx.Add(*ref, file.Metadata{MIMEType: mimeType, Type: file.TypeSymLink})
+	}
+
+	return tree, idx
+}
+
+// this is the path the dpkg cataloger takes when building package-file relationships, and the first error
+// reported in the original issue.
+func Test_searchContext_SearchByPath_SkipsLinkCycles(t *testing.T) {
+	tree, idx := cycleSearchFixture(t, "/usr/bin", "application/x-executable")
+
+	ref, err := NewSearchContext(tree, idx).SearchByPath("/usr/bin/xz")
+	require.NoError(t, err)
+	require.Nil(t, ref)
+
+	// the healthy neighbors must still resolve
+	ref, err = NewSearchContext(tree, idx).SearchByPath("/usr/bin/a-before")
+	require.NoError(t, err)
+	require.NotNil(t, ref)
+}
+
+// the sub-directory search basis (e.g. **/var/lib/dpkg/status.d/*) resolves entries by listing the parent,
+// which is a separate path from the MIME-type search.
+func Test_searchContext_SearchByGlob_SubDirectory_SkipsLinkCycles(t *testing.T) {
+	tree, idx := cycleSearchFixture(t, "/var/lib/dpkg/status.d", "text/plain")
+
+	results, err := NewSearchContext(tree, idx).SearchByGlob("**/status.d/*")
+	require.NoError(t, err)
+
+	var paths []string
+	for _, result := range results {
+		paths = append(paths, string(result.RealPath))
+	}
+	require.ElementsMatch(t, []string{
+		"/var/lib/dpkg/status.d/a-before",
+		"/var/lib/dpkg/status.d/zz-after",
+	}, paths)
+}
+
+func Test_searchContext_SearchByMIMEType_SkipsExcessiveLinkDepth(t *testing.T) {
+	const mimeType = "application/x-executable"
+	tree := New()
+	idx := NewIndex()
+
+	for _, name := range []string{"a-before", "zz-after"} {
+		ref, err := tree.AddFile(file.Path("/usr/bin/" + name))
+		require.NoError(t, err)
+		idx.Add(*ref, file.Metadata{MIMEType: mimeType})
+	}
+	for i := 0; i < maxLinkResolutionDepth+20; i++ {
+		ref, err := tree.AddSymLink(
+			file.Path(fmt.Sprintf("/usr/bin/l%04d", i)),
+			file.Path(fmt.Sprintf("/usr/bin/l%04d", i+1)),
+		)
+		require.NoError(t, err)
+		idx.Add(*ref, file.Metadata{MIMEType: mimeType, Type: file.TypeSymLink})
+	}
+
+	results, err := NewSearchContext(tree, idx).SearchByMIMEType(mimeType)
+	require.NoError(t, err)
+
+	var paths []string
+	for _, result := range results {
+		paths = append(paths, string(result.RealPath))
+	}
+	require.Subset(t, paths, []string{"/usr/bin/a-before", "/usr/bin/zz-after"})
+
+	// a link from the middle of the over-long chain must not survive either; picking one confirms the
+	// chain is actually being skipped, not just coincidentally absent.
+	midChainLink := fmt.Sprintf("/usr/bin/l%04d", (maxLinkResolutionDepth+20)/2)
+	require.NotContains(t, paths, midChainLink)
+}
+
+// a malformed link anywhere in the image must not cost us the backward-reference index, which is what
+// lets searches find files through symlinked parent directories. This is a differential test on purpose:
+// asserting "no error" would not have caught the index silently emptying itself.
+func Test_searchContext_LinkCycleDoesNotDropUnrelatedResults(t *testing.T) {
+	const mimeType = "text/plain"
+
+	build := func(t *testing.T, withCycle bool) Searcher {
+		t.Helper()
+		tree := New()
+		idx := NewIndex()
+
+		ref, err := tree.AddFile("/usr/bin/legit")
+		require.NoError(t, err)
+		idx.Add(*ref, file.Metadata{MIMEType: mimeType})
+
+		if withCycle {
+			// an unrelated malformed link. note: the index returns entries in insertion order, so this has to
+			// be indexed BEFORE the healthy link below, otherwise the healthy backward reference is already
+			// registered by the time the bad link truncates the index and nothing is observable.
+			for _, l := range []struct{ from, to file.Path }{{"/x", "/y"}, {"/y", "/x"}, {"/through", "/x/foo"}} {
+				ref, err = tree.AddSymLink(l.from, l.to)
+				require.NoError(t, err)
+				idx.Add(*ref, file.Metadata{Type: file.TypeSymLink})
+			}
+		}
+
+		// a healthy directory link: /bin/legit is a legitimate second path to the same file
+		ref, err = tree.AddSymLink("/bin", "/usr/bin")
+		require.NoError(t, err)
+		idx.Add(*ref, file.Metadata{Type: file.TypeSymLink})
+
+		return NewSearchContext(tree, idx)
+	}
+
+	paths := func(t *testing.T, refs []file.Resolution) []string {
+		t.Helper()
+		var out []string
+		for _, r := range refs {
+			out = append(out, string(r.RealPath))
+		}
+		return out
+	}
+
+	clean, err := build(t, false).SearchByGlob("/bin/leg*")
+	require.NoError(t, err)
+	require.Equal(t, []string{"/usr/bin/legit"}, paths(t, clean))
+
+	withCycle, err := build(t, true).SearchByGlob("/bin/leg*")
+	require.NoError(t, err)
+
+	// the cycle is unrelated to this glob, so the results must be identical
+	require.Equal(t, paths(t, clean), paths(t, withCycle))
+}

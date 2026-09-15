@@ -79,8 +79,8 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 		currentPath = w.pathStack.Pop()
 
 		currentNode, err = w.tree.node(currentPath, linkStrat)
-		if errors.Is(err, ErrLinkCycleDetected) {
-			log.WithFields("path", currentPath, "error", err).Warn("skipping path with link cycle during file tree walk")
+		if isUnresolvableLink(err) {
+			log.WithFields("path", currentPath, "error", err).Debug("skipping path with malformed link during file tree walk")
 			continue
 		}
 		if err != nil {
@@ -125,6 +125,11 @@ func (w *DepthFirstPathWalker) Walk(from file.Path) (file.Path, *filenode.FileNo
 		for _, childPath := range childPaths {
 			w.pathStack.Push(childPath)
 		}
+	}
+
+	if currentNode == nil {
+		// every path popped was skipped (e.g. the walk started at a link cycle), so there is no node to report
+		return currentPath, nil, nil
 	}
 
 	return currentPath, currentNode.FileNode, nil
