@@ -538,6 +538,30 @@ func TestFileTree_Merge_OpaqueWhiteoutUnderLinkCycleAncestor(t *testing.T) {
 	assert.True(t, lower.HasPath("/keep.txt"), "an unrelated file must survive the malformed link")
 }
 
+// a whiteout under a malformed link must not fail the squash. The upper layer carries the link, so
+// grafting it re-forms the cycle instead of breaking it, which is what reaches ancestor resolution.
+func TestFileTree_Merge_WhiteoutOverLinkCycle(t *testing.T) {
+	lower := New()
+	_, err := lower.AddSymLink("/b", "/a")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/a/gone.txt")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/keep.txt")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddSymLink("/a", "/b")
+	require.NoError(t, err)
+	_, err = upper.AddFile("/a/.wh.gone.txt")
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper), "a malformed link must not fail the squash")
+
+	assert.True(t, lower.HasPath("/keep.txt"), "an unrelated file must survive the malformed link")
+	assert.Falsef(t, lower.HasPath("/a/gone.txt"),
+		"the whiteout target should not survive; real paths are %v", lower.AllRealPaths())
+}
+
 func TestFileTree_Merge_Whiteout(t *testing.T) {
 	tr1 := New()
 	tr1.AddFile("/home/wagoodman/awesome/file.txt")

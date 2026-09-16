@@ -840,6 +840,12 @@ func (t *FileTree) Merge(upper Reader) error {
 			}
 
 			err = t.RemovePath(lowerPath)
+			// a malformed link must not fail the whole squash. RemovePath does not follow the basename, so
+			// its real path lookup already missed before resolution failed: there is no node to delete.
+			if IsUnresolvableLink(err) {
+				log.WithFields("path", lowerPath, "error", err).Trace("whiteout over malformed link during merge, nothing to remove")
+				err = nil
+			}
 			if err != nil {
 				return fmt.Errorf("filetree Merge failed to remove upperPath (upperPath=%s): %w", lowerPath, err)
 			}
