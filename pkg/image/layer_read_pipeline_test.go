@@ -780,8 +780,17 @@ func cancelAfterFetch(t *testing.T, fetchDone <-chan struct{}) context.Context {
 }
 
 func allStacks() string {
-	buf := make([]byte, 1<<20)
-	return string(buf[:runtime.Stack(buf, true)])
+	// runtime.Stack truncates silently when the buffer is too small, and both callers below use
+	// the result in negative assertions - a truncated dump would make those pass vacuously. Grow
+	// the buffer until the dump fits rather than trusting a fixed size.
+	buf := make([]byte, 1<<16)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			return string(buf[:n])
+		}
+		buf = make([]byte, 2*len(buf))
+	}
 }
 
 func goroutineRunning(frame string) bool {
@@ -865,5 +874,103 @@ func TestImage_readLayers_cancellationWaitsForInFlightWorkers(t *testing.T) {
 	case <-done:
 	case <-time.After(30 * time.Second):
 		t.Fatal("readLayers never returned after the in-flight worker was released")
+	}
+}
+
+// goroutineRunning is only ever used in negative assertions (see the two tests above), so if
+// pkg/image.(*Layer).index is ever renamed the substring match would silently return false
+// forever and both of those tests would pass for the wrong reason. This pins that the matcher is
+// actually live by asserting the frame IS present at a moment it provably must be.
+func TestGoroutineRunning_matchesALiveIndexFrame(t *testing.T) {
+	fetchDone := make(chan struct{})
+	layers := []*Layer{NewLayer(fetchSignalLayer{Layer: manyEntryLayer(t, 30000), done: fetchDone})}
+
+	i := &Image{contentCacheDir: t.TempDir()}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = i.readLayers(context.Background(), layers, NewFileCatalog(), progress.NewManual(0), newLayerGates(len(layers)))
+	}()
+
+	<-fetchDone // the index stage is about to pick this layer up
+
+	deadline := time.Now().Add(2 * time.Second)
+	found := false
+	for time.Now().Before(deadline) {
+		if goroutineRunning("pkg/image.(*Layer).index") {
+			found = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	require.True(t, found, "expected to observe pkg/image.(*Layer).index on some goroutine's stack while indexing was in flight")
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("readLayers never returned")
+	}
+}
+
+// TestImage_readLayers_sharedExecutorSurvivesMidFlightCancellation covers the pairing that
+// TestImage_readLayers_cancellationWaitsForInFlightWorkers does not: a caller-installed *shared*
+// ExecutorDefault (rather than readLayers' own per-stage executors) combined with a mid-flight
+// cancellation. That combination is exactly what the long comments in readLayers argue is safe,
+// and nothing else pins it.
+//
+// The two cases pin different halves, and only the second one regresses against the pre-fix code:
+//
+//   - bound 1 with more layers than slots parks the fetch stage's submitting goroutine inside
+//     Executor.Go, so the stage cannot reach its own return at all. This pins deadlock-freedom,
+//     which the old code also had.
+//   - a bound wide enough to take every layer lets the submitting goroutine finish, so the stage
+//     reaches the wait that this fix changed. This is the case that returns early, and fails,
+//     without the fix.
+func TestImage_readLayers_sharedExecutorSurvivesMidFlightCancellation(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		layers int
+		bound  int
+	}{
+		{name: "contended bound stays deadlock free", layers: 4, bound: 1},
+		{name: "uncontended bound still waits for in-flight work", layers: 3, bound: 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			started := make(chan struct{})
+			release := make(chan struct{})
+
+			layers := randomLayers(t, tt.layers)
+			blockingV1, err := random.Layer(64, v1Types.DockerLayer)
+			require.NoError(t, err)
+			layers[0] = NewLayer(blockingLayer{Layer: blockingV1, started: started, release: release})
+
+			// one shared executor resolved by both stages, rather than a per-stage pair
+			base := async.SetContextExecutor(context.Background(), async.ExecutorDefault, async.NewExecutor(tt.bound))
+			ctx, cancel := context.WithCancel(base)
+			defer cancel()
+
+			i := &Image{contentCacheDir: t.TempDir()}
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_ = i.readLayers(ctx, layers, NewFileCatalog(), progress.NewManual(0), newLayerGates(len(layers)))
+			}()
+
+			<-started // a fetch worker on the shared executor is provably in flight
+			cancel()
+
+			select {
+			case <-done:
+				t.Fatal("readLayers returned while the shared executor's in-flight worker was still blocked")
+			case <-time.After(250 * time.Millisecond):
+			}
+
+			close(release)
+			select {
+			case <-done:
+			case <-time.After(30 * time.Second):
+				t.Fatal("readLayers never returned after the in-flight worker on the shared executor was released")
+			}
+		})
 	}
 }

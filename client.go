@@ -66,13 +66,17 @@ func WithPlatform(platform string) Option {
 
 // GetImage parses the user provided image string and provides an image object;
 // note: the source where the image should be referenced from is automatically inferred.
+//
+// Cancelling ctx stops the read, but does not cut it short: see image.Image.Read for what a
+// cancelled read still waits for and how long that can be.
 func GetImage(ctx context.Context, imgStr string, options ...Option) (*image.Image, error) {
 	// look for a known source scheme like docker:
 	source, imgStr := ExtractSchemeSource(imgStr, allProviderTags()...)
 	return getImageFromSource(ctx, imgStr, source, options...)
 }
 
-// GetImageFromSource returns an image from the explicitly provided source.
+// GetImageFromSource returns an image from the explicitly provided source. See GetImage for what
+// cancelling ctx does.
 func GetImageFromSource(ctx context.Context, imgStr string, source image.Source, options ...Option) (*image.Image, error) {
 	if source == "" {
 		return nil, fmt.Errorf("source not provided, please specify a valid source tag")
