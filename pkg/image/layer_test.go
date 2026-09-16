@@ -345,3 +345,22 @@ func TestLayerRead_ClaimedDiffIDsDoNotShareCache(t *testing.T) {
 	require.True(t, img.SquashedTree().HasPath("/only-in-layer-1.txt"))
 	require.True(t, img.SquashedTree().HasPath("/only-in-layer-2.txt"))
 }
+
+// whiteout entries are changeset metadata: a layer's own tree keeps them (a merge reads them off the
+// upper tree), but no squashed tree may carry them, including the lowest layer's, which is not merged
+// into anything.
+func TestLayerRead_LowestLayerWhiteoutsAreNotSquashed(t *testing.T) {
+	img := readImageFromLayers(t,
+		layerFromTarEntries(t,
+			tarEntry{path: "etc/passwd", typeFlag: tar.TypeReg, contents: "root"},
+			tarEntry{path: "etc/.wh.shadow", typeFlag: tar.TypeReg},
+		),
+		layerFromTarEntries(t, tarEntry{path: "etc/hostname", typeFlag: tar.TypeReg, contents: "host"}),
+	)
+
+	require.True(t, img.Layers[0].Tree.HasPath("/etc/.wh.shadow"), "the layer diff tree should keep the marker")
+	require.False(t, img.Layers[0].SquashedTree.HasPath("/etc/.wh.shadow"), "the lowest layer squash leaked a whiteout marker")
+	require.False(t, img.SquashedTree().HasPath("/etc/.wh.shadow"), "the image squash leaked a whiteout marker")
+	require.True(t, img.SquashedTree().HasPath("/etc/passwd"))
+	require.True(t, img.SquashedTree().HasPath("/etc/hostname"))
+}

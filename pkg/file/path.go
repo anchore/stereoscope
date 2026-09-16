@@ -56,7 +56,10 @@ func (p Path) IsWhiteout() bool {
 // UnWhiteoutPath is a representation of the current path with no whiteout prefixes
 func (p Path) UnWhiteoutPath() (Path, error) {
 	basename := p.Basename()
-	if strings.HasPrefix(basename, OpaqueWhiteout) {
+	// the opaque marker is the file named exactly ".wh..wh..opq" (as IsDirWhiteout considers it); a name that
+	// merely starts with it is an ordinary whiteout of the sibling that follows the ".wh." prefix, not a
+	// marker for the parent directory
+	if p.IsDirWhiteout() {
 		return p.ParentPath()
 	}
 	parent, err := p.ParentPath()

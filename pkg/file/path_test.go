@@ -162,4 +162,17 @@ func TestPath_UnWhiteoutPath(t *testing.T) {
 	if newPath != "/some/path/to/somefile.txt" {
 		t.Fatal("path should be a whiteout")
 	}
+
+	// the opaque marker is the file named exactly ".wh..wh..opq". A name that merely starts with it
+	// is an ordinary whiteout of the sibling that follows the ".wh." prefix, not an opaque marker
+	// (which would resolve to the parent directory and delete it).
+	path = "/some/path/to/.wh..wh..opqX"
+
+	newPath, err = path.UnWhiteoutPath()
+	if err != nil {
+		t.Fatal("error while unwhiteing out", err)
+	}
+	if newPath != "/some/path/to/.wh..opqX" {
+		t.Fatalf("expected the sibling path, got '%v'", newPath)
+	}
 }

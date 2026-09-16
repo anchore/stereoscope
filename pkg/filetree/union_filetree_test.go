@@ -215,3 +215,110 @@ func TestUnionFileTree_Squash_opaqueDirectoryOverLinkCycle(t *testing.T) {
 		t.Errorf("opaque directory did not clear the lower tree; real paths are %v", squashed.AllRealPaths())
 	}
 }
+
+// the opaque marker is the file named exactly ".wh..wh..opq". An entry that merely starts with it is an
+// ordinary whiteout of the sibling that follows the ".wh." prefix; treating it as opaque resolves to the
+// parent directory and deletes the entire parent subtree.
+func TestUnionFileTree_Squash_opaquePrefixIsNotOpaqueMarker(t *testing.T) {
+	ut := NewUnionFileTree()
+	base := New()
+
+	base.AddFile("/etc/passwd")
+	base.AddFile("/etc/hostname")
+
+	top := New()
+	top.AddFile("/etc/" + file.OpaqueWhiteout + "X")
+
+	ut.PushTree(base)
+	ut.PushTree(top)
+
+	squashed, err := ut.Squash()
+	if err != nil {
+		t.Fatal("could not squash trees", err)
+	}
+
+	if !squashed.HasPath(file.Path("/etc/passwd")) {
+		t.Error("expected /etc/passwd to survive a non-opaque marker but it was deleted")
+	}
+	if !squashed.HasPath(file.Path("/etc/hostname")) {
+		t.Error("expected /etc/hostname to survive a non-opaque marker but it was deleted")
+	}
+}
+
+// the same mechanism at the image root resolves to "/", which RemovePath refuses, aborting the whole squash.
+func TestUnionFileTree_Squash_opaquePrefixAtRoot(t *testing.T) {
+	ut := NewUnionFileTree()
+	base := New()
+
+	base.AddFile("/etc/passwd")
+
+	top := New()
+	top.AddFile("/" + file.OpaqueWhiteout + "X")
+
+	ut.PushTree(base)
+	ut.PushTree(top)
+
+	squashed, err := ut.Squash()
+	if err != nil {
+		t.Fatal("could not squash trees", err)
+	}
+
+	if !squashed.HasPath(file.Path("/etc/passwd")) {
+		t.Error("expected /etc/passwd to survive a root level non-opaque marker but it was deleted")
+	}
+}
+
+// whiteout entries are changeset metadata and never materialize as files in an applied rootfs, but the
+// lowest tree is copied rather than merged, so nothing else would drop them.
+func TestUnionFileTree_Squash_whiteoutInLowestLayer(t *testing.T) {
+	ut := NewUnionFileTree()
+	base := New()
+
+	base.AddFile("/etc/passwd")
+	base.AddFile("/etc/" + file.WhiteoutPrefix + "shadow")
+	base.AddFile("/etc/" + file.OpaqueWhiteout)
+
+	top := New()
+	top.AddFile("/etc/hostname")
+
+	ut.PushTree(base)
+	ut.PushTree(top)
+
+	squashed, err := ut.Squash()
+	if err != nil {
+		t.Fatal("could not squash trees", err)
+	}
+
+	if squashed.HasPath(file.Path("/etc/" + file.WhiteoutPrefix + "shadow")) {
+		t.Error("expected the whiteout marker from the lowest layer to be stripped")
+	}
+	if squashed.HasPath(file.Path("/etc/" + file.OpaqueWhiteout)) {
+		t.Error("expected the opaque marker from the lowest layer to be stripped")
+	}
+	if !squashed.HasPath(file.Path("/etc/passwd")) {
+		t.Error("expected /etc/passwd to survive")
+	}
+}
+
+// a single tree is squashed by copy, which must still drop the whiteout markers it carries.
+func TestUnionFileTree_Squash_whiteoutInOnlyLayer(t *testing.T) {
+	ut := NewUnionFileTree()
+	only := New()
+
+	only.AddFile("/etc/passwd")
+	only.AddFile("/etc/" + file.WhiteoutPrefix + "shadow")
+
+	ut.PushTree(only)
+
+	squashed, err := ut.Squash()
+	if err != nil {
+		t.Fatal("could not squash trees", err)
+	}
+
+	if squashed.HasPath(file.Path("/etc/" + file.WhiteoutPrefix + "shadow")) {
+		t.Error("expected the whiteout marker from the only layer to be stripped")
+	}
+	if !squashed.HasPath(file.Path("/etc/passwd")) {
+		t.Error("expected /etc/passwd to survive")
+	}
+}
