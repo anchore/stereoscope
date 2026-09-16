@@ -303,3 +303,81 @@ func TestImage_ResolveLink_MalformedLinks(t *testing.T) {
 		require.False(t, resolved.HasReference())
 	})
 }
+
+// an opaque whiteout still hides lower layer files when the path to them is a link cycle.
+func TestImage_SquashedTree_OpaqueWhiteoutOverLinkCycle(t *testing.T) {
+	reg, sym := byte(tar.TypeReg), byte(tar.TypeSymlink)
+
+	lower := layerFromTarEntries(t,
+		tarEntry{path: "a", typeFlag: sym, linkPath: "/b"},
+		tarEntry{path: "b", typeFlag: sym, linkPath: "/a"},
+		tarEntry{path: "a/deleted.txt", typeFlag: reg, contents: "hidden by the opaque whiteout above"},
+	)
+	upper := layerFromTarEntries(t,
+		tarEntry{path: "a/.wh..wh..opq", typeFlag: reg},
+		tarEntry{path: "a/kept.txt", typeFlag: reg, contents: "visible"},
+	)
+
+	img := readImageFromLayers(t, lower, upper)
+
+	squash := img.SquashedTree()
+	require.True(t, squash.HasPath("/a/kept.txt"), "the upper layer file should be present")
+	require.Falsef(t, squash.HasPath("/a/deleted.txt"),
+		"opaque whiteout did not hide the lower layer file; squash holds %v", squash.AllRealPaths())
+
+	// the graft must keep the file readable, not just present in the tree
+	rc, err := img.OpenPathFromSquash("/a/kept.txt")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, rc.Close()) }()
+	contents, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Equal(t, "visible", string(contents))
+}
+
+// a whiteout over a malformed link must not fail the image read. The upper layer carries the link, so
+// grafting it re-forms the cycle instead of breaking it.
+func TestImage_SquashedTree_WhiteoutOverLinkCycle(t *testing.T) {
+	reg, sym := byte(tar.TypeReg), byte(tar.TypeSymlink)
+
+	lower := layerFromTarEntries(t,
+		tarEntry{path: "b", typeFlag: sym, linkPath: "/a"},
+		tarEntry{path: "a/gone.txt", typeFlag: reg, contents: "deleted by the whiteout above"},
+		tarEntry{path: "keep.txt", typeFlag: reg, contents: "untouched"},
+	)
+	upper := layerFromTarEntries(t,
+		tarEntry{path: "a", typeFlag: sym, linkPath: "/b"},
+		tarEntry{path: "a/.wh.gone.txt", typeFlag: reg},
+	)
+
+	img, err := tryReadImageFromLayers(t, lower, upper)
+	require.NoError(t, err, "a malformed link must not fail the image read")
+
+	squash := img.SquashedTree()
+	require.True(t, squash.HasPath("/keep.txt"), "an unrelated file must survive the malformed link")
+	require.Falsef(t, squash.HasPath("/a/gone.txt"),
+		"the whiteout target should not survive; squash holds %v", squash.AllRealPaths())
+}
+
+// an opaque whiteout hides that directory and nothing else. The link target is a separate directory
+// and must survive. This is the shape `rm -rf /link && mkdir /link` produces over a lower-layer link.
+func TestImage_SquashedTree_OpaqueWhiteoutOverSymlinkKeepsTarget(t *testing.T) {
+	reg, sym, dir := byte(tar.TypeReg), byte(tar.TypeSymlink), byte(tar.TypeDir)
+
+	lower := layerFromTarEntries(t,
+		tarEntry{path: "target", typeFlag: dir},
+		tarEntry{path: "target/keep.txt", typeFlag: reg, contents: "survives"},
+		tarEntry{path: "link", typeFlag: sym, linkPath: "/target"},
+	)
+	upper := layerFromTarEntries(t,
+		tarEntry{path: "link", typeFlag: dir},
+		tarEntry{path: "link/.wh..wh..opq", typeFlag: reg},
+		tarEntry{path: "link/new.txt", typeFlag: reg, contents: "new"},
+	)
+
+	img := readImageFromLayers(t, lower, upper)
+
+	squash := img.SquashedTree()
+	require.Truef(t, squash.HasPath("/target/keep.txt"),
+		"the link target is a different directory and must survive; squash holds %v", squash.AllRealPaths())
+	require.True(t, squash.HasPath("/link/new.txt"), "the upper layer file should be present")
+}

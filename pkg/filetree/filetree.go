@@ -720,10 +720,16 @@ func (t *FileTree) RemovePath(path file.Path) error {
 // basename is a symlink, then the symlink is followed before resolving children. If the path does not exist, this is a
 // nop.
 func (t *FileTree) RemoveChildPaths(path file.Path) error {
-	fna, err := t.node(path, linkResolutionStrategy{
+	return t.removeChildPaths(path, linkResolutionStrategy{
 		FollowAncestorLinks: true,
 		FollowBasenameLinks: true,
 	})
+}
+
+// removeChildPaths deletes the children of the node the strategy resolves path to. A zero strategy
+// means the literal real path.
+func (t *FileTree) removeChildPaths(path file.Path, strategy linkResolutionStrategy) error {
+	fna, err := t.node(path, strategy)
 	if err != nil {
 		return err
 	}
@@ -819,15 +825,10 @@ func (t *FileTree) Merge(upper Reader) error {
 		upperNode := n.(*filenode.FileNode)
 		// opaque directories must be processed first
 		if hasOpaqueDirectory(upper, upperNode.RealPath) {
-			err := t.RemoveChildPaths(upperNode.RealPath)
-			// a merge enumerates the upper tree, so one malformed link in the lower tree must not cost the
-			// whole squash. there are no resolvable children behind an unresolvable link, so there is nothing
-			// for the opaque directory to remove anyway.
-			if IsUnresolvableLink(err) {
-				log.WithFields("path", upperNode.RealPath, "error", err).Trace("skipping opaque directory with malformed link during merge")
-				err = nil
-			}
-			if err != nil {
+			// clear by real path, never through a link. An overlay mount masks a lower symlink instead of
+			// merging into its target, so resolving here would delete files still visible at the target.
+			// Note containerd and umoci resolve the marker's parent instead.
+			if err := t.removeChildPaths(upperNode.RealPath, linkResolutionStrategy{}); err != nil {
 				return fmt.Errorf("filetree Merge failed to remove child paths (upperPath=%s): %w", upperNode.RealPath, err)
 			}
 		}
@@ -839,6 +840,12 @@ func (t *FileTree) Merge(upper Reader) error {
 			}
 
 			err = t.RemovePath(lowerPath)
+			// a malformed link must not fail the whole squash. RemovePath does not follow the basename, so
+			// its real path lookup already missed before resolution failed: there is no node to delete.
+			if IsUnresolvableLink(err) {
+				log.WithFields("path", lowerPath, "error", err).Trace("whiteout over malformed link during merge, nothing to remove")
+				err = nil
+			}
 			if err != nil {
 				return fmt.Errorf("filetree Merge failed to remove upperPath (upperPath=%s): %w", lowerPath, err)
 			}
@@ -869,7 +876,8 @@ func (t *FileTree) Merge(upper Reader) error {
 
 		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory && lowerNode.FileNode.FileType == file.TypeDirectory {
 			// NOTE: both upperNode and lowerNode paths are the same, and does not have an effect
-			// on removal of child paths
+			// on removal of child paths. No link is followed: lowerNode was found at the literal real
+			// path and the condition above proves it is a directory.
 			err := t.RemoveChildPaths(upperNode.RealPath)
 			if err != nil {
 				return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
