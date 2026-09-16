@@ -150,7 +150,7 @@ func TestPath_UnWhiteoutPath(t *testing.T) {
 		t.Fatal("error while unwhiteing out", err)
 	}
 	if newPath != Path("/some/path/to") {
-		t.Fatal("path should be a whiteout")
+		t.Fatalf("expected the parent path, got '%v'", newPath)
 	}
 
 	path = "/some/path/to/.wh.somefile.txt"
@@ -160,7 +160,7 @@ func TestPath_UnWhiteoutPath(t *testing.T) {
 		t.Fatal("error while unwhiteing out", err)
 	}
 	if newPath != "/some/path/to/somefile.txt" {
-		t.Fatal("path should be a whiteout")
+		t.Fatalf("expected the unwhiteouted path, got '%v'", newPath)
 	}
 
 	// the opaque marker is the file named exactly ".wh..wh..opq". A name that merely starts with it
@@ -174,5 +174,13 @@ func TestPath_UnWhiteoutPath(t *testing.T) {
 	}
 	if newPath != "/some/path/to/.wh..opqX" {
 		t.Fatalf("expected the sibling path, got '%v'", newPath)
+	}
+
+	// a path that is not a whiteout has no meaningful unwhiteouted form: a bare ".wh." would otherwise
+	// resolve to its parent directory, and at the image root that is "/", which cannot be removed
+	for _, notWhiteout := range []Path{"/some/path/to/" + WhiteoutPrefix, "/" + WhiteoutPrefix, "/some/path/to/file.txt", "/"} {
+		if _, err := notWhiteout.UnWhiteoutPath(); err == nil {
+			t.Errorf("expected an error for a non-whiteout path '%v'", notWhiteout)
+		}
 	}
 }

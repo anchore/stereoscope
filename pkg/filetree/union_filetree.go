@@ -2,6 +2,10 @@ package filetree
 
 import "fmt"
 
+// UnionFileTree stacks file trees as OCI changesets, lowest pushed first. Trees pushed here are interpreted
+// as layer diffs rather than as plain filesystems: whiteout entries (".wh.*", and the opaque directory marker
+// ".wh..wh..opq") are changeset metadata that Squash consumes and never emits. Use FileTree.Copy directly for
+// a faithful copy with no changeset interpretation.
 type UnionFileTree struct {
 	trees []ReadWriter
 }
@@ -16,6 +20,9 @@ func (u *UnionFileTree) PushTree(t ReadWriter) {
 	u.trees = append(u.trees, t)
 }
 
+// Squash applies each pushed tree onto the one below it and returns the result. The result never contains
+// whiteout entries, including any carried by the lowest tree, which means a Squash of a single tree is not the
+// same as a Copy of that tree.
 func (u *UnionFileTree) Squash() (ReadWriter, error) {
 	if len(u.trees) == 0 {
 		return New(), nil

@@ -277,6 +277,9 @@ func TestUnionFileTree_Squash_whiteoutInLowestLayer(t *testing.T) {
 	base.AddFile("/etc/passwd")
 	base.AddFile("/etc/" + file.WhiteoutPrefix + "shadow")
 	base.AddFile("/etc/" + file.OpaqueWhiteout)
+	// a whiteout-named directory: removing it must take its subtree with it, and the stale descendants left
+	// in the path snapshot must not then fail the squash
+	base.AddFile("/etc/" + file.WhiteoutPrefix + "d/child")
 
 	top := New()
 	top.AddFile("/etc/hostname")
@@ -294,6 +297,12 @@ func TestUnionFileTree_Squash_whiteoutInLowestLayer(t *testing.T) {
 	}
 	if squashed.HasPath(file.Path("/etc/" + file.OpaqueWhiteout)) {
 		t.Error("expected the opaque marker from the lowest layer to be stripped")
+	}
+	if squashed.HasPath(file.Path("/etc/" + file.WhiteoutPrefix + "d")) {
+		t.Error("expected the whiteout-named directory from the lowest layer to be stripped")
+	}
+	if squashed.HasPath(file.Path("/etc/" + file.WhiteoutPrefix + "d/child")) {
+		t.Error("expected the whiteout-named directory's children to be stripped with it")
 	}
 	if !squashed.HasPath(file.Path("/etc/passwd")) {
 		t.Error("expected /etc/passwd to survive")

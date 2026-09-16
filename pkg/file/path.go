@@ -53,13 +53,20 @@ func (p Path) IsWhiteout() bool {
 	return strings.HasPrefix(basename, WhiteoutPrefix) && basename != WhiteoutPrefix
 }
 
-// UnWhiteoutPath is a representation of the current path with no whiteout prefixes
+// UnWhiteoutPath is a representation of the current path with no whiteout prefixes. A path that is not a
+// whiteout is an error rather than a best-effort answer: a bare ".wh." would otherwise resolve to the parent
+// directory, and at the image root that is "/", which callers then hand to a removal that refuses it.
 func (p Path) UnWhiteoutPath() (Path, error) {
+	if !p.IsWhiteout() {
+		return "", fmt.Errorf("not a whiteout path: %q", string(p))
+	}
 	basename := p.Basename()
 	// the opaque marker is the file named exactly ".wh..wh..opq" (as IsDirWhiteout considers it); a name that
 	// merely starts with it is an ordinary whiteout of the sibling that follows the ".wh." prefix, not a
 	// marker for the parent directory
 	if p.IsDirWhiteout() {
+		// note: this is "/" for a marker at the image root. An opaque marker is applied by removing the
+		// directory's children, never by removing this path
 		return p.ParentPath()
 	}
 	parent, err := p.ParentPath()
