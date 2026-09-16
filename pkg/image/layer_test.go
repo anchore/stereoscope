@@ -345,3 +345,48 @@ func TestLayerRead_ClaimedDiffIDsDoNotShareCache(t *testing.T) {
 	require.True(t, img.SquashedTree().HasPath("/only-in-layer-1.txt"))
 	require.True(t, img.SquashedTree().HasPath("/only-in-layer-2.txt"))
 }
+
+// whiteout entries are changeset metadata: a layer's own tree keeps them (a merge reads them off the
+// upper tree), but no squashed tree may carry them, including the lowest layer's, which is not merged
+// into anything.
+func TestLayerRead_LowestLayerWhiteoutsAreNotSquashed(t *testing.T) {
+	img := readImageFromLayers(t,
+		layerFromTarEntries(t,
+			tarEntry{path: "etc/passwd", typeFlag: tar.TypeReg, contents: "root"},
+			tarEntry{path: "etc/.wh.shadow", typeFlag: tar.TypeReg},
+			tarEntry{path: "etc/.wh..wh..opq", typeFlag: tar.TypeReg},
+		),
+		layerFromTarEntries(t, tarEntry{path: "etc/hostname", typeFlag: tar.TypeReg, contents: "host"}),
+	)
+
+	require.True(t, img.Layers[0].Tree.HasPath("/etc/.wh.shadow"), "the layer diff tree should keep the marker")
+	require.True(t, img.Layers[0].Tree.HasPath("/etc/.wh..wh..opq"), "the layer diff tree should keep the opaque marker")
+	require.False(t, img.Layers[0].SquashedTree.HasPath("/etc/.wh.shadow"), "the lowest layer squash leaked a whiteout marker")
+	require.False(t, img.Layers[0].SquashedTree.HasPath("/etc/.wh..wh..opq"), "the lowest layer squash leaked an opaque marker")
+	require.False(t, img.SquashedTree().HasPath("/etc/.wh.shadow"), "the image squash leaked a whiteout marker")
+	require.False(t, img.SquashedTree().HasPath("/etc/.wh..wh..opq"), "the image squash leaked an opaque marker")
+	require.True(t, img.SquashedTree().HasPath("/etc/passwd"))
+	require.True(t, img.SquashedTree().HasPath("/etc/hostname"))
+}
+
+// an entry that merely starts with the opaque marker is an ordinary whiteout of the sibling that follows the
+// ".wh." prefix, not a marker for its parent. Treating it as opaque deletes the whole parent directory, and at
+// the image root the parent is "/", which cannot be removed, so the error fails the entire read.
+func TestLayerRead_OpaqueMarkerPrefixDoesNotAbortTheRead(t *testing.T) {
+	img, err := tryReadImageFromLayers(t,
+		layerFromTarEntries(t,
+			tarEntry{path: "etc/passwd", typeFlag: tar.TypeReg, contents: "root"},
+			tarEntry{path: "etc/hostname", typeFlag: tar.TypeReg, contents: "host"},
+		),
+		layerFromTarEntries(t,
+			tarEntry{path: "etc/.wh..wh..opqX", typeFlag: tar.TypeReg},
+			tarEntry{path: ".wh..wh..opqX", typeFlag: tar.TypeReg},
+		),
+	)
+
+	require.NoError(t, err, "a crafted opaque-prefix entry must not fail the read")
+	require.True(t, img.SquashedTree().HasPath("/etc/passwd"), "/etc was erased by a non-opaque marker")
+	require.True(t, img.SquashedTree().HasPath("/etc/hostname"), "/etc was erased by a non-opaque marker")
+	require.False(t, img.SquashedTree().HasPath("/etc/.wh..wh..opqX"), "the image squash leaked a whiteout marker")
+	require.False(t, img.SquashedTree().HasPath("/.wh..wh..opqX"), "the image squash leaked a whiteout marker")
+}

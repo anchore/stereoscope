@@ -639,15 +639,14 @@ func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.
 			// context over a layer that was never squashed, which panics on the nil tree.
 			return fmt.Errorf("unable to squash: layer %d was not indexed", idx)
 		}
-		if idx == 0 {
-			lastSquashTree = layer.Tree.(filetree.ReadWriter)
-			layer.SquashedTree = layer.Tree
-			layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
-			continue
-		}
 
+		// the lowest layer has nothing under it to merge into, but it is still squashed rather than
+		// used as-is: a layer tree keeps the whiteout entries of its own changeset, a squashed tree
+		// must not carry them
 		var unionTree = filetree.NewUnionFileTree()
-		unionTree.PushTree(lastSquashTree)
+		if idx > 0 {
+			unionTree.PushTree(lastSquashTree)
+		}
 		unionTree.PushTree(layer.Tree.(filetree.ReadWriter))
 
 		squashedTree, err := unionTree.Squash()

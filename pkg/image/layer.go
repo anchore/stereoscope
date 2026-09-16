@@ -80,10 +80,12 @@ type Layer struct {
 	indexedContent *file.TarIndex
 	// Metadata contains select layer attributes
 	Metadata LayerMetadata
-	// Tree is a filetree that represents the structure of the layer tar contents ("diff tree")
+	// Tree is a filetree that represents the structure of the layer tar contents ("diff tree"). It keeps this
+	// layer's whiteout entries, since a merge reads them off the upper tree to know what to remove.
 	Tree filetree.Reader
 	// SquashedTree is a filetree that represents the combination of this layers diff tree and all diff trees
-	// in lower layers relative to this one.
+	// in lower layers relative to this one. It never contains whiteout entries: those are changeset metadata
+	// and do not materialize as files in an applied rootfs.
 	SquashedTree filetree.Reader
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
 	fileCatalog           *FileCatalog
