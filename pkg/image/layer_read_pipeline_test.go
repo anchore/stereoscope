@@ -701,3 +701,276 @@ func TestImage_Read_squashedSearchContextMatchesAFreshlyBuiltOne(t *testing.T) {
 		}
 	}
 }
+
+// manyEntryLayer builds a layer tar with n zero-byte entries. Indexing it takes long enough
+// (hundreds of ms) that a cancellation landing just after the fetch stage is sure to catch the
+// index stage mid-flight.
+func manyEntryLayer(t *testing.T, n int) v1.Layer {
+	t.Helper()
+	entries := make([]tarEntry, 0, n)
+	for i := 0; i < n; i++ {
+		entries = append(entries, tarEntry{
+			path:     fmt.Sprintf("d%04d/f%06d.txt", i%64, i),
+			typeFlag: tar.TypeReg,
+		})
+	}
+	return layerFromTarEntries(t, entries...)
+}
+
+// fetchSignalLayer closes done once the fetch stage has finished consuming this layer, which is
+// the moment the index stage picks it up - so a test can cancel while the indexer is provably
+// running rather than racing to catch it with a sleep.
+type fetchSignalLayer struct {
+	v1.Layer
+	done chan struct{}
+}
+
+func (s fetchSignalLayer) Uncompressed() (io.ReadCloser, error) {
+	rc, err := s.Layer.Uncompressed()
+	if err != nil {
+		return nil, err
+	}
+	return &fetchSignalCloser{ReadCloser: rc, done: s.done}, nil
+}
+
+type fetchSignalCloser struct {
+	io.ReadCloser
+	done chan struct{}
+}
+
+func (s *fetchSignalCloser) Close() error {
+	err := s.ReadCloser.Close()
+	select {
+	case <-s.done:
+	default:
+		close(s.done)
+	}
+	return err
+}
+
+type fetchSignalImage struct {
+	v1.Image
+	done chan struct{}
+}
+
+func (i fetchSignalImage) Layers() ([]v1.Layer, error) {
+	ls, err := i.Image.Layers()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]v1.Layer, len(ls))
+	for idx, l := range ls {
+		out[idx] = fetchSignalLayer{Layer: l, done: i.done}
+	}
+	return out, nil
+}
+
+// cancelAfterFetch cancels shortly after the fetch stage hands its layer to the index stage,
+// leaving the index worker in flight at the moment of cancellation.
+func cancelAfterFetch(t *testing.T, fetchDone <-chan struct{}) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(layerConcurrency(1, 1))
+	t.Cleanup(cancel)
+	go func() {
+		<-fetchDone
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+	return ctx
+}
+
+func allStacks() string {
+	// runtime.Stack truncates silently when the buffer is too small, and both callers below use
+	// the result in negative assertions - a truncated dump would make those pass vacuously. Grow
+	// the buffer until the dump fits rather than trusting a fixed size.
+	buf := make([]byte, 1<<16)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			return string(buf[:n])
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+}
+
+func goroutineRunning(frame string) bool {
+	return strings.Contains(allStacks(), frame)
+}
+
+// Read must not hand control back to the caller while goroutines it started are still mutating the
+// layers it is about to release: the error path closes those layers and the caller's Cleanup
+// deletes the cache directory an indexer is still reading its tar out of.
+func TestImage_Read_cancelledReadDoesNotLeaveAnIndexerRunning(t *testing.T) {
+	fetchDone := make(chan struct{})
+	v1Img, err := mutate.AppendLayers(empty.Image, manyEntryLayer(t, 30000))
+	require.NoError(t, err)
+
+	img := New(fetchSignalImage{Image: v1Img, done: fetchDone}, file.NewTempDirGenerator("cancel-indexer-test"), t.TempDir())
+
+	err = img.Read(cancelAfterFetch(t, fetchDone))
+	require.Error(t, err)
+	require.NoError(t, img.Cleanup())
+
+	assert.Falsef(t, goroutineRunning("pkg/image.(*Layer).index"),
+		"Read returned and Cleanup completed while a layer was still being indexed:\n%s", allStacks())
+}
+
+// the same cancellation at the two calls Image.Read makes back to back (readLayers, then
+// closeLayers on the error path). Under -race the still-running index stage writes
+// Layer.indexedContent while closeLayers is reading it.
+func TestImage_readLayers_cancelledReadDoesNotRaceLayerClose(t *testing.T) {
+	fetchDone := make(chan struct{})
+	layers := []*Layer{NewLayer(fetchSignalLayer{Layer: manyEntryLayer(t, 30000), done: fetchDone})}
+
+	i := &Image{contentCacheDir: t.TempDir()}
+	_ = i.readLayers(cancelAfterFetch(t, fetchDone), layers, NewFileCatalog(), progress.NewManual(0), newLayerGates(len(layers)))
+
+	stillIndexing := goroutineRunning("pkg/image.(*Layer).index")
+
+	// exactly what Image.Read does when readAndSquashLayers fails
+	closeLayers(layers)
+
+	if stillIndexing {
+		// let the orphaned indexer install its tar descriptor, the write that conflicts with the
+		// close above, so -race has the whole pair to report
+		time.Sleep(5 * time.Second)
+	}
+	assert.False(t, stillIndexing,
+		"readLayers returned while the index stage was still writing to the layer that Image.Read then closes")
+}
+
+// cancellation has to wait for workers that are already running, not just stop dispatching new
+// ones: returning while a fetch is in flight is what lets Read close a layer mid-write.
+func TestImage_readLayers_cancellationWaitsForInFlightWorkers(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	layers := []*Layer{NewLayer(blockingLayer{
+		Layer:   layerFromTarEntries(t, tarEntry{path: "f.txt", typeFlag: tar.TypeReg, contents: "ok"}),
+		started: started,
+		release: release,
+	})}
+
+	ctx, cancel := context.WithCancel(layerConcurrency(1, 1))
+	defer cancel()
+
+	i := &Image{contentCacheDir: t.TempDir()}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = i.readLayers(ctx, layers, NewFileCatalog(), progress.NewManual(0), newLayerGates(len(layers)))
+	}()
+
+	<-started // a fetch worker is provably in flight
+	cancel()
+
+	select {
+	case <-done:
+		t.Fatal("readLayers returned while a fetch worker was still in flight; Read would close the layer out from under it")
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("readLayers never returned after the in-flight worker was released")
+	}
+}
+
+// goroutineRunning is only ever used in negative assertions (see the two tests above), so if
+// pkg/image.(*Layer).index is ever renamed the substring match would silently return false
+// forever and both of those tests would pass for the wrong reason. This pins that the matcher is
+// actually live by asserting the frame IS present at a moment it provably must be.
+func TestGoroutineRunning_matchesALiveIndexFrame(t *testing.T) {
+	fetchDone := make(chan struct{})
+	layers := []*Layer{NewLayer(fetchSignalLayer{Layer: manyEntryLayer(t, 30000), done: fetchDone})}
+
+	i := &Image{contentCacheDir: t.TempDir()}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = i.readLayers(context.Background(), layers, NewFileCatalog(), progress.NewManual(0), newLayerGates(len(layers)))
+	}()
+
+	<-fetchDone // the index stage is about to pick this layer up
+
+	deadline := time.Now().Add(2 * time.Second)
+	found := false
+	for time.Now().Before(deadline) {
+		if goroutineRunning("pkg/image.(*Layer).index") {
+			found = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	require.True(t, found, "expected to observe pkg/image.(*Layer).index on some goroutine's stack while indexing was in flight")
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("readLayers never returned")
+	}
+}
+
+// TestImage_readLayers_sharedExecutorSurvivesMidFlightCancellation covers the pairing that
+// TestImage_readLayers_cancellationWaitsForInFlightWorkers does not: a caller-installed *shared*
+// ExecutorDefault (rather than readLayers' own per-stage executors) combined with a mid-flight
+// cancellation. That combination is exactly what the long comments in readLayers argue is safe,
+// and nothing else pins it.
+//
+// The two cases pin different halves, and only the second one regresses against the pre-fix code:
+//
+//   - bound 1 with more layers than slots parks the fetch stage's submitting goroutine inside
+//     Executor.Go, so the stage cannot reach its own return at all. This pins deadlock-freedom,
+//     which the old code also had.
+//   - a bound wide enough to take every layer lets the submitting goroutine finish, so the stage
+//     reaches the wait that this fix changed. This is the case that returns early, and fails,
+//     without the fix.
+func TestImage_readLayers_sharedExecutorSurvivesMidFlightCancellation(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		layers int
+		bound  int
+	}{
+		{name: "contended bound stays deadlock free", layers: 4, bound: 1},
+		{name: "uncontended bound still waits for in-flight work", layers: 3, bound: 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			started := make(chan struct{})
+			release := make(chan struct{})
+
+			layers := randomLayers(t, tt.layers)
+			blockingV1, err := random.Layer(64, v1Types.DockerLayer)
+			require.NoError(t, err)
+			layers[0] = NewLayer(blockingLayer{Layer: blockingV1, started: started, release: release})
+
+			// one shared executor resolved by both stages, rather than a per-stage pair
+			base := async.SetContextExecutor(context.Background(), async.ExecutorDefault, async.NewExecutor(tt.bound))
+			ctx, cancel := context.WithCancel(base)
+			defer cancel()
+
+			i := &Image{contentCacheDir: t.TempDir()}
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_ = i.readLayers(ctx, layers, NewFileCatalog(), progress.NewManual(0), newLayerGates(len(layers)))
+			}()
+
+			<-started // a fetch worker on the shared executor is provably in flight
+			cancel()
+
+			select {
+			case <-done:
+				t.Fatal("readLayers returned while the shared executor's in-flight worker was still blocked")
+			case <-time.After(250 * time.Millisecond):
+			}
+
+			close(release)
+			select {
+			case <-done:
+			case <-time.After(30 * time.Second):
+				t.Fatal("readLayers never returned after the in-flight worker on the shared executor was released")
+			}
+		})
+	}
+}
