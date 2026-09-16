@@ -206,7 +206,8 @@ func (i *Image) applyOverrideMetadata() error {
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree).
 //
 // The context bounds the read: cancelling it abandons work that has not started and stops the
-// layer pools from picking up more.
+// layer pools from picking up more. It does not return until the layer work already in flight has
+// finished, so the layers it releases on the way out are not being written to by anyone.
 func (i *Image) Read(ctx context.Context) error {
 	startTime := time.Now()
 
@@ -349,9 +350,10 @@ func (i *Image) squashedSearchContext() filetree.Searcher {
 // express.
 //
 // Errors from both stages are joined. Panics inside either stage are captured as errors rather
-// than taking down the process. A cancelled context stops either stage from starting more work,
-// and the first layer failure sets an internal flag that does the same to its peers' fetches -
-// no sense downloading layer 7 after layer 2 is already known to be corrupt.
+// than taking down the process. A cancelled context stops either stage from starting more work
+// and is waited out rather than abandoned, and the first layer failure sets an internal flag that
+// does the same to its peers' fetches - no sense downloading layer 7 after layer 2 is already
+// known to be corrupt.
 func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *FileCatalog, readProg *progress.Manual, gates *layerGates) error {
 	ctx = withLayerExecutors(ctx, len(layers))
 
@@ -395,12 +397,13 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 		idxs[n] = n
 	}
 
-	// fetchIdxs stops handing out new layer indices once aborted is set, so Collect never starts
-	// a fetch for a layer we already know we will not need. Whatever it already started keeps
-	// running to completion regardless - see the aborted comment above for why that matters.
+	// fetchIdxs stops handing out new layer indices once aborted is set or the caller has given
+	// up, so Collect never starts a fetch for a layer we already know we will not need. Whatever
+	// it already started keeps running to completion regardless - see the aborted comment above,
+	// and the stage contexts below, for why that matters.
 	fetchIdxs := func(yield func(int) bool) {
 		for _, idx := range idxs {
-			if aborted.Load() {
+			if aborted.Load() || ctx.Err() != nil {
 				return
 			}
 			if !yield(idx) {
@@ -422,10 +425,26 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 	fetched := make(chan int, len(layers))
 	fetchDone := make(chan error, 1)
 
-	fetchCtx := ctx
+	// neither stage hands the caller's context to Collect. Collect gives up as soon as its context
+	// is done - it races ctx.Done against its own wait and returns on whichever fires first - so a
+	// cancelled read would return while workers it dispatched were still writing to layers that
+	// Read then closes, and that the caller's Cleanup then deletes the cache directory out from
+	// under. A context that cannot be cancelled leaves Collect only its wait, so its return means
+	// every worker it started has finished, and so does readLayers'.
+	//
+	// Cancellation is still honoured, at the two points where acting on it is safe: the iterators
+	// stop handing out layers, so nothing new is queued, and each task below returns immediately
+	// when ctx is already done, which is what a layer that was dispatched but never started costs
+	// now that Collect's own pre-task check can no longer fire. What is in flight is always run to
+	// completion - the same reasoning as aborted above.
+	fetchCtx := context.WithoutCancel(ctx)
 	go func() {
 		err := async.Collect(&fetchCtx, LayerFetchExecutor, fetchIdxs,
 			func(idx int) (int, error) {
+				if ctx.Err() != nil {
+					gates.done(idx, false)
+					return idx, nil
+				}
 				if err := layers[idx].fetch(idx, i.contentCacheDir); err != nil {
 					// the index stage will never see this layer, so open its gate here
 					gates.done(idx, false)
@@ -438,25 +457,24 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 				// bail via Done rather than block forever on a handoff nothing is reading anymore
 				select {
 				case fetched <- idx:
-				case <-fetchCtx.Done():
+				case <-ctx.Done():
 					gates.done(idx, false)
 				}
 				return idx, nil
 			}, nil)
-		// only safe once every fetch worker above has actually returned. Collect can return here
-		// while a worker is still parked in the select above, but only by taking its ctx.Done
-		// branch - and that branch can only fire once ctx is cancelled, which is permanent, so if
-		// we observe no cancellation here Collect must have waited for all of them (its ctx.Done
-		// alternative never became ready)
-		if fetchCtx.Err() == nil {
-			close(fetched)
-		}
+		// safe unconditionally: fetchCtx cannot be cancelled, so Collect only returns once every
+		// fetch worker has, and there is no sender left to panic on a closed channel
+		close(fetched)
 		fetchDone <- err
 	}()
 
-	indexCtx := ctx
-	indexErr := async.Collect(&indexCtx, LayerIndexExecutor, seqOfChannel(indexCtx, fetched),
+	indexCtx := context.WithoutCancel(ctx)
+	indexErr := async.Collect(&indexCtx, LayerIndexExecutor, seqOfChannel(ctx, fetched),
 		func(idx int) (int, error) {
+			if ctx.Err() != nil {
+				gates.done(idx, false)
+				return idx, nil
+			}
 			err := layers[idx].index(fileCatalog)
 			// open the gate either way: squash decides what to do with the outcome
 			gates.done(idx, err == nil)
