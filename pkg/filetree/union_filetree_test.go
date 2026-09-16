@@ -174,7 +174,7 @@ func TestUnionFileTree_Squash_whiteout(t *testing.T) {
 
 // an opaque directory in an upper layer sitting over a malformed link in a lower layer must not cost the whole
 // image. Merge runs RemoveChildPaths against the lower tree before grafting the upper node, and that resolves
-// through the link, so without the skip this aborts the entire squash rather than one path.
+// through the link. It must still delete the link's own children.
 func TestUnionFileTree_Squash_opaqueDirectoryOverLinkCycle(t *testing.T) {
 	ut := NewUnionFileTree()
 	base := New()
@@ -186,6 +186,9 @@ func TestUnionFileTree_Squash_opaqueDirectoryOverLinkCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := base.AddSymLink("/y", "/x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := base.AddFile("/x/gone.txt"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -205,5 +208,10 @@ func TestUnionFileTree_Squash_opaqueDirectoryOverLinkCycle(t *testing.T) {
 	// the unrelated file must survive the malformed link entirely
 	if !squashed.HasPath("/usr/bin/keep") {
 		t.Errorf("expected '/usr/bin/keep' to survive the squash but it was not found")
+	}
+
+	// ...and the opaque directory must still delete what it covers
+	if squashed.HasPath("/x/gone.txt") {
+		t.Errorf("opaque directory did not clear the lower tree; real paths are %v", squashed.AllRealPaths())
 	}
 }

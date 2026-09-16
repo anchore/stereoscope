@@ -442,6 +442,102 @@ func TestFileTree_Merge_OpaqueWhiteout_NoLowerDirectory(t *testing.T) {
 	}
 }
 
+// an opaque directory clears the lower tree's children even when the path to it is a link cycle. The
+// children are still real nodes at their own real paths.
+func TestFileTree_Merge_OpaqueWhiteoutOverLinkCycle(t *testing.T) {
+	lower := New()
+	_, err := lower.AddSymLink("/a", "/b")
+	require.NoError(t, err)
+	_, err = lower.AddSymLink("/b", "/a")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/a/deleted.txt")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddFile(file.Path("/a/" + file.OpaqueWhiteout))
+	require.NoError(t, err)
+	_, err = upper.AddFile("/a/kept.txt")
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper))
+
+	assert.True(t, lower.HasPath("/a/kept.txt"), "the upper tree's file should be present")
+	assert.Falsef(t, lower.HasPath("/a/deleted.txt"),
+		"the opaque directory did not clear the lower tree; real paths are %v", lower.AllRealPaths())
+
+	// the upper directory replaced the link, so the other half of the cycle now resolves into it
+	n, err := lower.node("/a", linkResolutionStrategy{})
+	require.NoError(t, err)
+	require.True(t, n.HasFileNode())
+	assert.Equal(t, file.TypeDirectory, n.FileNode.FileType, "the upper tree's directory should have replaced the link")
+	assert.True(t, lower.HasPath("/b/kept.txt"), "the surviving link should resolve into the new directory")
+}
+
+// an opaque directory clears the link's own children and stops there. The target is a separate
+// directory an overlay mount leaves alone, so clearing it would delete files still visible there.
+func TestFileTree_Merge_OpaqueWhiteoutOverResolvableLink(t *testing.T) {
+	lower := New()
+	_, err := lower.AddSymLink("/a", "/real")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/real/target-child.txt")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/a/link-child.txt")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddFile(file.Path("/a/" + file.OpaqueWhiteout))
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper))
+
+	assert.Truef(t, lower.HasPath("/real/target-child.txt"),
+		"the link target is a separate directory and must survive; real paths are %v", lower.AllRealPaths())
+	assert.Falsef(t, lower.HasPath("/a/link-child.txt"),
+		"the link's own children should be cleared; real paths are %v", lower.AllRealPaths())
+}
+
+// merged-usr shape: the opaque directory's ancestor is a link (/lib -> /usr/lib). The clear does not
+// follow it, so /usr/lib keeps its contents and stays reachable by its own real path.
+func TestFileTree_Merge_OpaqueWhiteoutUnderResolvableLinkAncestor(t *testing.T) {
+	lower := New()
+	_, err := lower.AddSymLink("/lib", "/usr/lib")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/usr/lib/jvm/old.txt")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddFile(file.Path("/lib/jvm/" + file.OpaqueWhiteout))
+	require.NoError(t, err)
+	_, err = upper.AddFile("/lib/jvm/new.txt")
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper))
+
+	assert.Truef(t, lower.HasPath("/usr/lib/jvm/old.txt"),
+		"the link target must keep its contents; real paths are %v", lower.AllRealPaths())
+	assert.True(t, lower.HasPath("/lib/jvm/new.txt"), "the upper tree's file should be present")
+}
+
+// a link cycle in an ancestor resolves to no node, so there is nothing to clear and the squash
+// carries on.
+func TestFileTree_Merge_OpaqueWhiteoutUnderLinkCycleAncestor(t *testing.T) {
+	lower := New()
+	_, err := lower.AddSymLink("/x", "/y")
+	require.NoError(t, err)
+	_, err = lower.AddSymLink("/y", "/x")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/keep.txt")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddFile(file.Path("/x/y/z/" + file.OpaqueWhiteout))
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper))
+
+	assert.True(t, lower.HasPath("/keep.txt"), "an unrelated file must survive the malformed link")
+}
+
 func TestFileTree_Merge_Whiteout(t *testing.T) {
 	tr1 := New()
 	tr1.AddFile("/home/wagoodman/awesome/file.txt")
