@@ -237,7 +237,7 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 		if done, final := b.finished(); done {
 			return n, b.latch(final)
 		}
-		if resumeErr := b.resume(readErr); resumeErr != nil {
+		if resumeErr := b.resume(shortRead(readErr)); resumeErr != nil {
 			return n, b.latch(resumeErr)
 		}
 		if n > 0 {
@@ -245,6 +245,25 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 			return n, nil
 		}
 	}
+}
+
+// shortRead renames the error of a stream that stopped before its declared length was delivered.
+//
+// net/http reports a body that simply ends as io.EOF, and the terminal failures below wrap their
+// cause so that the sentinels this path raises stay classifiable. wrapping a bare io.EOF along with
+// them would make errors.Is(err, io.EOF) true on a truncation, and a clean end of stream is exactly
+// what a truncation must never be mistakable for: this repo's own file.IterateTar breaks on that
+// test and returns nil, as do several go-containerregistry helpers, so a layer we failed to fetch
+// would become a silently short SBOM -- the outcome this whole transport exists to prevent.
+//
+// it is called where the stream is known to be short, after finished() has ruled out a body that
+// arrived in full.
+func shortRead(readErr error) error {
+	if errors.Is(readErr, io.EOF) {
+		return io.ErrUnexpectedEOF
+	}
+
+	return readErr
 }
 
 // latch records the error that ended the stream so every subsequent Read returns it, rather than
@@ -329,7 +348,11 @@ func (b *resumableBody) resume(cause error) error {
 					forLog(b.req.URL), b.offset, cause, err)
 			}
 
-			cause = err
+			// the same renaming the read error gets, and for the same reason: http.Transport hands
+			// back a bare io.EOF when a peer accepts the connection, reads the request and closes
+			// without answering -- which is what a drained CDN edge does, and is how this path is
+			// reached at all
+			cause = shortRead(err)
 
 			continue
 		}

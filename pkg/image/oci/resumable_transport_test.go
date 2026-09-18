@@ -1,9 +1,11 @@
 package oci
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1149,4 +1151,163 @@ func TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims(t *testing
 
 	// permanent, so it costs one attempt rather than the whole budget
 	assert.Len(t, server.seenRanges(), 2)
+}
+
+// clampingBlobServer honours every Range but answers with a self-consistent 206 far shorter than
+// the span asked for: Content-Range, Content-Length and the bytes written all agree, so the segment
+// is accepted and then ends in a bare io.EOF well short of the object. It is the shape a badly
+// configured mirror takes, and the only one that produces an io.EOF as the cause of a terminal
+// failure -- an ordinary truncation is reported by net/http as io.ErrUnexpectedEOF already.
+type clampingBlobServer struct {
+	payload []byte
+	clamp   int
+}
+
+func (s *clampingBlobServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := int64(0)
+	status := http.StatusOK
+
+	if spec := r.Header.Get("Range"); spec != "" {
+		var end int64
+		if _, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end); err != nil {
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		status = http.StatusPartialContent
+
+		sending := int64(s.clamp)
+		if start+sending > int64(len(s.payload)) {
+			sending = int64(len(s.payload)) - start
+		}
+
+		w.Header().Set("Content-Range",
+			fmt.Sprintf("bytes %d-%d/%d", start, start+sending-1, len(s.payload)))
+		w.Header().Set("Content-Length", strconv.FormatInt(sending, 10))
+		w.WriteHeader(status)
+		_, _ = w.Write(s.payload[start : start+sending])
+
+		return
+	}
+
+	// the first response declares the whole object and delivers a fraction of it
+	w.Header().Set("Content-Length", strconv.Itoa(len(s.payload)))
+	w.WriteHeader(status)
+	_, _ = w.Write(s.payload[:s.clamp])
+	w.(http.Flusher).Flush()
+}
+
+func TestResumableTransport_aFailedTransferIsNeverACleanEndOfStream(t *testing.T) {
+	// the sharpest edge this transport could leave: a caller testing errors.Is(err, io.EOF) to mean
+	// "the stream ended" would read a truncated layer as a complete one. file.IterateTar in this
+	// repo does exactly that test, so the terminal error must never carry io.EOF in its chain
+	payload := payloadOfSize(256 * 1024)
+	server := &clampingBlobServer{payload: payload, clamp: 4096}
+
+	srv := httptest.NewServer(server)
+	t.Cleanup(srv.Close)
+
+	resp, err := newTestClient(1).Get(srv.URL)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	_, err = io.ReadAll(resp.Body)
+	require.Error(t, err, "a transfer that never completes must fail")
+
+	assert.NotErrorIs(t, err, io.EOF,
+		"a truncation must not be mistakable for a clean end of stream")
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF,
+		"it should be reported as the short read it is")
+}
+
+// acceptAndCloseListener serves one truncated blob over a raw socket and then answers every later
+// connection by reading the request and closing without a response. That is what a load balancer
+// or CDN edge whose backend pool has drained does, and net/http reports it to the caller of
+// RoundTrip as a bare io.EOF -- the second door into the terminal error, which httptest cannot
+// produce because it always writes a response.
+type acceptAndCloseListener struct {
+	listener net.Listener
+	payload  []byte
+	prefix   int
+
+	mu       sync.Mutex
+	attempts int
+}
+
+func newAcceptAndCloseListener(t *testing.T, payload []byte, prefix int) *acceptAndCloseListener {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	server := &acceptAndCloseListener{listener: listener, payload: payload, prefix: prefix}
+	go server.serve()
+
+	t.Cleanup(func() { _ = listener.Close() })
+
+	return server
+}
+
+func (s *acceptAndCloseListener) url() string {
+	return "http://" + s.listener.Addr().String() + "/blob"
+}
+
+func (s *acceptAndCloseListener) serve() {
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			return
+		}
+
+		go s.handle(conn)
+	}
+}
+
+func (s *acceptAndCloseListener) handle(conn net.Conn) {
+	defer conn.Close()
+
+	s.mu.Lock()
+	s.attempts++
+	attempt := s.attempts
+	s.mu.Unlock()
+
+	// read the request line and headers, so the client has genuinely written its request
+	reader := bufio.NewReader(conn)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil || line == "\r\n" {
+			break
+		}
+	}
+
+	if attempt > 1 {
+		// accept, read, and close with no response at all
+		return
+	}
+
+	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n", len(s.payload))
+	_, _ = conn.Write(s.payload[:s.prefix])
+}
+
+func TestResumableTransport_aReopenThatIsNeverAnsweredIsNotACleanEndOfStream(t *testing.T) {
+	// the sibling of aFailedTransferIsNeverACleanEndOfStream, and the door it does not cover: there
+	// the io.EOF comes from the body read, here it comes from RoundTrip itself. the invariant is the
+	// same and has to hold on both, or a caller testing errors.Is(err, io.EOF) reads a layer we
+	// failed to fetch as one that simply ended
+	payload := payloadOfSize(64 * 1024)
+	server := newAcceptAndCloseListener(t, payload, 1024)
+
+	transport := newTestTransport(1)
+
+	resp, err := (&http.Client{Transport: transport}).Get(server.url())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	got, err := io.ReadAll(resp.Body)
+	require.Error(t, err, "a transfer whose every reopen goes unanswered must fail")
+
+	assert.Len(t, got, 1024, "the bytes that did arrive should still be handed over")
+	assert.NotErrorIs(t, err, io.EOF,
+		"a reopen that was never answered must not be mistakable for a clean end of stream")
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF,
+		"it should be reported as the short read it is")
 }
