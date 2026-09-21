@@ -16,7 +16,8 @@ func main() {
 		// (not just the stub) is actually compiled and tested in CI.
 		gotest.Tasks(
 			gotest.Name("unit-containers-storage"),
-			gotest.Tags("containers_image_openpgp"),
+			// exclude_graphdriver_btrfs avoids needing btrfs/version.h, which CI runners don't have.
+			gotest.Tags("containers_image_openpgp", "exclude_graphdriver_btrfs"),
 			gotest.IncludeGlob("./pkg/image/containerstorage/..."),
 			gotest.NoCoverage(),
 		),
@@ -37,8 +38,9 @@ func main() {
 			Run: func() {
 				// the containers_image_openpgp tag compiles in the containers-storage integration
 				// test; it self-skips when buildah isn't on PATH, so this is safe without buildah
-				// installed in CI.
-				Run("go test -v -tags containers_image_openpgp ./test/integration")
+				// installed in CI. exclude_graphdriver_btrfs avoids needing btrfs/version.h, which
+				// CI runners don't have.
+				Run("go test -v -tags containers_image_openpgp,exclude_graphdriver_btrfs ./test/integration")
 			},
 		},
 		Task{
