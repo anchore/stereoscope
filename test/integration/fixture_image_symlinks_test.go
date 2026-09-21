@@ -65,7 +65,11 @@ func TestImageSymlinks(t *testing.T) {
 
 	expectedSet := collections.TaggedValueSet[image.Provider]{}.
 		Join(stereoscope.ImageProviders(stereoscope.ImageProviderConfig{})...).
-		Remove(image.OciRegistrySource)
+		Remove(image.OciRegistrySource).
+		// containers-storage has no fixture-loading path here (it reads from a real containers-storage
+		// store, not the docker/oci/sif fixtures this file loads); it's covered by the dedicated
+		// containers-storage unit and integration tests instead.
+		Remove(image.ContainersStorageSource)
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
