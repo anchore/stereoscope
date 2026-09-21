@@ -11,6 +11,15 @@ import (
 func main() {
 	Makefile(
 		gotest.Tasks(gotest.ExcludeGlob("**/test/**")),
+		// the containers-storage provider (pkg/image/containerstorage) is only compiled with the
+		// containers_image_openpgp build tag; run it as its own suite so the real implementation
+		// (not just the stub) is actually compiled and tested in CI.
+		gotest.Tasks(
+			gotest.Name("unit-containers-storage"),
+			gotest.Tags("containers_image_openpgp"),
+			gotest.IncludeGlob("./pkg/image/containerstorage/..."),
+			gotest.NoCoverage(),
+		),
 		golint.Tasks(),
 		release.Tasks(),
 		Task{
@@ -26,7 +35,10 @@ func main() {
 			Description:  "run integration tests",
 			Dependencies: Deps("integration-tools"),
 			Run: func() {
-				Run("go test -v ./test/integration")
+				// the containers_image_openpgp tag compiles in the containers-storage integration
+				// test; it self-skips when buildah isn't on PATH, so this is safe without buildah
+				// installed in CI.
+				Run("go test -v -tags containers_image_openpgp ./test/integration")
 			},
 		},
 		Task{

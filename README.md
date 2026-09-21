@@ -46,7 +46,8 @@ users use their rootless store (typically `~/.local/share/containers/storage`) a
 (typically `/var/lib/containers/storage`). Stereoscope does not probe both locations; it uses the default store
 for the current user.
 
-Usage:
+Usage (assuming the consuming binary, e.g. `syft`, was itself built with the `containers_image_openpgp` build
+tag described below — a stock `syft` release build does not include this source):
 
 ```bash
 # explicit source selection
@@ -59,8 +60,9 @@ syft localhost/myimage:latest
 
 > [!NOTE]
 > The `containers-storage` source depends on the [image](https://github.com/podman-container-tools/container-libs/tree/main/image) and
-> [storage](https://github.com/podman-container-tools/container-libs/tree/main/storage) libraries and is only compiled into binaries built
-> with the `containers_image_openpgp` build tag:
+> [storage](https://github.com/podman-container-tools/container-libs/tree/main/storage) libraries (the `go.podman.io/image`
+> and `go.podman.io/storage` module paths that `github.com/containers/image` and `github.com/containers/storage` have moved
+> to) and is only compiled into binaries built with the `containers_image_openpgp` build tag:
 >
 > ```bash
 > go build -tags containers_image_openpgp ./...

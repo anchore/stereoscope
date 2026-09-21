@@ -8,13 +8,14 @@ package containerstorage
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
 	"go.podman.io/image/v5/copy"
 	dockerarchive "go.podman.io/image/v5/docker/archive"
+	"go.podman.io/image/v5/docker/reference"
 	"go.podman.io/image/v5/signature"
 	storagetransport "go.podman.io/image/v5/storage"
 	"go.podman.io/image/v5/types"
@@ -72,7 +73,7 @@ func (p *containersStorageProvider) provideFromStore(ctx context.Context, store 
 
 	srcRef, err := storagetransport.Transport.ParseStoreReference(store, p.imageStr)
 	if err != nil {
-		return nil, fmt.Errorf("unable to resolve image from containers-storage: invalid reference %q: %w", p.imageStr, err)
+		return nil, fmt.Errorf("invalid containers-storage reference %q: %w", p.imageStr, err)
 	}
 
 	tempDir, err := p.tmpDirGen.NewDirectory("containers-storage-image")
@@ -83,12 +84,12 @@ func (p *containersStorageProvider) provideFromStore(ctx context.Context, store 
 	archivePath := filepath.Join(tempDir, "image.tar")
 	destRef, err := dockerarchive.ParseReference(archivePath)
 	if err != nil {
-		return nil, fmt.Errorf("unable to resolve image from containers-storage: invalid archive destination %q: %w", archivePath, err)
+		return nil, fmt.Errorf("invalid docker-archive destination %q: %w", archivePath, err)
 	}
 
 	policyContext, err := newInsecurePolicyContext()
 	if err != nil {
-		return nil, fmt.Errorf("unable to resolve image from containers-storage: %w", err)
+		return nil, err
 	}
 	defer func() {
 		if closeErr := policyContext.Destroy(); closeErr != nil {
@@ -98,36 +99,79 @@ func (p *containersStorageProvider) provideFromStore(ctx context.Context, store 
 
 	log.WithFields("image", p.imageStr, "archive", archivePath).Trace("copying image from containers-storage to docker archive")
 
+	sysCtx := p.systemContext(tempDir)
 	if _, err := copy.Image(ctx, policyContext, destRef, srcRef, &copy.Options{
-		SourceCtx: p.systemContext(),
+		SourceCtx: sysCtx,
 	}); err != nil {
-		return nil, fmt.Errorf("unable to resolve image from containers-storage: %w", err)
+		return nil, fmt.Errorf("failed to copy image from containers-storage: %w", err)
 	}
 
 	log.WithFields("image", p.imageStr, "time", time.Since(startTime)).Debug("copied image from containers-storage")
 
-	// the docker-archive we generated above does not carry the store's tags or the config's OS/architecture,
-	// so gather them directly from the store image and pass them through as additional metadata
-	metadata := p.additionalMetadata(ctx, store, srcRef)
+	// the docker-archive we generated above does not carry the store's tags, repo digests, or the config's
+	// OS/architecture, so gather them directly from the store image and pass them through as additional metadata
+	metadata := p.additionalMetadata(ctx, srcRef, sysCtx)
 
 	// reuse the existing docker archive provider to construct the final stereoscope image from the generated tar
 	return docker.NewArchiveProvider(p.tmpDirGen, archivePath, metadata...).Provide(ctx)
 }
 
-// additionalMetadata recovers tags from the store image and the OS/architecture/variant from the resolved image
-// config, since neither survives the copy into a tagless docker-archive. Failures are non-fatal: we log and return
-// whatever metadata could be gathered so the resulting image is still usable.
-func (p *containersStorageProvider) additionalMetadata(ctx context.Context, store storage.Store, srcRef types.ImageReference) (metadata []image.AdditionalMetadata) {
-	if storeImage, err := store.Image(p.imageStr); err == nil && len(storeImage.Names) > 0 {
-		metadata = append(metadata, image.WithTags(storeImage.Names...))
-	} else if err != nil {
-		log.Debugf("unable to look up containers-storage image %q for tags: %v", p.imageStr, err)
+// additionalMetadata recovers metadata that does not survive the copy into a tagless docker-archive: tags and repo
+// digests from the resolved store image, and OS/architecture/variant from the image config. Failures are non-fatal:
+// we log and return whatever metadata could be gathered so the resulting image is still usable.
+func (p *containersStorageProvider) additionalMetadata(ctx context.Context, srcRef types.ImageReference, sysCtx *types.SystemContext) []image.AdditionalMetadata {
+	metadata := p.tagAndDigestMetadata(srcRef)
+	return append(metadata, p.platformMetadata(ctx, srcRef, sysCtx)...)
+}
+
+// tagAndDigestMetadata resolves srcRef back against the store to recover the names (tags) and manifest digest
+// recorded for the image. It resolves via srcRef (rather than re-parsing the raw, possibly non-normalized
+// p.imageStr) so that inputs like a bare "myimage" or "localhost/myimage" without a tag still match the same
+// normalized name the copy above used.
+func (p *containersStorageProvider) tagAndDigestMetadata(srcRef types.ImageReference) (metadata []image.AdditionalMetadata) {
+	_, storeImage, err := storagetransport.ResolveReference(srcRef)
+	if err != nil {
+		log.Warnf("unable to resolve containers-storage image %q for tags/digests: %v", p.imageStr, err)
+		return nil
 	}
 
-	img, err := srcRef.NewImage(ctx, p.systemContext())
+	if len(storeImage.Names) > 0 {
+		metadata = append(metadata, image.WithTags(storeImage.Names...))
+	}
+	if digests := repoDigests(storeImage); len(digests) > 0 {
+		metadata = append(metadata, image.WithRepoDigests(digests...))
+	}
+	return metadata
+}
+
+// repoDigests derives docker-style "repo@digest" strings from the store image's names and canonical digest,
+// mirroring the RepoDigests docker.NewDaemonProvider surfaces for daemon-resolved images. A name is skipped (rather
+// than failing metadata gathering) if it doesn't parse as an image reference.
+func repoDigests(storeImage *storage.Image) (digests []string) {
+	if storeImage.Digest == "" {
+		return nil
+	}
+	for _, name := range storeImage.Names {
+		named, err := reference.ParseNormalizedNamed(name)
+		if err != nil {
+			continue
+		}
+		canonical, err := reference.WithDigest(reference.TrimNamed(named), storeImage.Digest)
+		if err != nil {
+			continue
+		}
+		digests = append(digests, canonical.String())
+	}
+	return digests
+}
+
+// platformMetadata inspects the resolved image's config for the OS/architecture/variant, since the generated
+// docker-archive does not carry it either.
+func (p *containersStorageProvider) platformMetadata(ctx context.Context, srcRef types.ImageReference, sysCtx *types.SystemContext) (metadata []image.AdditionalMetadata) {
+	img, err := srcRef.NewImage(ctx, sysCtx)
 	if err != nil {
-		log.Debugf("unable to inspect containers-storage image %q for metadata: %v", p.imageStr, err)
-		return metadata
+		log.Warnf("unable to open containers-storage image %q for platform metadata: %v", p.imageStr, err)
+		return nil
 	}
 	defer func() {
 		if closeErr := img.Close(); closeErr != nil {
@@ -137,8 +181,8 @@ func (p *containersStorageProvider) additionalMetadata(ctx context.Context, stor
 
 	info, err := img.Inspect(ctx)
 	if err != nil {
-		log.Debugf("unable to inspect containers-storage image %q for metadata: %v", p.imageStr, err)
-		return metadata
+		log.Warnf("unable to inspect containers-storage image %q for platform metadata: %v", p.imageStr, err)
+		return nil
 	}
 
 	if info.Architecture != "" {
@@ -151,9 +195,14 @@ func (p *containersStorageProvider) additionalMetadata(ctx context.Context, stor
 }
 
 // systemContext builds a containers/image SystemContext carrying the requested platform selection (if any) so that
-// multi-arch images stored locally resolve to the requested OS/architecture/variant.
-func (p *containersStorageProvider) systemContext() *types.SystemContext {
-	sysCtx := &types.SystemContext{}
+// multi-arch images stored locally resolve to the requested OS/architecture/variant. bigFilesDir is used for any
+// large-blob staging during the copy: containers/image otherwise hardcodes /var/tmp for this (to avoid a
+// systemd-tmpfs /tmp), which isn't always writable; bigFilesDir is a directory already managed by our own
+// TempDirGenerator and cleaned up alongside the rest of the resolved image's temp files.
+func (p *containersStorageProvider) systemContext(bigFilesDir string) *types.SystemContext {
+	sysCtx := &types.SystemContext{
+		BigFilesTemporaryDir: bigFilesDir,
+	}
 	if p.platform != nil {
 		sysCtx.OSChoice = p.platform.OS
 		sysCtx.ArchitectureChoice = p.platform.Architecture
@@ -163,17 +212,22 @@ func (p *containersStorageProvider) systemContext() *types.SystemContext {
 }
 
 // openDefaultStore opens the containers-storage store described by the default configuration for the current
-// process/user. Errors are wrapped so explicit usage surfaces actionable messages (e.g. permission denied) while
-// still allowing auto-resolution to fall through to the next provider.
+// process/user. It only opens a store that already exists on disk: storage.GetStore would otherwise silently
+// create the graph/run root directories as a side effect of what is, for auto-resolution of a plain image
+// reference, meant to be a read-only "is this available locally" check.
 func openDefaultStore() (storage.Store, error) {
 	storeOptions, err := storage.DefaultStoreOptions()
 	if err != nil {
-		return nil, fmt.Errorf("unable to resolve image from containers-storage: failed to load default store options: %w", err)
+		return nil, fmt.Errorf("failed to load default containers-storage options: %w", err)
+	}
+
+	if _, err := os.Stat(storeOptions.GraphRoot); err != nil {
+		return nil, fmt.Errorf("no local containers-storage store found at %q: %w", storeOptions.GraphRoot, err)
 	}
 
 	store, err := storage.GetStore(storeOptions)
 	if err != nil {
-		return nil, fmt.Errorf("unable to resolve image from containers-storage: failed to open store: %w", err)
+		return nil, fmt.Errorf("failed to open containers-storage store: %w", err)
 	}
 	return store, nil
 }
@@ -188,7 +242,7 @@ func newInsecurePolicyContext() (*signature.PolicyContext, error) {
 	}
 	pc, err := signature.NewPolicyContext(policy)
 	if err != nil {
-		return nil, errors.Join(errors.New("failed to create policy context"), err)
+		return nil, fmt.Errorf("failed to create policy context: %w", err)
 	}
 	return pc, nil
 }

@@ -1,6 +1,10 @@
 version: "2"
 run:
   tests: false
+  # containers-storage (pkg/image/containerstorage) is only compiled with this tag; without it,
+  # only the stub provider gets linted.
+  build-tags:
+    - containers_image_openpgp
 linters:
   default: none
   enable:
