@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os/exec"
+
 	. "github.com/anchore/go-make"
 	"github.com/anchore/go-make/run"
 	"github.com/anchore/go-make/tasks/golint"
@@ -41,6 +43,13 @@ func main() {
 				// installed in CI. exclude_graphdriver_btrfs avoids needing btrfs/version.h, which
 				// CI runners don't have.
 				Run("go test -v -tags containers_image_openpgp,exclude_graphdriver_btrfs ./test/integration")
+
+				// a rootless containers-storage store can only be opened from inside a user namespace, which
+				// buildah/podman/skopeo enter by re-execing themselves and a go test binary cannot. the test
+				// above self-skips outside of one, so run it again under `buildah unshare` to actually cover it.
+				if _, err := exec.LookPath("buildah"); err == nil {
+					Run("buildah unshare go test -v -tags containers_image_openpgp,exclude_graphdriver_btrfs -run TestContainersStorageSource ./test/integration")
+				}
 			},
 		},
 		Task{

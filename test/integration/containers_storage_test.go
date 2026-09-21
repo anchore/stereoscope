@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"testing"
 
@@ -14,20 +15,28 @@ import (
 	"github.com/anchore/stereoscope/pkg/filetree"
 )
 
-// TestContainersStorageSource is an optional, opt-in integration test for the containers-storage image source. It is
-// only compiled with the `containers_image_openpgp` build tag (the same tag that enables the provider) and is skipped
-// unless buildah is available, so it does not introduce a required CI dependency on rootless storage / buildah.
+// TestContainersStorageSource is an integration test for the containers-storage image source. It is only compiled with
+// the `containers_image_openpgp` build tag (the same tag that enables the provider) and is skipped unless buildah is
+// available and the process can actually open a store (see the user namespace note below).
 //
 // Run it explicitly with:
 //
-//	go test -tags containers_image_openpgp -run TestContainersStorageSource ./test/integration
+//	buildah unshare go test -tags containers_image_openpgp,exclude_graphdriver_btrfs -run TestContainersStorageSource ./test/integration
 //
-// It builds a tiny image into the current user's containers-storage store (rootless for non-root users, rootful for
-// root) and verifies that stereoscope resolves the locally built image both explicitly and implicitly, and that it
-// observes a marker file that is unique to the local image (so we know it did not pull from a registry).
+// It builds a tiny image into the current user's containers-storage store and verifies that stereoscope resolves it
+// via the explicit `containers-storage:` scheme, observing a marker file that is unique to the local image (so we know
+// it did not pull from a registry). Implicit (bare reference) resolution is not asserted here since the podman daemon
+// provider is tried first and reads the same store; provider ordering is covered by the unit tests in providers_test.go.
 func TestContainersStorageSource(t *testing.T) {
 	if _, err := exec.LookPath("buildah"); err != nil {
 		t.Skip("buildah not available; skipping containers-storage integration test")
+	}
+
+	// a rootless store can only be opened in-process from inside a user namespace (buildah, podman, and skopeo all
+	// re-exec themselves into one; a plain go test binary does not), otherwise the overlay graphdriver cannot make
+	// its home mount private.
+	if os.Geteuid() != 0 && os.Getenv("_CONTAINERS_USERNS_CONFIGURED") == "" {
+		t.Skip("rootless containers-storage requires a user namespace; re-run this test under `buildah unshare`")
 	}
 
 	const (
@@ -46,26 +55,13 @@ func TestContainersStorageSource(t *testing.T) {
 		_ = exec.Command("buildah", "rmi", imageRef).Run()
 	})
 
-	assertMarker := func(t *testing.T, userInput string) {
-		t.Helper()
-		img, err := stereoscope.GetImage(context.Background(), userInput)
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, img.Cleanup())
-		})
-
-		_, ref, err := img.SquashedTree().File(file.Path(markerPath), filetree.FollowBasenameLinks)
-		require.NoError(t, err)
-		require.NotNil(t, ref, "expected marker file %q to exist in the locally built image", markerPath)
-	}
-
-	t.Run("explicit containers-storage scheme", func(t *testing.T) {
-		assertMarker(t, "containers-storage:"+imageRef)
+	img, err := stereoscope.GetImage(context.Background(), "containers-storage:"+imageRef)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, img.Cleanup())
 	})
 
-	t.Run("implicit resolution before registry", func(t *testing.T) {
-		// note: localhost/... does not exist in any registry, so a successful resolution proves the image was
-		// found in the local containers-storage store before any registry fallback.
-		assertMarker(t, imageRef)
-	})
+	_, ref, err := img.SquashedTree().File(file.Path(markerPath), filetree.FollowBasenameLinks)
+	require.NoError(t, err)
+	require.NotNil(t, ref, "expected marker file %q to exist in the locally built image", markerPath)
 }
