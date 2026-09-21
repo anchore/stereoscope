@@ -21,7 +21,8 @@ import (
 //
 // The rule the cases encode: a hardlink is a second name for an inode, fixed when the link is
 // created. Replacing, overwriting or deleting the OTHER name of that inode in a later layer does not
-// change what this name refers to.
+// change what this name refers to. That rule holds for docker/containerd/buildkit builds, which was
+// measured for #670. podman diverges for a few cases; see podmanHardlinkOverrides.
 
 type hardlinkPathCase struct {
 	path string
@@ -33,9 +34,24 @@ type hardlinkPathCase struct {
 	note string
 }
 
-func hardlinkPathCases() []hardlinkPathCase {
-	return []hardlinkPathCase{
-		// c1: the other name was modified in place, so overlayfs copied it up to a new inode.
+// podmanHardlinkOverrides holds the paths where a real `podman build` diverges from docker. podman's
+// layer diff (vfs, and overlay's naive-diff fallback used by rootless/CI podman) walks full merged
+// trees instead of reading an overlayfs copy-up delta, so overwriting one hardlinked name in place
+// re-materializes BOTH names onto the new content in that layer, rather than splitting them. measured
+// against a real podman build, not assumed.
+func podmanHardlinkOverrides() map[string]hardlinkPathCase {
+	note := "podman's diff re-links both names onto the new content; docker's copy-up keeps them split"
+	return map[string]hardlinkPathCase{
+		"/c1/orig.txt": {path: "/c1/orig.txt", contents: "CASE3-MODIFIED-IN-PLACE", note: note},
+		"/c9/orig.txt": {path: "/c9/orig.txt", contents: "CASE9-HARDLINK-OVERWRITTEN", note: note},
+		"/c11/z.txt":   {path: "/c11/z.txt", contents: "CASE11-A-REPLACED-LATER", note: note},
+	}
+}
+
+func hardlinkPathCases(source string) []hardlinkPathCase {
+	cases := []hardlinkPathCase{
+		// c1: the other name was modified in place, so overlayfs copied it up to a new inode. podman
+		// overrides this below; see podmanHardlinkOverrides.
 		{path: "/c1/hard.txt", contents: "CASE1-ORIGINAL", note: "keeps the original inode"},
 		{path: "/c1/orig.txt", contents: "CASE3-MODIFIED-IN-PLACE"},
 
@@ -68,6 +84,7 @@ func hardlinkPathCases() []hardlinkPathCase {
 		{path: "/c8/c.txt", contents: "CASE8-PAYLOAD"},
 
 		// c9: the data-carrying name was overwritten in a later layer, so the two names diverge.
+		// podman overrides this below; see podmanHardlinkOverrides.
 		{path: "/c9/hard.txt", contents: "CASE9-HARDLINK-OVERWRITTEN"},
 		{path: "/c9/orig.txt", contents: "CASE9-ORIGINAL", note: "still the layer's original inode"},
 
@@ -76,10 +93,22 @@ func hardlinkPathCases() []hardlinkPathCase {
 		{path: "/c10/a.txt", absent: true},
 		{path: "/c10/z.txt", contents: "CASE10-PAYLOAD"},
 
-		// c11: the data-carrying name was replaced in a later layer.
+		// c11: the data-carrying name was replaced in a later layer. podman overrides this below; see
+		// podmanHardlinkOverrides.
 		{path: "/c11/a.txt", contents: "CASE11-A-REPLACED-LATER"},
 		{path: "/c11/z.txt", contents: "CASE11-PAYLOAD", note: "still the original inode"},
 	}
+
+	if source == "podman" {
+		overrides := podmanHardlinkOverrides()
+		for i, c := range cases {
+			if override, ok := overrides[c.path]; ok {
+				cases[i] = override
+			}
+		}
+	}
+
+	return cases
 }
 
 func TestImageHardLinks(t *testing.T) {
@@ -110,7 +139,7 @@ func TestImageHardLinks(t *testing.T) {
 
 			img := imagetest.GetFixtureImage(t, c.source, "image-hardlinks")
 
-			for _, tc := range hardlinkPathCases() {
+			for _, tc := range hardlinkPathCases(c.source) {
 				t.Run(tc.path, func(t *testing.T) {
 					contents, err := hardlinkContents(img, tc.path)
 
