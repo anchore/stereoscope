@@ -71,12 +71,13 @@ func (t *effectiveURLTransport) getEffectiveHost(originalHost string) string {
 }
 
 // NewRegistryProvider creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, imageStr string, platform *image.Platform) image.Provider {
+func NewRegistryProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, imageStr string, platform *image.Platform, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	return &registryImageProvider{
-		tmpDirGen:       tmpDirGen,
-		imageStr:        imageStr,
-		platform:        platform,
-		registryOptions: registryOptions,
+		tmpDirGen:          tmpDirGen,
+		imageStr:           imageStr,
+		platform:           platform,
+		registryOptions:    registryOptions,
+		additionalMetadata: additionalMetadata,
 	}
 }
 
@@ -86,6 +87,7 @@ type registryImageProvider struct {
 	imageStr           string
 	platform           *image.Platform
 	registryOptions    image.RegistryOptions
+	additionalMetadata []image.AdditionalMetadata
 	effectiveTransport *effectiveURLTransport
 }
 
@@ -162,6 +164,9 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 			image.WithOS(platform.OS),
 		)
 	}
+
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, p.additionalMetadata...)
 
 	// registry layers arrive over the network: download them one at a time, since a second stream
 	// only splits a link a single stream already saturates, while already-fetched layers are

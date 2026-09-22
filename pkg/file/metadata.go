@@ -28,6 +28,11 @@ type Metadata struct {
 	GroupID         int
 	Type            Type
 	MIMEType        string
+	// Digests are the file content checksums computed while the file was indexed. Populated only
+	// for regular files, and only when the consumer requested digest computation up front (see
+	// image.WithFileDigestAlgorithms); nil otherwise, in which case consumers needing digests must
+	// read the file contents themselves.
+	Digests []Digest
 }
 
 type ManualInfo struct {

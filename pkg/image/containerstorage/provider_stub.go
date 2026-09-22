@@ -21,7 +21,7 @@ var errNotCompiledIn = fmt.Errorf("containers-storage support is not compiled in
 // NewProvider returns a stub provider used when containers-storage support is not compiled into the binary. It keeps
 // the source name registered (so explicit "containers-storage:" references and source ordering behave consistently)
 // while returning a clear error from Provide so that auto-resolution can continue to the next provider.
-func NewProvider(_ *file.TempDirGenerator, _ string, _ *image.Platform) image.Provider {
+func NewProvider(_ *file.TempDirGenerator, _ string, _ *image.Platform, _ ...image.AdditionalMetadata) image.Provider {
 	return &unsupportedProvider{}
 }
 

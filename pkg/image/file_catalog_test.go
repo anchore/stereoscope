@@ -3,6 +3,7 @@
 package image
 
 import (
+	"crypto"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wagoodman/go-progress"
 
 	"github.com/anchore/stereoscope/internal/testutil"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -743,6 +745,21 @@ func TestFileCatalog_GetBasenames(t *testing.T) {
 				require.NotEmpty(t, e)
 			}
 		})
+	}
+}
+
+// layerTarIndexer is the serial, single-visitor equivalent of what indexStandardImageLayer does
+// in two phases, kept as a test harness for driving file.NewTarIndex against a tree and catalog
+// directly.
+func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
+	builder := filetree.NewBuilder(ft, fileCatalog.Index)
+
+	return func(index file.TarIndexEntry) error {
+		var digestAlgorithms []crypto.Hash
+		if layerRef != nil {
+			digestAlgorithms = layerRef.fileDigestAlgorithms
+		}
+		return addTarEntry(builder, ft, fileCatalog, size, layerRef, monitor, index, tarEntryMetadata(index, digestAlgorithms))
 	}
 }
 
