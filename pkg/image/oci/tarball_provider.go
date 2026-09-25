@@ -14,8 +14,8 @@ import (
 const Archive image.Source = image.OciTarballSource
 
 // NewArchiveProvider creates a new provider instance for the specific image tarball already at the given path.
-func NewArchiveProvider(tmpDirGen *file.TempDirGenerator, path string) image.Provider {
-	return NewArchiveProviderWithPlatform(tmpDirGen, path, nil)
+func NewArchiveProvider(tmpDirGen *file.TempDirGenerator, path string, additionalMetadata ...image.AdditionalMetadata) image.Provider {
+	return NewArchiveProviderWithPlatform(tmpDirGen, path, nil, additionalMetadata...)
 }
 
 // NewArchiveProviderWithPlatform creates a new provider instance for the specific image tarball already at the given path,
@@ -23,19 +23,21 @@ func NewArchiveProvider(tmpDirGen *file.TempDirGenerator, path string) image.Pro
 // single-platform layouts: Provide returns an *image.ErrPlatformMismatch if the image does not match it. A nil
 // platform selects the only image in a single-platform layout, or the host platform in a multiplatform one.
 // The platform should come from image.NewPlatform so that OS and architecture aliases are normalized.
-func NewArchiveProviderWithPlatform(tmpDirGen *file.TempDirGenerator, path string, platform *image.Platform) image.Provider {
+func NewArchiveProviderWithPlatform(tmpDirGen *file.TempDirGenerator, path string, platform *image.Platform, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	return &tarballImageProvider{
-		tmpDirGen: tmpDirGen,
-		path:      path,
-		platform:  platform,
+		tmpDirGen:          tmpDirGen,
+		path:               path,
+		platform:           platform,
+		additionalMetadata: additionalMetadata,
 	}
 }
 
 // tarballImageProvider is an image.Provider for an OCI image (V1) for an existing tar on disk (from a buildah push <img> oci-archive:<name>.tar command).
 type tarballImageProvider struct {
-	tmpDirGen *file.TempDirGenerator
-	path      string
-	platform  *image.Platform
+	tmpDirGen          *file.TempDirGenerator
+	path               string
+	platform           *image.Platform
+	additionalMetadata []image.AdditionalMetadata
 }
 
 func (p *tarballImageProvider) Name() string {
@@ -66,5 +68,5 @@ func (p *tarballImageProvider) Provide(ctx context.Context) (*image.Image, error
 
 	log.WithFields("file", p.path, "tempDir", tempDir, "time", time.Since(startTime)).Debug("extracted OCI tar file to tempdir")
 
-	return NewDirectoryProviderWithPlatform(p.tmpDirGen, tempDir, p.platform).Provide(ctx)
+	return NewDirectoryProviderWithPlatform(p.tmpDirGen, tempDir, p.platform, p.additionalMetadata...).Provide(ctx)
 }
