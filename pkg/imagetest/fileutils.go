@@ -112,3 +112,35 @@ func walkEvaluateLinks(root string, virtualPath string, fn filepath.WalkFunc) er
 func walk(root string, fn filepath.WalkFunc) error {
 	return walkEvaluateLinks(root, root, fn)
 }
+
+// writeFileAtomic writes to a temp file next to path and renames it into place once write succeeds, so concurrent
+// readers only ever see no file or a complete one (never a truncated or partially written file).
+func writeFileAtomic(path string, write func(w io.Writer) error) (err error) {
+	// the temp file must be in the same dir for the rename to be atomic (same filesystem). The suffix keeps it from
+	// matching the "*.tar" globs used to collect the fixture cache.
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("unable to create temp file for %q: %w", path, err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+
+	if err = write(tmp); err != nil {
+		return err
+	}
+	// CreateTemp uses 0600, keep the permissions os.Create would have given the file
+	if err = tmp.Chmod(0o644); err != nil {
+		return fmt.Errorf("unable to set permissions on %q: %w", tmp.Name(), err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("unable to close %q: %w", tmp.Name(), err)
+	}
+	if err = os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("unable to move %q into place: %w", path, err)
+	}
+	return nil
+}
