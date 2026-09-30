@@ -3,6 +3,7 @@ package imagetest
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -353,26 +354,22 @@ func buildContainerdImage(t testing.TB, contextDir, name, tag string) {
 
 func saveImage(t testing.TB, image, path string) error {
 	t.Logf("saveImage running: docker image save %s", image)
-	outfile, err := os.Create(path)
-	if err != nil {
-		t.Fatal("unable to create file for docker image tar:", err)
-	}
-	defer func() {
-		err := outfile.Close()
-		if err != nil {
-			t.Fatalf("unable to close file path=%q : %+v", path, err)
-		}
-	}()
 
-	// note: we are not using -o since some CI providers need root access for the docker client, however,
-	// we don't want the resulting tar to be owned by root, thus we write the file piped from stdout.
-	cmd := exec.Command("docker", "image", "save", image)
-	cmd.Env = os.Environ()
+	// the tar is written atomically since the same cache path can be shared by several test processes (e.g. `go test`
+	// running multiple packages that resolve fixtures from one testdata dir). Callers check for the tar and then save
+	// it, so two processes can both decide to save; writing in place would let one process truncate a tar that
+	// another has already finished and is about to read.
+	return writeFileAtomic(path, func(w io.Writer) error {
+		// note: we are not using -o since some CI providers need root access for the docker client, however,
+		// we don't want the resulting tar to be owned by root, thus we write the file piped from stdout.
+		cmd := exec.Command("docker", "image", "save", image)
+		cmd.Env = os.Environ()
 
-	cmd.Stdout = outfile
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	return cmd.Run()
+		cmd.Stdout = w
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		return cmd.Run()
+	})
 }
 
 func GetFixtureImageSIFPath(t testing.TB, name string) string {
