@@ -68,7 +68,7 @@ jobs:
 
   Unit-Test-Windows:
     name: "Unit tests (Windows)"
-    runs-on: windows-latest
+    runs-on: windows-2025
     permissions:
       contents: read
     steps:
