@@ -3,12 +3,14 @@ package oci
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -325,6 +327,127 @@ func pushRandomRegistryImage(t *testing.T, registryHost, repo, tag string) {
 	require.NoError(t, err)
 	err = remote.Tag(latestTag, img, remoteopts...)
 	require.NoError(t, err)
+}
+
+// pushLargeRegistryImage pushes an image whose single layer is comfortably above resumeMinSize, so
+// that the resumable transport actually engages on it.
+func pushLargeRegistryImage(t *testing.T, registryHost, repo, tag string) {
+	t.Helper()
+
+	baseImg, err := random.Image(4*1024*1024, 1)
+	require.NoError(t, err)
+
+	cfg, err := baseImg.ConfigFile()
+	require.NoError(t, err)
+
+	cfg.OS = "linux"
+	cfg.Architecture = runtime.GOARCH
+
+	img, err := mutate.ConfigFile(baseImg, cfg)
+	require.NoError(t, err)
+
+	opts := []name.Option{name.Insecure, name.WithDefaultRegistry(registryHost)}
+	ref, err := name.ParseReference(repo+":"+tag, opts...)
+	require.NoError(t, err)
+
+	require.NoError(t, remote.Write(ref, img, remote.WithUserAgent("stereoscope-test")))
+}
+
+// truncatingProxy forwards to upstream, tearing the connection down partway through the first
+// `drops` responses to each blob, so that the read has to be resumed repeatedly. more than one drop
+// matters: a single splice exercises neither the budgets nor a second pass through
+// verify.ReadCloser's running hash.
+func truncatingProxy(t *testing.T, upstream string, drops int) string {
+	t.Helper()
+
+	var mu sync.Mutex
+	truncated := make(map[string]int)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, "http://"+upstream+r.URL.RequestURI(), nil)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		req.Header = r.Header.Clone()
+
+		resp, err := http.DefaultTransport.RoundTrip(req)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+
+		for key, values := range resp.Header {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+
+		mu.Lock()
+		truncate := r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") &&
+			truncated[r.URL.Path] < drops
+		if truncate {
+			truncated[r.URL.Path]++
+		}
+		mu.Unlock()
+
+		// only what the transport will actually wrap: truncating the config blob, which is a few
+		// hundred bytes and far below resumeMinSize, would break the test in a way that looks like
+		// the feature failing
+		if truncate && int64(len(body)) > resumeMinSize {
+			_, _ = w.Write(body[:len(body)/2])
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
+		}
+
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+
+	return strings.TrimPrefix(srv.URL, "http://")
+}
+
+func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T) {
+	// every other test of the resumable transport drives a bare http.Client against fixtures of our
+	// own making. this one puts it under the real go-containerregistry stack -- remote.Get, the
+	// bearer and retry transports, and verify.ReadCloser's digest check -- against
+	// go-containerregistry's own registry implementation, which is what `crane registry serve` and
+	// ko run. that registry parses Range with Sscanf("bytes=%d-%d"), so it answers 416 to an
+	// open-ended range, which nothing driving a hand-written fixture would ever notice
+	upstream := makeRegistry(t)
+	pushLargeRegistryImage(t, upstream, "resume-probe", "latest")
+
+	generator := file.TempDirGenerator{}
+	defer func() { _ = generator.Cleanup() }()
+
+	// several drops per blob, so the budgets and the running digest are both exercised across
+	// multiple splices rather than a single one
+	imageStr := fmt.Sprintf("%s/resume-probe:latest", truncatingProxy(t, upstream, 4))
+	provider := NewRegistryProvider(&generator, image.RegistryOptions{InsecureUseHTTP: true}, imageStr, nil)
+
+	img, err := provider.Provide(context.TODO())
+	require.NoError(t, err, "the layer must survive a mid-stream drop and pass the digest check")
+	require.NotNil(t, img)
+	t.Cleanup(func() { _ = img.Cleanup() })
+}
+
+func Test_RegistryProvider_blobResumeCanBeDisabled(t *testing.T) {
+	// an operator meeting a registry that mishandles ranges needs a remedy that is not a release
+	effective := newEffectiveURLTransport(nil)
+
+	getTransportWithEffectiveURL(nil, effective, false)
+	assert.IsType(t, &resumableTransport{}, effective.base, "resuming is on by default")
+
+	getTransportWithEffectiveURL(nil, effective, true)
+	assert.IsType(t, &http.Transport{}, effective.base, "DisableBlobResume removes it from the chain")
 }
 
 func makeRegistry(t *testing.T) (registryHost string) {
