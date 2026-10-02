@@ -142,8 +142,10 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 
 	// the digest is what the image claims about the layer, not something we verified, so two layers
 	// can claim the same one. Key on the index as well so a layer can never be handed another
-	// layer's unpacked content.
-	path := path.Join(uncompressedLayersCacheDir, fmt.Sprintf("%d-%s", l.Metadata.Index, l.Metadata.Digest))
+	// layer's unpacked content. The digest's colon is swapped out since NTFS reads "name:stream" as
+	// an alternate data stream, which a create tolerates but a rename into place does not.
+	name := fmt.Sprintf("%d-%s", l.Metadata.Index, strings.ReplaceAll(l.Metadata.Digest, ":", "-"))
+	path := path.Join(uncompressedLayersCacheDir, name)
 
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		return path, nil
