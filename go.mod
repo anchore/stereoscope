@@ -30,7 +30,7 @@ require (
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.12.1
-	github.com/sylabs/sif/v2 v2.24.1
+	github.com/sylabs/sif/v2 v2.24.2
 	github.com/sylabs/squashfs v1.0.6
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20260303201901-10176f79b2c0
@@ -129,10 +129,10 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/proglottis/gpgme v0.1.6 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
+	github.com/secure-systems-lab/go-securesystemslib v0.11.1 // indirect
 	github.com/sigstore/fulcio v1.8.7 // indirect
-	github.com/sigstore/protobuf-specs v0.5.1 // indirect
-	github.com/sigstore/sigstore v1.10.8 // indirect
+	github.com/sigstore/protobuf-specs v0.5.2 // indirect
+	github.com/sigstore/sigstore v1.10.11 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/smallstep/pkcs7 v0.2.1 // indirect
 	github.com/stefanberger/go-pkcs11uri v0.0.0-20230803200340-78284954bff6 // indirect
