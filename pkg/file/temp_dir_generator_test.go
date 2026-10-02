@@ -2,7 +2,6 @@ package file
 
 import (
 	"os"
-	"path"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -40,7 +39,7 @@ func TestTempDirGenerator(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			expectedPrefix := path.Join(os.TempDir(), test.genPrefix)
+			expectedPrefix := filepath.Join(os.TempDir(), test.genPrefix)
 
 			assert.True(t, !doesGlobExist(t, expectedPrefix+"*"),
 				"prefix temp dir already exists before test started")
@@ -166,7 +165,7 @@ func TestTempDirGenerator_cleanupDuringNewDirectory(t *testing.T) {
 		require.NoError(t, gen.Cleanup())
 		for _, d := range dirs {
 			assert.NoDirExists(t, d, "cleanup left an orphaned dir behind")
-			assert.NoDirExists(t, path.Dir(d), "cleanup left an orphaned root behind")
+			assert.NoDirExists(t, filepath.Dir(d), "cleanup left an orphaned root behind")
 		}
 	}
 }
@@ -187,7 +186,7 @@ func TestTempDirGenerator_reuseAfterCleanup(t *testing.T) {
 	second, err := gen.NewDirectory("second")
 	require.NoError(t, err, "generator must be reusable after cleanup")
 	require.DirExists(t, second)
-	assert.NotContains(t, second, path.Dir(first), "reuse must start a fresh root")
+	assert.NotContains(t, second, filepath.Dir(first), "reuse must start a fresh root")
 
 	// cleanup is idempotent
 	require.NoError(t, gen.Cleanup())

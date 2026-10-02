@@ -442,12 +442,15 @@ func TestLayerRead_ConcurrentReadsShareCatalogSafely(t *testing.T) {
 
 	var wg sync.WaitGroup
 	errs := make([]error, layerCount)
+	read := make([]*Layer, layerCount)
+	t.Cleanup(func() { closeLayers(read) })
 	for i, l := range layers {
+		read[i] = NewLayer(l)
 		wg.Add(1)
-		go func(idx int, v1Layer v1.Layer) {
+		go func(idx int) {
 			defer wg.Done()
-			errs[idx] = NewLayer(v1Layer).Read(catalog, idx, cacheDir)
-		}(i, l)
+			errs[idx] = read[idx].Read(catalog, idx, cacheDir)
+		}(i)
 	}
 	wg.Wait()
 
