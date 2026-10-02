@@ -3,6 +3,7 @@ package image
 import (
 	"crypto/x509"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/docker/go-connections/tlsconfig"
@@ -516,6 +517,8 @@ func TestRegistryOptions_selectMostSpecificCredentials(t *testing.T) {
 func TestRegistryOptions_TLSConfig_rootCAs(t *testing.T) {
 	certFile := testutil.GetFixturePath(t, "certs", "server.crt")
 	certsDir := testutil.GetFixturePath(t, "certs")
+	absCertsDir, err := filepath.Abs(certsDir)
+	require.NoError(t, err)
 	systemCerts, err := tlsconfig.SystemCertPool()
 	require.NoError(t, err)
 
@@ -542,6 +545,13 @@ func TestRegistryOptions_TLSConfig_rootCAs(t *testing.T) {
 			name: "add root certs from dir",
 			registryOptions: RegistryOptions{
 				CAFileOrDir: certsDir,
+			},
+			want: certPool,
+		},
+		{
+			name: "add root certs from absolute dir",
+			registryOptions: RegistryOptions{
+				CAFileOrDir: absCertsDir,
 			},
 			want: certPool,
 		},
