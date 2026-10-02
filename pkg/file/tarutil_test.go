@@ -210,6 +210,8 @@ func Test_tarVisitor_visit(t *testing.T) {
 			haveDirs := strset.New()
 			err := afero.Walk(fs, "/", func(path string, info os.FileInfo, err error) error {
 				require.NoError(t, err)
+				// walk yields host separators, expectations are slash paths
+				path = filepath.ToSlash(path)
 				if info.IsDir() {
 					haveDirs.Add(path)
 				} else {
