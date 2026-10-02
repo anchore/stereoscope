@@ -34,11 +34,12 @@ const Source image.Source = image.ContainersStorageSource
 // This is the store typically populated by buildah and rootless podman (e.g. ~/.local/share/containers/storage for
 // rootless users, /var/lib/containers/storage for root). The provider relies on the containers/storage default store
 // configuration for the current process/user; it does not probe alternate storage locations.
-func NewProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform) image.Provider {
+func NewProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	return &containersStorageProvider{
-		tmpDirGen: tmpDirGen,
-		imageStr:  imageStr,
-		platform:  platform,
+		tmpDirGen:    tmpDirGen,
+		imageStr:     imageStr,
+		platform:     platform,
+		userMetadata: additionalMetadata,
 	}
 }
 
@@ -48,6 +49,9 @@ type containersStorageProvider struct {
 	tmpDirGen *file.TempDirGenerator
 	imageStr  string
 	platform  *image.Platform
+	// userMetadata is caller-supplied; distinct from the additionalMetadata method, which recovers
+	// what the docker-archive copy loses from the store image itself
+	userMetadata []image.AdditionalMetadata
 }
 
 func (p *containersStorageProvider) Name() string {
@@ -111,6 +115,9 @@ func (p *containersStorageProvider) provideFromStore(ctx context.Context, store 
 	// the docker-archive we generated above does not carry the store's tags, repo digests, or the config's
 	// OS/architecture, so gather them directly from the store image and pass them through as additional metadata
 	metadata := p.additionalMetadata(ctx, srcRef, sysCtx)
+
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, p.userMetadata...)
 
 	// reuse the existing docker archive provider to construct the final stereoscope image from the generated tar
 	return docker.NewArchiveProvider(p.tmpDirGen, archivePath, metadata...).Provide(ctx)

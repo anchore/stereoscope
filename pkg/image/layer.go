@@ -1,12 +1,15 @@
 package image
 
 import (
+	"context"
+	"crypto"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
+	"runtime"
 	"strings"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
 
+	async "github.com/anchore/go-sync"
 	"github.com/anchore/stereoscope/internal/bus"
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/event"
@@ -94,6 +98,11 @@ type Layer struct {
 	// knownDiffID is the layer's diff ID as recorded in the image config, when the image could
 	// supply it; it saves computing the diff ID from the layer contents.
 	knownDiffID string
+	// fileDigestAlgorithms are the content hashes to compute for each regular file while the
+	// layer is indexed, saving consumers a second full read of the layer contents. Empty by
+	// default: no digests are computed unless a consumer asked for them (see
+	// WithFileDigestAlgorithms).
+	fileDigestAlgorithms []crypto.Hash
 	// contentPath is where Fetch materialized the uncompressed layer
 	contentPath string
 	// readMonitor reports indexing progress for this layer
@@ -102,15 +111,16 @@ type Layer struct {
 
 // NewLayer provides a new, unread layer object.
 func NewLayer(layer v1.Layer) *Layer {
-	return newLayer(layer, "")
+	return newLayer(layer, "", nil)
 }
 
 // newLayer provides a new, unread layer object with the diff ID the image already knows for it,
 // if any. See Layer.knownDiffID.
-func newLayer(layer v1.Layer, knownDiffID string) *Layer {
+func newLayer(layer v1.Layer, knownDiffID string, fileDigestAlgorithms []crypto.Hash) *Layer {
 	return &Layer{
-		layer:       layer,
-		knownDiffID: knownDiffID,
+		layer:                layer,
+		knownDiffID:          knownDiffID,
+		fileDigestAlgorithms: fileDigestAlgorithms,
 	}
 }
 
@@ -119,7 +129,7 @@ func newLayer(layer v1.Layer, knownDiffID string) *Layer {
 // The image config already records every layer's diff ID, which saves each layer computing its own
 // (for an OCI layout that means decompressing the entire layer just to hash it). When the config
 // does not list exactly one per layer we cannot line them up, so let each layer answer for itself.
-func newLayers(v1Layers []v1.Layer, diffIDs []v1.Hash) []*Layer {
+func newLayers(v1Layers []v1.Layer, diffIDs []v1.Hash, fileDigestAlgorithms []crypto.Hash) []*Layer {
 	if len(diffIDs) != len(v1Layers) {
 		diffIDs = nil
 	}
@@ -130,7 +140,7 @@ func newLayers(v1Layers []v1.Layer, diffIDs []v1.Hash) []*Layer {
 		if diffIDs != nil {
 			knownDiffID = diffIDs[idx].String()
 		}
-		layers[idx] = newLayer(v1Layer, knownDiffID)
+		layers[idx] = newLayer(v1Layer, knownDiffID, fileDigestAlgorithms)
 	}
 	return layers
 }
@@ -271,19 +281,105 @@ func (l *Layer) index(catalog *FileCatalog) error {
 }
 
 func (l *Layer) indexStandardImageLayer(tree *filetree.FileTree) error {
-	var err error
 	startTime := time.Now()
-	l.indexedContent, err = file.NewTarIndex(
-		l.contentPath,
-		layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, l.readMonitor),
-	)
+
+	// walk the tar once to index every entry, then build each entry's metadata (the MIME sniff
+	// and any requested content digests) in parallel before adding them to the tree. Metadata
+	// construction only reads the entry's own section of the layer tar, so entries carry no
+	// ordering dependency; the tree and catalog mutation below keeps tar order, which hardlink
+	// adoption and later-entry-wins path replacement rely on.
+	var entries []file.TarIndexEntry
+	indexedContent, err := file.NewTarIndex(l.contentPath, func(entry file.TarIndexEntry) error {
+		entries = append(entries, entry)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
+	}
+	l.indexedContent = indexedContent
+
+	metadata, err := prepareTarEntryMetadata(entries, l.fileDigestAlgorithms)
+	if err != nil {
+		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
+	}
+
+	builder := filetree.NewBuilder(tree, l.fileCatalog.Index)
+	for i := range entries {
+		if err := addTarEntry(builder, tree, l.fileCatalog, &l.Metadata.Size, l, l.readMonitor, entries[i], metadata[i]); err != nil {
+			return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
+		}
 	}
 	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType, "time", time.Since(startTime)).Trace("completed indexing image layer")
 
 	l.readMonitor.SetCompleted()
 	return nil
+}
+
+// tarEntryMetadata builds the metadata for one tar entry, including the content digests when
+// requested. A hardlink entry gets no digests here: it has no data section of its own, and
+// adoption in addTarEntry copies its target's digests instead.
+func tarEntryMetadata(entry file.TarIndexEntry, digestAlgorithms []crypto.Hash) file.Metadata {
+	tarEntry := entry.ToTarFileEntry()
+	metadata := file.NewMetadata(tarEntry.Header, tarEntry.Reader)
+
+	if len(digestAlgorithms) > 0 && metadata.Type == file.TypeRegular {
+		contents := entry.Open()
+		digests, err := file.NewDigests(digestAlgorithms, contents)
+		_ = contents.Close()
+		if err != nil {
+			// a file whose content cannot be read is not fatal to indexing: leave the digests
+			// out and let the consumer's own read of this file surface the error
+			log.WithFields("path", metadata.Path, "error", err).Trace("unable to compute file digests while indexing layer")
+		} else {
+			metadata.Digests = digests
+		}
+	}
+	return metadata
+}
+
+// fileMetadataExecutor names the go-sync executor prepareTarEntryMetadata installs on its own
+// context. It is deliberately not resolved from the caller's context: the index stage can share
+// one bounded executor with the fetch stage (see readLayers), and an index worker that waited for
+// more slots on that same executor while holding its own would deadlock it. A fresh per-layer
+// executor keeps the fan-out bounded without holding any other stage's slots.
+const fileMetadataExecutor = "layer-file-metadata"
+
+// prepareTarEntryMetadata builds every entry's metadata in parallel. On large layers this is
+// where nearly all indexing time goes - content hashing in particular - and fanning it out keeps
+// a layer's indexing off the critical path of a single goroutine. Both slices are per-layer and
+// released when indexing finishes, the same lifetime as the tar index's own entry map.
+//
+// Collect recovers a panic in an entry's build and reports it as the returned error, which keeps
+// a bad entry failing this one layer's read instead of the process - the same containment the
+// index stage's own Collect gave this work when it ran inline on the index worker.
+func prepareTarEntryMetadata(entries []file.TarIndexEntry, digestAlgorithms []crypto.Hash) ([]file.Metadata, error) {
+	metadata := make([]file.Metadata, len(entries))
+
+	workers := min(runtime.GOMAXPROCS(0), len(entries))
+	if workers <= 1 {
+		// nothing to fan out; a panic here is recovered by the index stage's Collect, as before
+		for i := range entries {
+			metadata[i] = tarEntryMetadata(entries[i], digestAlgorithms)
+		}
+		return metadata, nil
+	}
+
+	indices := func(yield func(int) bool) {
+		for i := range entries {
+			if !yield(i) {
+				return
+			}
+		}
+	}
+
+	ctx := async.SetContextExecutor(context.Background(), fileMetadataExecutor, async.NewExecutor(workers))
+	err := async.Collect(&ctx, fileMetadataExecutor, indices,
+		func(i int) (int, error) {
+			// each task writes only its own element, so no accumulator is needed
+			metadata[i] = tarEntryMetadata(entries[i], digestAlgorithms)
+			return i, nil
+		}, nil)
+	return metadata, err
 }
 
 func (l *Layer) indexSingularityImageLayer(tree *filetree.FileTree) error {
@@ -446,93 +542,86 @@ func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *
 	metadata.MIMEType = target.MIMEType
 	metadata.Type = target.Type
 	metadata.LinkDestination = target.LinkDestination
+	// two names for one inode share content, so they share its digests; the link header's own
+	// (empty) data section is not what this name resolves to
+	metadata.Digests = target.Digests
 
 	return opener, true
 }
 
-func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
-	builder := filetree.NewBuilder(ft, fileCatalog.Index)
+// addTarEntry describes one tar entry to the tree and the catalog. Entries must be added in tar
+// order: hardlink adoption resolves against what this layer has indexed so far, and a later entry
+// at an existing path replaces it.
+func addTarEntry(builder *filetree.Builder, ft filetree.Reader, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual, index file.TarIndexEntry, metadata file.Metadata) error {
+	entry := index.ToTarFileEntry()
 
-	return func(index file.TarIndexEntry) error {
-		var err error
-		var entry = index.ToTarFileEntry()
-
-		var contents = index.Open()
-		defer func() {
-			if err := contents.Close(); err != nil {
-				log.Warnf("unable to close file while indexing layer: %+v", err)
-			}
-		}()
-		metadata := file.NewMetadata(entry.Header, contents)
-
-		// a hardlink names a file already present in this layer; describe it as that file and read
-		// its contents through that file's opener rather than this header's empty data section
-		var hardLinkOpener file.Opener
-		var preAdoptionMetadata *file.Metadata
-		if metadata.Type == file.TypeHardLink {
-			original := metadata
-			var adopted bool
-			hardLinkOpener, adopted = adoptHardLinkInode(ft, fileCatalog, &metadata)
-			if adopted {
-				// keep the un-adopted description to fall back to: adoption changes the node type this
-				// entry claims, which can conflict with what an earlier header put at the same path
-				preAdoptionMetadata = &original
-			} else {
-				// trace, not warn: resolution still works via the link path, and a per-header warning
-				// would be noisy on any archive that trips this
-				log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination).
-					Trace("hardlink names a file that is not in this layer, indexing it from its own header")
-			}
+	// a hardlink names a file already present in this layer; describe it as that file and read
+	// its contents through that file's opener rather than this header's empty data section
+	var hardLinkOpener file.Opener
+	var preAdoptionMetadata *file.Metadata
+	if metadata.Type == file.TypeHardLink {
+		original := metadata
+		var adopted bool
+		hardLinkOpener, adopted = adoptHardLinkInode(ft, fileCatalog, &metadata)
+		if adopted {
+			// keep the un-adopted description to fall back to: adoption changes the node type this
+			// entry claims, which can conflict with what an earlier header put at the same path
+			preAdoptionMetadata = &original
+		} else {
+			// trace, not warn: resolution still works via the link path, and a per-header warning
+			// would be noisy on any archive that trips this
+			log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination).
+				Trace("hardlink names a file that is not in this layer, indexing it from its own header")
 		}
-
-		// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
-		// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
-		// This is ok, and the FileTree will account for this by automatically adding directories for non-existing
-		// constituent paths. If later there happens to be a tar header entry for an already added constituent path
-		// the FileNode will be updated with the new file.Reference. If there is no tar header entry for constituent
-		// paths the FileTree is still structurally consistent (all paths can be iterated even though there may not have
-		// been a tar header entry for part of the given path).
-		//
-		// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
-		// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
-		ref, err := builder.Add(metadata)
-		if err != nil {
-			if preAdoptionMetadata == nil {
-				return err
-			}
-			// only an adopted hardlink can be described here as something other than what its own
-			// header says, so a malformed archive should cost this one entry its adoption rather than
-			// the whole image. errors on the un-adopted retry are still fatal, as they were before.
-			log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination, "error", err).
-				Trace("adopted hardlink conflicts with an existing entry, indexing it from its own header")
-
-			metadata = *preAdoptionMetadata
-			hardLinkOpener = nil
-
-			ref, err = builder.Add(metadata)
-			if err != nil {
-				return err
-			}
-		}
-
-		if size != nil {
-			// what this entry contributes to the layer blob, which is its own header's data section.
-			// NOT metadata.Size(), which for an adopted hardlink is the size of the file it names
-			*(size) += entry.Header.Size
-		}
-		opener := hardLinkOpener
-		if opener == nil {
-			opener = func() (io.ReadCloser, error) {
-				return index.Open(), nil
-			}
-		}
-		fileCatalog.addImageReferences(ref.ID(), layerRef, opener)
-
-		if monitor != nil {
-			monitor.Increment()
-		}
-		return nil
 	}
+
+	// note: the tar header name is independent of surrounding structure, for example, there may be a tar header entry
+	// for /some/path/to/file.txt without any entries to constituent paths (/some, /some/path, /some/path/to ).
+	// This is ok, and the FileTree will account for this by automatically adding directories for non-existing
+	// constituent paths. If later there happens to be a tar header entry for an already added constituent path
+	// the FileNode will be updated with the new file.Reference. If there is no tar header entry for constituent
+	// paths the FileTree is still structurally consistent (all paths can be iterated even though there may not have
+	// been a tar header entry for part of the given path).
+	//
+	// In summary: the set of all FileTrees can have NON-leaf nodes that don't exist in the FileCatalog, but
+	// the FileCatalog should NEVER have entries that don't appear in one (or more) FileTree(s).
+	ref, err := builder.Add(metadata)
+	if err != nil {
+		if preAdoptionMetadata == nil {
+			return err
+		}
+		// only an adopted hardlink can be described here as something other than what its own
+		// header says, so a malformed archive should cost this one entry its adoption rather than
+		// the whole image. errors on the un-adopted retry are still fatal, as they were before.
+		log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination, "error", err).
+			Trace("adopted hardlink conflicts with an existing entry, indexing it from its own header")
+
+		metadata = *preAdoptionMetadata
+		hardLinkOpener = nil
+
+		ref, err = builder.Add(metadata)
+		if err != nil {
+			return err
+		}
+	}
+
+	if size != nil {
+		// what this entry contributes to the layer blob, which is its own header's data section.
+		// NOT metadata.Size(), which for an adopted hardlink is the size of the file it names
+		*(size) += entry.Header.Size
+	}
+	opener := hardLinkOpener
+	if opener == nil {
+		opener = func() (io.ReadCloser, error) {
+			return index.Open(), nil
+		}
+	}
+	fileCatalog.addImageReferences(ref.ID(), layerRef, opener)
+
+	if monitor != nil {
+		monitor.Increment()
+	}
+	return nil
 }
 
 // squashfsReader implements an io.ReadCloser that reads a file from within a SquashFS filesystem.

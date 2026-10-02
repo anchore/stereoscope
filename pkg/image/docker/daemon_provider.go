@@ -34,20 +34,21 @@ import (
 const Daemon image.Source = image.DockerDaemonSource
 
 // NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform) image.Provider {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	return NewAPIClientProvider(Daemon, tmpDirGen, imageStr, platform, func() (client.APIClient, error) {
 		return docker.GetClient()
-	})
+	}, additionalMetadata...)
 }
 
 // NewAPIClientProvider creates a new provider for the provided Docker client.APIClient
-func NewAPIClientProvider(name string, tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, newClient apiClientCreator) image.Provider {
+func NewAPIClientProvider(name string, tmpDirGen *file.TempDirGenerator, imageStr string, platform *image.Platform, newClient apiClientCreator, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	return &daemonImageProvider{
-		name:         name,
-		tmpDirGen:    tmpDirGen,
-		newAPIClient: newClient,
-		imageStr:     imageStr,
-		platform:     platform,
+		name:               name,
+		tmpDirGen:          tmpDirGen,
+		newAPIClient:       newClient,
+		imageStr:           imageStr,
+		platform:           platform,
+		additionalMetadata: additionalMetadata,
 	}
 }
 
@@ -55,11 +56,12 @@ type apiClientCreator func() (client.APIClient, error)
 
 // daemonImageProvider is an image.Provider capable of fetching and representing a docker image from the docker daemon API
 type daemonImageProvider struct {
-	name         string
-	tmpDirGen    *file.TempDirGenerator
-	newAPIClient apiClientCreator
-	imageStr     string
-	platform     *image.Platform
+	name               string
+	tmpDirGen          *file.TempDirGenerator
+	newAPIClient       apiClientCreator
+	imageStr           string
+	platform           *image.Platform
+	additionalMetadata []image.AdditionalMetadata
 }
 
 func (p *daemonImageProvider) Name() string {
@@ -354,8 +356,9 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 
 	log.WithFields("image", imageRef, "time", time.Since(startTime), "path", tarFileName).Info("docker saved image")
 
-	// use the existing tarball provider to process what was pulled from the docker daemon
-	return NewArchiveProvider(p.tmpDirGen, tarFileName, withInspectMetadata(inspectResult)...).
+	// use the existing tarball provider to process what was pulled from the docker daemon,
+	// applying user-supplied metadata last to override any default behavior
+	return NewArchiveProvider(p.tmpDirGen, tarFileName, append(withInspectMetadata(inspectResult), p.additionalMetadata...)...).
 		Provide(ctx)
 }
 

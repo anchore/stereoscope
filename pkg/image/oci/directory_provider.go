@@ -17,8 +17,8 @@ import (
 const Directory image.Source = image.OciDirectorySource
 
 // NewDirectoryProvider creates a new provider instance for the specific image already at the given path.
-func NewDirectoryProvider(tmpDirGen *file.TempDirGenerator, path string) image.Provider {
-	return NewDirectoryProviderWithPlatform(tmpDirGen, path, nil)
+func NewDirectoryProvider(tmpDirGen *file.TempDirGenerator, path string, additionalMetadata ...image.AdditionalMetadata) image.Provider {
+	return NewDirectoryProviderWithPlatform(tmpDirGen, path, nil, additionalMetadata...)
 }
 
 // NewDirectoryProviderWithPlatform creates a new provider instance for the specific image already at the given path,
@@ -26,19 +26,21 @@ func NewDirectoryProvider(tmpDirGen *file.TempDirGenerator, path string) image.P
 // single-platform layouts: Provide returns an *image.ErrPlatformMismatch if the image does not match it. A nil
 // platform selects the only image in a single-platform layout, or the host platform in a multiplatform one.
 // The platform should come from image.NewPlatform so that OS and architecture aliases are normalized.
-func NewDirectoryProviderWithPlatform(tmpDirGen *file.TempDirGenerator, path string, platform *image.Platform) image.Provider {
+func NewDirectoryProviderWithPlatform(tmpDirGen *file.TempDirGenerator, path string, platform *image.Platform, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	return &directoryImageProvider{
-		tmpDirGen: tmpDirGen,
-		path:      path,
-		platform:  platform,
+		tmpDirGen:          tmpDirGen,
+		path:               path,
+		platform:           platform,
+		additionalMetadata: additionalMetadata,
 	}
 }
 
 // directoryImageProvider is an image.Provider for an OCI image (V1) for an existing tar on disk (from a buildah push <img> oci:<img> command).
 type directoryImageProvider struct {
-	tmpDirGen *file.TempDirGenerator
-	path      string
-	platform  *image.Platform
+	tmpDirGen          *file.TempDirGenerator
+	path               string
+	platform           *image.Platform
+	additionalMetadata []image.AdditionalMetadata
 }
 
 func (p *directoryImageProvider) Name() string {
@@ -118,6 +120,9 @@ func (p *directoryImageProvider) Provide(ctx context.Context) (*image.Image, err
 	if err == nil {
 		metadata = append(metadata, image.WithManifest(rawManifest))
 	}
+
+	// apply user-supplied metadata last to override any default behavior
+	metadata = append(metadata, p.additionalMetadata...)
 
 	contentTempDir, err := p.tmpDirGen.NewDirectory("oci-dir-image")
 	if err != nil {
