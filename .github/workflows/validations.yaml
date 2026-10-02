@@ -48,6 +48,27 @@ jobs:
           name: unit-test-results
           path: test/results/**/*
 
+  Windows-Test:
+    # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
+    name: "Windows tests"
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # filesystem semantics (reserved names, rename rules, path separators) that only Windows enforces.
+      # ponytail: a curated subset, since the full unit suite has never run on Windows. Widen it as
+      # packages are shown to pass here.
+      - name: Run Windows-relevant tests
+        run: go test -count=1 -run "Smoke|uncompressedCache|UncompressedCache|ClaimedDiffIDs" . ./pkg/image/
+
   Integration-Test:
     # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
     name: "Integration tests"
