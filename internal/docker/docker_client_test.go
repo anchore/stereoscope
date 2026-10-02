@@ -18,7 +18,7 @@ func Test_newClient(t *testing.T) {
 		{
 			name:           "Test newClient returns the correct default location",
 			providedSocket: "",
-			expectedSocket: "unix:///var/run/docker.sock",
+			expectedSocket: client.DefaultDockerHost,
 		},
 		{
 			name:           "Test newClient with runtime specific path",

@@ -118,12 +118,15 @@ func (r RegistryOptions) TLSConfig(registry string) (*tls.Config, error) {
 
 		var files []string
 		if fi.IsDir() {
-			// glob all *.crt, *.pem, and *.cert files in the directory
-			var err error
-
-			files, err = doublestar.Glob(os.DirFS("."), filepath.Join(r.CAFileOrDir, "*.{crt,pem,cert}"))
+			// glob all *.crt, *.pem, and *.cert files within the dir itself. io/fs patterns are
+			// slash-separated and relative, so a host path (absolute, or with windows separators)
+			// never matches against os.DirFS(".")
+			matches, err := doublestar.Glob(os.DirFS(r.CAFileOrDir), "*.{crt,pem,cert}")
 			if err != nil {
 				return nil, fmt.Errorf("unable to find certs in %q: %w", r.CAFileOrDir, err)
+			}
+			for _, m := range matches {
+				files = append(files, filepath.Join(r.CAFileOrDir, m))
 			}
 		} else {
 			files = []string{r.CAFileOrDir}

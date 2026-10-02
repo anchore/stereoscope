@@ -30,6 +30,24 @@ jobs:
     # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
     name: "Unit tests"
     runs-on: ubuntu-24.04
+    needs: [Unit-Test-Linux, Unit-Test-Windows]
+    # a skipped job satisfies a required check, so this job must always run and fail explicitly
+    # unless every dependency succeeded (otherwise a failing PR can still be auto-merged)
+    if: ${{ always() }}
+    steps:
+      - name: Require all unit test jobs to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -e 'length > 0 and all(.[]; .result == "success")' > /dev/null || {
+            echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+            exit 1
+          }
+          echo All unit tests passed!
+
+  Unit-Test-Linux:
+    name: "Unit tests (Linux)"
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -48,10 +66,9 @@ jobs:
           name: unit-test-results
           path: test/results/**/*
 
-  Windows-Test:
-    # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
-    name: "Windows tests"
-    runs-on: windows-2025
+  Unit-Test-Windows:
+    name: "Unit tests (Windows)"
+    runs-on: windows-latest
     permissions:
       contents: read
     steps:
@@ -59,15 +76,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      # go-make's setup only (not ./.github/actions/bootstrap): binny ships no windows release and no apt is needed
+      - name: Setup go + go-make tooling
+        uses: anchore/go-make/.github/actions/setup@430e2175bb166bfd138ef75466adbcc8ddab875f # v0.8.0
 
-      # filesystem semantics (reserved names, rename rules, path separators) that only Windows enforces.
-      # ponytail: a curated subset, since the full unit suite has never run on Windows. Widen it as
-      # packages are shown to pass here.
-      - name: Run Windows-relevant tests
-        run: go test -count=1 -run "Smoke|uncompressedCache|UncompressedCache|ClaimedDiffIDs" . ./pkg/image/
+      - name: Run unit tests
+        run: make unit
 
   Integration-Test:
     # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline

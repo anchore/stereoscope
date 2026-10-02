@@ -173,7 +173,9 @@ func TestRead(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			layer := Layer{layer: fakeLayer(tt.mediaType, tt.mediaTypeErr)}
 			catalog := NewFileCatalog()
-			err := layer.Read(catalog, 0, t.TempDir())
+			dir := t.TempDir()
+			t.Cleanup(func() { _ = layer.close() })
+			err := layer.Read(catalog, 0, dir)
 			if tt.wantErrContents != "" {
 				require.ErrorContains(t, err, tt.wantErrContents)
 				return

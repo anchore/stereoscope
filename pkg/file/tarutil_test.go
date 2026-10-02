@@ -1,5 +1,3 @@
-//go:build !windows
-
 package file
 
 import (
@@ -11,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -106,6 +105,10 @@ func TestMetadataFromTar(t *testing.T) {
 }
 
 func getTarFixture(t testing.TB, name string) *os.File {
+	if runtime.GOOS == "windows" {
+		// the generator scripts build the tar inside a linux container via bash
+		t.Skip("tar fixture generation requires bash and linux docker")
+	}
 	generatorScriptName := name + ".sh"
 	fixturesGeneratorsPath := testutil.GetFixturePath(t, "generators")
 	tarCachePath := testutil.GetFixturePath(t, "tar-cache")
@@ -207,6 +210,8 @@ func Test_tarVisitor_visit(t *testing.T) {
 			haveDirs := strset.New()
 			err := afero.Walk(fs, "/", func(path string, info os.FileInfo, err error) error {
 				require.NoError(t, err)
+				// walk yields host separators, expectations are slash paths
+				path = filepath.ToSlash(path)
 				if info.IsDir() {
 					haveDirs.Add(path)
 				} else {
