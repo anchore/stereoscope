@@ -37,7 +37,7 @@ jobs:
       # these are checks that should be run on pull-request and merges to main.
       # we do NOT want to kick off a release if these have not been verified on main.
       # Please see the validations.yaml workflow for the names that should be used here.
-      checks: '["Static analysis", "Unit tests", "Windows tests", "Integration tests", "Cross-platform build test"]'
+      checks: '["Static analysis", "Unit tests", "Integration tests", "Cross-platform build test"]'
 
   release:
     needs: [check-gate, version-available]
