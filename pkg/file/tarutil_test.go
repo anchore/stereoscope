@@ -1,5 +1,3 @@
-//go:build !windows
-
 package file
 
 import (
@@ -11,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -106,6 +105,10 @@ func TestMetadataFromTar(t *testing.T) {
 }
 
 func getTarFixture(t testing.TB, name string) *os.File {
+	if runtime.GOOS == "windows" {
+		// the generator scripts build the tar inside a linux container via bash
+		t.Skip("tar fixture generation requires bash and linux docker")
+	}
 	generatorScriptName := name + ".sh"
 	fixturesGeneratorsPath := testutil.GetFixturePath(t, "generators")
 	tarCachePath := testutil.GetFixturePath(t, "tar-cache")
