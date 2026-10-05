@@ -103,17 +103,9 @@ func TestImageAdditionalMetadata(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			tempFile, err := os.CreateTemp("", "")
-			if err != nil {
-				t.Fatalf("could not create tempfile: %+v", err)
-			}
-			t.Cleanup(func() {
-				os.Remove(tempFile.Name())
-			})
+			img := New(nil, nil, t.TempDir(), test.options...)
 
-			img := New(nil, nil, tempFile.Name(), test.options...)
-
-			err = img.applyOverrideMetadata()
+			err := img.applyOverrideMetadata()
 			if err != nil {
 				t.Fatalf("could not create image: %+v", err)
 			}
@@ -212,7 +204,7 @@ func TestImage_PartialReadReleasesEarlierLayers(t *testing.T) {
 
 	// layer one reads fine and opens its tar, layer two fails. Counting descriptors rather than
 	// reaching for the index, because a failed Read must not leave the half-built layer set behind
-	before := testutil.OpenDescriptorCount(t)
+	before := testutil.OpenDescriptorBaseline(t)
 	require.Error(t, img.Read(context.Background()), "expected the second layer to fail the read")
 	require.Equal(t, before, testutil.OpenDescriptorCount(t), "a partial read leaked the first layer's tar")
 
