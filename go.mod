@@ -39,6 +39,7 @@ require (
 
 require (
 	github.com/anchore/go-sync v0.1.2
+	github.com/sirupsen/logrus v1.10.2
 	go.podman.io/image/v5 v5.41.2
 	go.podman.io/storage v1.64.1
 	golang.org/x/tools v0.50.0
@@ -133,7 +134,6 @@ require (
 	github.com/sigstore/fulcio v1.8.7 // indirect
 	github.com/sigstore/protobuf-specs v0.5.2 // indirect
 	github.com/sigstore/sigstore v1.10.11 // indirect
-	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/smallstep/pkcs7 v0.2.1 // indirect
 	github.com/stefanberger/go-pkcs11uri v0.0.0-20230803200340-78284954bff6 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
