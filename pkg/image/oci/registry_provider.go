@@ -240,7 +240,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	}
 
 	// Use our custom transport that captures effective URLs after redirects
-	transport := getTransportWithEffectiveURL(tlsConfig, effectiveTransport)
+	transport := getTransportWithEffectiveURL(tlsConfig, effectiveTransport, registryOptions.DisableBlobResume)
 	options = append(options, remote.WithTransport(transport))
 
 	return options
@@ -253,11 +253,19 @@ func getTransport(tlsConfig *tls.Config) *http.Transport {
 	return transport
 }
 
-func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *effectiveURLTransport) http.RoundTripper {
+func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *effectiveURLTransport, disableResume bool) http.RoundTripper {
 	// create base transport with TLS config
 	baseTransport := getTransport(tlsConfig)
 
+	// resume large blob downloads that the registry drops mid-stream. this must sit closest to
+	// the base transport so that it wraps the real response body, and below go-containerregistry's
+	// digest verification so that a reassembled layer is still verified end to end
+	var base http.RoundTripper = baseTransport
+	if !disableResume {
+		base = newResumableTransport(baseTransport)
+	}
+
 	// wrap it with our effective URL capturing transport
-	effectiveTransport.base = baseTransport
+	effectiveTransport.base = base
 	return effectiveTransport
 }
