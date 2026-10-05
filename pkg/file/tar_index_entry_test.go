@@ -152,7 +152,7 @@ func TestNewTarIndex_ReleasesTheDescriptorOnFailure(t *testing.T) {
 
 	// counting descriptors rather than unlinking the file: on unix os.Remove succeeds with the
 	// handle still open, so it would pass whether or not the failure path closed anything
-	before := testutil.OpenDescriptorCount(t)
+	before := testutil.OpenDescriptorBaseline(t)
 
 	index, err := NewTarIndex(path, nil)
 	require.Error(t, err)
