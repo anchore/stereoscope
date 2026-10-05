@@ -123,8 +123,37 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	return nil, fmt.Errorf("unable to detect input for '%s', errs: %w", imgStr, errors.Join(errs...))
 }
 
-func SetLogger(logger logger.Logger) {
-	log.Log = logger
+// LoggerOption configures optional behavior when setting stereoscope's logger (see SetLogger).
+type LoggerOption func(*loggerConfig)
+
+type loggerConfig struct {
+	logrusBridgeLevel *logger.Level
+}
+
+// WithLogrusBridge routes the process-global logrus logger (used by the containers/podman libraries, and also by
+// containerd) into the logger given to SetLogger, so library output doesn't print raw to stderr. The level should be
+// the level the given logger is configured at, so logrus doesn't build entries that would be dropped anyway.
+//
+// This takes over logrus.StandardLogger(): its output is discarded, its level is overwritten, and entries are
+// forwarded through a hook (tagged "from=containers-storage"). Only use this when your process does not log through
+// logrus.StandardLogger() itself. The bridge is installed once; later SetLogger calls still receive bridged entries.
+func WithLogrusBridge(level logger.Level) LoggerOption {
+	return func(c *loggerConfig) {
+		c.logrusBridgeLevel = &level
+	}
+}
+
+// SetLogger sets the logger used by stereoscope.
+func SetLogger(l logger.Logger, opts ...LoggerOption) {
+	log.Log = l
+
+	var cfg loggerConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+	if cfg.logrusBridgeLevel != nil {
+		log.BridgeLogrus(*cfg.logrusBridgeLevel)
+	}
 }
 
 func SetBus(b *partybus.Bus) {
