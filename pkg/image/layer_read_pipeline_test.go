@@ -78,7 +78,7 @@ func TestImage_readLayers_concurrentReadKeepsManifestOrder(t *testing.T) {
 	const layerCount = 6
 	layers := randomLayers(t, layerCount)
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	require.NoError(t, i.readLayers(layerConcurrency(3, 3), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 
 	// completion order is up to the pools; the layer set must still be manifest-ordered and
@@ -190,7 +190,7 @@ func TestImage_readLayers_failedLayerFailsTheReadWithoutHanging(t *testing.T) {
 	// return - with workers still draining - rather than deadlock or panic
 	layers[1] = NewLayer(fakeLayer("garbage/media-type", nil))
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	err := i.readLayers(layerConcurrency(2, 2), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "layer 1"), "error should name the failed layer: %v", err)
@@ -227,7 +227,7 @@ func TestImage_readLayers_reportsFailuresLowestLayerFirst(t *testing.T) {
 	layers := randomLayers(t, 6)
 	badLayersWithBarrier(layers, 4, 1, 3)
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 	require.Error(t, err)
 
@@ -247,7 +247,7 @@ func TestImage_readLayers_errorOrderIsStableAcrossRuns(t *testing.T) {
 	for run := 0; run < 25; run++ {
 		layers := randomLayers(t, 6)
 		badLayersWithBarrier(layers, 5, 2, 4)
-		i := &Image{contentCacheDir: t.TempDir()}
+		i := testImage(t, layers)
 		err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 		require.Error(t, err)
 		if run == 0 {
@@ -310,7 +310,7 @@ func TestImage_readLayers_callerSuppliedExecutorBoundsTheFetchStage(t *testing.T
 	layers := countingLayers(t, 8, &inFlight, &maxSeen)
 
 	ctx := async.SetContextExecutor(context.Background(), LayerFetchExecutor, async.NewExecutor(1))
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	require.NoError(t, i.readLayers(ctx, layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 
 	assert.Equal(t, int64(1), maxSeen.Load(), "caller's fetch executor was not honoured")
@@ -325,7 +325,7 @@ func TestImage_readLayers_defaultAppliesWhenCallerSuppliesNothing(t *testing.T) 
 
 	// no executors installed at all: both stages must still get a working bound rather than
 	// falling back to go-sync's inline serial executor, which would collapse the two stages
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	require.NoError(t, i.readLayers(context.Background(), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 
 	assert.LessOrEqual(t, maxSeen.Load(), int64(layerReadWorkers(len(layers))), "default fetch bound was exceeded")
@@ -370,7 +370,7 @@ func TestImage_readLayers_honoursExecutorDefault(t *testing.T) {
 	layers := countingLayers(t, 8, &inFlight, &maxSeen)
 
 	ctx := async.SetContextExecutor(context.Background(), async.ExecutorDefault, async.NewExecutor(1))
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	require.NoError(t, i.readLayers(ctx, layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 
 	assert.Equal(t, int64(1), maxSeen.Load(), "the host's ExecutorDefault did not bound the fetch stage")
@@ -389,7 +389,7 @@ func TestImage_readLayers_stageBoundsAreIndependent(t *testing.T) {
 
 	// only a fetch executor, so Read must fill in the index default rather than reusing this one
 	ctx := layerConcurrency(1, 0)
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	require.NoError(t, i.readLayers(ctx, layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers))))
 
 	assert.Equal(t, int64(1), maxSeen.Load(), "the caller's fetch bound was not honoured")
@@ -409,7 +409,7 @@ func TestImage_readLayers_cancelledContextStopsTheRead(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	err := i.readLayers(ctx, layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 	require.NoError(t, err, "a cancelled read reports no per-layer failure")
 
@@ -429,7 +429,7 @@ func TestImage_readLayers_internalAbortReportsTheLayerErrorNotCancellation(t *te
 	layers := randomLayers(t, 6)
 	layers[2] = NewLayer(fakeLayer("garbage/media-type", nil))
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	err := i.readLayers(layerConcurrency(4, 4), layers, NewFileCatalog(), &progress.Manual{}, newLayerGates(len(layers)))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to fetch layer 2")
@@ -619,7 +619,7 @@ func TestImage_squashLayers_reportsAnUnindexedLayer(t *testing.T) {
 	gates.done(1, false) // indexed nothing
 	gates.done(2, true)
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	// layer 0 needs a tree for its squash to copy
 	require.NoError(t, layers[0].fetch(0, i.contentCacheDir))
 	require.NoError(t, layers[0].index(NewFileCatalog()))
@@ -822,7 +822,7 @@ func TestImage_readLayers_cancelledReadDoesNotRaceLayerClose(t *testing.T) {
 	fetchDone := make(chan struct{})
 	layers := []*Layer{NewLayer(fetchSignalLayer{Layer: manyEntryLayer(t, 30000), done: fetchDone})}
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	_ = i.readLayers(cancelAfterFetch(t, fetchDone), layers, NewFileCatalog(), progress.NewManual(0), newLayerGates(len(layers)))
 
 	stillIndexing := goroutineRunning("pkg/image.(*Layer).index")
@@ -853,7 +853,7 @@ func TestImage_readLayers_cancellationWaitsForInFlightWorkers(t *testing.T) {
 	ctx, cancel := context.WithCancel(layerConcurrency(1, 1))
 	defer cancel()
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -885,7 +885,7 @@ func TestGoroutineRunning_matchesALiveIndexFrame(t *testing.T) {
 	fetchDone := make(chan struct{})
 	layers := []*Layer{NewLayer(fetchSignalLayer{Layer: manyEntryLayer(t, 30000), done: fetchDone})}
 
-	i := &Image{contentCacheDir: t.TempDir()}
+	i := testImage(t, layers)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -949,7 +949,7 @@ func TestImage_readLayers_sharedExecutorSurvivesMidFlightCancellation(t *testing
 			ctx, cancel := context.WithCancel(base)
 			defer cancel()
 
-			i := &Image{contentCacheDir: t.TempDir()}
+			i := testImage(t, layers)
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
@@ -973,4 +973,12 @@ func TestImage_readLayers_sharedExecutorSurvivesMidFlightCancellation(t *testing
 			}
 		})
 	}
+}
+
+// testImage returns an image that reads into a temp cache dir, closing the given layers before that
+// dir is removed (windows refuses to delete a file that still has an open handle)
+func testImage(t *testing.T, layers []*Layer) *Image {
+	dir := t.TempDir()
+	t.Cleanup(func() { closeLayers(layers) })
+	return &Image{contentCacheDir: dir}
 }
