@@ -41,7 +41,7 @@ require (
 	github.com/anchore/go-sync v0.1.2
 	go.podman.io/image/v5 v5.41.2
 	go.podman.io/storage v1.64.1
-	golang.org/x/tools v0.50.0
+	golang.org/x/tools v0.51.0
 )
 
 require (
