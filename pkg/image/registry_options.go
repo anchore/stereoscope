@@ -24,6 +24,14 @@ type RegistryOptions struct {
 	Credentials           []RegistryCredentials
 	Keychain              authn.Keychain
 	CAFileOrDir           string
+
+	// DisableBlobResume is read by the OCI registry provider only, the containerd provider having no
+	// blob fetching of its own. It turns off resuming a large blob download whose connection drops
+	// partway through, restoring the previous behaviour of failing the layer outright. Resuming is on by
+	// default. Note that this is a Go API only: syft, grype and anchorectl would each need to plumb
+	// a config key through before an operator meeting a registry that mishandles range requests
+	// could reach it.
+	DisableBlobResume bool
 }
 
 type credentialSelection struct {
