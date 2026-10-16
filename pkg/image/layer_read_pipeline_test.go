@@ -487,6 +487,49 @@ func TestImage_Read_squashOverlapMatchesOrderedSquash(t *testing.T) {
 	}
 }
 
+func TestImage_Read_imageSquashOnlyKeepsOnlyTheTopSquash(t *testing.T) {
+	var layers []v1.Layer
+	for idx := 0; idx < 6; idx++ {
+		layers = append(layers, layerFromTarEntries(t,
+			tarEntry{path: fmt.Sprintf("only-in-%d.txt", idx), typeFlag: tar.TypeReg, contents: fmt.Sprintf("c%d", idx)},
+			tarEntry{path: "shared.txt", typeFlag: tar.TypeReg, contents: fmt.Sprintf("v%d", idx)},
+		))
+	}
+	full := readImageFromLayers(t, layers...)
+
+	v1Img, err := mutate.AppendLayers(empty.Image, layers...)
+	require.NoError(t, err)
+	img := New(v1Img, file.NewTempDirGenerator("image-test"), t.TempDir())
+	t.Cleanup(func() { require.NoError(t, img.Cleanup()) })
+	require.NoError(t, img.Read(WithImageSquashOnly(context.Background())))
+
+	top := len(img.Layers) - 1
+	for idx, layer := range img.Layers[:top] {
+		assert.Nilf(t, layer.SquashedTree, "layer %d kept its squash", idx)
+		assert.Nilf(t, layer.SquashedSearchContext, "layer %d kept its squashed search context", idx)
+	}
+	require.NotNil(t, img.Layers[top].SquashedTree)
+	require.NotNil(t, img.Layers[top].SquashedSearchContext)
+
+	assert.Equal(t,
+		fileTuples(t, full.SquashedTree(), full.FileCatalog),
+		fileTuples(t, img.SquashedTree(), img.FileCatalog),
+		"image squash differs from a full read")
+
+	rc, err := img.OpenPathFromSquash("/shared.txt")
+	require.NoError(t, err)
+	defer rc.Close()
+	contents, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	assert.Equal(t, "v5", string(contents))
+
+	ref := file.NewFileReference("/shared.txt")
+	_, err = img.ResolveLinkByLayerSquash(*ref, 0)
+	assert.ErrorContains(t, err, "no squashed tree")
+	_, err = img.Layers[0].OpenPathFromSquash("/shared.txt")
+	assert.Error(t, err)
+}
+
 func TestImage_Read_fetchFailureDoesNotHangTheSquash(t *testing.T) {
 	good := func(idx int) v1.Layer {
 		return layerFromTarEntries(t, tarEntry{
@@ -624,7 +667,7 @@ func TestImage_squashLayers_reportsAnUnindexedLayer(t *testing.T) {
 	require.NoError(t, layers[0].fetch(0, i.contentCacheDir))
 	require.NoError(t, layers[0].index(NewFileCatalog()))
 
-	err := i.squashLayers(layers, gates, &progress.Manual{})
+	err := i.squashLayers(layers, gates, &progress.Manual{}, true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "layer 1")
 	assert.Contains(t, err.Error(), "not indexed")
