@@ -309,7 +309,7 @@ func (i *Image) readAndSquashLayers(ctx context.Context, layers []*Layer, fileCa
 	squashDigest := i.Metadata.ID
 	go func() {
 		squashStart := time.Now()
-		err := i.squashLayers(layers, gates, readProg)
+		err := i.squashLayers(layers, gates, readProg, !imageSquashOnly(ctx))
 		log.WithFields("digest", squashDigest, "time", time.Since(squashStart)).Trace("completed image squash")
 		squashDone <- err
 	}()
@@ -510,6 +510,22 @@ const (
 	LayerIndexExecutor = "layer-index"
 )
 
+type imageSquashOnlyKey struct{}
+
+// WithImageSquashOnly returns a context that tells Read to keep only the image squash. By default
+// every layer keeps its own squashed tree, and since each one is a full copy of the tree below it,
+// memory grows with layers x files. Use this when nothing needs a per-layer squash (for example a
+// squashed-scope scan): Layer.SquashedTree and Layer.SquashedSearchContext are then nil on every
+// layer except the top one, and ResolveLinkByLayerSquash only works for the top layer.
+func WithImageSquashOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, imageSquashOnlyKey{}, true)
+}
+
+func imageSquashOnly(ctx context.Context) bool {
+	v, _ := ctx.Value(imageSquashOnlyKey{}).(bool)
+	return v
+}
+
 // withLayerExecutors fills in the stage executors this image should use for any the caller has not
 // supplied. Never bounded at zero: a zero-concurrency go-sync executor runs inline on the caller's
 // goroutine, which would collapse the two stages back into one and lose the overlap.
@@ -628,7 +644,7 @@ func layerReadWorkers(layers int) int {
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
-func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.Manual) error {
+func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.Manual, keepLayerSquashes bool) error {
 	var lastSquashTree filetree.ReadWriter
 
 	for idx, layer := range layers {
@@ -657,6 +673,12 @@ func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.
 		layer.SquashedTree = squashedTree
 		layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 		lastSquashTree = squashedTree
+
+		// each squash is a full copy of the one below it, so keeping them all costs layers x files
+		if !keepLayerSquashes && idx > 0 {
+			layers[idx-1].SquashedTree = nil
+			layers[idx-1].SquashedSearchContext = nil
+		}
 
 		prog.Increment()
 	}
@@ -727,6 +749,9 @@ func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 // the image (a cycle, or a chain too deep to follow), resolves to nil with a nil error: callers are resolving one
 // file out of many and one bad link should not fail the whole set.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
+	if i.Layers[layer].SquashedTree == nil {
+		return nil, fmt.Errorf("layer %d has no squashed tree (image read with WithImageSquashOnly)", layer)
+	}
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)
 	if filetree.IsUnresolvableLink(err) {
