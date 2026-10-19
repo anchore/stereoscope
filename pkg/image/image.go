@@ -2,6 +2,7 @@ package image
 
 import (
 	"context"
+	"crypto"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -49,6 +50,11 @@ type Image struct {
 	SquashedSearchContext filetree.Searcher
 
 	overrideMetadata []AdditionalMetadata
+
+	// fileDigestAlgorithms are the content hashes to compute for every regular file while each
+	// layer is indexed during Read. Empty by default: no digests are computed unless a consumer
+	// opted in via WithFileDigestAlgorithms.
+	fileDigestAlgorithms []crypto.Hash
 }
 
 type AdditionalMetadata func(*Image) error
@@ -147,6 +153,22 @@ func WithOS(o string) AdditionalMetadata {
 			return fmt.Errorf("unknown OS: %s", o)
 		}
 		image.Metadata.OS = o
+		return nil
+	}
+}
+
+// WithFileDigestAlgorithms requests that the given content hashes be computed for every regular
+// file while each layer is indexed during Read, and recorded on that file's Metadata.Digests.
+// This saves consumers that need content digests a second full read of the image. Without this
+// option no digests are computed, which is the default.
+//
+// It must be passed to New (directly, or through a provider constructor's additionalMetadata):
+// Read applies it before any layer is indexed, so applying it to an already-read image has no
+// effect. A file whose digests could not be computed keeps a nil Metadata.Digests, and consumers
+// fall back to reading that file themselves.
+func WithFileDigestAlgorithms(algorithms ...crypto.Hash) AdditionalMetadata {
+	return func(image *Image) error {
+		image.fileDigestAlgorithms = algorithms
 		return nil
 	}
 }
@@ -286,7 +308,7 @@ func (i *Image) buildLayers() ([]*Layer, error) {
 	if err := validateLayerMediaTypes(v1Layers); err != nil {
 		return nil, err
 	}
-	return newLayers(v1Layers, i.Metadata.Config.RootFS.DiffIDs), nil
+	return newLayers(v1Layers, i.Metadata.Config.RootFS.DiffIDs, i.fileDigestAlgorithms), nil
 }
 
 // releasePreviousLayers releases every layer tar a previous Read left open and forgets the layers.

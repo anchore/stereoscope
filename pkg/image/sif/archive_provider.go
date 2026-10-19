@@ -14,17 +14,19 @@ const ProviderName = image.SingularitySource
 
 // NewArchiveProvider creates a new provider instance for the Singularity Image Format (SIF) image
 // at path.
-func NewArchiveProvider(tmpDirGen *file.TempDirGenerator, path string) image.Provider {
+func NewArchiveProvider(tmpDirGen *file.TempDirGenerator, path string, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	return &singularityImageProvider{
-		tmpDirGen: tmpDirGen,
-		path:      path,
+		tmpDirGen:          tmpDirGen,
+		path:               path,
+		additionalMetadata: additionalMetadata,
 	}
 }
 
 // singularityImageProvider is an image.Provider for a Singularity Image Format (SIF) image.
 type singularityImageProvider struct {
-	tmpDirGen *file.TempDirGenerator
-	path      string
+	tmpDirGen          *file.TempDirGenerator
+	path               string
+	additionalMetadata []image.AdditionalMetadata
 }
 
 func (p *singularityImageProvider) Name() string {
@@ -57,6 +59,7 @@ func (p *singularityImageProvider) Provide(ctx context.Context) (*image.Image, e
 		image.WithOS("linux"),
 		image.WithArchitecture(si.arch, ""),
 	}
+	metadata = append(metadata, p.additionalMetadata...)
 
 	out := image.New(ui, p.tmpDirGen, contentCacheDir, metadata...)
 	err = out.Read(ctx)

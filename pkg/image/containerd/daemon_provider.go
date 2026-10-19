@@ -35,17 +35,18 @@ import (
 const Daemon image.Source = image.ContainerdDaemonSource
 
 // NewDaemonProvider creates a new provider instance for a specific image that will later be cached to the given directory.
-func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, namespace string, imageStr string, platform *image.Platform) image.Provider {
+func NewDaemonProvider(tmpDirGen *file.TempDirGenerator, registryOptions image.RegistryOptions, namespace string, imageStr string, platform *image.Platform, additionalMetadata ...image.AdditionalMetadata) image.Provider {
 	if namespace == "" {
 		namespace = namespaces.Default
 	}
 
 	return &daemonImageProvider{
-		imageStr:        imageStr,
-		tmpDirGen:       tmpDirGen,
-		platform:        platform,
-		namespace:       namespace,
-		registryOptions: registryOptions,
+		imageStr:           imageStr,
+		tmpDirGen:          tmpDirGen,
+		platform:           platform,
+		namespace:          namespace,
+		registryOptions:    registryOptions,
+		additionalMetadata: additionalMetadata,
 	}
 }
 
@@ -53,11 +54,12 @@ var mb = math.Pow(2, 20)
 
 // daemonImageProvider is an image.Provider capable of fetching and representing a docker image from the containerd daemon API
 type daemonImageProvider struct {
-	imageStr        string
-	tmpDirGen       *file.TempDirGenerator
-	platform        *image.Platform
-	namespace       string
-	registryOptions image.RegistryOptions
+	imageStr           string
+	tmpDirGen          *file.TempDirGenerator
+	platform           *image.Platform
+	namespace          string
+	registryOptions    image.RegistryOptions
+	additionalMetadata []image.AdditionalMetadata
 }
 
 func (p *daemonImageProvider) Name() string {
@@ -100,8 +102,9 @@ func (p *daemonImageProvider) Provide(ctx context.Context) (*image.Image, error)
 
 	log.WithFields("image", p.imageStr, "time", time.Since(startTime)).Info("containerd saved image")
 
-	// use the existing tarball provider to process what was pulled from the containerd daemon
-	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, tarFileName, withMetadata(resolvedPlatform, p.imageStr)...).
+	// use the existing tarball provider to process what was pulled from the containerd daemon,
+	// applying user-supplied metadata last to override any default behavior
+	return stereoscopeDocker.NewArchiveProvider(p.tmpDirGen, tarFileName, append(withMetadata(resolvedPlatform, p.imageStr), p.additionalMetadata...)...).
 		Provide(ctx)
 }
 
