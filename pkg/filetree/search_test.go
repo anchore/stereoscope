@@ -2,10 +2,12 @@ package filetree
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -710,4 +712,87 @@ func Test_searchContext_LinkCycleDoesNotDropUnrelatedResults(t *testing.T) {
 			require.Equal(t, paths(t, clean), paths(t, withCycle))
 		})
 	}
+}
+
+func Test_searchContext_SearchByGlob_altAndClassBasenames(t *testing.T) {
+	// a basename glob that uses an alternation or a character class reaches the basename index
+	// (see parseBasenameAltAndClassGlobSections), so the indexed search must agree with the
+	// authoritative tree walk rather than silently returning nothing
+	paths := []string{
+		"/usr/lib/foo.jar",
+		"/usr/lib/bar.war",
+		"/usr/bin/python2",
+		"/usr/bin/python3",
+		"/opt/app/go.mod",
+		"/opt/app/go.sum",
+	}
+
+	tree := New()
+	idx := NewIndex()
+	for _, p := range paths {
+		ref, err := tree.AddFile(file.Path(p))
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		idx.Add(*ref, file.Metadata{Path: p, Type: file.TypeRegular})
+	}
+
+	tests := []struct {
+		name string
+		glob string
+		want []string
+	}{
+		{
+			name: "alternation in the basename",
+			glob: "**/*.{jar,war}",
+			want: []string{"/usr/lib/bar.war", "/usr/lib/foo.jar"},
+		},
+		{
+			name: "alternation suffixing the basename",
+			glob: "**/python{2,3}",
+			want: []string{"/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name: "character class in the basename",
+			glob: "**/python[23]",
+			want: []string{"/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name: "character class followed by a wildcard",
+			glob: "**/go.[ms]*",
+			want: []string{"/opt/app/go.mod", "/opt/app/go.sum"},
+		},
+		{
+			name: "plain wildcard basename still works",
+			glob: "**/python*",
+			want: []string{"/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name: "alternation that matches nothing",
+			glob: "**/*.{deb,rpm}",
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			indexed, err := NewSearchContext(tree, idx).SearchByGlob(tt.glob)
+			require.NoError(t, err)
+
+			// the tree walk takes no part in the index lookup, so it is the reference answer
+			walked, err := searchContext{tree: tree}.SearchByGlob(tt.glob)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.want, realPaths(indexed), "indexed search")
+			assert.Equal(t, tt.want, realPaths(walked), "tree walk")
+		})
+	}
+}
+
+func realPaths(refs []file.Resolution) []string {
+	var paths []string
+	for _, r := range refs {
+		paths = append(paths, string(r.RealPath))
+	}
+	sort.Strings(paths)
+	return paths
 }

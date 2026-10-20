@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/becheran/wildmatch-go"
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/scylladb/go-set/strset"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -249,10 +250,14 @@ func (c *index) GetByBasenameGlob(globs ...string) ([]IndexEntry, error) {
 			return nil, fmt.Errorf("found directory separator in a basename")
 		}
 
-		patternObj := wildmatch.NewWildMatch(glob)
+		isMatch, err := basenameGlobMatcher(glob)
+		if err != nil {
+			return nil, err
+		}
+
 		var e error
 		c.basenames.Each(func(b string) bool {
-			if patternObj.IsMatch(b) {
+			if isMatch(b) {
 				bns, err := c.getByBasename(b)
 				if err != nil {
 					e = fmt.Errorf("unable to fetch file references by basename (%q): %w", b, err)
@@ -268,6 +273,28 @@ func (c *index) GetByBasenameGlob(globs ...string) ([]IndexEntry, error) {
 	}
 
 	return entries, nil
+}
+
+// basenameGlobMatcher returns a predicate that reports whether a basename satisfies the given glob.
+//
+// wildmatch understands only '*' and '?', so it compares a character class or an alternation
+// literally and matches nothing. parseGlob hands both kinds of pattern to GetByBasenameGlob (see
+// parseBasenameAltAndClassGlobSections), so those need the same matcher the rest of the search
+// uses. wildmatch is kept for the patterns it does cover, which is the overwhelming majority.
+func basenameGlobMatcher(glob string) (func(string) bool, error) {
+	if !strings.ContainsAny(glob, "[]{}") {
+		return wildmatch.NewWildMatch(glob).IsMatch, nil
+	}
+
+	if !doublestar.ValidatePattern(glob) {
+		return nil, fmt.Errorf("invalid basename glob pattern: %q", glob)
+	}
+
+	return func(b string) bool {
+		// the pattern is already validated, so the only error Match can return cannot happen here
+		matched, err := doublestar.Match(glob, b)
+		return err == nil && matched
+	}, nil
 }
 
 func fileExtensions(p string) []string {
