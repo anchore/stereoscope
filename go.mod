@@ -18,7 +18,7 @@ require (
 	github.com/docker/go-connections v0.8.2
 	github.com/gabriel-vasile/mimetype v1.4.15
 	github.com/gkampitakis/go-snaps v0.5.23
-	github.com/go-test/deep v1.1.1
+	github.com/go-test/deep v1.1.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/moby/moby/client v0.6.2
