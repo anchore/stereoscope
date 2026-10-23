@@ -41,7 +41,7 @@ require (
 	github.com/anchore/go-sync v0.1.2
 	go.podman.io/image/v5 v5.41.2
 	go.podman.io/storage v1.64.2
-	golang.org/x/tools v0.51.0
+	golang.org/x/tools v0.52.0
 )
 
 require (
@@ -155,7 +155,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
