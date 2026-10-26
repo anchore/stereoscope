@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -43,11 +44,16 @@ const (
 	// surplus above it is discarded rather than banked, so each replenishment is earned afresh.
 	minResumeProgress = 64 * 1024
 
-	// reopenHeaderTimeout bounds how long a reopen may take to produce response headers. an
-	// endpoint that accepts the connection and then falls silent is otherwise ended only by the
-	// pull's context, which callers do not always give a deadline. it covers the headers only, so
-	// a body that is arriving slowly is never on a clock.
-	reopenHeaderTimeout = 30 * time.Second
+	// resumeCreditSize earns back one resume each time this much of the blob has arrived, so a long
+	// transfer that drops now and then is not held to the same count as a short one, while a path
+	// that drops every few kilobytes still runs out.
+	resumeCreditSize = 64 * 1024 * 1024
+
+	// idleTimeout bounds how long a reopen may wait for response headers, and how long a read may wait
+	// for the next bytes. an endpoint that accepts the connection or sends part of a body and then
+	// falls silent is otherwise ended only by the pull's context, which callers do not always give a
+	// deadline. a body that is arriving slowly is never on a clock, only a silent one.
+	idleTimeout = 30 * time.Second
 
 	// stallBackoff is multiplied by the consecutive stall count to space out repeated attempts. the
 	// first attempt after a drop is made immediately, so an isolated drop costs no delay.
@@ -82,31 +88,33 @@ var errResumeRefused = errors.New("the server refused to resume")
 // than the ones that may have lapsed during a long transfer.
 //
 // termination is two budgets: consecutive attempts that deliver no meaningful progress, and
-// reopens in total. between them they bound the number of attempts; the only clock is on a reopen
-// producing response headers, never on the transfer itself.
+// reopens in total. between them they bound the number of attempts, and idleTimeout bounds how long
+// any one of them may sit silent.
 type resumableTransport struct {
 	base http.RoundTripper
 	// client returns the client a reopen is issued through. it is called on each reopen so that
 	// building it, which may ping the registry, waits until a resume is actually needed
-	client        func(context.Context) (*http.Client, error)
-	minSize       int64
-	minProgress   int64
-	backoff       time.Duration
-	headerTimeout time.Duration
-	maxStalls     int
-	maxResumes    int
+	client       func(context.Context) (*http.Client, error)
+	minSize      int64
+	minProgress  int64
+	backoff      time.Duration
+	idleTimeout  time.Duration
+	maxStalls    int
+	maxResumes   int
+	resumeCredit int64
 }
 
 func newResumableTransport(base http.RoundTripper, client func(context.Context) (*http.Client, error)) *resumableTransport {
 	return &resumableTransport{
-		base:          base,
-		client:        client,
-		minSize:       resumeMinSize,
-		minProgress:   minResumeProgress,
-		backoff:       stallBackoff,
-		headerTimeout: reopenHeaderTimeout,
-		maxStalls:     maxConsecutiveStalls,
-		maxResumes:    maxTotalResumes,
+		base:         base,
+		client:       client,
+		minSize:      resumeMinSize,
+		minProgress:  minResumeProgress,
+		backoff:      stallBackoff,
+		idleTimeout:  idleTimeout,
+		maxStalls:    maxConsecutiveStalls,
+		maxResumes:   maxTotalResumes,
+		resumeCredit: resumeCreditSize,
 	}
 }
 
@@ -118,7 +126,7 @@ func (t *resumableTransport) RoundTrip(req *http.Request) (*http.Response, error
 
 	resp.Body = &resumableBody{
 		t:     t,
-		body:  resp.Body,
+		body:  watchIdle(resp.Body, t.idleTimeout),
 		req:   req,
 		total: resp.ContentLength,
 		done:  make(chan struct{}),
@@ -329,9 +337,9 @@ func (b *resumableBody) resume(cause error) error {
 
 	for {
 		b.resumes++
-		if b.resumes > b.t.maxResumes {
+		if b.resumes > b.t.maxResumes+int(b.offset/b.t.resumeCredit) {
 			return fmt.Errorf("unable to resume %s at byte %d after %d attempts in total: %w",
-				forLog(b.req), b.offset, b.t.maxResumes, cause)
+				forLog(b.req), b.offset, b.resumes-1, cause)
 		}
 
 		b.stalls++
@@ -449,7 +457,7 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 
 	// stopped once headers arrive, so the clock is on reaching the server rather than on the
 	// transfer that follows
-	headers := time.AfterFunc(b.t.headerTimeout, cancel)
+	headers := time.AfterFunc(b.t.idleTimeout, cancel)
 	resp, err := b.roundTrip(ctx)
 
 	if !headers.Stop() {
@@ -460,7 +468,7 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 			closeQuietly(resp.Body)
 		}
 
-		return nil, fmt.Errorf("no response headers to the resumed range request within %s", b.t.headerTimeout)
+		return nil, fmt.Errorf("no response headers to the resumed range request within %s", b.t.idleTimeout)
 	}
 
 	// only an accepted body still needs its context; a failed attempt releases it at once rather
@@ -474,9 +482,11 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 	body, err := b.acceptable(resp)
 	if err != nil {
 		cancel()
+
+		return nil, err
 	}
 
-	return body, err
+	return watchIdle(body, b.t.idleTimeout), nil
 }
 
 // roundTrip sends the range request to the registry URL the blob was first requested from, rather
@@ -706,6 +716,47 @@ func (b *resumableBody) release(closing bool) (io.ReadCloser, bool) {
 	}
 
 	return body, first
+}
+
+// idleBody closes a segment whose read waits longer than timeout for any bytes, so a connection that
+// stays open but falls silent becomes a drop that can be resumed rather than a read blocked for ever.
+// the clock runs only while a read is waiting on the server, never between reads, so a slow consumer
+// does not look like a silent server.
+type idleBody struct {
+	io.ReadCloser
+	timeout time.Duration
+	timer   *time.Timer
+	idle    atomic.Bool
+}
+
+func watchIdle(body io.ReadCloser, timeout time.Duration) *idleBody {
+	b := &idleBody{ReadCloser: body, timeout: timeout}
+	b.timer = time.AfterFunc(timeout, func() {
+		b.idle.Store(true)
+		closeQuietly(body)
+	})
+	b.timer.Stop()
+
+	return b
+}
+
+func (b *idleBody) Read(p []byte) (int, error) {
+	b.timer.Reset(b.timeout)
+	n, err := b.ReadCloser.Read(p)
+	b.timer.Stop()
+
+	if err != nil && b.idle.Load() {
+		// the error is whatever closing the body made the read return, which says nothing useful
+		err = fmt.Errorf("no data received within %s", b.timeout)
+	}
+
+	return n, err
+}
+
+func (b *idleBody) Close() error {
+	b.timer.Stop()
+
+	return b.ReadCloser.Close()
 }
 
 // parseContentRange pulls the first and last byte positions and the total length out of a

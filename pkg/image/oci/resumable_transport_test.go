@@ -1489,7 +1489,7 @@ func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *test
 	t.Cleanup(srv.Close)
 
 	transport := newTestTransport(1)
-	transport.headerTimeout = 50 * time.Millisecond
+	transport.idleTimeout = 50 * time.Millisecond
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
 	require.NoError(t, err)
@@ -1500,6 +1500,111 @@ func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *test
 	assert.Contains(t, err.Error(), "no response headers")
 	assert.NotErrorIs(t, err, context.Canceled, "a timeout must not be reported as a cancellation")
 	assert.Contains(t, err.Error(), "without progress", "a timeout is retried like any other stall")
+}
+
+func TestResumableTransport_resumesABodyThatFallsSilent(t *testing.T) {
+	// a degraded CDN edge may keep the connection open and simply stop sending. without a clock on
+	// the read that blocks until the caller's context ends, which may be never
+	payload := payloadOfSize(8192)
+
+	var mu sync.Mutex
+	served := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		served++
+		first := served == 1
+		mu.Unlock()
+
+		if first {
+			w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(payload[:1000])
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
+
+		start, _ := parseRangeRequest(r.Header.Get("Range"))
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(payload)-1, len(payload)))
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)-int(start)))
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write(payload[start:])
+	}))
+	t.Cleanup(srv.Close)
+
+	transport := newTestTransport(1)
+	transport.idleTimeout = 50 * time.Millisecond
+
+	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	type result struct {
+		got []byte
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		got, readErr := io.ReadAll(resp.Body)
+		done <- result{got, readErr}
+	}()
+
+	select {
+	case r := <-done:
+		require.NoError(t, r.err)
+		assert.Equal(t, payload, r.got)
+	case <-time.After(5 * time.Second):
+		t.Fatal("a body that fell silent was never resumed")
+	}
+}
+
+func TestResumableTransport_aSlowReaderIsNotASilentServer(t *testing.T) {
+	// the clock runs while a read waits on the server, not between reads, so a consumer that pauses
+	// longer than the timeout must not cost a reconnect
+	server := &flakyBlobServer{payload: payloadOfSize(8192)}
+
+	srv := httptest.NewServer(server)
+	t.Cleanup(srv.Close)
+
+	transport := newTestTransport(1)
+	transport.idleTimeout = 20 * time.Millisecond
+
+	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+
+	_, err = io.ReadFull(resp.Body, make([]byte, 100))
+	require.NoError(t, err)
+
+	time.Sleep(100 * time.Millisecond)
+
+	_, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Len(t, server.seenRanges(), 1, "a pause on the reading side must not reopen the blob")
+}
+
+func TestResumableTransport_progressEarnsBackTotalBudget(t *testing.T) {
+	// a long transfer that drops now and then, delivering plenty between drops, must not be held to
+	// the same count as one that drops every few kilobytes
+	payload := payloadOfSize(4 * 1024 * 1024)
+	drops := maxTotalResumes + 10
+	server := &flakyBlobServer{payload: payload, dropsLeft: drops, bytesPerDrop: minResumeProgress}
+
+	srv := httptest.NewServer(server)
+	t.Cleanup(srv.Close)
+
+	transport := newTestTransport(1)
+	transport.resumeCredit = minResumeProgress
+
+	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+
+	got, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, payload, got)
+	assert.Len(t, server.seenRanges(), drops+1)
 }
 
 func TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims(t *testing.T) {
