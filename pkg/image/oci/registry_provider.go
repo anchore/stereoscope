@@ -236,7 +236,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 
 	tlsConfig, err := registryOptions.TLSConfig(registryName)
 	if err != nil {
-		log.Warn("unable to configure TLS transport: %w", err)
+		log.Warnf("unable to configure TLS transport: %v", err)
 	}
 
 	// Use our custom transport that captures effective URLs after redirects
