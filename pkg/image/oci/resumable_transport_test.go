@@ -993,6 +993,18 @@ func TestParseContentRange(t *testing.T) {
 	}
 }
 
+func TestParseContentRange_echoesOnlyAPrefixOfAMalformedHeader(t *testing.T) {
+	// the server picks the header, and the error ends up in a caller's output
+	for _, header := range []string{
+		"bytes " + strings.Repeat("9", 1<<20) + "-1/2",
+		"bytes 0-1/" + strings.Repeat("x", 1<<20),
+	} {
+		_, _, _, err := parseContentRange(header)
+		require.Error(t, err)
+		assert.Less(t, len(err.Error()), 128)
+	}
+}
+
 func TestResumableTransport_refusesARangeRunningPastTheEnd(t *testing.T) {
 	// with the total withheld the parser cannot catch this, so the body's own length has to
 	body := &resumableBody{t: newTestTransport(1), total: 100, offset: 50, done: make(chan struct{})}

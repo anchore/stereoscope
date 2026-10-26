@@ -707,7 +707,12 @@ func (b *resumableBody) Close() error {
 // malformed.
 func parseContentRange(header string) (int64, int64, int64, error) {
 	malformed := func() (int64, int64, int64, error) {
-		return 0, 0, 0, fmt.Errorf("malformed Content-Range %q", header)
+		// the server picks the header's length, so only a prefix of it goes into the error
+		shown := header
+		if len(shown) > 64 {
+			shown = shown[:64] + "..."
+		}
+		return 0, 0, 0, fmt.Errorf("malformed Content-Range %q", shown)
 	}
 
 	unit, spec, ok := strings.Cut(strings.TrimSpace(header), " ")
@@ -727,7 +732,7 @@ func parseContentRange(header string) (int64, int64, int64, error) {
 
 	start, err := strconv.ParseInt(strings.TrimSpace(first), 10, 64)
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("malformed Content-Range %q: %w", header, err)
+		return malformed()
 	}
 
 	end, err := strconv.ParseInt(strings.TrimSpace(last), 10, 64)
