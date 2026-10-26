@@ -1515,28 +1515,32 @@ func TestResumableTransport_resumesABodyThatFallsSilent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		served++
-		first := served == 1
+		silent := served <= 2
 		mu.Unlock()
 
-		if first {
-			w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(payload[:1000])
+		start, status := int64(0), http.StatusOK
+		if rangeHeader := r.Header.Get("Range"); rangeHeader != "" {
+			start, _ = parseRangeRequest(rangeHeader)
+			status = http.StatusPartialContent
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(payload)-1, len(payload)))
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)-int(start)))
+		w.WriteHeader(status)
+
+		// the first body and the first resumed segment both stall partway, so the clock has to be on
+		// a resumed segment as well as on the original body
+		if silent {
+			_, _ = w.Write(payload[start : start+1000])
 			w.(http.Flusher).Flush()
 			<-r.Context().Done()
 			return
 		}
-
-		start, _ := parseRangeRequest(r.Header.Get("Range"))
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(payload)-1, len(payload)))
-		w.Header().Set("Content-Length", strconv.Itoa(len(payload)-int(start)))
-		w.WriteHeader(http.StatusPartialContent)
 		_, _ = w.Write(payload[start:])
 	}))
 	t.Cleanup(srv.Close)
 
 	transport := newTestTransport()
-	transport.idleTimeout = 50 * time.Millisecond
+	transport.idleTimeout = 200 * time.Millisecond
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
 	require.NoError(t, err)
@@ -1559,6 +1563,35 @@ func TestResumableTransport_resumesABodyThatFallsSilent(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("a body that fell silent was never resumed")
 	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 3, served, "both silent segments should have been abandoned and resumed")
+}
+
+func TestResumableTransport_aBodyThatStaysSilentSaysSo(t *testing.T) {
+	// closing a silent body makes the read fail with whatever net/http reports for a closed body,
+	// which would read as the caller having closed it
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "8192")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(srv.Close)
+
+	transport := newTestTransport()
+	transport.idleTimeout = 200 * time.Millisecond
+	transport.maxStalls = 0
+
+	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	_, err = io.ReadAll(resp.Body)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no data received within")
+	assert.NotErrorIs(t, err, http.ErrBodyReadAfterClose)
 }
 
 func TestResumableTransport_aSlowReaderIsNotASilentServer(t *testing.T) {
