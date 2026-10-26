@@ -211,7 +211,8 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 
 	// Set the user agent to indicate what binary is making the request
 	// (e.g. syft, grype)
-	options = append(options, remote.WithUserAgent(os.Args[0]))
+	userAgent := os.Args[0]
+	options = append(options, remote.WithUserAgent(userAgent))
 
 	if p != nil {
 		options = append(options, remote.WithPlatform(*toContainerRegistryPlatform(p)))
@@ -242,10 +243,13 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		log.Warnf("unable to configure TLS transport: %v", err)
 	}
 
+	// one base transport, so the pull and any resume share a connection pool
+	baseTransport := getTransport(tlsConfig)
+
 	// a resumed blob is reissued through its own client, authenticated the same way as the pull
-	var reopen func(context.Context) (*http.Client, error)
+	var reopen reopenClientFunc
 	if !registryOptions.DisableBlobResume {
-		reopen = reopenClient(ref, getTransport(tlsConfig), func(ctx context.Context) (authn.Authenticator, error) {
+		reopen = reopenClient(ref, baseTransport, userAgent, func(ctx context.Context) (authn.Authenticator, error) {
 			if authenticator != nil {
 				return authenticator, nil
 			}
@@ -254,7 +258,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	}
 
 	// Use our custom transport that captures effective URLs after redirects
-	rt := getTransportWithEffectiveURL(tlsConfig, effectiveTransport, reopen)
+	rt := getTransportWithEffectiveURL(baseTransport, effectiveTransport, reopen)
 	options = append(options, remote.WithTransport(rt))
 
 	return options
@@ -262,8 +266,9 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 
 // reopenClient lazily builds the client a resumed blob request is reissued through. it authenticates
 // against the registry the way go-containerregistry does, so a resume gets a fresh token and a freshly
-// signed redirect rather than ones that lapsed during a long transfer.
-func reopenClient(ref name.Reference, base http.RoundTripper, auth func(context.Context) (authn.Authenticator, error)) func(context.Context) (*http.Client, error) {
+// signed redirect rather than ones that lapsed during a long transfer. unlike go-containerregistry's
+// client it has no retry transport, since the resume's own stall budget already retries.
+func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, auth func(context.Context) (authn.Authenticator, error)) reopenClientFunc {
 	// one lock across the registry ping, so concurrent first resumes wait on a single build
 	var mu sync.Mutex
 	var client *http.Client
@@ -282,7 +287,7 @@ func reopenClient(ref name.Reference, base http.RoundTripper, auth func(context.
 		}
 
 		repo := ref.Context()
-		rt, err := transport.NewWithContext(ctx, repo.Registry, authenticator, transport.NewUserAgent(base, os.Args[0]),
+		rt, err := transport.NewWithContext(ctx, repo.Registry, authenticator, transport.NewUserAgent(base, userAgent),
 			[]string{repo.Scope(transport.PullScope)})
 		if err != nil {
 			return nil, err
@@ -301,10 +306,7 @@ func getTransport(tlsConfig *tls.Config) *http.Transport {
 	return rt
 }
 
-func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *effectiveURLTransport, reopen func(context.Context) (*http.Client, error)) http.RoundTripper {
-	// create base transport with TLS config
-	baseTransport := getTransport(tlsConfig)
-
+func getTransportWithEffectiveURL(baseTransport *http.Transport, effectiveTransport *effectiveURLTransport, reopen reopenClientFunc) http.RoundTripper {
 	// resume large blob downloads that the registry drops mid-stream. this must sit closest to
 	// the base transport so that it wraps the real response body, and below go-containerregistry's
 	// digest verification so that a reassembled layer is still verified end to end

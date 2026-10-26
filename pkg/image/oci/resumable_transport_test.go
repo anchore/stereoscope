@@ -248,7 +248,7 @@ func newTestTransport() *resumableTransport {
 
 // directClient reopens through base alone, following redirects as the registry client does but
 // without authenticating.
-func directClient(base http.RoundTripper) func(context.Context) (*http.Client, error) {
+func directClient(base http.RoundTripper) reopenClientFunc {
 	client := &http.Client{Transport: base, CheckRedirect: checkRedirect}
 
 	return func(context.Context) (*http.Client, error) { return client, nil }

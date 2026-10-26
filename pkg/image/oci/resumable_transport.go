@@ -59,8 +59,8 @@ var errResumeRefused = errors.New("the server refused to resume")
 // freshly signed CDN URL rather than ones that lapsed along the way.
 type resumableTransport struct {
 	base http.RoundTripper
-	// client is what reopens go through, built on first use since building it pings the registry
-	client       func(context.Context) (*http.Client, error)
+	// clientFor returns what reopens go through, built on first use since building it pings the registry
+	clientFor    reopenClientFunc
 	minProgress  int64
 	backoff      time.Duration
 	idleTimeout  time.Duration
@@ -69,10 +69,13 @@ type resumableTransport struct {
 	resumeCredit int64
 }
 
-func newResumableTransport(base http.RoundTripper, client func(context.Context) (*http.Client, error)) *resumableTransport {
+// reopenClientFunc returns the client a resumed blob request is reissued through.
+type reopenClientFunc func(context.Context) (*http.Client, error)
+
+func newResumableTransport(base http.RoundTripper, clientFor reopenClientFunc) *resumableTransport {
 	return &resumableTransport{
 		base:         base,
-		client:       client,
+		clientFor:    clientFor,
 		minProgress:  minResumeProgress,
 		backoff:      stallBackoff,
 		idleTimeout:  idleTimeout,
@@ -404,7 +407,7 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 // than to the CDN hop that dropped, so the client can authenticate it and follow a fresh redirect.
 // identity is asked for since the stream so far is wire bytes.
 func (b *resumableBody) roundTrip(ctx context.Context) (*http.Response, error) {
-	client, err := b.t.client(ctx)
+	client, err := b.t.clientFor(ctx)
 	if err != nil {
 		return nil, err
 	}
