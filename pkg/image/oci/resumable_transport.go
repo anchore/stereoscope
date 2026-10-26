@@ -280,9 +280,10 @@ func (b *resumableBody) record(n int) {
 }
 
 // finished reports whether the read is over, and with which error. a body that arrived in full is
-// finished whatever the connection made of it afterwards -- over HTTP/2 a RST_STREAM following the
-// final DATA frame surfaces as a stream error rather than io.EOF -- and otherwise a cancelled
-// context ends the read as its own error, so a truncated stream is never mistaken for a clean end.
+// finished whatever error came with its last bytes: net/http returns io.EOF alongside the final
+// read of a Content-Length body, and a connection torn down at that moment reports some other
+// error instead. otherwise a cancelled context ends the read as its own error, so a truncated
+// stream is never mistaken for a clean end.
 func (b *resumableBody) finished() (bool, error) {
 	if b.offset >= b.total {
 		return true, io.EOF

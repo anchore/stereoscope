@@ -3,6 +3,7 @@ package oci
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -604,8 +605,8 @@ func TestResumableTransport_resumesOverHTTP2(t *testing.T) {
 }
 
 func TestResumableTransport_completesWhenTheConnectionIsResetAfterTheLastByte(t *testing.T) {
-	// over HTTP/2 a RST_STREAM following the final DATA frame surfaces as a stream error rather
-	// than io.EOF; resuming from there would ask for a range past the last byte
+	// the declared length is what says a body is complete, so tearing the connection down once the
+	// last byte is out must not cost a resume, which would ask for a range past the end
 	payload := payloadOfSize(2 * 1024 * 1024)
 	server := &flakyBlobServer{payload: payload, abortAfterBody: true}
 
@@ -626,6 +627,46 @@ func TestResumableTransport_completesWhenTheConnectionIsResetAfterTheLastByte(t 
 	require.NoError(t, err)
 	assert.Equal(t, payload, got)
 	assert.Len(t, server.seenRanges(), 1, "a complete body must not be resumed at all")
+}
+
+// errAfterReader hands back its bytes and the given error together on the read that drains it.
+type errAfterReader struct {
+	data []byte
+	err  error
+}
+
+func (r *errAfterReader) Read(p []byte) (int, error) {
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	if len(r.data) == 0 {
+		return n, r.err
+	}
+	return n, nil
+}
+
+func (r *errAfterReader) Close() error { return nil }
+
+func TestResumableTransport_aBodyDeliveredInFullIsCompleteWhateverErrorCameWithIt(t *testing.T) {
+	// the read that delivers the last bytes may carry io.EOF or a connection error. either way every
+	// declared byte has arrived, and resuming would ask for a range past the end
+	payload := payloadOfSize(4096)
+
+	for _, readErr := range []error{io.EOF, errors.New("connection reset by peer")} {
+		t.Run(readErr.Error(), func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://example.com/v2/img/blobs/sha256:abc", nil)
+			body := &resumableBody{
+				t:     newTestTransport(1),
+				body:  &errAfterReader{data: payload, err: readErr},
+				req:   req,
+				total: int64(len(payload)),
+				done:  make(chan struct{}),
+			}
+
+			got, err := io.ReadAll(body)
+			require.NoError(t, err)
+			assert.Equal(t, payload, got)
+		})
+	}
 }
 
 func TestResumableTransport_readAfterCloseDoesNotRestartTheDownload(t *testing.T) {
