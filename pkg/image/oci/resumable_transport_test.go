@@ -268,7 +268,7 @@ func TestResumableTransport_reassemblesBlobAcrossDrops(t *testing.T) {
 	assert.Equal(t, payload, got, "the reassembled body should be byte-identical to the original")
 
 	// the first attempt carries no Range; each resume asks for exactly the bytes still owed, as a
-	// closed range -- an open-ended one is answered with 416 by go-containerregistry's own registry
+	// closed range, since an open-ended one is answered with 416 by go-containerregistry's own registry
 	assert.Equal(t, []string{"", "bytes=1000-8191", "bytes=2000-8191", "bytes=3000-8191"},
 		server.seenRanges())
 }
@@ -1420,8 +1420,8 @@ func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *test
 
 func TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims(t *testing.T) {
 	// a server with no real range support may echo back the range it was asked for and then serve
-	// the object from the beginning anyway. it contradicts itself doing so -- the body is longer
-	// than the span the Content-Range claims -- and that is worth catching here, because otherwise
+	// the object from the beginning anyway. it contradicts itself doing so (the body is longer
+	// than the span the Content-Range claims), and that is worth catching here, because otherwise
 	// the whole layer downloads again before the digest check rejects it.
 	payload := payloadOfSize(8192)
 	server := &flakyBlobServer{
@@ -1452,7 +1452,7 @@ func TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims(t *testing
 // the span asked for: Content-Range, Content-Length and the bytes written all agree, so the segment
 // is accepted and then ends in a bare io.EOF well short of the object. It is the shape a badly
 // configured mirror takes, and the only one that produces an io.EOF as the cause of a terminal
-// failure -- an ordinary truncation is reported by net/http as io.ErrUnexpectedEOF already.
+// failure: an ordinary truncation is reported by net/http as io.ErrUnexpectedEOF already.
 type clampingBlobServer struct {
 	payload []byte
 	clamp   int
@@ -1517,7 +1517,7 @@ func TestResumableTransport_aFailedTransferIsNeverACleanEndOfStream(t *testing.T
 // acceptAndCloseListener serves one truncated blob over a raw socket and then answers every later
 // connection by reading the request and closing without a response. That is what a load balancer
 // or CDN edge whose backend pool has drained does, and net/http reports it to the caller of
-// RoundTrip as a bare io.EOF -- the second door into the terminal error, which httptest cannot
+// RoundTrip as a bare io.EOF. This is the second door into the terminal error, which httptest cannot
 // produce because it always writes a response.
 type acceptAndCloseListener struct {
 	listener net.Listener

@@ -435,8 +435,8 @@ func truncatingProxy(t *testing.T, upstream string, drops int) (string, func() i
 
 func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T) {
 	// every other test of the resumable transport drives a bare http.Client against fixtures of our
-	// own making. this one puts it under the real go-containerregistry stack -- remote.Get, the
-	// bearer and retry transports, and verify.ReadCloser's digest check -- against
+	// own making. this one puts it under the real go-containerregistry stack (remote.Get, the
+	// bearer and retry transports, and verify.ReadCloser's digest check) against
 	// go-containerregistry's own registry implementation, which is what `crane registry serve` and
 	// ko run. that registry parses Range with Sscanf("bytes=%d-%d"), so it answers 416 to an
 	// open-ended range, which nothing driving a hand-written fixture would ever notice
