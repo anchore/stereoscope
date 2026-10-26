@@ -625,16 +625,22 @@ func Test_checkRedirect(t *testing.T) {
 		{to: "https://registry.example.com/elsewhere", allowed: true},
 		{to: "https://cdn.example.com/blob?sig=1", allowed: true},
 		{to: "https://203.0.113.7/blob", allowed: true},
-		{to: "http://127.0.0.1/blob"},
-		{to: "http://10.0.0.1/blob"},
-		{to: "http://169.254.169.254/latest/meta-data"},
-		{to: "http://[::1]/blob"},
-		{to: "http://[::ffff:127.0.0.1]/blob"},
-		{to: "http://0.0.0.0/blob"},
+		{to: "https://127.0.0.1/blob"},
+		{to: "https://10.0.0.1/blob"},
+		{to: "https://169.254.169.254/latest/meta-data"},
+		{to: "https://[::1]/blob"},
+		{to: "https://[::ffff:127.0.0.1]/blob"},
+		{to: "https://0.0.0.0/blob"},
 		// legacy spellings the resolver accepts and netip does not
-		{to: "http://127.1/blob"},
-		{to: "http://0x7f000001/blob"},
-		{to: "http://2130706433/blob"},
+		{to: "https://127.1/blob"},
+		{to: "https://0x7f000001/blob"},
+		{to: "https://2130706433/blob"},
+		// full-width digits, which the transport maps onto 127.0.0.1 when it dials
+		{to: "https://１２７．０．０．１/blob"},
+		{to: "https://cdn.exämple.com/blob"},
+		// a downgrade, even to the same host
+		{to: "http://registry.example.com/blob"},
+		{to: "http://cdn.example.com/blob"},
 	}
 
 	for _, tt := range tests {
@@ -649,6 +655,13 @@ func Test_checkRedirect(t *testing.T) {
 	}
 
 	assert.ErrorIs(t, checkRedirect(via[0], make([]*http.Request, 10)), errResumeRefused, "redirects are capped")
+
+	long := httptest.NewRequest(http.MethodGet, "https://"+strings.Repeat("a", 1<<16)+".example/", nil)
+	err := checkRedirect(long, []*http.Request{httptest.NewRequest(http.MethodGet, "https://10.0.0.1/", nil)})
+	require.NoError(t, err, "a public name is allowed whatever its length")
+	err = checkRedirect(httptest.NewRequest(http.MethodGet, "https://"+strings.Repeat("１", 1<<16)+"/", nil), via)
+	require.Error(t, err)
+	assert.Less(t, len(err.Error()), maxErrorText+128, "the refused host must be clipped in the error")
 }
 
 func TestResumableTransport_neverReturnsMoreThanWasDeclared(t *testing.T) {

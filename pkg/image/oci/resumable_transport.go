@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/anchore/stereoscope/internal/log"
 )
@@ -434,12 +435,18 @@ func (b *resumableBody) roundTrip(ctx context.Context) (*http.Response, error) {
 }
 
 // checkRedirect is go-containerregistry's checkRedirectSSRF for the reopen client: a redirect may
-// change host, but not to a loopback, private, link-local or unspecified address. a host made only of
-// numbers is refused rather than decoded, since the resolver accepts legacy spellings such as 127.1
-// that netip does not.
+// change host, but not to a loopback, private, link-local or unspecified address. it is stricter in
+// three ways. a host made only of numbers is refused rather than decoded, since the resolver accepts
+// legacy spellings such as 127.1 that netip does not. a host that is not plain ASCII is refused, since
+// the transport maps full-width digits onto an address netip never sees. and https may not drop to
+// http, as go-containerregistry already insists for foreign layers.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return fmt.Errorf("%w: stopped after 10 redirects", errResumeRefused)
+	}
+
+	if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return fmt.Errorf("%w: redirect from https to %q denied", errResumeRefused, clip(req.URL.Scheme))
 	}
 
 	from, to := via[0].URL.Hostname(), req.URL.Hostname()
@@ -449,8 +456,8 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 
 	addr, err := netip.ParseAddr(to)
 	if err != nil {
-		if numericHost(to) {
-			return fmt.Errorf("%w: redirect to the numeric host %q denied", errResumeRefused, to)
+		if !isASCII(to) || numericHost(to) {
+			return fmt.Errorf("%w: redirect to the host %q denied", errResumeRefused, clip(to))
 		}
 
 		return nil
@@ -458,10 +465,20 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 
 	if addr = addr.Unmap(); addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() ||
 		addr.IsLinkLocalMulticast() || addr.IsUnspecified() {
-		return fmt.Errorf("%w: redirect from %q to private host %q denied", errResumeRefused, from, to)
+		return fmt.Errorf("%w: redirect from %q to private host %q denied", errResumeRefused, clip(from), clip(to))
 	}
 
 	return nil
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+
+	return true
 }
 
 // numericHost reports whether every dot-separated part of a host is a number in some base, as in
