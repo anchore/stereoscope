@@ -1021,6 +1021,25 @@ func TestResumableTransport_refusesARangeRunningPastTheEnd(t *testing.T) {
 	assert.Contains(t, err.Error(), "past the end")
 }
 
+func TestResumableTransport_holdsAnUnsizedSegmentToItsSpan(t *testing.T) {
+	// with no Content-Length the span cannot be checked up front, so the body has to stop at it
+	body := &resumableBody{t: newTestTransport(1), total: 100, offset: 50, done: make(chan struct{})}
+
+	resp := &http.Response{
+		StatusCode:    http.StatusPartialContent,
+		ContentLength: -1,
+		Header:        http.Header{"Content-Range": []string{"bytes 50-59/100"}},
+		Body:          io.NopCloser(strings.NewReader(strings.Repeat("x", 30))),
+	}
+
+	segment, err := body.acceptable(resp)
+	require.NoError(t, err)
+
+	got, err := io.ReadAll(segment)
+	require.NoError(t, err)
+	assert.Len(t, got, 10, "only the declared span may be spliced in")
+}
+
 func TestResumableTransport_retriesAResumeTheServerCouldNotServeYet(t *testing.T) {
 	// a CDN edge unhealthy enough to sever the stream is exactly the one liable to answer the
 	// reopen with a 503, and that is no reason to discard everything already delivered

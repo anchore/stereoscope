@@ -592,7 +592,12 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 			errObjectChanged, total, b.total))
 	}
 
-	return resp.Body, nil
+	// a body with no declared length is held to the span here instead, so bytes past its end are
+	// never spliced in as if they continued it
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.LimitReader(resp.Body, end-start+1), resp.Body}, nil
 }
 
 // refusedStatus classifies a reopen that did not come back as 206. a busy server is worth another
