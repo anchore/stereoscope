@@ -239,11 +239,9 @@ func payloadOfSize(n int) []byte {
 // blobPath is where the fixtures are fetched from, since only registry blobs are resumed.
 const blobPath = "/v2/img/blobs/sha256:abc"
 
-// newTestTransport builds a transport that resumes above the given size with no backoff, so the
-// tests need neither large payloads nor real delays.
-func newTestTransport(minSize int64) *resumableTransport {
+// newTestTransport builds a transport with no backoff, so the tests need no real delays.
+func newTestTransport() *resumableTransport {
 	transport := newResumableTransport(http.DefaultTransport, directClient(http.DefaultTransport))
-	transport.minSize = minSize
 	transport.backoff = 0
 	return transport
 }
@@ -256,8 +254,8 @@ func directClient(base http.RoundTripper) func(context.Context) (*http.Client, e
 	return func(context.Context) (*http.Client, error) { return client, nil }
 }
 
-func newTestClient(minSize int64) *http.Client {
-	return &http.Client{Transport: newTestTransport(minSize)}
+func newTestClient() *http.Client {
+	return &http.Client{Transport: newTestTransport()}
 }
 
 func TestResumableTransport_reassemblesBlobAcrossDrops(t *testing.T) {
@@ -267,7 +265,7 @@ func TestResumableTransport_reassemblesBlobAcrossDrops(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -291,7 +289,7 @@ func TestResumableTransport_survivesManyDropsWhileMakingProgress(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -309,7 +307,7 @@ func TestResumableTransport_terminatesAgainstATricklingServer(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -336,7 +334,7 @@ func TestResumableTransport_givesUpWhenNoProgressIsMade(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -361,7 +359,7 @@ func TestResumableTransport_refusesAResumeThatIsNotPartialContent(t *testing.T) 
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -386,7 +384,7 @@ func TestResumableTransport_refusesAResumeFromTheWrongOffset(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -409,7 +407,7 @@ func TestResumableTransport_refusesAResumeWithAnUnusableContentRange(t *testing.
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -432,7 +430,7 @@ func TestResumableTransport_refusesAResumeWhenTheBlobLengthChanged(t *testing.T)
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -456,7 +454,7 @@ func TestResumableTransport_refusesAnEncodedSegment(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -474,7 +472,7 @@ func TestResumableTransport_asksForIdentityOnResume(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -499,7 +497,7 @@ func TestResumableTransport_preservesRequestHeadersAcrossAResume(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer sekrit")
 	req.Header.Set("User-Agent", "stereoscope-test")
 
-	resp, err := newTestClient(1).Do(req)
+	resp, err := newTestClient().Do(req)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -533,7 +531,7 @@ func TestResumableTransport_resumesThroughARedirectToACDN(t *testing.T) {
 	}))
 	t.Cleanup(registry.Close)
 
-	resp, err := newTestClient(1).Get(registry.URL + blobPath)
+	resp, err := newTestClient().Get(registry.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -596,7 +594,6 @@ func TestResumableTransport_resumesWithAFreshTokenAndSignedURL(t *testing.T) {
 	reopen := &http.Client{Transport: authorize, CheckRedirect: checkRedirect}
 
 	transport := newResumableTransport(http.DefaultTransport, func(context.Context) (*http.Client, error) { return reopen, nil })
-	transport.minSize = 1
 	transport.backoff = 0
 
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, registry.URL+blobPath, nil)
@@ -658,8 +655,8 @@ func TestResumableTransport_neverReturnsMoreThanWasDeclared(t *testing.T) {
 	// spliced in whole: an unwrapped net/http body caps at Content-Length, and so must this one.
 	//
 	// the segment is served chunked, so there is no Content-Length to cross-check against the
-	// Content-Range and the cap in Read is the only thing withholding the surplus. a segment that
-	// does declare a length inconsistent with its range is refused outright instead, which
+	// Content-Range, and holding it to the span is the only thing withholding the surplus. a segment
+	// that does declare a length inconsistent with its range is refused outright instead, which
 	// TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims covers
 	payload := payloadOfSize(8192)
 	overrun := payloadOfSize(500)
@@ -690,7 +687,7 @@ func TestResumableTransport_neverReturnsMoreThanWasDeclared(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -712,7 +709,6 @@ func TestResumableTransport_resumesOverHTTP2(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	transport := newResumableTransport(srv.Client().Transport, directClient(srv.Client().Transport))
-	transport.minSize = 1
 	transport.backoff = 0
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
@@ -740,7 +736,6 @@ func TestResumableTransport_completesWhenTheConnectionIsResetAfterTheLastByte(t 
 	t.Cleanup(srv.Close)
 
 	transport := newResumableTransport(srv.Client().Transport, directClient(srv.Client().Transport))
-	transport.minSize = 1
 	transport.backoff = 0
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
@@ -779,7 +774,7 @@ func TestResumableTransport_aBodyDeliveredInFullIsCompleteWhateverErrorCameWithI
 		t.Run(readErr.Error(), func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://example.com/v2/img/blobs/sha256:abc", nil)
 			body := &resumableBody{
-				t:     newTestTransport(1),
+				t:     newTestTransport(),
 				body:  &errAfterReader{data: payload, err: readErr},
 				req:   req,
 				total: int64(len(payload)),
@@ -799,7 +794,7 @@ func TestResumableTransport_readAfterCloseDoesNotRestartTheDownload(t *testing.T
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 
 	require.IsType(t, &resumableBody{}, resp.Body, "the fixture must produce a wrapped body")
@@ -824,7 +819,7 @@ func TestResumableTransport_closeAbandonsABackoffInProgress(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 	transport.backoff = 10 * time.Second
 	transport.maxStalls = 1_000_000
 
@@ -869,7 +864,7 @@ func TestResumableTransport_doesNotResumeACancelledRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	// no budget at all, so a cancellation mistaken for a drop would report giving up instead
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 	transport.maxResumes = 0
 
 	resp, err := (&http.Client{Transport: transport}).Do(req)
@@ -889,22 +884,6 @@ func TestResumableTransport_doesNotResumeACancelledRequest(t *testing.T) {
 	assert.Len(t, server.seenRanges(), before, "reading past a terminal error must not reopen anything")
 }
 
-func TestResumableTransport_leavesSmallResponsesAlone(t *testing.T) {
-	// below the threshold a drop costs little to repeat, so small blobs such as image configs stay
-	// clear of the machinery
-	server := &flakyBlobServer{payload: payloadOfSize(8192)}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient(resumeMinSize).Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	_, ok := resp.Body.(*resumableBody)
-	assert.False(t, ok, "a response below the size threshold should not be wrapped")
-}
-
 func TestResumableTransport_leavesUnknownLengthResponsesAlone(t *testing.T) {
 	// without a Content-Length there is no way to tell a truncated stream from a complete one, so
 	// such a body is passed through untouched rather than resumed on a guess
@@ -915,7 +894,7 @@ func TestResumableTransport_leavesUnknownLengthResponsesAlone(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -953,7 +932,7 @@ func TestResumableTransport_shouldResume(t *testing.T) {
 	}
 
 	encoded := func(coding string) *http.Response {
-		resp := response(http.StatusOK, resumeMinSize)
+		resp := response(http.StatusOK, 1024)
 		resp.Header.Set("Content-Encoding", coding)
 		return resp
 	}
@@ -969,7 +948,7 @@ func TestResumableTransport_shouldResume(t *testing.T) {
 		{
 			name:     "a large plain GET is wrapped",
 			req:      get(""),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: true,
 		},
 		{
@@ -987,9 +966,9 @@ func TestResumableTransport_shouldResume(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "a response just below the threshold is left alone",
+			name:     "an empty response is left alone",
 			req:      get(""),
-			resp:     response(http.StatusOK, resumeMinSize-1),
+			resp:     response(http.StatusOK, 0),
 			expected: false,
 		},
 		{
@@ -999,69 +978,70 @@ func TestResumableTransport_shouldResume(t *testing.T) {
 			expected: false,
 		},
 		{
+			// a server that ignores Range answers 200, and the offsets would then be wrong
 			name:     "a caller's own range request is left alone",
 			req:      get("bytes=10-"),
-			resp:     response(http.StatusPartialContent, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: false,
 		},
 		{
 			name:     "a non-200 response is left alone",
 			req:      get(""),
-			resp:     response(http.StatusNotFound, resumeMinSize),
+			resp:     response(http.StatusNotFound, 1024),
 			expected: false,
 		},
 		{
 			name:     "a HEAD is left alone",
 			req:      httptest.NewRequest(http.MethodHead, "http://example.com/v2/img/blobs/sha256:abc", nil),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: false,
 		},
 		{
 			name:     "a response with no body is left alone",
 			req:      get(""),
-			resp:     &http.Response{StatusCode: http.StatusOK, ContentLength: resumeMinSize},
+			resp:     &http.Response{StatusCode: http.StatusOK, ContentLength: 1024},
 			expected: false,
 		},
 		{
 			name:     "a manifest is left alone, since nothing verifies one fetched by tag",
 			req:      httptest.NewRequest(http.MethodGet, "http://example.com/v2/img/manifests/latest", nil),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: false,
 		},
 		{
 			name:     "a blob in a repository with a blobs component is wrapped",
 			req:      httptest.NewRequest(http.MethodGet, "http://example.com/v2/org/blobs/app/blobs/sha256:abc", nil),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: true,
 		},
 		{
 			name:     "a manifest in a repository with a blobs component is left alone",
 			req:      httptest.NewRequest(http.MethodGet, "http://example.com/v2/org/blobs/app/manifests/sha256:abc", nil),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: false,
 		},
 		{
 			name:     "an upload session is left alone",
 			req:      httptest.NewRequest(http.MethodGet, "http://example.com/v2/img/blobs/uploads/1234", nil),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: false,
 		},
 		{
 			name:     "a CDN hop is wrapped when the registry request it came from was for a blob",
 			req:      redirected("http://example.com/v2/img/blobs/sha256:abc", "http://cdn.example.com/x/y?sig=1"),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: true,
 		},
 		{
 			name:     "a CDN hop is left alone when the registry request it came from was not for a blob",
 			req:      redirected("http://example.com/v2/img/manifests/latest", "http://cdn.example.com/x/y?sig=1"),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: false,
 		},
 		{
 			name:     "a request carrying a body is left alone",
 			req:      httptest.NewRequest(http.MethodGet, "http://example.com/v2/img/blobs/sha256:abc", strings.NewReader("x")),
-			resp:     response(http.StatusOK, resumeMinSize),
+			resp:     response(http.StatusOK, 1024),
 			expected: false,
 		},
 	}
@@ -1139,7 +1119,7 @@ func Test_quoted(t *testing.T) {
 
 func TestResumableTransport_refusesARangeRunningPastTheEnd(t *testing.T) {
 	// with the total withheld the parser cannot catch this, so the body's own length has to
-	body := &resumableBody{t: newTestTransport(1), total: 100, offset: 50, done: make(chan struct{})}
+	body := &resumableBody{t: newTestTransport(), total: 100, offset: 50, done: make(chan struct{})}
 
 	resp := &http.Response{
 		StatusCode:    http.StatusPartialContent,
@@ -1155,7 +1135,7 @@ func TestResumableTransport_refusesARangeRunningPastTheEnd(t *testing.T) {
 
 func TestResumableTransport_holdsAnUnsizedSegmentToItsSpan(t *testing.T) {
 	// with no Content-Length the span cannot be checked up front, so the body has to stop at it
-	body := &resumableBody{t: newTestTransport(1), total: 100, offset: 50, done: make(chan struct{})}
+	body := &resumableBody{t: newTestTransport(), total: 100, offset: 50, done: make(chan struct{})}
 
 	resp := &http.Response{
 		StatusCode:    http.StatusPartialContent,
@@ -1187,7 +1167,7 @@ func TestResumableTransport_retriesAResumeTheServerCouldNotServeYet(t *testing.T
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -1235,7 +1215,7 @@ func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
 			srv := httptest.NewServer(server)
 			t.Cleanup(srv.Close)
 
-			resp, err := newTestClient(1).Get(srv.URL + blobPath)
+			resp, err := newTestClient().Get(srv.URL + blobPath)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -1284,7 +1264,7 @@ func TestResumableTransport_acceptsAnIdentityContentEncoding(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -1319,7 +1299,7 @@ func TestResumableTransport_givesUpOnceTheTotalBudgetIsSpent(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -1347,7 +1327,7 @@ func TestResumableTransport_retriesABusyServerWhoseErrorPageIsEncoded(t *testing
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
 
@@ -1392,7 +1372,7 @@ func TestResumableTransport_closeAbortsAReopenInFlight(t *testing.T) {
 
 	// a single stall allowed, so a Close mistaken for a failed attempt would exhaust the budget and
 	// report giving up instead of the Close
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 	transport.maxStalls = 1
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
@@ -1438,7 +1418,7 @@ func TestResumableTransport_cancellingThePullAbortsAReopenInFlight(t *testing.T)
 	}))
 	t.Cleanup(srv.Close)
 
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 	transport.maxStalls = 1
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1488,7 +1468,7 @@ func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *test
 	}))
 	t.Cleanup(srv.Close)
 
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 	transport.idleTimeout = 50 * time.Millisecond
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
@@ -1533,7 +1513,7 @@ func TestResumableTransport_resumesABodyThatFallsSilent(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 	transport.idleTimeout = 50 * time.Millisecond
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
@@ -1567,7 +1547,7 @@ func TestResumableTransport_aSlowReaderIsNotASilentServer(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 	transport.idleTimeout = 20 * time.Millisecond
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
@@ -1594,7 +1574,7 @@ func TestResumableTransport_progressEarnsBackTotalBudget(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 	transport.resumeCredit = minResumeProgress
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
@@ -1623,7 +1603,7 @@ func TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims(t *testing
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -1690,7 +1670,7 @@ func TestResumableTransport_aFailedTransferIsNeverACleanEndOfStream(t *testing.T
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL + blobPath)
+	resp, err := newTestClient().Get(srv.URL + blobPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -1780,7 +1760,7 @@ func TestResumableTransport_aReopenThatIsNeverAnsweredIsNotACleanEndOfStream(t *
 	payload := payloadOfSize(64 * 1024)
 	server := newAcceptAndCloseListener(t, payload, 1024)
 
-	transport := newTestTransport(1)
+	transport := newTestTransport()
 
 	resp, err := (&http.Client{Transport: transport}).Get(server.url())
 	require.NoError(t, err)

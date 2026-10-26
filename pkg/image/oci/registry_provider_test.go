@@ -329,32 +329,8 @@ func pushRandomRegistryImage(t *testing.T, registryHost, repo, tag string) {
 	require.NoError(t, err)
 }
 
-// pushLargeRegistryImage pushes an image whose single layer is comfortably above resumeMinSize, so
-// that the resumable transport actually engages on it.
-func pushLargeRegistryImage(t *testing.T, registryHost, repo, tag string) {
-	t.Helper()
-
-	baseImg, err := random.Image(4*1024*1024, 1)
-	require.NoError(t, err)
-
-	cfg, err := baseImg.ConfigFile()
-	require.NoError(t, err)
-
-	cfg.OS = "linux"
-	cfg.Architecture = runtime.GOARCH
-
-	img, err := mutate.ConfigFile(baseImg, cfg)
-	require.NoError(t, err)
-
-	opts := []name.Option{name.Insecure, name.WithDefaultRegistry(registryHost)}
-	ref, err := name.ParseReference(repo+":"+tag, opts...)
-	require.NoError(t, err)
-
-	require.NoError(t, remote.Write(ref, img, remote.WithUserAgent("stereoscope-test")))
-}
-
 // truncatingProxy forwards to upstream, tearing the connection down partway through the first
-// `drops` responses to each large blob, so that the read has to be resumed repeatedly. more than one
+// `drops` responses to each blob, so that the read has to be resumed repeatedly. more than one
 // drop matters: a single splice exercises neither the budgets nor a second pass through
 // verify.ReadCloser's running hash. it returns the proxy's host and a count of the truncations it
 // has made.
@@ -392,18 +368,9 @@ func truncatingProxy(t *testing.T, upstream string, drops int) (string, func() i
 		}
 		w.WriteHeader(resp.StatusCode)
 
-		// only what the transport will actually wrap: truncating the config blob, which is a few
-		// hundred bytes and far below resumeMinSize, would break the test in a way that looks like
-		// the feature failing. the size is the blob's, not this segment's, so that resumed segments
-		// are truncated too however short they get
-		blobSize := int64(len(body))
-		if _, _, total, err := parseContentRange(resp.Header.Get("Content-Range")); err == nil && total > 0 {
-			blobSize = total
-		}
-
 		mu.Lock()
 		truncate := r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") &&
-			blobSize > resumeMinSize && truncated[r.URL.Path] < drops
+			len(body) > 1 && truncated[r.URL.Path] < drops
 		if truncate {
 			truncated[r.URL.Path]++
 		}
@@ -441,14 +408,14 @@ func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T
 	// ko run. that registry parses Range with Sscanf("bytes=%d-%d"), so it answers 416 to an
 	// open-ended range, which nothing driving a hand-written fixture would ever notice
 	upstream := makeRegistry(t)
-	pushLargeRegistryImage(t, upstream, "resume-probe", "latest")
+	pushRandomRegistryImage(t, upstream, "resume-probe", "latest")
 
 	generator := file.TempDirGenerator{}
 	defer func() { _ = generator.Cleanup() }()
 
-	// several drops per blob, so the budgets and the running digest are both exercised across
-	// multiple splices rather than a single one
-	proxy, truncations := truncatingProxy(t, upstream, 4)
+	// two drops per blob, so the running digest is exercised across more than one splice. each is
+	// a stall on blobs this small, so more would only add backoff
+	proxy, truncations := truncatingProxy(t, upstream, 2)
 	imageStr := fmt.Sprintf("%s/resume-probe:latest", proxy)
 	provider := NewRegistryProvider(&generator, image.RegistryOptions{InsecureUseHTTP: true}, imageStr, nil)
 
@@ -457,9 +424,9 @@ func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T
 	require.NotNil(t, img)
 	t.Cleanup(func() { _ = img.Cleanup() })
 
-	// the image has one blob above resumeMinSize, and every drop asked for must actually have
-	// happened, or this test passes without exercising a resume at all
-	assert.Equal(t, 4, truncations())
+	// two layers and a config, and every drop asked for must actually have happened, or this test
+	// passes without exercising a resume at all
+	assert.Equal(t, 3*2, truncations())
 }
 
 func Test_RegistryProvider_blobResumeCanBeDisabled(t *testing.T) {

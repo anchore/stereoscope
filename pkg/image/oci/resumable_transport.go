@@ -18,11 +18,6 @@ import (
 )
 
 const (
-	// resumeMinSize is the blob size above which a body is worth wrapping. below it a drop costs
-	// little to repeat, and a request that fails before its body starts flowing is already retried
-	// by go-containerregistry.
-	resumeMinSize = 1024 * 1024
-
 	// maxConsecutiveStalls is how many attempts in a row may fail to deliver meaningful progress
 	// before the read is abandoned. progress replenishes it, so a drop in the middle of an
 	// otherwise healthy transfer costs nothing.
@@ -95,7 +90,6 @@ type resumableTransport struct {
 	// client returns the client a reopen is issued through. it is called on each reopen so that
 	// building it, which may ping the registry, waits until a resume is actually needed
 	client       func(context.Context) (*http.Client, error)
-	minSize      int64
 	minProgress  int64
 	backoff      time.Duration
 	idleTimeout  time.Duration
@@ -108,7 +102,6 @@ func newResumableTransport(base http.RoundTripper, client func(context.Context) 
 	return &resumableTransport{
 		base:         base,
 		client:       client,
-		minSize:      resumeMinSize,
 		minProgress:  minResumeProgress,
 		backoff:      stallBackoff,
 		idleTimeout:  idleTimeout,
@@ -137,7 +130,7 @@ func (t *resumableTransport) RoundTrip(req *http.Request) (*http.Response, error
 
 // shouldResume reports whether a response body is worth wrapping: a plain GET for a registry blob,
 // not itself a range request so that the offset arithmetic starts from zero, which returned a body
-// of known length large enough to be worth resuming.
+// of known length.
 //
 // only blobs are wrapped because only blobs are digest-verified above this transport. a manifest
 // fetched by tag is not, so a resume spliced across a re-push of the tag would go undetected.
@@ -158,7 +151,7 @@ func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response
 		// identity segment spliced onto it. net/http only strips a coding it asked for itself, and
 		// that sets ContentLength to -1, so an explicit one from the server survives to here
 		identityEncoded(resp.Header) &&
-		resp.ContentLength >= t.minSize
+		resp.ContentLength > 0
 }
 
 // isBlobRequest reports whether a request is fetching a registry blob, a /v2/<name>/blobs/<digest>
@@ -225,16 +218,6 @@ type resumableBody struct {
 func (b *resumableBody) Read(p []byte) (int, error) {
 	if b.failed != nil {
 		return 0, b.failed
-	}
-
-	// never hand back more than the response declared, as an unwrapped net/http body would not
-	remaining := b.total - b.offset
-	if remaining <= 0 {
-		return 0, b.latch(io.EOF)
-	}
-
-	if int64(len(p)) > remaining {
-		p = p[:remaining]
 	}
 
 	for {
