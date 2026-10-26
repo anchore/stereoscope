@@ -1127,6 +1127,15 @@ func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
 	}
 }
 
+func Test_forLog(t *testing.T) {
+	original := httptest.NewRequest(http.MethodGet, "https://registry.example.com/v2/img/blobs/sha256:abc", nil)
+	cdn := httptest.NewRequest(http.MethodGet, "https://cdn.example.com/token=sekrit/blob?sig=sekrit", nil)
+	cdn.Response = &http.Response{StatusCode: http.StatusTemporaryRedirect, Request: original}
+
+	assert.Equal(t, "registry.example.com/v2/img/blobs/sha256:abc", forLog(cdn),
+		"a signed CDN URL must never reach a log line or an error")
+}
+
 func TestResumableTransport_acceptsAnIdentityContentEncoding(t *testing.T) {
 	// reopen asks for identity, and a server that echoes the Accept-Encoding it was sent returns
 	// it. identity is not a valid content-coding for a response, so it means the same as no header

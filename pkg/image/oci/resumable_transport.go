@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -184,14 +183,19 @@ func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response
 // the response that caused it, so the walk back to the first one finds the registry URL. a foreign
 // layer, fetched from a URL of the manifest's choosing rather than the registry's, is not one.
 func isBlobRequest(req *http.Request) bool {
+	_, digest, ok := strings.Cut(firstRequest(req).URL.Path, "/blobs/")
+
+	// an upload session lives under /blobs/uploads/, and a digest is algorithm:hex
+	return ok && strings.Contains(digest, ":") && !strings.Contains(digest, "/")
+}
+
+// firstRequest walks back through any redirects to the request the client began with.
+func firstRequest(req *http.Request) *http.Request {
 	for req.Response != nil && req.Response.Request != nil {
 		req = req.Response.Request
 	}
 
-	_, digest, ok := strings.Cut(req.URL.Path, "/blobs/")
-
-	// an upload session lives under /blobs/uploads/, and a digest is algorithm:hex
-	return ok && strings.Contains(digest, ":") && !strings.Contains(digest, "/")
+	return req
 }
 
 // resumableBody is the io.ReadCloser handed back in place of a large response body. it tracks how
@@ -339,18 +343,18 @@ func (b *resumableBody) resume(cause error) error {
 		b.resumes++
 		if b.resumes > b.t.maxResumes {
 			return fmt.Errorf("gave up resuming %s at byte %d after %d attempts in total: %w",
-				forLog(b.req.URL), b.offset, b.t.maxResumes, cause)
+				forLog(b.req), b.offset, b.t.maxResumes, cause)
 		}
 
 		b.stalls++
 		if b.stalls > b.t.maxStalls {
 			return fmt.Errorf("gave up resuming %s at byte %d after %d attempts without progress: %w",
-				forLog(b.req.URL), b.offset, b.t.maxStalls, cause)
+				forLog(b.req), b.offset, b.t.maxStalls, cause)
 		}
 
 		// Info rather than Debug: a run of these is the only sign an operator has that a slow pull
 		// is recovering rather than wedged, and there are at most maxTotalResumes of them
-		log.WithFields("url", forLog(b.req.URL), "offset", b.offset, "error", cause).
+		log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause).
 			Info("blob stream dropped, resuming from the current offset")
 
 		// the first attempt after a drop goes out at once; only repeated failures back off. sleep
@@ -378,7 +382,7 @@ func (b *resumableBody) resume(cause error) error {
 
 			if permanentResumeError(err) {
 				return fmt.Errorf("cannot resume %s at byte %d after %w: %w",
-					forLog(b.req.URL), b.offset, cause, err)
+					forLog(b.req), b.offset, cause, err)
 			}
 
 			// the same renaming the read error gets, and for the same reason: http.Transport hands
@@ -736,9 +740,11 @@ func parseContentRange(header string) (int64, int64, int64, error) {
 	return start, end, total, nil
 }
 
-// forLog renders a URL without its query string, which for a CDN-signed blob URL carries the
-// access token.
-func forLog(u *url.URL) string {
+// forLog names a blob by the registry URL it was requested from, never the CDN URL it was redirected
+// to: a signed CDN URL carries its access token in the query or, for some CDNs, in the path itself.
+func forLog(req *http.Request) string {
+	u := firstRequest(req).URL
+
 	return u.Host + u.Path
 }
 
