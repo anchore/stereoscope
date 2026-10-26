@@ -518,6 +518,10 @@ type imageSquashOnlyKey struct{}
 // memory grows with layers x files. Use this when nothing needs a per-layer squash (for example a
 // squashed-scope scan): Layer.SquashedTree and Layer.SquashedSearchContext are then nil on every
 // layer except the top one, and ResolveLinkByLayerSquash only works for the top layer.
+//
+// It applies to every Read under the returned context and cannot be switched back off in a child
+// context, so set it on a context scoped to the one read, never on one shared with reads that need
+// per-layer squashes. stereoscope.WithImageSquashOnly scopes it to a single GetImage call.
 func WithImageSquashOnly(ctx context.Context) context.Context {
 	return context.WithValue(ctx, imageSquashOnlyKey{}, true)
 }
