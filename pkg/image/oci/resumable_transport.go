@@ -199,7 +199,10 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 
 			return n, b.latch(final)
 		}
-		if resumeErr := b.resume(quoted(shortRead(readErr))); resumeErr != nil {
+		// a clean io.EOF short of the blob is a segment ending where its Content-Range said it would,
+		// as on a CDN that caps spans, rather than a dropped connection
+		spanEnded := readErr == io.EOF
+		if resumeErr := b.resume(quoted(shortRead(readErr)), spanEnded); resumeErr != nil {
 			return n, b.latch(resumeErr)
 		}
 		if n > 0 {
@@ -260,12 +263,17 @@ func (b *resumableBody) finished() (bool, error) {
 
 // resume closes the failed connection and reopens the request from the current offset, retrying
 // until it succeeds or runs out of budget.
-func (b *resumableBody) resume(cause error) error {
+func (b *resumableBody) resume(cause error, spanEnded bool) error {
 	b.closeCurrent()
 
-	// info, since it is the only sign an operator has that a slow pull is recovering rather than wedged
-	log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause).
-		Info("blob stream ended early, resuming from the current offset")
+	// a drop is info, since it is the only sign an operator has that a slow pull is recovering rather
+	// than wedged. a capped span is routine and would otherwise log one line per span
+	logger := log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause)
+	if spanEnded {
+		logger.Debug("blob span ended, continuing from the current offset")
+	} else {
+		logger.Info("blob stream ended early, resuming from the current offset")
+	}
 
 	for {
 		b.resumes++
