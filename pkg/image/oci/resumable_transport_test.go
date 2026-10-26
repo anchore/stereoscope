@@ -897,9 +897,7 @@ func TestParseContentRange(t *testing.T) {
 
 func TestResumableTransport_retriesAResumeTheServerCouldNotServeYet(t *testing.T) {
 	// a CDN edge unhealthy enough to sever the stream is exactly the one liable to answer the
-	// reopen with a 503. treating that as "this server cannot resume" discarded everything already
-	// delivered, while a dropped connection from the same host was survivable: the asymmetry was
-	// not intended.
+	// reopen with a 503, and that is no reason to discard everything already delivered
 	payload := payloadOfSize(8192)
 	server := &flakyBlobServer{
 		payload:         payload,
@@ -957,9 +955,8 @@ func TestResumableTransport_spendsTheBudgetWhenTheServerStaysUnavailable(t *test
 
 func TestResumableTransport_refusesAResumeWhoseCredentialsWereRejected(t *testing.T) {
 	// reopen reissues the request below go-containerregistry's auth transport, so every attempt
-	// would carry the same expired token and earn the same refusal. this stays permanent on
-	// purpose; only the diagnosis changes, because blaming range support sent operators hunting
-	// for a registry limitation that does not exist.
+	// would carry the same expired token and earn the same refusal. it is permanent, and reported as
+	// a credentials problem rather than as missing range support
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			server := &flakyBlobServer{
@@ -1045,9 +1042,8 @@ func TestResumableTransport_givesUpOnceTheTotalBudgetIsSpent(t *testing.T) {
 }
 
 func TestResumableTransport_retriesABusyServerWhoseErrorPageIsEncoded(t *testing.T) {
-	// the coding check guards a body about to be spliced, which is only ever a 206. running it
-	// ahead of the status check made a busy server serving a compressed error page indistinguishable
-	// from one that cannot resume at all, and that verdict is permanent.
+	// the coding check guards a body about to be spliced, which is only ever a 206. a busy server
+	// serving a compressed error page must still be retried, not refused as one that cannot resume
 	payload := payloadOfSize(8192)
 	server := &flakyBlobServer{
 		payload:                  payload,

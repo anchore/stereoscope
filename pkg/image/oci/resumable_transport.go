@@ -94,11 +94,9 @@ var errCredentialsRejected = errors.New("the server rejected the credentials on 
 // path's and not a universal one -- a manifest fetched by tag is not digest-verified -- which is
 // why the offset, length and coding of every resumed response are checked here as well.
 //
-// termination is two budgets and no more: consecutive attempts that deliver no meaningful
-// progress, and reopens in total. an earlier revision carried five interacting ones, and each
-// extra strangled some legitimate transfer before it was tuned back, so the pair is kept
-// deliberately plain. between them they bound the number of attempts; the only clock is on a
-// reopen producing response headers, never on the transfer itself.
+// termination is two budgets: consecutive attempts that deliver no meaningful progress, and
+// reopens in total. between them they bound the number of attempts; the only clock is on a reopen
+// producing response headers, never on the transfer itself.
 type resumableTransport struct {
 	base        http.RoundTripper
 	minSize     int64
@@ -412,7 +410,7 @@ func (b *resumableBody) sleep(d time.Duration) error {
 // the range is closed rather than open-ended. go-containerregistry's own registry -- which is what
 // `crane registry serve` and ko run, and which a good many CI harnesses embed -- parses the header
 // with Sscanf("bytes=%d-%d") and answers 416 to "bytes=N-", which would discard the layer on its
-// first drop. every registry probed for this change answered a closed range correctly.
+// first drop.
 //
 // identity is asked for because the stream so far is wire bytes: splicing a decoded segment onto it
 // would be caught by a blob's digest but by nothing at all on a wrapped manifest.
@@ -483,9 +481,8 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 		return reject(b.refusedStatus(resp))
 	}
 
-	// the coding check guards a body about to be spliced, so it belongs below the status one. run
-	// first, it read a busy server that serves its error page compressed as one that cannot resume
-	// at all, and that verdict is permanent
+	// the coding check guards a body about to be spliced, so it comes after the status check: a
+	// busy server may serve its error page compressed, and that must not read as a permanent refusal
 	if !identityEncoded(resp.Header.Get("Content-Encoding")) {
 		return reject(fmt.Errorf("%w: the resumed segment came back encoded", errNoRangeSupport))
 	}
@@ -519,12 +516,9 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 	return resp.Body, nil
 }
 
-// refusedStatus classifies a reopen that did not come back as 206.
-//
-// the distinction matters more than it looks. lumping every status into "this server cannot
-// resume" made a busy CDN indistinguishable from one that has never heard of Range, and since that
-// verdict is permanent a single 503 discarded however many gigabytes had already arrived -- while
-// a dropped TCP connection from the very same host was survivable. that asymmetry was not intended.
+// refusedStatus classifies a reopen that did not come back as 206. a busy server is worth another
+// attempt, since a CDN edge unhealthy enough to sever a stream is the one liable to answer its
+// reopen with a 503; a server that cannot or will not serve the range is not.
 func (b *resumableBody) refusedStatus(resp *http.Response) error {
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
