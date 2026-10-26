@@ -16,12 +16,9 @@ import (
 )
 
 const (
-	// resumeMinSize is the response size above which a body is worth wrapping. below roughly this
-	// size a response arrives in too few segments for a mid-body drop to be a realistic failure,
-	// and a request that fails before its body starts flowing is already retried by
-	// go-containerregistry. it is a size predicate rather than a "blobs only" one, so an unusually
-	// large manifest is wrapped too; gating on a /blobs/ path segment was rejected because the URL
-	// actually read is the post-redirect CDN one, whose shape is the CDN's business.
+	// resumeMinSize is the blob size above which a body is worth wrapping. below it a drop costs
+	// little to repeat, and a request that fails before its body starts flowing is already retried
+	// by go-containerregistry.
 	resumeMinSize = 1024 * 1024
 
 	// maxConsecutiveStalls is how many attempts in a row may fail to deliver meaningful progress
@@ -103,11 +100,11 @@ var errCredentialsRejected = errors.New("the server rejected the credentials on 
 // connection surfaces as an unexpected EOF and the entire layer is discarded, however much of it
 // had already arrived.
 //
-// this sits below go-containerregistry's verification wrapper, so for a blob the digest and size
-// of the reassembled stream are still checked end to end: a resume that splices in the wrong bytes
-// fails the layer exactly as a corrupt single-shot download would. that backstop is the blob
-// path's and not a universal one -- a manifest fetched by tag is not digest-verified -- which is
-// why the offset, length and coding of every resumed response are checked here as well.
+// only blobs are wrapped, and this sits below go-containerregistry's verification wrapper, so the
+// digest and size of every reassembled stream are still checked end to end: a resume that splices
+// in the wrong bytes fails the layer exactly as a corrupt single-shot download would. the offset,
+// length and coding of each resumed response are checked here as well, so that a server which
+// cannot resume costs one request rather than a whole layer before the digest says so.
 //
 // termination is two budgets: consecutive attempts that deliver no meaningful progress, and
 // reopens in total. between them they bound the number of attempts; the only clock is on a reopen
@@ -155,9 +152,12 @@ func (t *resumableTransport) RoundTrip(req *http.Request) (*http.Response, error
 	return resp, nil
 }
 
-// shouldResume reports whether a response body is worth wrapping: a plain GET, not itself a range
-// request so that the offset arithmetic starts from zero, which returned a body of known length
-// large enough to be a layer blob.
+// shouldResume reports whether a response body is worth wrapping: a plain GET for a registry blob,
+// not itself a range request so that the offset arithmetic starts from zero, which returned a body
+// of known length large enough to be worth resuming.
+//
+// only blobs are wrapped because only blobs are digest-verified above this transport. a manifest
+// fetched by tag is not, so a resume spliced across a re-push of the tag would go undetected.
 //
 // the length must be known because it is the only way to tell a stream that ended early from one
 // that ended properly. it also keeps transparently decompressed responses out, since net/http sets
@@ -165,6 +165,7 @@ func (t *resumableTransport) RoundTrip(req *http.Request) (*http.Response, error
 // always over wire bytes, and an identity segment cannot be spliced onto a stream that is not.
 func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response) bool {
 	return req.Method == http.MethodGet &&
+		isBlobRequest(req) &&
 		// Clone shares the body reader, so a reissued request would resend a consumed one
 		(req.Body == nil || req.Body == http.NoBody) &&
 		req.Header.Get("Range") == "" &&
@@ -175,6 +176,22 @@ func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response
 		// that sets ContentLength to -1, so an explicit one from the server survives to here
 		identityEncoded(resp.Header) &&
 		resp.ContentLength >= t.minSize
+}
+
+// isBlobRequest reports whether a request is fetching a registry blob, a /v2/<name>/blobs/<digest>
+// URL. a blob is usually served by a redirect to a CDN, so the request seen here is often the
+// redirected one, whose path is the CDN's business; the client links each redirected request to
+// the response that caused it, so the walk back to the first one finds the registry URL. a foreign
+// layer, fetched from a URL of the manifest's choosing rather than the registry's, is not one.
+func isBlobRequest(req *http.Request) bool {
+	for req.Response != nil && req.Response.Request != nil {
+		req = req.Response.Request
+	}
+
+	_, digest, ok := strings.Cut(req.URL.Path, "/blobs/")
+
+	// an upload session lives under /blobs/uploads/, and a digest is algorithm:hex
+	return ok && strings.Contains(digest, ":") && !strings.Contains(digest, "/")
 }
 
 // resumableBody is the io.ReadCloser handed back in place of a large response body. it tracks how
