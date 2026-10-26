@@ -1499,7 +1499,7 @@ func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *test
 
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no response headers")
+	assert.Contains(t, err.Error(), "no response to the resumed range request")
 	assert.NotErrorIs(t, err, context.Canceled, "a timeout must not be reported as a cancellation")
 	assert.Contains(t, err.Error(), "without progress", "a timeout is retried like any other stall")
 }

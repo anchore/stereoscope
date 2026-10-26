@@ -27,7 +27,9 @@ type RegistryOptions struct {
 
 	// DisableBlobResume turns off resuming a registry blob download from where it stopped when the
 	// connection drops partway through, so the layer fails outright instead. Resuming is on by
-	// default, and applies to the OCI registry provider only.
+	// default, and applies to the OCI registry provider only. It also turns off what comes with it:
+	// a read that receives nothing for two minutes is treated as a drop, and the first resume of a
+	// pull pings and authenticates against the registry again.
 	DisableBlobResume bool
 }
 

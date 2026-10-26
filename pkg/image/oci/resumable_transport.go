@@ -33,9 +33,10 @@ const (
 	// enough, since one byte per connection would replenish it for ever.
 	minResumeProgress = 64 * 1024
 
-	// idleTimeout bounds how long a reopen may wait for headers, and how long a read may wait for
-	// its next bytes. a slow body is never on a clock, only a silent one.
-	idleTimeout = 30 * time.Second
+	// idleTimeout bounds how long a reopen may take to get a response, re-authenticating included,
+	// and how long a read may wait for its next bytes. a slow body is never on a clock, only a silent
+	// one. it is generous so that a proxy pausing to fill from upstream is not taken for a drop.
+	idleTimeout = 2 * time.Minute
 
 	// stallBackoff is multiplied by the consecutive stall count. the first attempt after a drop
 	// goes out at once.
@@ -395,7 +396,7 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 			closeQuietly(resp.Body)
 		}
 
-		return nil, fmt.Errorf("no response headers to the resumed range request within %s", b.t.idleTimeout)
+		return nil, fmt.Errorf("no response to the resumed range request within %s", b.t.idleTimeout)
 	}
 
 	// only an accepted body still needs its context
