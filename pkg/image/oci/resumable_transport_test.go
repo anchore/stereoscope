@@ -747,7 +747,11 @@ func TestResumableTransport_doesNotResumeACancelledRequest(t *testing.T) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+blobPath, nil)
 	require.NoError(t, err)
 
-	resp, err := newTestClient(1).Do(req)
+	// no budget at all, so a cancellation mistaken for a drop would report giving up instead
+	transport := newTestTransport(1)
+	transport.maxResumes = 0
+
+	resp, err := (&http.Client{Transport: transport}).Do(req)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
 
@@ -756,6 +760,7 @@ func TestResumableTransport_doesNotResumeACancelledRequest(t *testing.T) {
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled, "cancellation should surface as such, not as a clean EOF")
+	assert.NotContains(t, err.Error(), "gave up", "a cancellation is not a dropped stream to resume")
 
 	before := len(server.seenRanges())
 	_, again := resp.Body.Read(make([]byte, 16))

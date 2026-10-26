@@ -354,10 +354,11 @@ func pushLargeRegistryImage(t *testing.T, registryHost, repo, tag string) {
 }
 
 // truncatingProxy forwards to upstream, tearing the connection down partway through the first
-// `drops` responses to each blob, so that the read has to be resumed repeatedly. more than one drop
-// matters: a single splice exercises neither the budgets nor a second pass through
-// verify.ReadCloser's running hash.
-func truncatingProxy(t *testing.T, upstream string, drops int) string {
+// `drops` responses to each large blob, so that the read has to be resumed repeatedly. more than one
+// drop matters: a single splice exercises neither the budgets nor a second pass through
+// verify.ReadCloser's running hash. it returns the proxy's host and a count of the truncations it
+// has made.
+func truncatingProxy(t *testing.T, upstream string, drops int) (string, func() int) {
 	t.Helper()
 
 	var mu sync.Mutex
@@ -391,18 +392,24 @@ func truncatingProxy(t *testing.T, upstream string, drops int) string {
 		}
 		w.WriteHeader(resp.StatusCode)
 
+		// only what the transport will actually wrap: truncating the config blob, which is a few
+		// hundred bytes and far below resumeMinSize, would break the test in a way that looks like
+		// the feature failing. the size is the blob's, not this segment's, so that resumed segments
+		// are truncated too however short they get
+		blobSize := int64(len(body))
+		if _, _, total, err := parseContentRange(resp.Header.Get("Content-Range")); err == nil && total > 0 {
+			blobSize = total
+		}
+
 		mu.Lock()
 		truncate := r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") &&
-			truncated[r.URL.Path] < drops
+			blobSize > resumeMinSize && truncated[r.URL.Path] < drops
 		if truncate {
 			truncated[r.URL.Path]++
 		}
 		mu.Unlock()
 
-		// only what the transport will actually wrap: truncating the config blob, which is a few
-		// hundred bytes and far below resumeMinSize, would break the test in a way that looks like
-		// the feature failing
-		if truncate && int64(len(body)) > resumeMinSize {
+		if truncate {
 			_, _ = w.Write(body[:len(body)/2])
 			w.(http.Flusher).Flush()
 			panic(http.ErrAbortHandler)
@@ -412,7 +419,18 @@ func truncatingProxy(t *testing.T, upstream string, drops int) string {
 	}))
 	t.Cleanup(srv.Close)
 
-	return strings.TrimPrefix(srv.URL, "http://")
+	count := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+
+		total := 0
+		for _, n := range truncated {
+			total += n
+		}
+		return total
+	}
+
+	return strings.TrimPrefix(srv.URL, "http://"), count
 }
 
 func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T) {
@@ -430,23 +448,31 @@ func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T
 
 	// several drops per blob, so the budgets and the running digest are both exercised across
 	// multiple splices rather than a single one
-	imageStr := fmt.Sprintf("%s/resume-probe:latest", truncatingProxy(t, upstream, 4))
+	proxy, truncations := truncatingProxy(t, upstream, 4)
+	imageStr := fmt.Sprintf("%s/resume-probe:latest", proxy)
 	provider := NewRegistryProvider(&generator, image.RegistryOptions{InsecureUseHTTP: true}, imageStr, nil)
 
 	img, err := provider.Provide(context.TODO())
 	require.NoError(t, err, "the layer must survive a mid-stream drop and pass the digest check")
 	require.NotNil(t, img)
 	t.Cleanup(func() { _ = img.Cleanup() })
+
+	// the image has one blob above resumeMinSize, and every drop asked for must actually have
+	// happened, or this test passes without exercising a resume at all
+	assert.Equal(t, 4, truncations())
 }
 
 func Test_RegistryProvider_blobResumeCanBeDisabled(t *testing.T) {
 	// a caller meeting a registry that mishandles range requests needs a way to turn resuming off
+	ref, err := name.ParseReference("registry.example.com/img:latest")
+	require.NoError(t, err)
+
 	effective := newEffectiveURLTransport(nil)
 
-	getTransportWithEffectiveURL(nil, effective, false)
+	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{}, nil, effective)
 	assert.IsType(t, &resumableTransport{}, effective.base, "resuming is on by default")
 
-	getTransportWithEffectiveURL(nil, effective, true)
+	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{DisableBlobResume: true}, nil, effective)
 	assert.IsType(t, &http.Transport{}, effective.base, "DisableBlobResume removes it from the chain")
 }
 
