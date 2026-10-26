@@ -273,6 +273,10 @@ func TestResumableTransport_reassemblesBlobAcrossDrops(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, payload, got, "the reassembled body should be byte-identical to the original")
 
+	body := resp.Body.(*resumableBody)
+	assert.Nil(t, body.body, "the last segment should be released at EOF, not held for Close")
+	assert.Nil(t, body.cancel, "the last resume's context should be released at EOF, not held for Close")
+
 	// the first attempt carries no Range; each resume asks for exactly the bytes still owed, as a
 	// closed range, since an open-ended one is answered with 416 by go-containerregistry's own registry
 	assert.Equal(t, []string{"", "bytes=1000-8191", "bytes=2000-8191", "bytes=3000-8191"},

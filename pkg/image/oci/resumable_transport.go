@@ -193,6 +193,10 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 			return n, b.latch(http.ErrBodyReadAfterClose)
 		}
 		if done, final := b.finished(); done {
+			// release the connection and any resume's context now, as an unwrapped body would at EOF,
+			// rather than leaving them for a Close that may never come
+			b.closeCurrent()
+
 			return n, b.latch(final)
 		}
 		if resumeErr := b.resume(quoted(shortRead(readErr))); resumeErr != nil {
