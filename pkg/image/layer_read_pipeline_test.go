@@ -488,20 +488,40 @@ func TestImage_Read_squashOverlapMatchesOrderedSquash(t *testing.T) {
 }
 
 func TestImage_Read_imageSquashOnlyKeepsOnlyTheTopSquash(t *testing.T) {
+	reg, sym := byte(tar.TypeReg), byte(tar.TypeSymlink)
+
+	// beyond overwrites, the squash must apply whiteouts, opaque dirs and links that cross layers
+	// the same way whether each layer gets its own squash or one squash is merged in place
 	var layers []v1.Layer
 	for idx := 0; idx < 6; idx++ {
-		layers = append(layers, layerFromTarEntries(t,
-			tarEntry{path: fmt.Sprintf("only-in-%d.txt", idx), typeFlag: tar.TypeReg, contents: fmt.Sprintf("c%d", idx)},
-			tarEntry{path: "shared.txt", typeFlag: tar.TypeReg, contents: fmt.Sprintf("v%d", idx)},
-		))
+		entries := []tarEntry{
+			{path: fmt.Sprintf("only-in-%d.txt", idx), typeFlag: reg, contents: fmt.Sprintf("c%d", idx)},
+			{path: "shared.txt", typeFlag: reg, contents: fmt.Sprintf("v%d", idx)},
+		}
+		switch idx {
+		case 0:
+			entries = append(entries,
+				tarEntry{path: "opaque/lower.txt", typeFlag: reg, contents: "hidden by the opaque dir above"},
+				tarEntry{path: "gone.txt", typeFlag: reg, contents: "removed by the whiteout above"},
+				tarEntry{path: "etc/target.txt", typeFlag: reg, contents: "t0"},
+			)
+		case 1:
+			entries = append(entries, tarEntry{path: "link-to-target", typeFlag: sym, linkPath: "/etc/target.txt"})
+		case 2:
+			entries = append(entries,
+				tarEntry{path: "opaque/.wh..wh..opq", typeFlag: reg},
+				tarEntry{path: "opaque/upper.txt", typeFlag: reg, contents: "visible"},
+				tarEntry{path: ".wh.gone.txt", typeFlag: reg},
+			)
+		case 3:
+			entries = append(entries, tarEntry{path: "etc/target.txt", typeFlag: reg, contents: "t3"})
+		}
+		layers = append(layers, layerFromTarEntries(t, entries...))
 	}
 	full := readImageFromLayers(t, layers...)
 
-	v1Img, err := mutate.AppendLayers(empty.Image, layers...)
+	img, err := tryReadImageFromLayersWithContext(t, WithImageSquashOnly(context.Background()), layers...)
 	require.NoError(t, err)
-	img := New(v1Img, file.NewTempDirGenerator("image-test"), t.TempDir())
-	t.Cleanup(func() { require.NoError(t, img.Cleanup()) })
-	require.NoError(t, img.Read(WithImageSquashOnly(context.Background())))
 
 	top := len(img.Layers) - 1
 	for idx, layer := range img.Layers[:top] {
@@ -516,12 +536,19 @@ func TestImage_Read_imageSquashOnlyKeepsOnlyTheTopSquash(t *testing.T) {
 		fileTuples(t, img.SquashedTree(), img.FileCatalog),
 		"image squash differs from a full read")
 
-	rc, err := img.OpenPathFromSquash("/shared.txt")
-	require.NoError(t, err)
-	defer rc.Close()
-	contents, err := io.ReadAll(rc)
-	require.NoError(t, err)
-	assert.Equal(t, "v5", string(contents))
+	squash := img.SquashedTree()
+	assert.False(t, squash.HasPath("/opaque/lower.txt"), "opaque dir did not hide the lower file")
+	assert.True(t, squash.HasPath("/opaque/upper.txt"))
+	assert.False(t, squash.HasPath("/gone.txt"), "whiteout did not remove the lower file")
+
+	for path, want := range map[string]string{"/shared.txt": "v5", "/link-to-target": "t3"} {
+		rc, err := img.OpenPathFromSquash(file.Path(path))
+		require.NoError(t, err)
+		contents, err := io.ReadAll(rc)
+		require.NoError(t, rc.Close())
+		require.NoError(t, err)
+		assert.Equalf(t, want, string(contents), "contents of %s", path)
+	}
 
 	// every accessor over a dropped layer squash must error rather than dereference the nil tree
 	ref := file.NewFileReference("/shared.txt")

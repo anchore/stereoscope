@@ -79,6 +79,12 @@ func readImageFromLayers(t *testing.T, layers ...v1.Layer) *Image {
 // itself, rather than have it fail the test.
 func tryReadImageFromLayers(t *testing.T, layers ...v1.Layer) (*Image, error) {
 	t.Helper()
+	return tryReadImageFromLayersWithContext(t, context.Background(), layers...)
+}
+
+// tryReadImageFromLayersWithContext is tryReadImageFromLayers with the context handed to Read.
+func tryReadImageFromLayersWithContext(t *testing.T, ctx context.Context, layers ...v1.Layer) (*Image, error) {
+	t.Helper()
 
 	v1Img, err := mutate.AppendLayers(empty.Image, layers...)
 	require.NoError(t, err)
@@ -88,7 +94,7 @@ func tryReadImageFromLayers(t *testing.T, layers ...v1.Layer) (*Image, error) {
 		require.NoError(t, img.Cleanup())
 	})
 
-	return img, img.Read(context.Background())
+	return img, img.Read(ctx)
 }
 
 // readImageFromLayersWithConfig is readImageFromLayers with the image config rewritten before the

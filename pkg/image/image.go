@@ -644,6 +644,9 @@ func layerReadWorkers(layers int) int {
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
+//
+// Without keepLayerSquashes only the top layer gets a squash (and search context). Nothing else
+// can see the squash below the top, so each layer is merged onto it in place rather than onto a copy.
 func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.Manual, keepLayerSquashes bool) error {
 	var lastSquashTree filetree.ReadWriter
 
@@ -656,34 +659,40 @@ func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.
 			return fmt.Errorf("unable to squash: layer %d was not indexed", idx)
 		}
 
-		// the lowest layer has nothing under it to merge into, but it is still squashed rather than
-		// used as-is: a layer tree keeps the whiteout entries of its own changeset, a squashed tree
-		// must not carry them
-		var unionTree = filetree.NewUnionFileTree()
-		if idx > 0 {
-			unionTree.PushTree(lastSquashTree)
-		}
-		unionTree.PushTree(layer.Tree.(filetree.ReadWriter))
-
-		squashedTree, err := unionTree.Squash()
+		squashedTree, err := squashOnto(lastSquashTree, layer.Tree.(filetree.ReadWriter), keepLayerSquashes)
 		if err != nil {
 			return fmt.Errorf("failed to squash tree %d: %w", idx, err)
 		}
-
-		layer.SquashedTree = squashedTree
-		layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 		lastSquashTree = squashedTree
 
-		// each squash is a full copy of the one below it, so keeping them all costs layers x files
-		if !keepLayerSquashes && idx > 0 {
-			layers[idx-1].SquashedTree = nil
-			layers[idx-1].SquashedSearchContext = nil
+		if keepLayerSquashes || idx == len(layers)-1 {
+			layer.SquashedTree = squashedTree
+			layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 		}
 
 		prog.Increment()
 	}
 
 	return nil
+}
+
+// squashOnto applies layerTree onto the squash below it (nil for the lowest layer). The lower squash
+// is left untouched when keepLower is set, otherwise it is merged into and returned.
+func squashOnto(lower, layerTree filetree.ReadWriter, keepLower bool) (filetree.ReadWriter, error) {
+	if lower != nil && !keepLower {
+		// a squash never carries whiteouts, so this is exactly what Squash would do after copying it
+		return lower, lower.Merge(layerTree)
+	}
+
+	// the lowest layer has nothing under it to merge into, but it is still squashed rather than
+	// used as-is: a layer tree keeps the whiteout entries of its own changeset, a squashed tree
+	// must not carry them
+	unionTree := filetree.NewUnionFileTree()
+	if lower != nil {
+		unionTree.PushTree(lower)
+	}
+	unionTree.PushTree(layerTree)
+	return unionTree.Squash()
 }
 
 // SquashedTree returns the pre-computed image squash file tree.
