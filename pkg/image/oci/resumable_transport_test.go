@@ -242,10 +242,18 @@ const blobPath = "/v2/img/blobs/sha256:abc"
 // newTestTransport builds a transport that resumes above the given size with no backoff, so the
 // tests need neither large payloads nor real delays.
 func newTestTransport(minSize int64) *resumableTransport {
-	transport := newResumableTransport(http.DefaultTransport)
+	transport := newResumableTransport(http.DefaultTransport, directClient(http.DefaultTransport))
 	transport.minSize = minSize
 	transport.backoff = 0
 	return transport
+}
+
+// directClient reopens through base alone, following redirects as the registry client does but
+// without authenticating.
+func directClient(base http.RoundTripper) func(context.Context) (*http.Client, error) {
+	client := &http.Client{Transport: base, CheckRedirect: checkRedirect}
+
+	return func(context.Context) (*http.Client, error) { return client, nil }
 }
 
 func newTestClient(minSize int64) *http.Client {
@@ -359,7 +367,7 @@ func TestResumableTransport_refusesAResumeThatIsNotPartialContent(t *testing.T) 
 
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, errNoRangeSupport)
+	assert.ErrorIs(t, err, errResumeRefused)
 	assert.Contains(t, err.Error(), "after ", "the original drop should survive in the error chain")
 
 	// a server that will not resume is refused at once rather than after the whole budget, so the
@@ -384,7 +392,7 @@ func TestResumableTransport_refusesAResumeFromTheWrongOffset(t *testing.T) {
 
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, errNoRangeSupport)
+	assert.ErrorIs(t, err, errResumeRefused)
 	assert.Contains(t, err.Error(), "server resumed at byte")
 	assert.Len(t, server.seenRanges(), 2)
 }
@@ -407,7 +415,7 @@ func TestResumableTransport_refusesAResumeWithAnUnusableContentRange(t *testing.
 
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, errNoRangeSupport)
+	assert.ErrorIs(t, err, errResumeRefused)
 	assert.Len(t, server.seenRanges(), 2)
 }
 
@@ -430,8 +438,8 @@ func TestResumableTransport_refusesAResumeWhenTheBlobLengthChanged(t *testing.T)
 
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, errObjectChanged)
-	assert.NotErrorIs(t, err, errNoRangeSupport)
+	assert.ErrorIs(t, err, errResumeRefused)
+	assert.Contains(t, err.Error(), "the blob is now")
 	assert.Len(t, server.seenRanges(), 2)
 }
 
@@ -454,7 +462,7 @@ func TestResumableTransport_refusesAnEncodedSegment(t *testing.T) {
 
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, errNoRangeSupport)
+	assert.ErrorIs(t, err, errResumeRefused)
 	assert.Contains(t, err.Error(), "came back encoded")
 }
 
@@ -508,15 +516,19 @@ func TestResumableTransport_preservesRequestHeadersAcrossAResume(t *testing.T) {
 
 func TestResumableTransport_resumesThroughARedirectToACDN(t *testing.T) {
 	// mcr.microsoft.com answers the blob request with a 307 to a CDN, and it is the CDN hop that
-	// drops. go-containerregistry follows the redirect through this transport, so the resumed
-	// request must go to the CDN rather than back to the registry
+	// drops. a resume goes back to the registry for a fresh redirect, and the range rides along
 	payload := payloadOfSize(8192)
 	cdn := &flakyBlobServer{payload: payload, dropsLeft: 2, bytesPerDrop: 1000}
 
 	cdnSrv := httptest.NewServer(cdn)
 	t.Cleanup(cdnSrv.Close)
 
+	var mu sync.Mutex
+	var registryRanges []string
 	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		registryRanges = append(registryRanges, r.Header.Get("Range"))
+		mu.Unlock()
 		http.Redirect(w, r, cdnSrv.URL, http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(registry.Close)
@@ -528,8 +540,117 @@ func TestResumableTransport_resumesThroughARedirectToACDN(t *testing.T) {
 	got, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, payload, got)
-	assert.Equal(t, []string{"", "bytes=1000-8191", "bytes=2000-8191"}, cdn.seenRanges(),
-		"the resumes should go to the CDN, not the registry")
+	assert.Equal(t, []string{"", "bytes=1000-8191", "bytes=2000-8191"}, cdn.seenRanges())
+	assert.Equal(t, []string{"", "bytes=1000-8191", "bytes=2000-8191"}, registryRanges,
+		"each resume should be redirected afresh by the registry")
+}
+
+func TestResumableTransport_resumesWithAFreshTokenAndSignedURL(t *testing.T) {
+	// the pull outlives both its bearer token and the signed CDN URL it was redirected to. a resume
+	// reissued from the CDN hop with the original headers would earn a 401 or 403; one sent through
+	// the reopen client is re-authorized and redirected to a freshly signed URL
+	payload := payloadOfSize(8192)
+
+	var mu sync.Mutex
+	signature := 1
+	token := "Bearer first"
+	spent := map[string]bool{}
+
+	cdn := &flakyBlobServer{payload: payload, dropsLeft: 1, bytesPerDrop: 1000}
+	cdnSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		sig := r.URL.Query().Get("sig")
+		valid := sig == strconv.Itoa(signature) && !spent[sig]
+		spent[sig] = true
+		mu.Unlock()
+		if !valid {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		cdn.ServeHTTP(w, r)
+	}))
+	t.Cleanup(cdnSrv.Close)
+
+	registry := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Header.Get("Authorization") != token {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		// both lapse as soon as they have been used, so only a re-authorized, re-redirected request
+		// can succeed
+		signature++
+		token = "Bearer second"
+		http.Redirect(w, r, fmt.Sprintf("%s?sig=%d", cdnSrv.URL, signature), http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(registry.Close)
+
+	// stands in for go-containerregistry's bearer transport, which sets the token on registry requests
+	authorize := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host == strings.TrimPrefix(registry.URL, "http://") {
+			req.Header.Set("Authorization", "Bearer second")
+		}
+		return http.DefaultTransport.RoundTrip(req)
+	})
+	reopen := &http.Client{Transport: authorize, CheckRedirect: checkRedirect}
+
+	transport := newResumableTransport(http.DefaultTransport, func(context.Context) (*http.Client, error) { return reopen, nil })
+	transport.minSize = 1
+	transport.backoff = 0
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, registry.URL+blobPath, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer first")
+
+	resp, err := (&http.Client{Transport: transport}).Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+
+	got, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, payload, got)
+	assert.Equal(t, []string{"", "bytes=1000-8191"}, cdn.seenRanges())
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func Test_checkRedirect(t *testing.T) {
+	via := []*http.Request{httptest.NewRequest(http.MethodGet, "https://registry.example.com/v2/img/blobs/sha256:abc", nil)}
+
+	tests := []struct {
+		to      string
+		allowed bool
+	}{
+		{to: "https://registry.example.com/elsewhere", allowed: true},
+		{to: "https://cdn.example.com/blob?sig=1", allowed: true},
+		{to: "https://203.0.113.7/blob", allowed: true},
+		{to: "http://127.0.0.1/blob"},
+		{to: "http://10.0.0.1/blob"},
+		{to: "http://169.254.169.254/latest/meta-data"},
+		{to: "http://[::1]/blob"},
+		{to: "http://[::ffff:127.0.0.1]/blob"},
+		{to: "http://0.0.0.0/blob"},
+		// legacy spellings the resolver accepts and netip does not
+		{to: "http://127.1/blob"},
+		{to: "http://0x7f000001/blob"},
+		{to: "http://2130706433/blob"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.to, func(t *testing.T) {
+			err := checkRedirect(httptest.NewRequest(http.MethodGet, tt.to, nil), via)
+			if tt.allowed {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorIs(t, err, errResumeRefused)
+		})
+	}
+
+	assert.ErrorIs(t, checkRedirect(via[0], make([]*http.Request, 10)), errResumeRefused, "redirects are capped")
 }
 
 func TestResumableTransport_neverReturnsMoreThanWasDeclared(t *testing.T) {
@@ -590,7 +711,7 @@ func TestResumableTransport_resumesOverHTTP2(t *testing.T) {
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
 
-	transport := newResumableTransport(srv.Client().Transport)
+	transport := newResumableTransport(srv.Client().Transport, directClient(srv.Client().Transport))
 	transport.minSize = 1
 	transport.backoff = 0
 
@@ -618,7 +739,7 @@ func TestResumableTransport_completesWhenTheConnectionIsResetAfterTheLastByte(t 
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
 
-	transport := newResumableTransport(srv.Client().Transport)
+	transport := newResumableTransport(srv.Client().Transport, directClient(srv.Client().Transport))
 	transport.minSize = 1
 	transport.backoff = 0
 
@@ -760,7 +881,7 @@ func TestResumableTransport_doesNotResumeACancelledRequest(t *testing.T) {
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled, "cancellation should surface as such, not as a clean EOF")
-	assert.NotContains(t, err.Error(), "gave up", "a cancellation is not a dropped stream to resume")
+	assert.NotContains(t, err.Error(), "attempts", "a cancellation is not a dropped stream to resume")
 
 	before := len(server.seenRanges())
 	_, again := resp.Body.Read(make([]byte, 16))
@@ -837,7 +958,7 @@ func TestResumableTransport_shouldResume(t *testing.T) {
 		return resp
 	}
 
-	transport := newResumableTransport(http.DefaultTransport)
+	transport := newResumableTransport(http.DefaultTransport, nil)
 
 	tests := []struct {
 		name     string
@@ -1028,7 +1149,7 @@ func TestResumableTransport_refusesARangeRunningPastTheEnd(t *testing.T) {
 	}
 
 	_, err := body.acceptable(resp)
-	assert.ErrorIs(t, err, errNoRangeSupport)
+	assert.ErrorIs(t, err, errResumeRefused)
 	assert.Contains(t, err.Error(), "past the end")
 }
 
@@ -1078,84 +1199,28 @@ func TestResumableTransport_retriesAResumeTheServerCouldNotServeYet(t *testing.T
 	assert.Len(t, server.seenRanges(), 4)
 }
 
-func TestResumableTransport_spendsTheBudgetWhenTheServerStaysUnavailable(t *testing.T) {
-	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, statusClientClosedRequest,
-		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
-		t.Run(strconv.Itoa(status), func(t *testing.T) {
-			server := &flakyBlobServer{
-				payload:         payloadOfSize(8192),
-				dropsLeft:       1,
-				bytesPerDrop:    1000,
-				transientStatus: status,
-			}
-
-			srv := httptest.NewServer(server)
-			t.Cleanup(srv.Close)
-
-			resp, err := newTestClient(1).Get(srv.URL + blobPath)
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = resp.Body.Close() })
-
-			_, err = io.ReadAll(resp.Body)
-			require.Error(t, err)
-			assert.ErrorIs(t, err, errResumeUnavailable)
-			assert.NotErrorIs(t, err, errNoRangeSupport,
-				"a busy server must not be reported as one that cannot resume")
-			assert.Contains(t, err.Error(), "without progress")
-
-			// the whole budget is spent rather than abandoned on the first refusal
-			assert.Len(t, server.seenRanges(), maxConsecutiveStalls+1)
-		})
-	}
-}
-
-func TestResumableTransport_refusesAResumeWhoseCredentialsWereRejected(t *testing.T) {
-	// reopen reissues the request below go-containerregistry's auth transport, so every attempt
-	// would carry the same expired token and earn the same refusal. it is permanent, and reported as
-	// a credentials problem rather than as missing range support
-	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
-			server := &flakyBlobServer{
-				payload:         payloadOfSize(8192),
-				dropsLeft:       1,
-				bytesPerDrop:    1000,
-				transientStatus: status,
-			}
-
-			srv := httptest.NewServer(server)
-			t.Cleanup(srv.Close)
-
-			resp, err := newTestClient(1).Get(srv.URL + blobPath)
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = resp.Body.Close() })
-
-			_, err = io.ReadAll(resp.Body)
-			require.Error(t, err)
-			assert.ErrorIs(t, err, errCredentialsRejected)
-			assert.NotErrorIs(t, err, errNoRangeSupport)
-			assert.NotErrorIs(t, err, errResumeUnavailable)
-			assert.Contains(t, err.Error(), "rejected the credentials")
-
-			// permanent, so it costs one attempt rather than the whole budget
-			assert.Len(t, server.seenRanges(), 2)
-		})
-	}
-}
-
 func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
-	// every refusal here is permanent and costs one attempt. what differs is the diagnosis: only a
-	// status that answers the range request itself says the server cannot resume
+	// a busy server spends the stall budget and is tried again; anything else is permanent and costs
+	// one attempt. a 401 or 403 is permanent because the reopen client has already re-authorized and
+	// followed a fresh redirect to get it, and a 307 here is one the client could not follow
 	tests := []struct {
-		status   int
-		expected error
+		status    int
+		permanent bool
 	}{
-		{status: http.StatusOK, expected: errNoRangeSupport},
-		{status: http.StatusRequestedRangeNotSatisfiable, expected: errNoRangeSupport},
-		// a redirect is refused rather than followed, which says nothing about range support
-		{status: http.StatusTemporaryRedirect, expected: errRangeRefused},
-		{status: http.StatusBadRequest, expected: errRangeRefused},
-		{status: http.StatusNotFound, expected: errRangeRefused},
-		{status: http.StatusGone, expected: errRangeRefused},
+		{status: http.StatusRequestTimeout},
+		{status: http.StatusTooManyRequests},
+		{status: statusClientClosedRequest},
+		{status: http.StatusBadGateway},
+		{status: http.StatusServiceUnavailable},
+		{status: http.StatusGatewayTimeout},
+		{status: http.StatusOK, permanent: true},
+		{status: http.StatusTemporaryRedirect, permanent: true},
+		{status: http.StatusBadRequest, permanent: true},
+		{status: http.StatusUnauthorized, permanent: true},
+		{status: http.StatusForbidden, permanent: true},
+		{status: http.StatusNotFound, permanent: true},
+		{status: http.StatusGone, permanent: true},
+		{status: http.StatusRequestedRangeNotSatisfiable, permanent: true},
 	}
 
 	for _, tt := range tests {
@@ -1176,13 +1241,16 @@ func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
 
 			_, err = io.ReadAll(resp.Body)
 			require.Error(t, err)
-			assert.ErrorIs(t, err, tt.expected)
-			for _, other := range []error{errNoRangeSupport, errRangeRefused} {
-				if other != tt.expected {
-					assert.NotErrorIs(t, err, other)
-				}
+
+			if tt.permanent {
+				assert.ErrorIs(t, err, errResumeRefused)
+				assert.Len(t, server.seenRanges(), 2, "a permanent refusal costs one attempt")
+				return
 			}
-			assert.Len(t, server.seenRanges(), 2, "a permanent refusal costs one attempt")
+
+			assert.NotErrorIs(t, err, errResumeRefused, "a busy server must not be reported as a refusal")
+			assert.Contains(t, err.Error(), "without progress")
+			assert.Len(t, server.seenRanges(), maxConsecutiveStalls+1, "the whole stall budget is spent")
 		})
 	}
 }
@@ -1342,7 +1410,7 @@ func TestResumableTransport_closeAbortsAReopenInFlight(t *testing.T) {
 	select {
 	case readErr := <-read:
 		assert.ErrorIs(t, readErr, http.ErrBodyReadAfterClose)
-		assert.NotContains(t, readErr.Error(), "gave up", "a Close is not a failed attempt")
+		assert.NotContains(t, readErr.Error(), "attempts", "a Close is not a failed attempt")
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close did not release a reader blocked on a reopen that never answered")
 	}
@@ -1394,7 +1462,7 @@ func TestResumableTransport_cancellingThePullAbortsAReopenInFlight(t *testing.T)
 	select {
 	case readErr := <-read:
 		assert.ErrorIs(t, readErr, context.Canceled)
-		assert.NotContains(t, readErr.Error(), "gave up", "a cancellation is not a failed attempt")
+		assert.NotContains(t, readErr.Error(), "attempts", "a cancellation is not a failed attempt")
 	case <-time.After(5 * time.Second):
 		t.Fatal("cancelling the pull did not release a reader blocked on a reopen")
 	}
@@ -1429,7 +1497,7 @@ func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *test
 
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, errReopenTimeout)
+	assert.Contains(t, err.Error(), "no response headers")
 	assert.NotErrorIs(t, err, context.Canceled, "a timeout must not be reported as a cancellation")
 	assert.Contains(t, err.Error(), "without progress", "a timeout is retried like any other stall")
 }
@@ -1456,7 +1524,7 @@ func TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims(t *testing
 
 	got, err := io.ReadAll(resp.Body)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, errNoRangeSupport)
+	assert.ErrorIs(t, err, errResumeRefused)
 	assert.Contains(t, err.Error(), "covers")
 	assert.Len(t, got, 1000, "only the bytes from before the drop are handed back")
 

@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	containerregistryV1Types "github.com/google/go-containerregistry/pkg/v1/types"
 
 	async "github.com/anchore/go-sync"
@@ -222,16 +223,18 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	// If no explicit authenticator can be found, check if explicit Keychain has been provided, and if not, then
 	// fallback to the default keychain. With the authenticator also comes the option to configure TLS transport.
 	authenticator := registryOptions.Authenticator(registryName)
+	keychain := registryOptions.Keychain
 
 	switch {
 	case authenticator != nil:
 		options = append(options, remote.WithAuth(authenticator))
-	case registryOptions.Keychain != nil:
-		options = append(options, remote.WithAuthFromKeychain(registryOptions.Keychain))
+	case keychain != nil:
+		options = append(options, remote.WithAuthFromKeychain(keychain))
 	default:
 		// use the Keychain specified from a docker config file.
 		log.Debugf("no registry credentials configured for %q, using the default keychain", registryName)
-		options = append(options, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		keychain = authn.DefaultKeychain
+		options = append(options, remote.WithAuthFromKeychain(keychain))
 	}
 
 	tlsConfig, err := registryOptions.TLSConfig(registryName)
@@ -239,21 +242,66 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		log.Warnf("unable to configure TLS transport: %v", err)
 	}
 
+	// a resumed blob is reissued through its own client, authenticated the same way as the pull
+	var reopen func(context.Context) (*http.Client, error)
+	if !registryOptions.DisableBlobResume {
+		reopen = reopenClient(ref, getTransport(tlsConfig), func(ctx context.Context) (authn.Authenticator, error) {
+			if authenticator != nil {
+				return authenticator, nil
+			}
+			return authn.Resolve(ctx, keychain, ref.Context())
+		})
+	}
+
 	// Use our custom transport that captures effective URLs after redirects
-	transport := getTransportWithEffectiveURL(tlsConfig, effectiveTransport, registryOptions.DisableBlobResume)
-	options = append(options, remote.WithTransport(transport))
+	rt := getTransportWithEffectiveURL(tlsConfig, effectiveTransport, reopen)
+	options = append(options, remote.WithTransport(rt))
 
 	return options
 }
 
-func getTransport(tlsConfig *tls.Config) *http.Transport {
-	// use the default transport to inherit existing default options (including proxy options)
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = tlsConfig
-	return transport
+// reopenClient lazily builds the client a resumed blob request is reissued through. it authenticates
+// against the registry the way go-containerregistry does, so a resume gets a fresh token and a freshly
+// signed redirect rather than ones that lapsed during a long transfer.
+func reopenClient(ref name.Reference, base http.RoundTripper, auth func(context.Context) (authn.Authenticator, error)) func(context.Context) (*http.Client, error) {
+	// one lock across the registry ping, so concurrent first resumes wait on a single build
+	var mu sync.Mutex
+	var client *http.Client
+
+	return func(ctx context.Context) (*http.Client, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if client != nil {
+			return client, nil
+		}
+
+		authenticator, err := auth(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		repo := ref.Context()
+		rt, err := transport.NewWithContext(ctx, repo.Registry, authenticator, transport.NewUserAgent(base, os.Args[0]),
+			[]string{repo.Scope(transport.PullScope)})
+		if err != nil {
+			return nil, err
+		}
+
+		client = &http.Client{Transport: rt, CheckRedirect: checkRedirect}
+
+		return client, nil
+	}
 }
 
-func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *effectiveURLTransport, disableResume bool) http.RoundTripper {
+func getTransport(tlsConfig *tls.Config) *http.Transport {
+	// use the default transport to inherit existing default options (including proxy options)
+	rt := http.DefaultTransport.(*http.Transport).Clone()
+	rt.TLSClientConfig = tlsConfig
+	return rt
+}
+
+func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *effectiveURLTransport, reopen func(context.Context) (*http.Client, error)) http.RoundTripper {
 	// create base transport with TLS config
 	baseTransport := getTransport(tlsConfig)
 
@@ -261,8 +309,8 @@ func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *eff
 	// the base transport so that it wraps the real response body, and below go-containerregistry's
 	// digest verification so that a reassembled layer is still verified end to end
 	var base http.RoundTripper = baseTransport
-	if !disableResume {
-		base = newResumableTransport(baseTransport)
+	if reopen != nil {
+		base = newResumableTransport(baseTransport, reopen)
 	}
 
 	// wrap it with our effective URL capturing transport

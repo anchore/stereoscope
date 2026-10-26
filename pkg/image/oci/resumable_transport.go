@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,41 +58,10 @@ const (
 	statusClientClosedRequest = 499
 )
 
-// errNoRangeSupport marks a server that will not resume however often it is asked: it answered the
-// range request with a status that settles the matter (a plain 200 or a 416), or with a 206 whose
-// Content-Range is unusable or starts at the wrong byte, or with a body in a different content
-// coding from the stream so far. a server that was merely busy is errResumeUnavailable,
-// one that refused to authorize the request is errCredentialsRejected, and any other refusal is
-// errRangeRefused.
-var errNoRangeSupport = errors.New("server does not support resuming with range requests")
-
-// errRangeRefused marks a reopen answered with a status that says nothing about range support,
-// such as a 404 or 410 from a pre-signed URL that lapsed mid-transfer, a 400 from one that some
-// object stores report as expired, or a redirect this transport may not follow. it is permanent, but
-// blaming range support for it would point an operator at a limitation the server does not have.
-var errRangeRefused = errors.New("the server refused the resumed range request")
-
-// errObjectChanged marks a resume whose Content-Range reports a different total length from the
-// one the read began with, which is direct evidence the object is not the one we started.
-var errObjectChanged = errors.New("the object changed while it was being read")
-
-// errResumeUnavailable marks a reopen the server could not serve just now: it was rate limited or
-// briefly broken. this is the condition resuming exists for. a CDN edge unhealthy enough to
-// sever a multi-gigabyte stream is exactly the one liable to answer the reopen with a 503, so it
-// spends a stall and goes round again rather than discarding everything already delivered.
-var errResumeUnavailable = errors.New("the server could not serve the resumed range just now")
-
-// errReopenTimeout marks a reopen that produced no response headers in time. like a busy server it
-// spends a stall and goes round again.
-var errReopenTimeout = errors.New("no response headers to the resumed range request")
-
-// errCredentialsRejected marks a reopen the server refused to authorize. it is permanent here on
-// purpose: reopen reissues the original request below go-containerregistry's auth transport, so
-// every attempt would carry the same expired token or the same stale pre-signed URL and earn the
-// same refusal. retrying would only turn one honest failure into a whole stall budget of them.
-// mending it properly means giving this transport a way to re-authorize, which is a larger change
-// than resuming.
-var errCredentialsRejected = errors.New("the server rejected the credentials on the resumed range request")
+// errResumeRefused marks a reopen that another attempt cannot mend: the server answered with a
+// status that settles the matter, or with a segment that cannot be spliced onto the stream so far.
+// anything else that goes wrong with a reopen spends a stall and is tried again.
+var errResumeRefused = errors.New("the server refused to resume")
 
 // resumableTransport wraps a RoundTripper so that a large GET whose body fails partway through is
 // transparently resumed with a Range request from the byte already delivered.
@@ -106,11 +77,18 @@ var errCredentialsRejected = errors.New("the server rejected the credentials on 
 // length and coding of each resumed response are checked here as well, so that a server which
 // cannot resume costs one request rather than a whole layer before the digest says so.
 //
+// a reopen is not reissued from down here: it goes back to the registry URL through client, which
+// authenticates and follows redirects, so it gets a fresh token and a freshly signed CDN URL rather
+// than the ones that may have lapsed during a long transfer.
+//
 // termination is two budgets: consecutive attempts that deliver no meaningful progress, and
 // reopens in total. between them they bound the number of attempts; the only clock is on a reopen
 // producing response headers, never on the transfer itself.
 type resumableTransport struct {
-	base          http.RoundTripper
+	base http.RoundTripper
+	// client returns the client a reopen is issued through. it is called on each reopen so that
+	// building it, which may ping the registry, waits until a resume is actually needed
+	client        func(context.Context) (*http.Client, error)
 	minSize       int64
 	minProgress   int64
 	backoff       time.Duration
@@ -119,13 +97,10 @@ type resumableTransport struct {
 	maxResumes    int
 }
 
-func newResumableTransport(base http.RoundTripper) *resumableTransport {
-	if base == nil {
-		base = http.DefaultTransport
-	}
-
+func newResumableTransport(base http.RoundTripper, client func(context.Context) (*http.Client, error)) *resumableTransport {
 	return &resumableTransport{
 		base:          base,
+		client:        client,
 		minSize:       resumeMinSize,
 		minProgress:   minResumeProgress,
 		backoff:       stallBackoff,
@@ -355,13 +330,13 @@ func (b *resumableBody) resume(cause error) error {
 	for {
 		b.resumes++
 		if b.resumes > b.t.maxResumes {
-			return fmt.Errorf("gave up resuming %s at byte %d after %d attempts in total: %w",
+			return fmt.Errorf("unable to resume %s at byte %d after %d attempts in total: %w",
 				forLog(b.req), b.offset, b.t.maxResumes, cause)
 		}
 
 		b.stalls++
 		if b.stalls > b.t.maxStalls {
-			return fmt.Errorf("gave up resuming %s at byte %d after %d attempts without progress: %w",
+			return fmt.Errorf("unable to resume %s at byte %d after %d attempts without progress: %w",
 				forLog(b.req), b.offset, b.t.maxStalls, cause)
 		}
 
@@ -388,8 +363,8 @@ func (b *resumableBody) resume(cause error) error {
 				return ctxErr
 			}
 
-			if permanentResumeError(err) {
-				return fmt.Errorf("cannot resume %s at byte %d after %w: %w",
+			if errors.Is(err, errResumeRefused) {
+				return fmt.Errorf("unable to resume %s at byte %d after %w: %w",
 					forLog(b.req), b.offset, cause, err)
 			}
 
@@ -406,15 +381,6 @@ func (b *resumableBody) resume(cause error) error {
 
 		return b.adopt(body)
 	}
-}
-
-// permanentResumeError reports whether retrying could possibly mend the error, so that a server
-// which cannot resume fails at once rather than after the whole budget has been spent.
-func permanentResumeError(err error) bool {
-	return errors.Is(err, errNoRangeSupport) ||
-		errors.Is(err, errRangeRefused) ||
-		errors.Is(err, errObjectChanged) ||
-		errors.Is(err, errCredentialsRejected)
 }
 
 // adopt installs a freshly opened body, unless the caller closed us while it was being opened.
@@ -464,12 +430,11 @@ func (b *resumableBody) sleep(d time.Duration) error {
 	}
 }
 
-// reopen issues the original request again for the bytes not yet delivered.
+// reopen issues the blob request again for the bytes not yet delivered.
 //
 // the range is closed rather than open-ended. go-containerregistry's own registry (which is what
-// `crane registry serve` and ko run, and which a good many CI harnesses embed) parses the header
-// with Sscanf("bytes=%d-%d") and answers 416 to "bytes=N-", which would discard the layer on its
-// first drop.
+// `crane registry serve` and ko run) parses the header with Sscanf("bytes=%d-%d") and answers 416 to
+// "bytes=N-", which would discard the layer on its first drop.
 //
 // identity is asked for explicitly, overriding any Accept-Encoding cloned from the original request,
 // because the stream so far is wire bytes and a segment in some other coding cannot be spliced onto
@@ -482,14 +447,10 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 		return nil, http.ErrBodyReadAfterClose
 	}
 
-	req := b.req.Clone(ctx)
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", b.offset, b.total-1))
-	req.Header.Set("Accept-Encoding", "identity")
-
 	// stopped once headers arrive, so the clock is on reaching the server rather than on the
 	// transfer that follows
 	headers := time.AfterFunc(b.t.headerTimeout, cancel)
-	resp, err := b.t.base.RoundTrip(req)
+	resp, err := b.roundTrip(ctx)
 
 	if !headers.Stop() {
 		// the cancellation was ours, not the caller's, so it is reported as a timeout rather than
@@ -499,7 +460,7 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 			closeQuietly(resp.Body)
 		}
 
-		return nil, fmt.Errorf("%w within %s", errReopenTimeout, b.t.headerTimeout)
+		return nil, fmt.Errorf("no response headers to the resumed range request within %s", b.t.headerTimeout)
 	}
 
 	// only an accepted body still needs its context; a failed attempt releases it at once rather
@@ -516,6 +477,72 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 	}
 
 	return body, err
+}
+
+// roundTrip sends the range request to the registry URL the blob was first requested from, rather
+// than to the CDN hop that dropped, so the client can authenticate it and follow a fresh redirect.
+func (b *resumableBody) roundTrip(ctx context.Context) (*http.Response, error) {
+	client, err := b.t.client(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	req := firstRequest(b.req).Clone(ctx)
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", b.offset, b.total-1))
+	req.Header.Set("Accept-Encoding", "identity")
+
+	resp, err := client.Do(req)
+
+	// the client names the URL in its errors, and after a redirect that is a signed CDN URL
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		err = urlErr.Err
+	}
+
+	return resp, err
+}
+
+// checkRedirect is go-containerregistry's checkRedirectSSRF for the reopen client: a redirect may
+// change host, but not to a loopback, private, link-local or unspecified address. a host made only of
+// numbers is refused rather than decoded, since the resolver accepts legacy spellings such as 127.1
+// that netip does not.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("%w: stopped after 10 redirects", errResumeRefused)
+	}
+
+	from, to := via[0].URL.Hostname(), req.URL.Hostname()
+	if to == from {
+		return nil
+	}
+
+	addr, err := netip.ParseAddr(to)
+	if err != nil {
+		if numericHost(to) {
+			return fmt.Errorf("%w: redirect to the numeric host %q denied", errResumeRefused, to)
+		}
+
+		return nil
+	}
+
+	if addr = addr.Unmap(); addr.IsLoopback() || addr.IsPrivate() || addr.IsLinkLocalUnicast() ||
+		addr.IsLinkLocalMulticast() || addr.IsUnspecified() {
+		return fmt.Errorf("%w: redirect from %q to private host %q denied", errResumeRefused, from, to)
+	}
+
+	return nil
+}
+
+// numericHost reports whether every dot-separated part of a host is a number in some base, as in
+// 127.1, 0x7f000001 or 2130706433.
+func numericHost(host string) bool {
+	for _, part := range strings.Split(host, ".") {
+		if _, err := strconv.ParseUint(part, 0, 32); err != nil {
+			return false
+		}
+	}
+
+	return true
 }
 
 // adoptCancel stores the cancel belonging to the reopen now in flight, ending any it replaces, and
@@ -535,65 +562,50 @@ func (b *resumableBody) adoptCancel(cancel context.CancelFunc) bool {
 }
 
 // acceptable decides whether a reissued response may be spliced onto the stream, closing it if not.
-// a 3xx is refused permanently rather than followed: this transport sits below
-// go-containerregistry's checkRedirectSSRF, so honouring a Location from here would reach a host
-// that client never vetted. refusedStatus sorts the rest into what is worth another attempt.
 func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
-	if resp.Body == nil {
-		return nil, fmt.Errorf("%w: the server returned no body", errNoRangeSupport)
-	}
-
-	reject := func(err error) (io.ReadCloser, error) {
+	reject := func(format string, args ...any) (io.ReadCloser, error) {
 		closeQuietly(resp.Body)
 
-		return nil, err
+		return nil, fmt.Errorf("%w: "+format, append([]any{errResumeRefused}, args...)...)
 	}
 
 	if resp.StatusCode != http.StatusPartialContent {
-		return reject(b.refusedStatus(resp))
+		closeQuietly(resp.Body)
+
+		return nil, b.refusedStatus(resp)
 	}
 
 	// the coding check guards a body about to be spliced, so it comes after the status check: a
 	// busy server may serve its error page compressed, and that must not read as a permanent refusal
 	if !identityEncoded(resp.Header) {
-		return reject(fmt.Errorf("%w: the resumed segment came back encoded", errNoRangeSupport))
+		return reject("the resumed segment came back encoded")
 	}
 
 	start, end, total, err := parseContentRange(resp.Header.Get("Content-Range"))
 	if err != nil {
-		return reject(fmt.Errorf("%w: %w", errNoRangeSupport, err))
+		return reject("%w", err)
 	}
 
 	if start != b.offset {
-		return reject(fmt.Errorf("%w: server resumed at byte %d, expected %d",
-			errNoRangeSupport, start, b.offset))
+		return reject("server resumed at byte %d, expected %d", start, b.offset)
+	}
+
+	if total >= 0 && total != b.total {
+		return reject("the blob is now %d bytes, it was %d when the read began", total, b.total)
 	}
 
 	// a server that ignored the Range and began the object again, while still echoing back the
-	// range it was asked for, contradicts itself here: the body it declares is longer than the
-	// span it claims to be sending. it cannot catch a server whose lengths agree and whose bytes
-	// are simply wrong (only the digest above can do that), but it is the shape a server with
-	// no real range support actually takes, and catching it here costs one request instead of a
-	// whole layer
+	// range it was asked for, declares a body longer than the span it claims to be sending
 	if span := end - start + 1; resp.ContentLength >= 0 && resp.ContentLength != span {
-		return reject(fmt.Errorf("%w: Content-Range covers %d bytes but %d were sent",
-			errNoRangeSupport, span, resp.ContentLength))
+		return reject("Content-Range covers %d bytes but %d were sent", span, resp.ContentLength)
 	}
 
 	if end >= b.total {
-		return reject(fmt.Errorf("%w: Content-Range runs to byte %d, past the end at %d",
-			errNoRangeSupport, end, b.total-1))
+		return reject("Content-Range runs to byte %d, past the end at %d", end, b.total-1)
 	}
 
 	// a span that stops short of the end is legal, and some CDNs cap them. it is accepted, and when
-	// it runs out Read resumes again, spending a resume just as a drop does. that is deliberate: a
-	// server serving tiny spans would otherwise reconnect without bound, so a capped edge gets
-	// maxTotalResumes segments and no more
-
-	if total >= 0 && total != b.total {
-		return reject(fmt.Errorf("%w: the blob is now %d bytes, it was %d when the read began",
-			errObjectChanged, total, b.total))
-	}
+	// it runs out Read resumes again, spending a resume just as a drop does
 
 	// a body with no declared length is held to the span here instead, so bytes past its end are
 	// never spliced in as if they continued it
@@ -605,30 +617,18 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 
 // refusedStatus classifies a reopen that did not come back as 206. a busy server is worth another
 // attempt, since a CDN edge unhealthy enough to sever a stream is the one liable to answer its
-// reopen with a 503; a server that cannot or will not serve the range is not.
+// reopen with a 503; a server that cannot or will not serve the range is not. a 401 or 403 is
+// permanent too: the client has already re-authorized and followed a fresh redirect to get it.
 func (b *resumableBody) refusedStatus(resp *http.Response) error {
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		// an expired bearer token, or a pre-signed CDN URL that outlived the transfer
-		return fmt.Errorf("%w: got %d resuming at byte %d", errCredentialsRejected,
-			resp.StatusCode, b.offset)
-
-	case resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusTooManyRequests ||
-		resp.StatusCode == statusClientClosedRequest || resp.StatusCode >= http.StatusInternalServerError:
-		// every status go-containerregistry's own retry transport treats as transient, and the rest of 5xx
-		// the server's own Retry-After is deliberately not read: the stall backoff already spaces
-		// repeated attempts, and honouring a hint of minutes would only lengthen a pull that is
-		// already failing
-		return fmt.Errorf("%w: got %d resuming at byte %d", errResumeUnavailable,
-			resp.StatusCode, b.offset)
-
-	case resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable:
-		// the server understood the range request and will not serve it
-		return fmt.Errorf("%w: expected HTTP 206 resuming at byte %d, got %d",
-			errNoRangeSupport, b.offset, resp.StatusCode)
+	switch code := resp.StatusCode; {
+	case code == http.StatusRequestTimeout || code == http.StatusTooManyRequests ||
+		code == statusClientClosedRequest || code >= http.StatusInternalServerError:
+		// every status go-containerregistry's own retry transport treats as transient, and the rest
+		// of 5xx. Retry-After is not read: the stall backoff already spaces repeated attempts
+		return fmt.Errorf("the server could not serve the range just now: got %d resuming at byte %d", code, b.offset)
 
 	default:
-		return fmt.Errorf("%w: got %d resuming at byte %d", errRangeRefused, resp.StatusCode, b.offset)
+		return fmt.Errorf("%w: expected HTTP 206 resuming at byte %d, got %d", errResumeRefused, b.offset, code)
 	}
 }
 
@@ -671,38 +671,16 @@ func (b *resumableBody) isClosed() bool {
 
 // closeCurrent drops the failed connection without marking the body closed to callers.
 func (b *resumableBody) closeCurrent() {
-	b.mu.Lock()
-	body := b.body
-	cancel := b.cancel
-	b.body, b.cancel = nil, nil
-	b.mu.Unlock()
-
-	if cancel != nil {
-		cancel()
-	}
-
-	if body != nil {
+	if body, _ := b.release(false); body != nil {
 		closeQuietly(body)
 	}
 }
 
 func (b *resumableBody) Close() error {
-	b.mu.Lock()
-	first := !b.closed
-	b.closed = true
-	body := b.body
-	cancel := b.cancel
-	b.body, b.cancel = nil, nil
-	b.mu.Unlock()
-
+	body, first := b.release(true)
 	if first {
 		// wakes a backoff in progress; guarded by first so a second Close cannot panic
 		close(b.done)
-	}
-
-	// ends a reopen that has not yet returned, which closing the body cannot reach
-	if cancel != nil {
-		cancel()
 	}
 
 	if body == nil {
@@ -710,6 +688,24 @@ func (b *resumableBody) Close() error {
 	}
 
 	return body.Close()
+}
+
+// release detaches the current body and ends the reopen that produced it, or one still in flight,
+// which closing the body cannot reach. closing also marks b closed, and reports whether this call was
+// the one that did.
+func (b *resumableBody) release(closing bool) (io.ReadCloser, bool) {
+	b.mu.Lock()
+	first := closing && !b.closed
+	b.closed = b.closed || closing
+	body, cancel := b.body, b.cancel
+	b.body, b.cancel = nil, nil
+	b.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+
+	return body, first
 }
 
 // parseContentRange pulls the first and last byte positions and the total length out of a
