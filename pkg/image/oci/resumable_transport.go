@@ -545,9 +545,14 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 	// are simply wrong -- only the digest above can do that -- but it is the shape a server with
 	// no real range support actually takes, and catching it here costs one request instead of a
 	// whole layer
-	if span := end - start + 1; end >= start && resp.ContentLength >= 0 && resp.ContentLength != span {
+	if span := end - start + 1; resp.ContentLength >= 0 && resp.ContentLength != span {
 		return reject(fmt.Errorf("%w: Content-Range covers %d bytes but %d were sent",
 			errNoRangeSupport, span, resp.ContentLength))
+	}
+
+	if end >= b.total {
+		return reject(fmt.Errorf("%w: Content-Range runs to byte %d, past the end at %d",
+			errNoRangeSupport, end, b.total-1))
 	}
 
 	if total >= 0 && total != b.total {
@@ -663,7 +668,8 @@ func (b *resumableBody) Close() error {
 
 // parseContentRange pulls the first and last byte positions and the total length out of a
 // Content-Range header, e.g. the 4096, 8191 and 16384 in "bytes 4096-8191/16384". a total given as
-// "*" is unknown and is reported as -1, as is a last byte position that will not parse.
+// "*" is unknown and is reported as -1. a range that runs backwards, or past a known total, is
+// malformed.
 func parseContentRange(header string) (int64, int64, int64, error) {
 	malformed := func() (int64, int64, int64, error) {
 		return 0, 0, 0, fmt.Errorf("malformed Content-Range %q", header)
@@ -689,11 +695,9 @@ func parseContentRange(header string) (int64, int64, int64, error) {
 		return 0, 0, 0, fmt.Errorf("malformed Content-Range %q: %w", header, err)
 	}
 
-	// the last byte position is advisory here: it is cross-checked against Content-Length when both
-	// are present, but a server that omits or mangles it is not refused on that account alone
 	end, err := strconv.ParseInt(strings.TrimSpace(last), 10, 64)
-	if err != nil {
-		end = -1
+	if err != nil || start < 0 || end < start {
+		return malformed()
 	}
 
 	if size = strings.TrimSpace(size); size == "*" {
@@ -701,8 +705,8 @@ func parseContentRange(header string) (int64, int64, int64, error) {
 	}
 
 	total, err := strconv.ParseInt(size, 10, 64)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("malformed Content-Range %q: %w", header, err)
+	if err != nil || total <= end {
+		return malformed()
 	}
 
 	return start, end, total, nil

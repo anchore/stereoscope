@@ -913,7 +913,11 @@ func TestParseContentRange(t *testing.T) {
 		{name: "a range starting at zero", header: "bytes 0-15/16", start: 0, end: 15, total: 16},
 		{name: "an unknown total", header: "bytes 512-1023/*", start: 512, end: 1023, total: -1},
 		{name: "extra whitespace", header: "  bytes  4096-8191/16384 ", start: 4096, end: 8191, total: 16384},
-		{name: "an unparseable last byte is advisory", header: "bytes 4096-/16384", start: 4096, end: -1, total: 16384},
+		{name: "a missing last byte", header: "bytes 4096-/16384", wantErr: true},
+		{name: "a negative last byte", header: "bytes 5--3/20", wantErr: true},
+		{name: "a range that runs backwards", header: "bytes 9-5/20", wantErr: true},
+		{name: "a negative total", header: "bytes 5-9/-1", wantErr: true},
+		{name: "a range past the total", header: "bytes 5-20/20", wantErr: true},
 		{name: "an empty header", header: "", wantErr: true},
 		{name: "a missing unit", header: "4096-8191/16384", wantErr: true},
 		{name: "a unit that is not bytes", header: "items 0-5/10", wantErr: true},
@@ -935,6 +939,22 @@ func TestParseContentRange(t *testing.T) {
 			assert.Equal(t, tt.total, total)
 		})
 	}
+}
+
+func TestResumableTransport_refusesARangeRunningPastTheEnd(t *testing.T) {
+	// with the total withheld the parser cannot catch this, so the body's own length has to
+	body := &resumableBody{t: newTestTransport(1), total: 100, offset: 50, done: make(chan struct{})}
+
+	resp := &http.Response{
+		StatusCode:    http.StatusPartialContent,
+		ContentLength: 60,
+		Header:        http.Header{"Content-Range": []string{"bytes 50-109/*"}},
+		Body:          io.NopCloser(strings.NewReader("")),
+	}
+
+	_, err := body.acceptable(resp)
+	assert.ErrorIs(t, err, errNoRangeSupport)
+	assert.Contains(t, err.Error(), "past the end")
 }
 
 func TestResumableTransport_retriesAResumeTheServerCouldNotServeYet(t *testing.T) {
