@@ -183,10 +183,16 @@ func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response
 // the response that caused it, so the walk back to the first one finds the registry URL. a foreign
 // layer, fetched from a URL of the manifest's choosing rather than the registry's, is not one.
 func isBlobRequest(req *http.Request) bool {
-	_, digest, ok := strings.Cut(firstRequest(req).URL.Path, "/blobs/")
+	// the last /blobs/, since a repository name may itself have a blobs component
+	path := firstRequest(req).URL.Path
+	i := strings.LastIndex(path, "/blobs/")
+	if i < 0 {
+		return false
+	}
+	digest := path[i+len("/blobs/"):]
 
 	// an upload session lives under /blobs/uploads/, and a digest is algorithm:hex
-	return ok && strings.Contains(digest, ":") && !strings.Contains(digest, "/")
+	return strings.Contains(digest, ":") && !strings.Contains(digest, "/")
 }
 
 // firstRequest walks back through any redirects to the request the client began with.

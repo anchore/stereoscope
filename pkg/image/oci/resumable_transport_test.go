@@ -908,6 +908,18 @@ func TestResumableTransport_shouldResume(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "a blob in a repository with a blobs component is wrapped",
+			req:      httptest.NewRequest(http.MethodGet, "http://example.com/v2/org/blobs/app/blobs/sha256:abc", nil),
+			resp:     response(http.StatusOK, resumeMinSize),
+			expected: true,
+		},
+		{
+			name:     "a manifest in a repository with a blobs component is left alone",
+			req:      httptest.NewRequest(http.MethodGet, "http://example.com/v2/org/blobs/app/manifests/sha256:abc", nil),
+			resp:     response(http.StatusOK, resumeMinSize),
+			expected: false,
+		},
+		{
 			name:     "an upload session is left alone",
 			req:      httptest.NewRequest(http.MethodGet, "http://example.com/v2/img/blobs/uploads/1234", nil),
 			resp:     response(http.StatusOK, resumeMinSize),
