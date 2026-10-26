@@ -424,8 +424,8 @@ func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T
 	generator := file.TempDirGenerator{}
 	defer func() { _ = generator.Cleanup() }()
 
-	// two drops per blob, so the running digest is exercised across more than one splice. each is
-	// a stall on blobs this small, so more would only add backoff
+	// two drops per blob, so each is spliced more than once and the stall backoff engages. blobs this
+	// small never make enough progress to reset it, so each extra drop costs a real second
 	proxy, truncations := truncatingProxy(t, upstream, 2)
 	imageStr := fmt.Sprintf("%s/resume-probe:latest", proxy)
 	options := image.RegistryOptions{

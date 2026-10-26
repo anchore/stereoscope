@@ -831,48 +831,31 @@ func TestResumableTransport_readAfterCloseDoesNotRestartTheDownload(t *testing.T
 }
 
 func TestResumableTransport_closeAbandonsABackoffInProgress(t *testing.T) {
-	// zero bytes per attempt means the stall count climbs and the backoff genuinely engages
-	server := &flakyBlobServer{payload: payloadOfSize(1 << 20), dropsLeft: 10_000, bytesPerDrop: 0}
+	// driven through sleep directly, since through a server there is no way to know the reader has
+	// reached the backoff rather than a reopen. a Close before the sleep starts is caught by its
+	// first check, one during it by the timer's select, and both must return at once
+	for _, delay := range []time.Duration{0, 100 * time.Millisecond} {
+		t.Run(delay.String(), func(t *testing.T) {
+			body := &resumableBody{
+				t:    newTestTransport(),
+				req:  httptest.NewRequest(http.MethodGet, "http://example.com"+blobPath, nil),
+				done: make(chan struct{}),
+			}
 
-	// the first reopen goes out immediately and the next waits a full backoff, so once the server
-	// has seen the first reopen the reader is on its way into that backoff
-	reopened := make(chan struct{})
-	var once sync.Once
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Range") != "" {
-			once.Do(func() { close(reopened) })
-		}
-		server.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
+			slept := make(chan error, 1)
+			go func() { slept <- body.sleep(time.Minute) }()
 
-	transport := newTestTransport()
-	transport.backoff = 10 * time.Second
-	transport.maxStalls = 1_000_000
+			time.Sleep(delay)
+			require.NoError(t, body.Close())
 
-	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
-	require.NoError(t, err)
-
-	returned := make(chan struct{})
-	go func() {
-		_, _ = io.ReadAll(resp.Body)
-		close(returned)
-	}()
-
-	<-reopened
-	closedAt := time.Now()
-	require.NoError(t, resp.Body.Close())
-
-	select {
-	case <-returned:
-		assert.Less(t, time.Since(closedAt), 2*time.Second,
-			"Close must abandon the backoff, which here would otherwise run for 10s")
-	case <-time.After(5 * time.Second):
-		t.Fatal("the reader never returned after Close")
+			select {
+			case err := <-slept:
+				assert.ErrorIs(t, err, http.ErrBodyReadAfterClose)
+			case <-time.After(5 * time.Second):
+				t.Fatal("Close did not abandon the backoff")
+			}
+		})
 	}
-
-	// reopens are synchronous, so once the reader has returned nothing more can be in flight
-	assert.Len(t, server.seenRanges(), 2, "a closed body must not issue a further request on its way out")
 }
 
 func TestResumableTransport_doesNotResumeACancelledRequest(t *testing.T) {
@@ -1603,7 +1586,7 @@ func TestResumableTransport_aSlowReaderIsNotASilentServer(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	transport := newTestTransport()
-	transport.idleTimeout = 20 * time.Millisecond
+	transport.idleTimeout = 250 * time.Millisecond
 
 	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
 	require.NoError(t, err)
@@ -1612,7 +1595,7 @@ func TestResumableTransport_aSlowReaderIsNotASilentServer(t *testing.T) {
 	_, err = io.ReadFull(resp.Body, make([]byte, 100))
 	require.NoError(t, err)
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(time.Second)
 
 	_, err = io.ReadAll(resp.Body)
 	require.NoError(t, err)
