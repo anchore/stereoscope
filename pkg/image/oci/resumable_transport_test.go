@@ -484,9 +484,10 @@ func TestResumableTransport_asksForIdentityOnResume(t *testing.T) {
 	assert.Equal(t, "identity", headers[1].Get("Accept-Encoding"), "the resume must pin the coding")
 }
 
-func TestResumableTransport_preservesRequestHeadersAcrossAResume(t *testing.T) {
-	// the reopen clones the registry request, so headers the reopen client does not set itself
-	// (here it sets none) ride along
+func TestResumableTransport_neverReplaysCredentialsOnAResume(t *testing.T) {
+	// go-containerregistry sets Authorization on the request in place. a resume that replayed it
+	// would hand it to every redirect the reopen client follows, to hosts the pull never sent it to,
+	// so only the reopen client may add credentials. the user agent is kept
 	server := &flakyBlobServer{payload: payloadOfSize(8192), dropsLeft: 2, bytesPerDrop: 1000}
 
 	srv := httptest.NewServer(server)
@@ -506,9 +507,9 @@ func TestResumableTransport_preservesRequestHeadersAcrossAResume(t *testing.T) {
 
 	headers := server.seenHeaders()
 	require.Len(t, headers, 3)
-	for i, h := range headers {
-		assert.Equal(t, "Bearer sekrit", h.Get("Authorization"), "request %d lost its credentials", i)
-		assert.Equal(t, "stereoscope-test", h.Get("User-Agent"), "request %d lost its user agent", i)
+	for i, h := range headers[1:] {
+		assert.Empty(t, h.Get("Authorization"), "resume %d replayed the original credentials", i)
+		assert.Equal(t, "stereoscope-test", h.Get("User-Agent"), "resume %d lost its user agent", i)
 	}
 }
 

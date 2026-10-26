@@ -408,7 +408,17 @@ func (b *resumableBody) roundTrip(ctx context.Context) (*http.Response, error) {
 		return nil, err
 	}
 
-	req := firstRequest(b.req).Clone(ctx)
+	// a fresh request rather than a clone: go-containerregistry's auth transports set Authorization
+	// on the request in place, and a clone would carry it into the client's redirects, to hosts
+	// that pull never sent it to. the reopen client adds its own for the registry host
+	first := firstRequest(b.req)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, first.URL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if ua := first.Header.Get("User-Agent"); ua != "" {
+		req.Header.Set("User-Agent", ua)
+	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", b.offset, b.total-1))
 	req.Header.Set("Accept-Encoding", "identity")
 
