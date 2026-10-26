@@ -2,6 +2,7 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,9 +13,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -440,6 +443,41 @@ func Test_RegistryProvider_blobResumeCanBeDisabled(t *testing.T) {
 
 	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{DisableBlobResume: true}, nil, effective)
 	assert.IsType(t, &http.Transport{}, effective.base, "DisableBlobResume removes it from the chain")
+}
+
+func Test_reopenClient_aWaitingResumeCanBeCancelled(t *testing.T) {
+	// a resume waiting on another's client build must still honour its own Close or cancellation,
+	// which a mutex held across the build would not
+	ref, err := name.ParseReference("registry.example.com/img:latest")
+	require.NoError(t, err)
+
+	building := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+
+	clientFor := reopenClient(ref, http.DefaultTransport, "stereoscope-test", func(context.Context) (authn.Authenticator, error) {
+		close(building)
+		<-release
+		return nil, errors.New("never built")
+	})
+
+	go func() { _, _ = clientFor(context.Background()) }()
+	<-building
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := clientFor(ctx)
+		done <- err
+	}()
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("a cancelled resume kept waiting on another's client build")
+	}
 }
 
 func makeRegistry(t *testing.T) (registryHost string) {

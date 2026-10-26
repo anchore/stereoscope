@@ -269,13 +269,18 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 // signed redirect rather than ones that lapsed during a long transfer. unlike go-containerregistry's
 // client it has no retry transport, since the resume's own stall budget already retries.
 func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, auth func(context.Context) (authn.Authenticator, error)) reopenClientFunc {
-	// one lock across the registry ping, so concurrent first resumes wait on a single build
-	var mu sync.Mutex
+	// one slot held across the registry ping, so concurrent first resumes wait on a single build. a
+	// channel rather than a mutex, so a resume closed or cancelled meanwhile stops waiting
+	slot := make(chan struct{}, 1)
 	var client *http.Client
 
 	return func(ctx context.Context) (*http.Client, error) {
-		mu.Lock()
-		defer mu.Unlock()
+		select {
+		case slot <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		defer func() { <-slot }()
 
 		if client != nil {
 			return client, nil
