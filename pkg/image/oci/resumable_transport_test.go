@@ -485,8 +485,8 @@ func TestResumableTransport_asksForIdentityOnResume(t *testing.T) {
 }
 
 func TestResumableTransport_preservesRequestHeadersAcrossAResume(t *testing.T) {
-	// Authorization and User-Agent are applied by transports above this one, so a resumed request
-	// keeps them only because the original request is cloned
+	// the reopen clones the registry request, so headers the reopen client does not set itself
+	// (here it sets none) ride along
 	server := &flakyBlobServer{payload: payloadOfSize(8192), dropsLeft: 2, bytesPerDrop: 1000}
 
 	srv := httptest.NewServer(server)
@@ -698,8 +698,8 @@ func TestResumableTransport_neverReturnsMoreThanWasDeclared(t *testing.T) {
 }
 
 func TestResumableTransport_resumesOverHTTP2(t *testing.T) {
-	// every registry in the probe table serves HTTP/2, where a truncated body surfaces through a
-	// different path in net/http than it does over HTTP/1.1
+	// most registries serve HTTP/2, where a truncated body surfaces through a different path in
+	// net/http than it does over HTTP/1.1
 	payload := payloadOfSize(2 * 1024 * 1024)
 	server := &flakyBlobServer{payload: payload, dropsLeft: 3, bytesPerDrop: 200 * 1024}
 
@@ -816,7 +816,16 @@ func TestResumableTransport_closeAbandonsABackoffInProgress(t *testing.T) {
 	// zero bytes per attempt means the stall count climbs and the backoff genuinely engages
 	server := &flakyBlobServer{payload: payloadOfSize(1 << 20), dropsLeft: 10_000, bytesPerDrop: 0}
 
-	srv := httptest.NewServer(server)
+	// the first reopen goes out immediately and the next waits a full backoff, so once the server
+	// has seen the first reopen the reader is on its way into that backoff
+	reopened := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Range") != "" {
+			once.Do(func() { close(reopened) })
+		}
+		server.ServeHTTP(w, r)
+	}))
 	t.Cleanup(srv.Close)
 
 	transport := newTestTransport()
@@ -832,11 +841,7 @@ func TestResumableTransport_closeAbandonsABackoffInProgress(t *testing.T) {
 		close(returned)
 	}()
 
-	// the first attempt goes out immediately, the second waits a full backoff
-	time.Sleep(300 * time.Millisecond)
-	atClose := len(server.seenRanges())
-	require.Greater(t, atClose, 1, "the fixture must have reached a backoff for this test to mean anything")
-
+	<-reopened
 	closedAt := time.Now()
 	require.NoError(t, resp.Body.Close())
 
@@ -848,9 +853,8 @@ func TestResumableTransport_closeAbandonsABackoffInProgress(t *testing.T) {
 		t.Fatal("the reader never returned after Close")
 	}
 
-	time.Sleep(300 * time.Millisecond)
-	assert.LessOrEqual(t, len(server.seenRanges()), atClose,
-		"a closed body must not issue a further request on its way out")
+	// reopens are synchronous, so once the reader has returned nothing more can be in flight
+	assert.Len(t, server.seenRanges(), 2, "a closed body must not issue a further request on its way out")
 }
 
 func TestResumableTransport_doesNotResumeACancelledRequest(t *testing.T) {
