@@ -362,7 +362,7 @@ func (b *resumableBody) resume(cause error) error {
 		// Info rather than Debug: a run of these is the only sign an operator has that a slow pull
 		// is recovering rather than wedged, and there are at most maxTotalResumes of them
 		log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause).
-			Info("blob stream dropped, resuming from the current offset")
+			Info("blob stream ended early, resuming from the current offset")
 
 		// the first attempt after a drop goes out at once; only repeated failures back off. sleep
 		// is called either way, so cancellation and Close are noticed on every attempt
@@ -582,6 +582,11 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 		return reject(fmt.Errorf("%w: Content-Range runs to byte %d, past the end at %d",
 			errNoRangeSupport, end, b.total-1))
 	}
+
+	// a span that stops short of the end is legal, and some CDNs cap them. it is accepted, and when
+	// it runs out Read resumes again, spending a resume just as a drop does. that is deliberate: a
+	// server serving tiny spans would otherwise reconnect without bound, so a capped edge gets
+	// maxTotalResumes segments and no more
 
 	if total >= 0 && total != b.total {
 		return reject(fmt.Errorf("%w: the blob is now %d bytes, it was %d when the read began",
