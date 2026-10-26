@@ -130,15 +130,11 @@ func (t *resumableTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	resp.Body = &resumableBody{
-		body:        resp.Body,
-		req:         req,
-		base:        t.base,
-		total:       resp.ContentLength,
-		minProgress: t.minProgress,
-		backoff:     t.backoff,
-		maxStalls:   t.maxStalls,
-		maxResumes:  t.maxResumes,
-		done:        make(chan struct{}),
+		t:     t,
+		body:  resp.Body,
+		req:   req,
+		total: resp.ContentLength,
+		done:  make(chan struct{}),
 	}
 
 	return resp, nil
@@ -170,13 +166,9 @@ func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response
 // many bytes it has delivered so that a failed read can be continued with a Range request rather
 // than restarting a transfer that may already be gigabytes along.
 type resumableBody struct {
-	req         *http.Request
-	base        http.RoundTripper
-	total       int64
-	minProgress int64
-	backoff     time.Duration
-	maxStalls   int
-	maxResumes  int
+	t     *resumableTransport
+	req   *http.Request
+	total int64
 
 	// mu guards body, cancel and closed, which Close may touch from another goroutine while Read is
 	// blocked or mid-resume. closing a Response.Body to abort a read is documented, legal usage of the
@@ -284,7 +276,7 @@ func (b *resumableBody) record(n int) {
 	b.offset += int64(n)
 	b.progress += int64(n)
 
-	if b.progress >= b.minProgress {
+	if b.progress >= b.t.minProgress {
 		b.stalls = 0
 		b.progress = 0
 	}
@@ -313,15 +305,15 @@ func (b *resumableBody) resume(cause error) error {
 
 	for {
 		b.resumes++
-		if b.resumes > b.maxResumes {
+		if b.resumes > b.t.maxResumes {
 			return fmt.Errorf("gave up resuming %s at byte %d after %d attempts in total: %w",
-				forLog(b.req.URL), b.offset, b.maxResumes, cause)
+				forLog(b.req.URL), b.offset, b.t.maxResumes, cause)
 		}
 
 		b.stalls++
-		if b.stalls > b.maxStalls {
+		if b.stalls > b.t.maxStalls {
 			return fmt.Errorf("gave up resuming %s at byte %d after %d attempts without progress: %w",
-				forLog(b.req.URL), b.offset, b.maxStalls, cause)
+				forLog(b.req.URL), b.offset, b.t.maxStalls, cause)
 		}
 
 		// Info rather than Debug: a run of these is the only sign an operator has that a slow pull
@@ -333,7 +325,7 @@ func (b *resumableBody) resume(cause error) error {
 		// is called either way, so cancellation and Close are noticed on every attempt
 		var delay time.Duration
 		if b.stalls > 1 {
-			delay = time.Duration(b.stalls-1) * b.backoff
+			delay = time.Duration(b.stalls-1) * b.t.backoff
 		}
 
 		if err := b.sleep(delay); err != nil {
@@ -442,7 +434,7 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 	// transfer that follows. a timer that fires in the instant before Stop costs one attempt of the
 	// budget, which is why this is not the only thing bounding the read
 	headers := time.AfterFunc(reopenHeaderTimeout, cancel)
-	resp, err := b.base.RoundTrip(req)
+	resp, err := b.t.base.RoundTrip(req)
 	timedOut := !headers.Stop()
 
 	if err != nil {
