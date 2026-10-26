@@ -456,7 +456,8 @@ func TestResumableTransport_refusesAnEncodedSegment(t *testing.T) {
 }
 
 func TestResumableTransport_asksForIdentityOnResume(t *testing.T) {
-	// net/http would otherwise add gzip to the reissued request and transparently decode the reply
+	// the reissued request is a clone, so an Accept-Encoding set on the original would ride along;
+	// the resume pins identity so the segment arrives in the same coding as the stream so far
 	server := &flakyBlobServer{payload: payloadOfSize(8192), dropsLeft: 1, bytesPerDrop: 1000}
 
 	srv := httptest.NewServer(server)

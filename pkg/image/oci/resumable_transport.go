@@ -413,8 +413,9 @@ func (b *resumableBody) sleep(d time.Duration) error {
 // with Sscanf("bytes=%d-%d") and answers 416 to "bytes=N-", which would discard the layer on its
 // first drop.
 //
-// identity is asked for because the stream so far is wire bytes: splicing a decoded segment onto it
-// would be caught by a blob's digest but by nothing at all on a wrapped manifest.
+// identity is asked for explicitly, overriding any Accept-Encoding cloned from the original request,
+// because the stream so far is wire bytes and a segment in some other coding cannot be spliced onto
+// it. net/http adds no coding of its own to a request carrying a Range.
 func (b *resumableBody) reopen() (io.ReadCloser, error) {
 	ctx, cancel := context.WithCancel(b.req.Context())
 	if !b.adoptCancel(cancel) {
