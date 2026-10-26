@@ -52,12 +52,12 @@ const (
 	stallBackoff = time.Second
 
 	// statusClientClosedRequest is the non-standard 499 some proxies answer with when they abandon
-	// an upstream request, which net/http has no constant for
+	// an upstream request, which net/http has no constant for.
 	statusClientClosedRequest = 499
 )
 
 // errNoRangeSupport marks a server that will not resume however often it is asked: it answered the
-// range request with a status that settles the matter -- a plain 200, a 416, a redirect -- or with
+// range request with a status that settles the matter (a plain 200, a 416, a redirect), or with
 // a 206 whose Content-Range is unusable or starts at the wrong byte, or with a body in a different
 // content coding from the stream so far. a server that was merely busy is errResumeUnavailable,
 // one that refused to authorize the request is errCredentialsRejected, and any other refusal is
@@ -75,8 +75,8 @@ var errRangeRefused = errors.New("the server refused the resumed range request")
 var errObjectChanged = errors.New("the object changed while it was being read")
 
 // errResumeUnavailable marks a reopen the server could not serve just now: it was rate limited or
-// briefly broken. this is the condition resuming exists for -- a CDN edge unhealthy enough to
-// sever a multi-gigabyte stream is exactly the one liable to answer the reopen with a 503 -- so it
+// briefly broken. this is the condition resuming exists for. a CDN edge unhealthy enough to
+// sever a multi-gigabyte stream is exactly the one liable to answer the reopen with a 503, so it
 // spends a stall and goes round again rather than discarding everything already delivered.
 var errResumeUnavailable = errors.New("the server could not serve the resumed range just now")
 
@@ -288,7 +288,7 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 // them would make errors.Is(err, io.EOF) true on a truncation, and a clean end of stream is exactly
 // what a truncation must never be mistakable for: this repo's own file.IterateTar breaks on that
 // test and returns nil, as do several go-containerregistry helpers, so a layer we failed to fetch
-// would become a silently short SBOM -- the outcome this whole transport exists to prevent.
+// would become a silently short SBOM, the outcome this whole transport exists to prevent.
 //
 // it is called where the stream is known to be short, after finished() has ruled out a body that
 // arrived in full.
@@ -394,7 +394,7 @@ func (b *resumableBody) resume(cause error) error {
 
 			// the same renaming the read error gets, and for the same reason: http.Transport hands
 			// back a bare io.EOF when a peer accepts the connection, reads the request and closes
-			// without answering -- which is what a drained CDN edge does, and is how this path is
+			// without answering, which is what a drained CDN edge does, and is how this path is
 			// reached at all
 			cause = shortRead(err)
 
@@ -463,8 +463,8 @@ func (b *resumableBody) sleep(d time.Duration) error {
 
 // reopen issues the original request again for the bytes not yet delivered.
 //
-// the range is closed rather than open-ended. go-containerregistry's own registry -- which is what
-// `crane registry serve` and ko run, and which a good many CI harnesses embed -- parses the header
+// the range is closed rather than open-ended. go-containerregistry's own registry (which is what
+// `crane registry serve` and ko run, and which a good many CI harnesses embed) parses the header
 // with Sscanf("bytes=%d-%d") and answers 416 to "bytes=N-", which would discard the layer on its
 // first drop.
 //
@@ -516,7 +516,7 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 }
 
 // adoptCancel stores the cancel belonging to the reopen now in flight, ending any it replaces, and
-// reports whether the caller is still wanted -- Close may have arrived while it was being opened.
+// reports whether the caller is still wanted, since Close may have arrived while it was being opened.
 func (b *resumableBody) adoptCancel(cancel context.CancelFunc) bool {
 	b.mu.Lock()
 	previous := b.cancel
@@ -569,7 +569,7 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 	// a server that ignored the Range and began the object again, while still echoing back the
 	// range it was asked for, contradicts itself here: the body it declares is longer than the
 	// span it claims to be sending. it cannot catch a server whose lengths agree and whose bytes
-	// are simply wrong -- only the digest above can do that -- but it is the shape a server with
+	// are simply wrong (only the digest above can do that), but it is the shape a server with
 	// no real range support actually takes, and catching it here costs one request instead of a
 	// whole layer
 	if span := end - start + 1; resp.ContentLength >= 0 && resp.ContentLength != span {
