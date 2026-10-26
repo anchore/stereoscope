@@ -272,7 +272,7 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 		if done, final := b.finished(); done {
 			return n, b.latch(final)
 		}
-		if resumeErr := b.resume(shortRead(readErr)); resumeErr != nil {
+		if resumeErr := b.resume(quoted(shortRead(readErr))); resumeErr != nil {
 			return n, b.latch(resumeErr)
 		}
 		if n > 0 {
@@ -347,6 +347,11 @@ func (b *resumableBody) finished() (bool, error) {
 func (b *resumableBody) resume(cause error) error {
 	b.closeCurrent()
 
+	// Info rather than Debug: a run of these is the only sign an operator has that a slow pull is
+	// recovering rather than wedged
+	log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause).
+		Info("blob stream ended early, resuming from the current offset")
+
 	for {
 		b.resumes++
 		if b.resumes > b.t.maxResumes {
@@ -359,11 +364,6 @@ func (b *resumableBody) resume(cause error) error {
 			return fmt.Errorf("gave up resuming %s at byte %d after %d attempts without progress: %w",
 				forLog(b.req), b.offset, b.t.maxStalls, cause)
 		}
-
-		// Info rather than Debug: a run of these is the only sign an operator has that a slow pull
-		// is recovering rather than wedged, and there are at most maxTotalResumes of them
-		log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause).
-			Info("blob stream ended early, resuming from the current offset")
 
 		// the first attempt after a drop goes out at once; only repeated failures back off. sleep
 		// is called either way, so cancellation and Close are noticed on every attempt
@@ -397,7 +397,9 @@ func (b *resumableBody) resume(cause error) error {
 			// back a bare io.EOF when a peer accepts the connection, reads the request and closes
 			// without answering, which is what a drained CDN edge does, and is how this path is
 			// reached at all
-			cause = shortRead(err)
+			cause = quoted(shortRead(err))
+			log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause).
+				Debug("unable to resume blob stream, retrying")
 
 			continue
 		}
@@ -716,12 +718,7 @@ func (b *resumableBody) Close() error {
 // malformed.
 func parseContentRange(header string) (int64, int64, int64, error) {
 	malformed := func() (int64, int64, int64, error) {
-		// the server picks the header's length, so only a prefix of it goes into the error
-		shown := header
-		if len(shown) > 64 {
-			shown = shown[:64] + "..."
-		}
-		return 0, 0, 0, fmt.Errorf("malformed Content-Range %q", shown)
+		return 0, 0, 0, fmt.Errorf("malformed Content-Range %q", clip(header))
 	}
 
 	unit, spec, ok := strings.Cut(strings.TrimSpace(header), " ")
@@ -766,8 +763,42 @@ func parseContentRange(header string) (int64, int64, int64, error) {
 func forLog(req *http.Request) string {
 	u := firstRequest(req).URL
 
-	return u.Host + u.Path
+	// escaped, since a foreign layer URL comes from the manifest and its path may decode to anything
+	return u.Host + u.EscapedPath()
 }
+
+// maxErrorText caps how much of a server-influenced message reaches a log line or an error.
+const maxErrorText = 200
+
+// clip caps text a server chose before it goes into a log line or an error.
+func clip(s string) string {
+	if len(s) > maxErrorText {
+		return s[:maxErrorText] + "..."
+	}
+
+	return s
+}
+
+// quotedError keeps an error's identity for errors.Is, but caps its text and escapes control
+// characters. a failed reopen's error can carry bytes the server chose (some Go releases put a
+// malformed header line into it raw), and it is logged and handed to the caller.
+type quotedError struct{ err error }
+
+func quoted(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	return quotedError{err: err}
+}
+
+func (e quotedError) Error() string {
+	q := strconv.Quote(clip(e.err.Error()))
+
+	return q[1 : len(q)-1]
+}
+
+func (e quotedError) Unwrap() error { return e.err }
 
 func closeQuietly(c io.Closer) {
 	if err := c.Close(); err != nil {

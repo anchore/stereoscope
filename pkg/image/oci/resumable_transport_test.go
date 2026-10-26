@@ -1001,8 +1001,19 @@ func TestParseContentRange_echoesOnlyAPrefixOfAMalformedHeader(t *testing.T) {
 	} {
 		_, _, _, err := parseContentRange(header)
 		require.Error(t, err)
-		assert.Less(t, len(err.Error()), 128)
+		assert.Less(t, len(err.Error()), maxErrorText+64)
 	}
+}
+
+func Test_quoted(t *testing.T) {
+	// a reopen's error can carry raw bytes from a hostile server, and it reaches logs and terminals
+	inner := fmt.Errorf("malformed MIME header line: X: \x1b]0;pwned\x07%s: %w", strings.Repeat("y", 1<<20), io.ErrUnexpectedEOF)
+	err := quoted(inner)
+
+	assert.NotContains(t, err.Error(), "\x1b", "control characters must be escaped")
+	assert.Contains(t, err.Error(), `\x1b]0;pwned\a`)
+	assert.Less(t, len(err.Error()), maxErrorText+64, "the text must be capped")
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF, "the error must stay classifiable")
 }
 
 func TestResumableTransport_refusesARangeRunningPastTheEnd(t *testing.T) {
@@ -1183,6 +1194,11 @@ func Test_forLog(t *testing.T) {
 
 	assert.Equal(t, "registry.example.com/v2/img/blobs/sha256:abc", forLog(cdn),
 		"a signed CDN URL must never reach a log line or an error")
+
+	// a foreign layer URL comes from the manifest, so its path is whatever the image author chose
+	foreign := httptest.NewRequest(http.MethodGet, "https://evil.example/%1b[2J%0aFAKE/blobs/sha256:00", nil)
+	assert.Equal(t, "evil.example/%1b[2J%0aFAKE/blobs/sha256:00", forLog(foreign),
+		"a path that decodes to control characters must stay escaped")
 }
 
 func TestResumableTransport_acceptsAnIdentityContentEncoding(t *testing.T) {
