@@ -1,9 +1,8 @@
 package log
 
 import (
+	"bytes"
 	"io"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -22,9 +21,12 @@ func setLog(t *testing.T, l logger.Logger) {
 }
 
 func TestLogrusBridge_forwardsEntries(t *testing.T) {
-	logFile := filepath.Join(t.TempDir(), "log.txt")
-	l, err := logrusadapter.New(logrusadapter.Config{FileLocation: logFile, Level: logger.DebugLevel})
+	// capture in memory: the adapter never closes a FileLocation file, which breaks TempDir cleanup on windows
+	backing := logrus.New()
+	l, err := logrusadapter.Use(backing, logrusadapter.Config{Level: logger.DebugLevel})
 	require.NoError(t, err)
+	var buf bytes.Buffer
+	backing.SetOutput(&buf)
 	setLog(t, l)
 
 	lib := logrus.New()
@@ -34,9 +36,7 @@ func TestLogrusBridge_forwardsEntries(t *testing.T) {
 	lib.Info("from-library-info")
 	lib.WithField("from", "other").Error("from-library-error")
 
-	contents, err := os.ReadFile(logFile)
-	require.NoError(t, err)
-	got := string(contents)
+	got := buf.String()
 	assert.Contains(t, got, "from-library-warn")
 	assert.Contains(t, got, "xattr-err")
 	assert.Contains(t, got, "from-library-info")
