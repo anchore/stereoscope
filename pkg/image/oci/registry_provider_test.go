@@ -440,7 +440,7 @@ func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T
 }
 
 func Test_RegistryProvider_blobResumeCanBeDisabled(t *testing.T) {
-	// an operator meeting a registry that mishandles ranges needs a remedy that is not a release
+	// a caller meeting a registry that mishandles range requests needs a way to turn resuming off
 	effective := newEffectiveURLTransport(nil)
 
 	getTransportWithEffectiveURL(nil, effective, false)
