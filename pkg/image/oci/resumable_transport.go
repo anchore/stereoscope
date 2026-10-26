@@ -173,7 +173,7 @@ func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response
 		// the offsets are over wire bytes, so a stream that arrives in some coding cannot have an
 		// identity segment spliced onto it. net/http only strips a coding it asked for itself, and
 		// that sets ContentLength to -1, so an explicit one from the server survives to here
-		identityEncoded(resp.Header.Get("Content-Encoding")) &&
+		identityEncoded(resp.Header) &&
 		resp.ContentLength >= t.minSize
 }
 
@@ -525,7 +525,7 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 
 	// the coding check guards a body about to be spliced, so it comes after the status check: a
 	// busy server may serve its error page compressed, and that must not read as a permanent refusal
-	if !identityEncoded(resp.Header.Get("Content-Encoding")) {
+	if !identityEncoded(resp.Header) {
 		return reject(fmt.Errorf("%w: the resumed segment came back encoded", errNoRangeSupport))
 	}
 
@@ -598,10 +598,17 @@ func (b *resumableBody) refusedStatus(resp *http.Response) error {
 // "identity" is not a valid content-coding for a response, but a server that is echoing the
 // Accept-Encoding it was sent will return it anyway, and reopen always asks for identity. treating
 // that as an encoding would permanently refuse to resume from such a server.
-func identityEncoded(encoding string) bool {
-	encoding = strings.TrimSpace(encoding)
+//
+// every Content-Encoding line is checked, since a header repeated with a real coding after an
+// identity one still means the body is encoded.
+func identityEncoded(header http.Header) bool {
+	for _, encoding := range header.Values("Content-Encoding") {
+		if encoding = strings.TrimSpace(encoding); encoding != "" && !strings.EqualFold(encoding, "identity") {
+			return false
+		}
+	}
 
-	return encoding == "" || strings.EqualFold(encoding, "identity")
+	return true
 }
 
 // currentBody returns the body to read from, or an error if the caller has closed us.

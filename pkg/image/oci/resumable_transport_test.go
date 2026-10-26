@@ -1117,12 +1117,19 @@ func TestResumableTransport_acceptsAnIdentityContentEncoding(t *testing.T) {
 }
 
 func Test_identityEncoded(t *testing.T) {
-	assert.True(t, identityEncoded(""))
-	assert.True(t, identityEncoded("identity"))
-	assert.True(t, identityEncoded("Identity"))
-	assert.True(t, identityEncoded("  identity  "))
-	assert.False(t, identityEncoded("gzip"))
-	assert.False(t, identityEncoded("identity, gzip"))
+	encoded := func(values ...string) http.Header {
+		return http.Header{"Content-Encoding": values}
+	}
+
+	assert.True(t, identityEncoded(http.Header{}))
+	assert.True(t, identityEncoded(encoded("")))
+	assert.True(t, identityEncoded(encoded("identity")))
+	assert.True(t, identityEncoded(encoded("Identity")))
+	assert.True(t, identityEncoded(encoded("  identity  ")))
+	assert.True(t, identityEncoded(encoded("identity", "identity")))
+	assert.False(t, identityEncoded(encoded("gzip")))
+	assert.False(t, identityEncoded(encoded("identity, gzip")))
+	assert.False(t, identityEncoded(encoded("identity", "gzip")), "a later coding still applies")
 }
 
 func TestResumableTransport_givesUpOnceTheTotalBudgetIsSpent(t *testing.T) {
