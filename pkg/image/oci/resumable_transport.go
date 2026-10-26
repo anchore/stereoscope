@@ -87,8 +87,9 @@ var errReopenTimeout = errors.New("no response headers to the resumed range requ
 // errCredentialsRejected marks a reopen the server refused to authorize. it is permanent here on
 // purpose: reopen reissues the original request below go-containerregistry's auth transport, so
 // every attempt would carry the same expired token or the same stale pre-signed URL and earn the
-// same refusal. retrying would only turn one honest failure into ten. mending it properly means
-// giving this transport a way to re-authorize, which is a larger change than resuming.
+// same refusal. retrying would only turn one honest failure into a whole stall budget of them.
+// mending it properly means giving this transport a way to re-authorize, which is a larger change
+// than resuming.
 var errCredentialsRejected = errors.New("the server rejected the credentials on the resumed range request")
 
 // resumableTransport wraps a RoundTripper so that a large GET whose body fails partway through is
