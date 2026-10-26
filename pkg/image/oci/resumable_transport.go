@@ -180,8 +180,9 @@ func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response
 // isBlobRequest reports whether a request is fetching a registry blob, a /v2/<name>/blobs/<digest>
 // URL. a blob is usually served by a redirect to a CDN, so the request seen here is often the
 // redirected one, whose path is the CDN's business; the client links each redirected request to
-// the response that caused it, so the walk back to the first one finds the registry URL. a foreign
-// layer, fetched from a URL of the manifest's choosing rather than the registry's, is not one.
+// the response that caused it, so the walk back to the first one finds the registry URL. the match
+// is on the path alone, so a foreign layer at a URL of this shape (MCR's Windows layers are) is
+// wrapped too, which is safe because go-containerregistry digest-verifies those the same way.
 func isBlobRequest(req *http.Request) bool {
 	// the last /blobs/, since a repository name may itself have a blobs component
 	path := firstRequest(req).URL.Path
