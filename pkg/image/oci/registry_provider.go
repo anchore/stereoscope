@@ -262,6 +262,9 @@ func getTransportWithEffectiveURL(tlsConfig *tls.Config, effectiveTransport *eff
 	// digest verification so that a reassembled layer is still verified end to end
 	var base http.RoundTripper = baseTransport
 	if !disableResume {
+		// net/http quotes a malformed status line into its error, and a resumed blob logs that error
+		// on every reopen, so keep what a server can put there well under the 10 MiB default
+		baseTransport.MaxResponseHeaderBytes = 1 << 20
 		base = newResumableTransport(baseTransport)
 	}
 
