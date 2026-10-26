@@ -73,6 +73,10 @@ var errObjectChanged = errors.New("the object changed while it was being read")
 // spends a stall and goes round again rather than discarding everything already delivered.
 var errResumeUnavailable = errors.New("the server could not serve the resumed range just now")
 
+// errReopenTimeout marks a reopen that produced no response headers in time. like a busy server it
+// spends a stall and goes round again.
+var errReopenTimeout = errors.New("no response headers to the resumed range request")
+
 // errCredentialsRejected marks a reopen the server refused to authorize. it is permanent here on
 // purpose: reopen reissues the original request below go-containerregistry's auth transport, so
 // every attempt would carry the same expired token or the same stale pre-signed URL and earn the
@@ -98,12 +102,13 @@ var errCredentialsRejected = errors.New("the server rejected the credentials on 
 // reopens in total. between them they bound the number of attempts; the only clock is on a reopen
 // producing response headers, never on the transfer itself.
 type resumableTransport struct {
-	base        http.RoundTripper
-	minSize     int64
-	minProgress int64
-	backoff     time.Duration
-	maxStalls   int
-	maxResumes  int
+	base          http.RoundTripper
+	minSize       int64
+	minProgress   int64
+	backoff       time.Duration
+	headerTimeout time.Duration
+	maxStalls     int
+	maxResumes    int
 }
 
 func newResumableTransport(base http.RoundTripper) *resumableTransport {
@@ -112,12 +117,13 @@ func newResumableTransport(base http.RoundTripper) *resumableTransport {
 	}
 
 	return &resumableTransport{
-		base:        base,
-		minSize:     resumeMinSize,
-		minProgress: minResumeProgress,
-		backoff:     stallBackoff,
-		maxStalls:   maxConsecutiveStalls,
-		maxResumes:  maxTotalResumes,
+		base:          base,
+		minSize:       resumeMinSize,
+		minProgress:   minResumeProgress,
+		backoff:       stallBackoff,
+		headerTimeout: reopenHeaderTimeout,
+		maxStalls:     maxConsecutiveStalls,
+		maxResumes:    maxTotalResumes,
 	}
 }
 
@@ -429,19 +435,22 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 	req.Header.Set("Accept-Encoding", "identity")
 
 	// stopped once headers arrive, so the clock is on reaching the server rather than on the
-	// transfer that follows. a timer that fires in the instant before Stop costs one attempt of the
-	// budget, which is why this is not the only thing bounding the read
-	headers := time.AfterFunc(reopenHeaderTimeout, cancel)
+	// transfer that follows
+	headers := time.AfterFunc(b.t.headerTimeout, cancel)
 	resp, err := b.t.base.RoundTrip(req)
-	timedOut := !headers.Stop()
 
-	if err != nil {
-		if timedOut {
-			// the cancellation was ours, not the caller's. left bare it surfaces as "context
-			// canceled", which is indistinguishable from a Ctrl-C nobody pressed
-			return nil, fmt.Errorf("no response headers within %s: %w", reopenHeaderTimeout, err)
+	if !headers.Stop() {
+		// the cancellation was ours, not the caller's, so it is reported as a timeout rather than
+		// wrapping the context error, which would read as a cancellation nobody asked for. a
+		// response that raced the timer is already cancelled, so it is discarded
+		if err == nil {
+			closeQuietly(resp.Body)
 		}
 
+		return nil, fmt.Errorf("%w within %s", errReopenTimeout, b.t.headerTimeout)
+	}
+
+	if err != nil {
 		return nil, err
 	}
 

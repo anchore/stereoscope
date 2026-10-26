@@ -1162,6 +1162,40 @@ func TestResumableTransport_closeAbortsAReopenInFlight(t *testing.T) {
 	}
 }
 
+func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *testing.T) {
+	// the header timeout ends a reopen by cancelling its context, but nobody cancelled the pull. a
+	// caller sorting errors by errors.Is(err, context.Canceled) must not read this as an abort
+	payload := payloadOfSize(64 * 1024)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Range") != "" {
+			// accept the reopen and fall silent, never sending headers
+			<-r.Context().Done()
+			return
+		}
+
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload[:1024])
+		w.(http.Flusher).Flush()
+		panic(http.ErrAbortHandler)
+	}))
+	t.Cleanup(srv.Close)
+
+	transport := newTestTransport(1)
+	transport.headerTimeout = 50 * time.Millisecond
+
+	resp, err := (&http.Client{Transport: transport}).Get(srv.URL)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	_, err = io.ReadAll(resp.Body)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, errReopenTimeout)
+	assert.NotErrorIs(t, err, context.Canceled, "a timeout must not be reported as a cancellation")
+	assert.Contains(t, err.Error(), "without progress", "a timeout is retried like any other stall")
+}
+
 func TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims(t *testing.T) {
 	// a server with no real range support may echo back the range it was asked for and then serve
 	// the object from the beginning anyway. it contradicts itself doing so -- the body is longer
