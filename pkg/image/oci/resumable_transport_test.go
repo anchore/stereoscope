@@ -1,12 +1,11 @@
 package oci
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -258,9 +257,21 @@ func newTestClient() *http.Client {
 	return &http.Client{Transport: newTestTransport()}
 }
 
+// fetch reads the blob at url through transport, returning what arrived and how the read ended.
+func fetch(t *testing.T, transport *resumableTransport, url string) ([]byte, error) {
+	t.Helper()
+
+	resp, err := (&http.Client{Transport: transport}).Get(url)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	return io.ReadAll(resp.Body)
+}
+
 func TestResumableTransport_reassemblesBlobAcrossDrops(t *testing.T) {
 	payload := payloadOfSize(8192)
-	server := &flakyBlobServer{payload: payload, dropsLeft: 3, bytesPerDrop: 1000}
+	// the segments echo back the identity coding they were asked for, which is no coding at all
+	server := &flakyBlobServer{payload: payload, dropsLeft: 3, bytesPerDrop: 1000, contentEncoding: "identity"}
 
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
@@ -281,6 +292,11 @@ func TestResumableTransport_reassemblesBlobAcrossDrops(t *testing.T) {
 	// closed range, since an open-ended one is answered with 416 by go-containerregistry's own registry
 	assert.Equal(t, []string{"", "bytes=1000-8191", "bytes=2000-8191", "bytes=3000-8191"},
 		server.seenRanges())
+
+	// and pins the coding, so a segment arrives in the same coding as the stream so far
+	for i, h := range server.seenHeaders()[1:] {
+		assert.Equal(t, "identity", h.Get("Accept-Encoding"), "resume %d must pin the coding", i)
+	}
 }
 
 func TestResumableTransport_survivesManyDropsWhileMakingProgress(t *testing.T) {
@@ -293,11 +309,7 @@ func TestResumableTransport_survivesManyDropsWhileMakingProgress(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	got, err := io.ReadAll(resp.Body)
+	got, err := fetch(t, newTestTransport(), srv.URL+blobPath)
 	require.NoError(t, err)
 	assert.Equal(t, payload, got)
 	assert.Greater(t, len(server.seenRanges()), maxConsecutiveStalls)
@@ -338,11 +350,7 @@ func TestResumableTransport_givesUpWhenNoProgressIsMade(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	_, err = io.ReadAll(resp.Body)
+	_, err := fetch(t, newTestTransport(), srv.URL+blobPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "without progress")
 
@@ -350,142 +358,68 @@ func TestResumableTransport_givesUpWhenNoProgressIsMade(t *testing.T) {
 	assert.Len(t, server.seenRanges(), maxConsecutiveStalls+1)
 }
 
-func TestResumableTransport_refusesAResumeThatIsNotPartialContent(t *testing.T) {
-	// a server answering a range request with the whole body would restart the stream, duplicating
-	// everything already written
-	server := &flakyBlobServer{
-		payload:      payloadOfSize(8192),
-		dropsLeft:    1000,
-		bytesPerDrop: 512,
-		rangeStatus:  http.StatusOK,
+func TestResumableTransport_refusesAResumeItCannotSplice(t *testing.T) {
+	// each of these is settled by the server, so it is refused at once rather than after the whole
+	// budget, and the failure is no slower than it was before resuming existed
+	tests := []struct {
+		name    string
+		server  func(*flakyBlobServer)
+		wantMsg string
+	}{
+		{
+			// a whole body in answer to a range would duplicate everything already written
+			name:    "a 200 in answer to a range",
+			server:  func(s *flakyBlobServer) { s.rangeStatus = http.StatusOK },
+			wantMsg: "expected HTTP 206",
+		},
+		{
+			name:    "a resume from the wrong offset",
+			server:  func(s *flakyBlobServer) { s.rangeStartSkew = 16 },
+			wantMsg: "server resumed at byte",
+		},
+		{
+			name:    "an unusable Content-Range",
+			server:  func(s *flakyBlobServer) { s.blankContentRange = true },
+			wantMsg: "malformed Content-Range",
+		},
+		{
+			// direct evidence the object is not the one the read began with
+			name:    "a changed blob length",
+			server:  func(s *flakyBlobServer) { s.totalSkew = 64 },
+			wantMsg: "the blob is now",
+		},
+		{
+			// decoded bytes spliced onto wire bytes would only be caught by the digest
+			name:    "an encoded segment",
+			server:  func(s *flakyBlobServer) { s.contentEncoding = "gzip" },
+			wantMsg: "came back encoded",
+		},
+		{
+			// a server with no real range support may echo the range back and serve the object from
+			// the start anyway, declaring more than the span it claims
+			name:    "a segment longer than its range",
+			server:  func(s *flakyBlobServer) { s.restartOnRange = true },
+			wantMsg: "covers",
+		},
 	}
 
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := &flakyBlobServer{payload: payloadOfSize(8192), dropsLeft: 1, bytesPerDrop: 1000}
+			tt.server(server)
 
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
+			srv := httptest.NewServer(server)
+			t.Cleanup(srv.Close)
 
-	_, err = io.ReadAll(resp.Body)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errResumeRefused)
-	assert.Contains(t, err.Error(), "after ", "the original drop should survive in the error chain")
-
-	// a server that will not resume is refused at once rather than after the whole budget, so the
-	// failure is no slower than it was before resuming existed
-	assert.Len(t, server.seenRanges(), 2)
-}
-
-func TestResumableTransport_refusesAResumeFromTheWrongOffset(t *testing.T) {
-	server := &flakyBlobServer{
-		payload:        payloadOfSize(8192),
-		dropsLeft:      1000,
-		bytesPerDrop:   512,
-		rangeStartSkew: 16,
+			got, err := fetch(t, newTestTransport(), srv.URL+blobPath)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, errResumeRefused)
+			assert.Contains(t, err.Error(), tt.wantMsg)
+			assert.Contains(t, err.Error(), "after ", "the original drop should survive in the error chain")
+			assert.Len(t, got, 1000, "only the bytes from before the drop are handed back")
+			assert.Len(t, server.seenRanges(), 2, "a refusal costs one attempt")
+		})
 	}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	_, err = io.ReadAll(resp.Body)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errResumeRefused)
-	assert.Contains(t, err.Error(), "server resumed at byte")
-	assert.Len(t, server.seenRanges(), 2)
-}
-
-func TestResumableTransport_refusesAResumeWithAnUnusableContentRange(t *testing.T) {
-	// a server that cannot form a Content-Range will not form one on the fifth attempt either
-	server := &flakyBlobServer{
-		payload:           payloadOfSize(8192),
-		dropsLeft:         1000,
-		bytesPerDrop:      512,
-		blankContentRange: true,
-	}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	_, err = io.ReadAll(resp.Body)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errResumeRefused)
-	assert.Len(t, server.seenRanges(), 2)
-}
-
-func TestResumableTransport_refusesAResumeWhenTheBlobLengthChanged(t *testing.T) {
-	// a Content-Range reporting a different total is direct evidence the object is not the one the
-	// read began with, and costs nothing to check
-	server := &flakyBlobServer{
-		payload:      payloadOfSize(8192),
-		dropsLeft:    1,
-		bytesPerDrop: 1000,
-		totalSkew:    64,
-	}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	_, err = io.ReadAll(resp.Body)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errResumeRefused)
-	assert.Contains(t, err.Error(), "the blob is now")
-	assert.Len(t, server.seenRanges(), 2)
-}
-
-func TestResumableTransport_refusesAnEncodedSegment(t *testing.T) {
-	// splicing decoded bytes onto a stream of wire bytes would only be caught by the digest, once the
-	// whole layer had been read
-	server := &flakyBlobServer{
-		payload:         payloadOfSize(8192),
-		dropsLeft:       1,
-		bytesPerDrop:    1000,
-		contentEncoding: "gzip",
-	}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	_, err = io.ReadAll(resp.Body)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errResumeRefused)
-	assert.Contains(t, err.Error(), "came back encoded")
-}
-
-func TestResumableTransport_asksForIdentityOnResume(t *testing.T) {
-	// the reissued request is a clone, so an Accept-Encoding set on the original would ride along;
-	// the resume pins identity so the segment arrives in the same coding as the stream so far
-	server := &flakyBlobServer{payload: payloadOfSize(8192), dropsLeft: 1, bytesPerDrop: 1000}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	_, err = io.ReadAll(resp.Body)
-	require.NoError(t, err)
-
-	headers := server.seenHeaders()
-	require.Len(t, headers, 2)
-	assert.Equal(t, "identity", headers[1].Get("Accept-Encoding"), "the resume must pin the coding")
 }
 
 func TestResumableTransport_neverReplaysCredentialsOnAResume(t *testing.T) {
@@ -536,11 +470,7 @@ func TestResumableTransport_resumesThroughARedirectToACDN(t *testing.T) {
 	}))
 	t.Cleanup(registry.Close)
 
-	resp, err := newTestClient().Get(registry.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	got, err := io.ReadAll(resp.Body)
+	got, err := fetch(t, newTestTransport(), registry.URL+blobPath)
 	require.NoError(t, err)
 	assert.Equal(t, payload, got)
 	assert.Equal(t, []string{"", "bytes=1000-8191", "bytes=2000-8191"}, cdn.seenRanges())
@@ -705,11 +635,7 @@ func TestResumableTransport_neverReturnsMoreThanWasDeclared(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	got, err := io.ReadAll(resp.Body)
+	got, err := fetch(t, newTestTransport(), srv.URL+blobPath)
 	require.NoError(t, err)
 	assert.Len(t, got, len(payload), "the surplus past Content-Length must be withheld")
 	assert.Equal(t, payload, got)
@@ -756,11 +682,7 @@ func TestResumableTransport_completesWhenTheConnectionIsResetAfterTheLastByte(t 
 	transport := newResumableTransport(srv.Client().Transport, directClient(srv.Client().Transport))
 	transport.backoff = 0
 
-	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	got, err := io.ReadAll(resp.Body)
+	got, err := fetch(t, transport, srv.URL+blobPath)
 	require.NoError(t, err)
 	assert.Equal(t, payload, got)
 	assert.Len(t, server.seenRanges(), 1, "a complete body must not be resumed at all")
@@ -1172,11 +1094,7 @@ func TestResumableTransport_retriesAResumeTheServerCouldNotServeYet(t *testing.T
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	got, err := io.ReadAll(resp.Body)
+	got, err := fetch(t, newTestTransport(), srv.URL+blobPath)
 	require.NoError(t, err)
 	assert.Equal(t, payload, got, "the blob must be reassembled across the refusals")
 
@@ -1190,9 +1108,13 @@ func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
 	// followed a fresh redirect to get it, and a 307 here is one the client could not follow
 	tests := []struct {
 		status    int
+		encoding  string
 		permanent bool
 	}{
 		{status: http.StatusRequestTimeout},
+		// a busy server may serve its error page compressed, and the coding check guards only a body
+		// about to be spliced, so this is still a busy server rather than one that cannot resume
+		{status: http.StatusServiceUnavailable, encoding: "gzip"},
 		{status: http.StatusTooManyRequests},
 		{status: statusClientClosedRequest},
 		{status: http.StatusBadGateway},
@@ -1209,22 +1131,19 @@ func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(strconv.Itoa(tt.status), func(t *testing.T) {
+		t.Run(strconv.Itoa(tt.status)+tt.encoding, func(t *testing.T) {
 			server := &flakyBlobServer{
-				payload:         payloadOfSize(8192),
-				dropsLeft:       1,
-				bytesPerDrop:    1000,
-				transientStatus: tt.status,
+				payload:                  payloadOfSize(8192),
+				dropsLeft:                1,
+				bytesPerDrop:             1000,
+				transientStatus:          tt.status,
+				transientContentEncoding: tt.encoding,
 			}
 
 			srv := httptest.NewServer(server)
 			t.Cleanup(srv.Close)
 
-			resp, err := newTestClient().Get(srv.URL + blobPath)
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = resp.Body.Close() })
-
-			_, err = io.ReadAll(resp.Body)
+			_, err := fetch(t, newTestTransport(), srv.URL+blobPath)
 			require.Error(t, err)
 
 			if tt.permanent {
@@ -1254,30 +1173,6 @@ func Test_forLog(t *testing.T) {
 		"a path that decodes to control characters must stay escaped")
 }
 
-func TestResumableTransport_acceptsAnIdentityContentEncoding(t *testing.T) {
-	// reopen asks for identity, and a server that echoes the Accept-Encoding it was sent returns
-	// it. identity is not a valid content-coding for a response, so it means the same as no header
-	// at all; refusing it would permanently poison resuming against such a server.
-	payload := payloadOfSize(8192)
-	server := &flakyBlobServer{
-		payload:         payload,
-		dropsLeft:       1,
-		bytesPerDrop:    1000,
-		contentEncoding: "identity",
-	}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	got, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	assert.Equal(t, payload, got)
-}
-
 func Test_identityEncoded(t *testing.T) {
 	encoded := func(values ...string) http.Header {
 		return http.Header{"Content-Encoding": values}
@@ -1304,44 +1199,12 @@ func TestResumableTransport_givesUpOnceTheTotalBudgetIsSpent(t *testing.T) {
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	_, err = io.ReadAll(resp.Body)
+	_, err := fetch(t, newTestTransport(), srv.URL+blobPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "in total")
 
 	// the initial request plus exactly the total budget, and no more
 	assert.Len(t, server.seenRanges(), maxTotalResumes+1)
-}
-
-func TestResumableTransport_retriesABusyServerWhoseErrorPageIsEncoded(t *testing.T) {
-	// the coding check guards a body about to be spliced, which is only ever a 206. a busy server
-	// serving a compressed error page must still be retried, not refused as one that cannot resume
-	payload := payloadOfSize(8192)
-	server := &flakyBlobServer{
-		payload:                  payload,
-		dropsLeft:                1,
-		bytesPerDrop:             1000,
-		transientStatus:          http.StatusServiceUnavailable,
-		transientTimes:           2,
-		transientContentEncoding: "gzip",
-	}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	got, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	assert.Equal(t, payload, got, "a compressed error page must not be read as a refusal to resume")
-
-	// the initial request, the two refusals, and the attempt that finally served the range
-	assert.Len(t, server.seenRanges(), 4)
 }
 
 func TestResumableTransport_closeAbortsAReopenInFlight(t *testing.T) {
@@ -1476,11 +1339,7 @@ func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *test
 	transport := newTestTransport()
 	transport.idleTimeout = 50 * time.Millisecond
 
-	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	_, err = io.ReadAll(resp.Body)
+	_, err := fetch(t, transport, srv.URL+blobPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no response to the resumed range request")
 	assert.NotErrorIs(t, err, context.Canceled, "a timeout must not be reported as a cancellation")
@@ -1567,11 +1426,7 @@ func TestResumableTransport_aBodyThatStaysSilentSaysSo(t *testing.T) {
 	transport.idleTimeout = 200 * time.Millisecond
 	transport.maxStalls = 0
 
-	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	_, err = io.ReadAll(resp.Body)
+	_, err := fetch(t, transport, srv.URL+blobPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no data received within")
 	assert.NotErrorIs(t, err, http.ErrBodyReadAfterClose)
@@ -1615,201 +1470,64 @@ func TestResumableTransport_progressEarnsBackTotalBudget(t *testing.T) {
 	transport := newTestTransport()
 	transport.resumeCredit = minResumeProgress
 
-	resp, err := (&http.Client{Transport: transport}).Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
-
-	got, err := io.ReadAll(resp.Body)
+	got, err := fetch(t, transport, srv.URL+blobPath)
 	require.NoError(t, err)
 	assert.Equal(t, payload, got)
 	assert.Len(t, server.seenRanges(), drops+1)
 }
 
-func TestResumableTransport_refusesASegmentLongerThanTheRangeItClaims(t *testing.T) {
-	// a server with no real range support may echo back the range it was asked for and then serve
-	// the object from the beginning anyway. it contradicts itself doing so (the body is longer
-	// than the span the Content-Range claims), and that is worth catching here, because otherwise
-	// the whole layer downloads again before the digest check rejects it.
-	payload := payloadOfSize(8192)
-	server := &flakyBlobServer{
-		payload:        payload,
-		dropsLeft:      1,
-		bytesPerDrop:   1000,
-		restartOnRange: true,
-	}
-
-	srv := httptest.NewServer(server)
-	t.Cleanup(srv.Close)
-
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	got, err := io.ReadAll(resp.Body)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errResumeRefused)
-	assert.Contains(t, err.Error(), "covers")
-	assert.Len(t, got, 1000, "only the bytes from before the drop are handed back")
-
-	// permanent, so it costs one attempt rather than the whole budget
-	assert.Len(t, server.seenRanges(), 2)
-}
-
-// clampingBlobServer honours every Range but answers with a self-consistent 206 far shorter than
-// the span asked for: Content-Range, Content-Length and the bytes written all agree, so the segment
-// is accepted and then ends in a bare io.EOF well short of the object. It is the shape a badly
-// configured mirror takes, and the only one that produces an io.EOF as the cause of a terminal
-// failure: an ordinary truncation is reported by net/http as io.ErrUnexpectedEOF already.
-type clampingBlobServer struct {
-	payload []byte
-	clamp   int
-}
-
-func (s *clampingBlobServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := int64(0)
-	status := http.StatusOK
-
-	if spec := r.Header.Get("Range"); spec != "" {
-		var end int64
-		if _, err := fmt.Sscanf(spec, "bytes=%d-%d", &start, &end); err != nil {
-			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
-			return
-		}
-		status = http.StatusPartialContent
-
-		sending := int64(s.clamp)
-		if start+sending > int64(len(s.payload)) {
-			sending = int64(len(s.payload)) - start
-		}
-
-		w.Header().Set("Content-Range",
-			fmt.Sprintf("bytes %d-%d/%d", start, start+sending-1, len(s.payload)))
-		w.Header().Set("Content-Length", strconv.FormatInt(sending, 10))
-		w.WriteHeader(status)
-		_, _ = w.Write(s.payload[start : start+sending])
-
-		return
-	}
-
-	// the first response declares the whole object and delivers a fraction of it
-	w.Header().Set("Content-Length", strconv.Itoa(len(s.payload)))
-	w.WriteHeader(status)
-	_, _ = w.Write(s.payload[:s.clamp])
-	w.(http.Flusher).Flush()
-}
-
 func TestResumableTransport_aFailedTransferIsNeverACleanEndOfStream(t *testing.T) {
 	// the sharpest edge this transport could leave: a caller testing errors.Is(err, io.EOF) to mean
 	// "the stream ended" would read a truncated layer as a complete one. file.IterateTar in this
-	// repo does exactly that test, so the terminal error must never carry io.EOF in its chain
+	// repo does exactly that test, so the terminal error must never carry io.EOF in its chain.
+	//
+	// each resume is answered with a self-consistent 206 far shorter than asked for, so each segment
+	// ends in a bare io.EOF well short of the blob, the one shape whose cause is io.EOF rather than
+	// the io.ErrUnexpectedEOF net/http reports for a truncation
 	payload := payloadOfSize(256 * 1024)
-	server := &clampingBlobServer{payload: payload, clamp: 4096}
+	server := &flakyBlobServer{payload: payload, dropsLeft: 1, bytesPerDrop: 4096}
 
 	srv := httptest.NewServer(server)
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient().Get(srv.URL + blobPath)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
+	clamped := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		start, _ := parseRangeRequest(req.Header.Get("Range"))
+		end := min(start+4096, int64(len(payload))) - 1
+		return &http.Response{
+			StatusCode:    http.StatusPartialContent,
+			ContentLength: end - start + 1,
+			Header:        http.Header{"Content-Range": {fmt.Sprintf("bytes %d-%d/%d", start, end, len(payload))}},
+			Body:          io.NopCloser(bytes.NewReader(payload[start : end+1])),
+			Request:       req,
+		}, nil
+	})
 
-	_, err = io.ReadAll(resp.Body)
+	transport := newResumableTransport(http.DefaultTransport, directClient(clamped))
+	transport.backoff = 0
+
+	_, err := fetch(t, transport, srv.URL+blobPath)
 	require.Error(t, err, "a transfer that never completes must fail")
-
-	assert.NotErrorIs(t, err, io.EOF,
-		"a truncation must not be mistakable for a clean end of stream")
-	assert.ErrorIs(t, err, io.ErrUnexpectedEOF,
-		"it should be reported as the short read it is")
-}
-
-// acceptAndCloseListener serves one truncated blob over a raw socket and then answers every later
-// connection by reading the request and closing without a response. That is what a load balancer
-// or CDN edge whose backend pool has drained does, and net/http reports it to the caller of
-// RoundTrip as a bare io.EOF. This is the second door into the terminal error, which httptest cannot
-// produce because it always writes a response.
-type acceptAndCloseListener struct {
-	listener net.Listener
-	payload  []byte
-	prefix   int
-
-	mu       sync.Mutex
-	attempts int
-}
-
-func newAcceptAndCloseListener(t *testing.T, payload []byte, prefix int) *acceptAndCloseListener {
-	t.Helper()
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	server := &acceptAndCloseListener{listener: listener, payload: payload, prefix: prefix}
-	go server.serve()
-
-	t.Cleanup(func() { _ = listener.Close() })
-
-	return server
-}
-
-func (s *acceptAndCloseListener) url() string {
-	return "http://" + s.listener.Addr().String() + blobPath
-}
-
-func (s *acceptAndCloseListener) serve() {
-	for {
-		conn, err := s.listener.Accept()
-		if err != nil {
-			return
-		}
-
-		go s.handle(conn)
-	}
-}
-
-func (s *acceptAndCloseListener) handle(conn net.Conn) {
-	defer conn.Close()
-
-	s.mu.Lock()
-	s.attempts++
-	attempt := s.attempts
-	s.mu.Unlock()
-
-	// read the request line and headers, so the client has genuinely written its request
-	reader := bufio.NewReader(conn)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil || line == "\r\n" {
-			break
-		}
-	}
-
-	if attempt > 1 {
-		// accept, read, and close with no response at all
-		return
-	}
-
-	fmt.Fprintf(conn, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n", len(s.payload))
-	_, _ = conn.Write(s.payload[:s.prefix])
+	assert.NotErrorIs(t, err, io.EOF, "a truncation must not be mistakable for a clean end of stream")
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF, "it should be reported as the short read it is")
 }
 
 func TestResumableTransport_aReopenThatIsNeverAnsweredIsNotACleanEndOfStream(t *testing.T) {
-	// the sibling of aFailedTransferIsNeverACleanEndOfStream, and the door it does not cover: there
-	// the io.EOF comes from the body read, here it comes from RoundTrip itself. the invariant is the
-	// same and has to hold on both, or a caller testing errors.Is(err, io.EOF) reads a layer we
-	// failed to fetch as one that simply ended
+	// the sibling of aFailedTransferIsNeverACleanEndOfStream, through the other door: there the
+	// io.EOF comes from the body read, here from the reopen itself, as http.Transport reports a peer
+	// that reads the request and closes without answering, which is what a drained CDN edge does
 	payload := payloadOfSize(64 * 1024)
-	server := newAcceptAndCloseListener(t, payload, 1024)
+	server := &flakyBlobServer{payload: payload, dropsLeft: 1, bytesPerDrop: 1024}
 
-	transport := newTestTransport()
+	srv := httptest.NewServer(server)
+	t.Cleanup(srv.Close)
 
-	resp, err := (&http.Client{Transport: transport}).Get(server.url())
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
+	unanswered := roundTripperFunc(func(*http.Request) (*http.Response, error) { return nil, io.EOF })
+	transport := newResumableTransport(http.DefaultTransport, directClient(unanswered))
+	transport.backoff = 0
 
-	got, err := io.ReadAll(resp.Body)
+	got, err := fetch(t, transport, srv.URL+blobPath)
 	require.Error(t, err, "a transfer whose every reopen goes unanswered must fail")
-
 	assert.Len(t, got, 1024, "the bytes that did arrive should still be handed over")
-	assert.NotErrorIs(t, err, io.EOF,
-		"a reopen that was never answered must not be mistakable for a clean end of stream")
-	assert.ErrorIs(t, err, io.ErrUnexpectedEOF,
-		"it should be reported as the short read it is")
+	assert.NotErrorIs(t, err, io.EOF, "a reopen that was never answered must not be mistakable for a clean end of stream")
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF, "it should be reported as the short read it is")
 }
