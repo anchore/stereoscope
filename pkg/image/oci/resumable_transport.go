@@ -411,8 +411,7 @@ func permanentResumeError(err error) bool {
 	return errors.Is(err, errNoRangeSupport) ||
 		errors.Is(err, errRangeRefused) ||
 		errors.Is(err, errObjectChanged) ||
-		errors.Is(err, errCredentialsRejected) ||
-		errors.Is(err, http.ErrBodyReadAfterClose)
+		errors.Is(err, errCredentialsRejected)
 }
 
 // adopt installs a freshly opened body, unless the caller closed us while it was being opened.
