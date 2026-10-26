@@ -211,7 +211,6 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 	}
 
 	for {
-		//nolint:closecheck // borrowed from the struct, which owns it and closes it in Close
 		body, err := b.currentBody()
 		if err != nil {
 			return 0, err
@@ -332,7 +331,6 @@ func (b *resumableBody) resume(cause error) error {
 			return err
 		}
 
-		//nolint:closecheck // ownership passes to adopt, which either stores it or closes it
 		body, err := b.reopen()
 		if err != nil {
 			if permanentResumeError(err) {
