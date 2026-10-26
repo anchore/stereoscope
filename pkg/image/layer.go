@@ -308,6 +308,9 @@ func (l *Layer) OpenPath(path file.Path) (io.ReadCloser, error) {
 // OpenPathFromSquash reads the file contents for the given path from the underlying layer blob, relative to the layers squashed file tree.
 // An error is returned if there is no file at the given path and layer or the read operation cannot continue.
 func (l *Layer) OpenPathFromSquash(path file.Path) (io.ReadCloser, error) {
+	if l.SquashedTree == nil {
+		return nil, l.errNoSquash()
+	}
 	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
 }
 
@@ -324,7 +327,7 @@ func (l *Layer) FileContents(path file.Path) (io.ReadCloser, error) {
 //
 // Deprecated: use OpenPathFromSquash() instead.
 func (l *Layer) FileContentsFromSquash(path file.Path) (io.ReadCloser, error) {
-	return fetchReaderByPath(l.SquashedTree, l.fileCatalog, path)
+	return l.OpenPathFromSquash(path)
 }
 
 // FilesByMIMEType returns file references for files that match at least one of the given MIME types relative to each layer tree.
@@ -348,6 +351,9 @@ func (l *Layer) FilesByMIMEType(mimeTypes ...string) ([]file.Reference, error) {
 //
 // Deprecated: use SquashedSearchContext().SearchByMIMEType() instead.
 func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference, error) {
+	if l.SquashedSearchContext == nil {
+		return nil, l.errNoSquash()
+	}
 	var refs []file.Reference
 	refVias, err := l.SquashedSearchContext.SearchByMIMEType(mimeTypes...)
 	if err != nil {
@@ -359,6 +365,12 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 		}
 	}
 	return refs, nil
+}
+
+// errNoSquash is returned by squash accessors on a layer without one, which after a successful read
+// only happens below the top layer of an image read with WithImageSquashOnly.
+func (l *Layer) errNoSquash() error {
+	return fmt.Errorf("layer %d has no squashed tree (only the top layer keeps one when read with WithImageSquashOnly)", l.Metadata.Index)
 }
 
 // adoptHardLinkInode rewrites metadata for a hardlink tar header to describe the file it names, and

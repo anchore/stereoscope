@@ -750,7 +750,7 @@ func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 // file out of many and one bad link should not fail the whole set.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
 	if i.Layers[layer].SquashedTree == nil {
-		return nil, fmt.Errorf("layer %d has no squashed tree (image read with WithImageSquashOnly)", layer)
+		return nil, i.Layers[layer].errNoSquash()
 	}
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)

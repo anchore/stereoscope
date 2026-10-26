@@ -523,11 +523,29 @@ func TestImage_Read_imageSquashOnlyKeepsOnlyTheTopSquash(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "v5", string(contents))
 
+	// every accessor over a dropped layer squash must error rather than dereference the nil tree
 	ref := file.NewFileReference("/shared.txt")
-	_, err = img.ResolveLinkByLayerSquash(*ref, 0)
-	assert.ErrorContains(t, err, "no squashed tree")
-	_, err = img.Layers[0].OpenPathFromSquash("/shared.txt")
-	assert.Error(t, err)
+	lower := img.Layers[0]
+	accessors := map[string]func() error{
+		"Image.ResolveLinkByLayerSquash": func() error { _, err := img.ResolveLinkByLayerSquash(*ref, 0); return err },
+		"Layer.OpenPathFromSquash":       func() error { _, err := lower.OpenPathFromSquash("/shared.txt"); return err },
+		"Layer.FileContentsFromSquash":   func() error { _, err := lower.FileContentsFromSquash("/shared.txt"); return err },
+		"Layer.FilesByMIMETypeFromSquash": func() error {
+			_, err := lower.FilesByMIMETypeFromSquash("text/plain")
+			return err
+		},
+	}
+	for name, call := range accessors {
+		t.Run(name, func(t *testing.T) {
+			assert.ErrorContains(t, call(), "no squashed tree")
+		})
+	}
+
+	// while the top layer still answers
+	_, err = img.ResolveLinkByLayerSquash(*ref, top)
+	assert.NoError(t, err)
+	_, err = img.Layers[top].FilesByMIMETypeFromSquash("text/plain")
+	assert.NoError(t, err)
 }
 
 func TestImage_Read_fetchFailureDoesNotHangTheSquash(t *testing.T) {
