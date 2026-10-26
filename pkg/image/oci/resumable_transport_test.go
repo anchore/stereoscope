@@ -1142,7 +1142,12 @@ func TestResumableTransport_closeAbortsAReopenInFlight(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	resp, err := newTestClient(1).Get(srv.URL)
+	// a single stall allowed, so a Close mistaken for a failed attempt would exhaust the budget and
+	// report giving up instead of the Close
+	transport := newTestTransport(1)
+	transport.maxStalls = 1
+
+	resp, err := (&http.Client{Transport: transport}).Get(srv.URL)
 	require.NoError(t, err)
 
 	read := make(chan error, 1)
@@ -1157,8 +1162,61 @@ func TestResumableTransport_closeAbortsAReopenInFlight(t *testing.T) {
 	select {
 	case readErr := <-read:
 		assert.ErrorIs(t, readErr, http.ErrBodyReadAfterClose)
+		assert.NotContains(t, readErr.Error(), "gave up", "a Close is not a failed attempt")
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close did not release a reader blocked on a reopen that never answered")
+	}
+}
+
+func TestResumableTransport_cancellingThePullAbortsAReopenInFlight(t *testing.T) {
+	// the caller's context ends a reopen the same way Close does, and is as final
+	payload := payloadOfSize(2 * 1024 * 1024)
+	reopening := make(chan struct{})
+	var once sync.Once
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Range") != "" {
+			// accept the reopen and fall silent, never sending headers
+			once.Do(func() { close(reopening) })
+			<-r.Context().Done()
+			return
+		}
+
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload[:1024*1024])
+		w.(http.Flusher).Flush()
+		panic(http.ErrAbortHandler)
+	}))
+	t.Cleanup(srv.Close)
+
+	transport := newTestTransport(1)
+	transport.maxStalls = 1
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+
+	resp, err := (&http.Client{Transport: transport}).Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	read := make(chan error, 1)
+	go func() {
+		_, readErr := io.ReadAll(resp.Body)
+		read <- readErr
+	}()
+
+	<-reopening
+	cancel()
+
+	select {
+	case readErr := <-read:
+		assert.ErrorIs(t, readErr, context.Canceled)
+		assert.NotContains(t, readErr.Error(), "gave up", "a cancellation is not a failed attempt")
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelling the pull did not release a reader blocked on a reopen")
 	}
 }
 

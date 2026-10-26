@@ -338,6 +338,16 @@ func (b *resumableBody) resume(cause error) error {
 
 		body, err := b.reopen()
 		if err != nil {
+			// a Close or a cancelled pull ends the reopen by design, so it ends the read too rather
+			// than spending budget and logging a resume nobody is waiting for
+			if b.isClosed() {
+				return http.ErrBodyReadAfterClose
+			}
+
+			if ctxErr := b.req.Context().Err(); ctxErr != nil {
+				return ctxErr
+			}
+
 			if permanentResumeError(err) {
 				return fmt.Errorf("cannot resume %s at byte %d after %w: %w",
 					forLog(b.req.URL), b.offset, cause, err)
