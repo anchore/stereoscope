@@ -203,7 +203,8 @@ func (i *Image) applyOverrideMetadata() error {
 }
 
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
-// metadata, layer file trees, and layer squash trees (which implies the image squash tree).
+// metadata, layer file trees, and layer squash trees (which implies the image squash tree). Under
+// WithImageSquashOnly only the top layer's squash, the image squash, is kept.
 //
 // The context bounds the read: cancelling it abandons work that has not started and stops the
 // layer pools from picking up more. It does not return until the layer work already in flight has

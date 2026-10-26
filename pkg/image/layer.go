@@ -85,10 +85,12 @@ type Layer struct {
 	Tree filetree.Reader
 	// SquashedTree is a filetree that represents the combination of this layers diff tree and all diff trees
 	// in lower layers relative to this one. It never contains whiteout entries: those are changeset metadata
-	// and do not materialize as files in an applied rootfs.
+	// and do not materialize as files in an applied rootfs. It is nil on every layer but the top one when
+	// the image was read with WithImageSquashOnly.
 	SquashedTree filetree.Reader
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
-	fileCatalog           *FileCatalog
+	fileCatalog *FileCatalog
+	// SquashedSearchContext searches SquashedTree, and is nil whenever SquashedTree is.
 	SquashedSearchContext filetree.Searcher
 	SearchContext         filetree.Searcher
 	// knownDiffID is the layer's diff ID as recorded in the image config, when the image could
