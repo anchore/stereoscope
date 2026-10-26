@@ -54,14 +54,25 @@ const (
 	// stallBackoff is multiplied by the consecutive stall count to space out repeated attempts. the
 	// first attempt after a drop is made immediately, so an isolated drop costs no delay.
 	stallBackoff = time.Second
+
+	// statusClientClosedRequest is the non-standard 499 some proxies answer with when they abandon
+	// an upstream request, which net/http has no constant for
+	statusClientClosedRequest = 499
 )
 
 // errNoRangeSupport marks a server that will not resume however often it is asked: it answered the
 // range request with a status that settles the matter -- a plain 200, a 416, a redirect -- or with
 // a 206 whose Content-Range is unusable or starts at the wrong byte, or with a body in a different
 // content coding from the stream so far. a server that was merely busy is errResumeUnavailable,
-// and one that refused to authorize the request is errCredentialsRejected.
+// one that refused to authorize the request is errCredentialsRejected, and any other refusal is
+// errRangeRefused.
 var errNoRangeSupport = errors.New("server does not support resuming with range requests")
+
+// errRangeRefused marks a reopen answered with a status that says nothing about range support,
+// such as a 404 or 410 from a pre-signed URL that lapsed mid-transfer, or a 400 from one that some
+// object stores report as expired. it is permanent, but blaming range support for it would point an
+// operator at a limitation the server does not have.
+var errRangeRefused = errors.New("the server refused the resumed range request")
 
 // errObjectChanged marks a resume whose Content-Range reports a different total length from the
 // one the read began with, which is direct evidence the object is not the one we started.
@@ -370,6 +381,7 @@ func (b *resumableBody) resume(cause error) error {
 // which cannot resume fails at once rather than after the whole budget has been spent.
 func permanentResumeError(err error) bool {
 	return errors.Is(err, errNoRangeSupport) ||
+		errors.Is(err, errRangeRefused) ||
 		errors.Is(err, errObjectChanged) ||
 		errors.Is(err, errCredentialsRejected) ||
 		errors.Is(err, http.ErrBodyReadAfterClose)
@@ -556,17 +568,23 @@ func (b *resumableBody) refusedStatus(resp *http.Response) error {
 		return fmt.Errorf("%w: got %d resuming at byte %d", errCredentialsRejected,
 			resp.StatusCode, b.offset)
 
-	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError:
+	case resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusTooManyRequests ||
+		resp.StatusCode == statusClientClosedRequest || resp.StatusCode >= http.StatusInternalServerError:
+		// every status go-containerregistry's own retry transport treats as transient, and the rest of 5xx
 		// the server's own Retry-After is deliberately not read: the stall backoff already spaces
 		// repeated attempts, and honouring a hint of minutes would only lengthen a pull that is
 		// already failing
 		return fmt.Errorf("%w: got %d resuming at byte %d", errResumeUnavailable,
 			resp.StatusCode, b.offset)
 
-	default:
-		// 416, a plain 200, a redirect: the server understood the request and will not serve it
+	case resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
+		(resp.StatusCode >= 300 && resp.StatusCode < 400):
+		// the server understood the range request and will not serve it
 		return fmt.Errorf("%w: expected HTTP 206 resuming at byte %d, got %d",
 			errNoRangeSupport, b.offset, resp.StatusCode)
+
+	default:
+		return fmt.Errorf("%w: got %d resuming at byte %d", errRangeRefused, resp.StatusCode, b.offset)
 	}
 }
 

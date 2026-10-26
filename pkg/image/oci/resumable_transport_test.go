@@ -965,9 +965,9 @@ func TestResumableTransport_retriesAResumeTheServerCouldNotServeYet(t *testing.T
 }
 
 func TestResumableTransport_spendsTheBudgetWhenTheServerStaysUnavailable(t *testing.T) {
-	for _, status := range []int{http.StatusTooManyRequests, http.StatusBadGateway,
-		http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests, statusClientClosedRequest,
+		http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			server := &flakyBlobServer{
 				payload:         payloadOfSize(8192),
 				dropsLeft:       1,
@@ -1024,6 +1024,50 @@ func TestResumableTransport_refusesAResumeWhoseCredentialsWereRejected(t *testin
 
 			// permanent, so it costs one attempt rather than the whole budget
 			assert.Len(t, server.seenRanges(), 2)
+		})
+	}
+}
+
+func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
+	// every refusal here is permanent and costs one attempt. what differs is the diagnosis: only a
+	// status that answers the range request itself says the server cannot resume
+	tests := []struct {
+		status   int
+		expected error
+	}{
+		{status: http.StatusOK, expected: errNoRangeSupport},
+		{status: http.StatusRequestedRangeNotSatisfiable, expected: errNoRangeSupport},
+		{status: http.StatusTemporaryRedirect, expected: errNoRangeSupport},
+		{status: http.StatusBadRequest, expected: errRangeRefused},
+		{status: http.StatusNotFound, expected: errRangeRefused},
+		{status: http.StatusGone, expected: errRangeRefused},
+	}
+
+	for _, tt := range tests {
+		t.Run(strconv.Itoa(tt.status), func(t *testing.T) {
+			server := &flakyBlobServer{
+				payload:         payloadOfSize(8192),
+				dropsLeft:       1,
+				bytesPerDrop:    1000,
+				transientStatus: tt.status,
+			}
+
+			srv := httptest.NewServer(server)
+			t.Cleanup(srv.Close)
+
+			resp, err := newTestClient(1).Get(srv.URL)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = resp.Body.Close() })
+
+			_, err = io.ReadAll(resp.Body)
+			require.Error(t, err)
+			assert.ErrorIs(t, err, tt.expected)
+			for _, other := range []error{errNoRangeSupport, errRangeRefused} {
+				if other != tt.expected {
+					assert.NotErrorIs(t, err, other)
+				}
+			}
+			assert.Len(t, server.seenRanges(), 2, "a permanent refusal costs one attempt")
 		})
 	}
 }
