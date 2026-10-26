@@ -286,14 +286,20 @@ func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, 
 			return client, nil
 		}
 
+		// a credential or auth failure will not mend on retry, so it ends the resume rather than
+		// spending the stall budget on backoff. a network error while pinging still gets retried
 		authenticator, err := auth(ctx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: unable to resolve credentials: %w", errResumeRefused, err)
 		}
 
 		repo := ref.Context()
 		rt, err := transport.NewWithContext(ctx, repo.Registry, authenticator, transport.NewUserAgent(base, userAgent),
 			[]string{repo.Scope(transport.PullScope)})
+		var regErr *transport.Error
+		if errors.As(err, &regErr) && !regErr.Temporary() {
+			return nil, fmt.Errorf("%w: unable to authenticate: %w", errResumeRefused, err)
+		}
 		if err != nil {
 			return nil, err
 		}

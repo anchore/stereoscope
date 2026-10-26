@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -93,11 +92,12 @@ func (t *resumableTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	resp.Body = &resumableBody{
-		t:     t,
-		body:  watchIdle(resp.Body, t.idleTimeout),
-		req:   req,
-		total: resp.ContentLength,
-		done:  make(chan struct{}),
+		t:       t,
+		body:    watchIdle(resp.Body, t.idleTimeout),
+		req:     req,
+		total:   resp.ContentLength,
+		spanEnd: resp.ContentLength,
+		done:    make(chan struct{}),
 	}
 
 	return resp, nil
@@ -112,7 +112,7 @@ func (t *resumableTransport) RoundTrip(req *http.Request) (*http.Response, error
 func (t *resumableTransport) shouldResume(req *http.Request, resp *http.Response) bool {
 	return req.Method == http.MethodGet &&
 		isBlobRequest(req) &&
-		// Clone shares the body reader, so a reissued request would resend a consumed one
+		// a cloned request shares the body reader, so a reissued one would resend a consumed body
 		(req.Body == nil || req.Body == http.NoBody) &&
 		req.Header.Get("Range") == "" &&
 		resp.Body != nil &&
@@ -165,7 +165,9 @@ type resumableBody struct {
 	done chan struct{}
 
 	// the rest belong to the single reader and are not guarded
-	offset   int64
+	offset int64
+	// spanEnd is the offset the current segment's Content-Range said it would stop at
+	spanEnd  int64
 	progress int64
 	stalls   int
 	resumes  int
@@ -200,9 +202,10 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 
 			return n, b.latch(final)
 		}
-		// a clean io.EOF short of the blob is a segment ending where its Content-Range said it would,
-		// as on a CDN that caps spans, rather than a dropped connection
-		spanEnded := readErr == io.EOF
+		// a segment that stopped where its Content-Range said it would, as on a CDN that caps spans,
+		// rather than a dropped connection. io.EOF alone does not say so, since a span framed by
+		// connection close reports it on a drop too
+		spanEnded := b.offset == b.spanEnd
 		if resumeErr := b.resume(quoted(shortRead(readErr)), spanEnded); resumeErr != nil {
 			return n, b.latch(resumeErr)
 		}
@@ -276,8 +279,12 @@ func (b *resumableBody) resume(cause error, spanEnded bool) error {
 		logger.Info("blob stream ended early, resuming from the current offset")
 	}
 
-	for {
-		b.resumes++
+	for attempt := 0; ; attempt++ {
+		// the reopen after a capped span is routine, so only its retries spend the total budget. tiny
+		// spans still spend stalls, which is what stops a server serving a few bytes per request
+		if attempt > 0 || !spanEnded {
+			b.resumes++
+		}
 		if b.resumes > b.t.maxResumes+int(b.offset/b.t.resumeCredit) {
 			return fmt.Errorf("unable to resume %s at byte %d after %d attempts in total: %w",
 				forLog(b.req), b.offset, b.resumes-1, cause)
@@ -433,9 +440,6 @@ func (b *resumableBody) roundTrip(ctx context.Context) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if ua := first.Header.Get("User-Agent"); ua != "" {
-		req.Header.Set("User-Agent", ua)
-	}
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", b.offset, b.total-1))
 	req.Header.Set("Accept-Encoding", "identity")
 
@@ -568,6 +572,8 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 
 	// a span may stop short of the end (some CDNs cap them), and Read resumes again when it runs
 	// out. the body is held to the span, since one with no declared length could run past it
+	b.spanEnd = end + 1
+
 	return struct {
 		io.Reader
 		io.Closer
@@ -667,15 +673,11 @@ type idleBody struct {
 	io.ReadCloser
 	timeout time.Duration
 	timer   *time.Timer
-	idle    atomic.Bool
 }
 
 func watchIdle(body io.ReadCloser, timeout time.Duration) *idleBody {
 	b := &idleBody{ReadCloser: body, timeout: timeout}
-	b.timer = time.AfterFunc(timeout, func() {
-		b.idle.Store(true)
-		closeQuietly(body)
-	})
+	b.timer = time.AfterFunc(timeout, func() { closeQuietly(body) })
 	b.timer.Stop()
 
 	return b
@@ -684,10 +686,9 @@ func watchIdle(body io.ReadCloser, timeout time.Duration) *idleBody {
 func (b *idleBody) Read(p []byte) (int, error) {
 	b.timer.Reset(b.timeout)
 	n, err := b.ReadCloser.Read(p)
-	b.timer.Stop()
-
-	if err != nil && b.idle.Load() {
-		// the error is whatever closing the body made the read return, which says nothing useful
+	if !b.timer.Stop() {
+		// the timer fired and closed the body, so even bytes that raced it are the last this read
+		// gets. the error is whatever closing made the read return, which says nothing useful
 		err = fmt.Errorf("no data received within %s", b.timeout)
 	}
 

@@ -702,3 +702,48 @@ type mockRoundTripper struct {
 func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m.resp, m.err
 }
+
+func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
+	// a missing credential helper or a rejected token request will not mend on retry, so it must end
+	// the resume rather than spend the stall budget on backoff. a busy token server still gets retried
+	tests := []struct {
+		name        string
+		authErr     error
+		tokenStatus int
+		refused     bool
+	}{
+		{name: "credential helper fails", authErr: errors.New("docker-credential-ecr-login not found"), refused: true},
+		{name: "token request rejected", tokenStatus: http.StatusUnauthorized, refused: true},
+		{name: "token server busy", tokenStatus: http.StatusServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var srv *httptest.Server
+			srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/token" {
+					w.WriteHeader(tt.tokenStatus)
+					return
+				}
+				w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="test"`, srv.URL))
+				w.WriteHeader(http.StatusUnauthorized)
+			}))
+			t.Cleanup(srv.Close)
+
+			ref, err := name.ParseReference(strings.TrimPrefix(srv.URL, "http://") + "/img:latest")
+			require.NoError(t, err)
+
+			clientFor := reopenClient(ref, http.DefaultTransport, "stereoscope-test", func(context.Context) (authn.Authenticator, error) {
+				return authn.Anonymous, tt.authErr
+			})
+
+			_, err = clientFor(context.Background())
+			require.Error(t, err)
+			if tt.refused {
+				assert.ErrorIs(t, err, errResumeRefused)
+			} else {
+				assert.NotErrorIs(t, err, errResumeRefused)
+			}
+		})
+	}
+}

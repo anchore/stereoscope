@@ -425,7 +425,7 @@ func TestResumableTransport_refusesAResumeItCannotSplice(t *testing.T) {
 func TestResumableTransport_neverReplaysCredentialsOnAResume(t *testing.T) {
 	// go-containerregistry sets Authorization on the request in place. a resume that replayed it
 	// would hand it to every redirect the reopen client follows, to hosts the pull never sent it to,
-	// so only the reopen client may add credentials. the user agent is kept
+	// so only the reopen client may add credentials
 	server := &flakyBlobServer{payload: payloadOfSize(8192), dropsLeft: 2, bytesPerDrop: 1000}
 
 	srv := httptest.NewServer(server)
@@ -447,7 +447,6 @@ func TestResumableTransport_neverReplaysCredentialsOnAResume(t *testing.T) {
 	require.Len(t, headers, 3)
 	for i, h := range headers[1:] {
 		assert.Empty(t, h.Get("Authorization"), "resume %d replayed the original credentials", i)
-		assert.Equal(t, "stereoscope-test", h.Get("User-Agent"), "resume %d lost its user agent", i)
 	}
 }
 
@@ -1530,4 +1529,75 @@ func TestResumableTransport_aReopenThatIsNeverAnsweredIsNotACleanEndOfStream(t *
 	assert.Len(t, got, 1024, "the bytes that did arrive should still be handed over")
 	assert.NotErrorIs(t, err, io.EOF, "a reopen that was never answered must not be mistakable for a clean end of stream")
 	assert.ErrorIs(t, err, io.ErrUnexpectedEOF, "it should be reported as the short read it is")
+}
+
+func TestResumableTransport_cappedSpans(t *testing.T) {
+	// a CDN that caps range spans answers every resume with a short, honest 206. a span ending where
+	// it said it would is not a failure and must not spend the total budget, but one cut short of its
+	// own Content-Range is a drop, even when connection-close framing reports it as a clean io.EOF
+	const span = 64 * 1024
+	payload := payloadOfSize(16 * span)
+
+	tests := []struct {
+		name    string
+		deliver int64
+		wantErr string
+	}{
+		{name: "spans that end where they said cost nothing", deliver: span},
+		{name: "spans cut short of their Content-Range spend the budget", deliver: span / 2, wantErr: "attempts in total"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := &flakyBlobServer{payload: payload, dropsLeft: 1, bytesPerDrop: 4096}
+
+			srv := httptest.NewServer(server)
+			t.Cleanup(srv.Close)
+
+			capped := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				start, _ := parseRangeRequest(req.Header.Get("Range"))
+				end := min(start+span, int64(len(payload))) - 1
+				sent := min(end+1, start+tt.deliver)
+				return &http.Response{
+					StatusCode:    http.StatusPartialContent,
+					ContentLength: -1,
+					Header:        http.Header{"Content-Range": {fmt.Sprintf("bytes %d-%d/%d", start, end, len(payload))}},
+					Body:          io.NopCloser(bytes.NewReader(payload[start:sent])),
+					Request:       req,
+				}, nil
+			})
+
+			transport := newResumableTransport(http.DefaultTransport, directClient(capped))
+			transport.backoff = 0
+			transport.maxResumes = 1
+
+			got, err := fetch(t, transport, srv.URL+blobPath)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, payload, got)
+		})
+	}
+}
+
+// lateReader returns a few bytes, but only after delay.
+type lateReader struct{ delay time.Duration }
+
+func (r lateReader) Read(p []byte) (int, error) {
+	time.Sleep(r.delay)
+	return copy(p, "late"), nil
+}
+
+func TestIdleBody_bytesThatRaceTheTimerEndTheSegment(t *testing.T) {
+	// a read that returns data just as the idle timer fires has had its body closed under it, so it
+	// must end the segment now rather than leave the next read to fail on a closed body
+	body := watchIdle(io.NopCloser(lateReader{delay: 100 * time.Millisecond}), 10*time.Millisecond)
+
+	n, err := body.Read(make([]byte, 8))
+	assert.Equal(t, 4, n, "the bytes that arrived are still handed back")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no data received within")
 }
