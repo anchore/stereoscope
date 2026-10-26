@@ -1122,7 +1122,7 @@ func TestResumableTransport_closeAbortsAReopenInFlight(t *testing.T) {
 	served := 0
 	var mu sync.Mutex
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		served++
 		first := served == 1
@@ -1138,8 +1138,9 @@ func TestResumableTransport_closeAbortsAReopenInFlight(t *testing.T) {
 
 		// accept the reopen and fall silent, never sending headers
 		once.Do(func() { close(reopening) })
-		select {}
+		<-r.Context().Done()
 	}))
+	t.Cleanup(srv.Close)
 
 	resp, err := newTestClient(1).Get(srv.URL)
 	require.NoError(t, err)
