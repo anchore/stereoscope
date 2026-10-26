@@ -1121,7 +1121,8 @@ func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
 	}{
 		{status: http.StatusOK, expected: errNoRangeSupport},
 		{status: http.StatusRequestedRangeNotSatisfiable, expected: errNoRangeSupport},
-		{status: http.StatusTemporaryRedirect, expected: errNoRangeSupport},
+		// a redirect is refused rather than followed, which says nothing about range support
+		{status: http.StatusTemporaryRedirect, expected: errRangeRefused},
 		{status: http.StatusBadRequest, expected: errRangeRefused},
 		{status: http.StatusNotFound, expected: errRangeRefused},
 		{status: http.StatusGone, expected: errRangeRefused},

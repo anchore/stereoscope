@@ -57,17 +57,17 @@ const (
 )
 
 // errNoRangeSupport marks a server that will not resume however often it is asked: it answered the
-// range request with a status that settles the matter (a plain 200, a 416, a redirect), or with
-// a 206 whose Content-Range is unusable or starts at the wrong byte, or with a body in a different
-// content coding from the stream so far. a server that was merely busy is errResumeUnavailable,
+// range request with a status that settles the matter (a plain 200 or a 416), or with a 206 whose
+// Content-Range is unusable or starts at the wrong byte, or with a body in a different content
+// coding from the stream so far. a server that was merely busy is errResumeUnavailable,
 // one that refused to authorize the request is errCredentialsRejected, and any other refusal is
 // errRangeRefused.
 var errNoRangeSupport = errors.New("server does not support resuming with range requests")
 
 // errRangeRefused marks a reopen answered with a status that says nothing about range support,
-// such as a 404 or 410 from a pre-signed URL that lapsed mid-transfer, or a 400 from one that some
-// object stores report as expired. it is permanent, but blaming range support for it would point an
-// operator at a limitation the server does not have.
+// such as a 404 or 410 from a pre-signed URL that lapsed mid-transfer, a 400 from one that some
+// object stores report as expired, or a redirect this transport may not follow. it is permanent, but
+// blaming range support for it would point an operator at a limitation the server does not have.
 var errRangeRefused = errors.New("the server refused the resumed range request")
 
 // errObjectChanged marks a resume whose Content-Range reports a different total length from the
@@ -614,8 +614,7 @@ func (b *resumableBody) refusedStatus(resp *http.Response) error {
 		return fmt.Errorf("%w: got %d resuming at byte %d", errResumeUnavailable,
 			resp.StatusCode, b.offset)
 
-	case resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable ||
-		(resp.StatusCode >= 300 && resp.StatusCode < 400):
+	case resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusRequestedRangeNotSatisfiable:
 		// the server understood the range request and will not serve it
 		return fmt.Errorf("%w: expected HTTP 206 resuming at byte %d, got %d",
 			errNoRangeSupport, b.offset, resp.StatusCode)
