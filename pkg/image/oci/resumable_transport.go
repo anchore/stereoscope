@@ -460,11 +460,20 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 		return nil, fmt.Errorf("%w within %s", errReopenTimeout, b.t.headerTimeout)
 	}
 
+	// only an accepted body still needs its context; a failed attempt releases it at once rather
+	// than leaving it to the next attempt or to Close
 	if err != nil {
+		cancel()
+
 		return nil, err
 	}
 
-	return b.acceptable(resp)
+	body, err := b.acceptable(resp)
+	if err != nil {
+		cancel()
+	}
+
+	return body, err
 }
 
 // adoptCancel stores the cancel belonging to the reopen now in flight, ending any it replaces, and
