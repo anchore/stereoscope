@@ -439,7 +439,15 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	return watchIdle(body, b.t.idleTimeout), nil
+	watched := watchIdle(body, b.t.idleTimeout)
+	if resp.StatusCode == http.StatusOK {
+		log.WithFields("url", forLog(b.req), "offset", b.offset).
+			Info("the server ignored the range, reading the blob again from the start")
+
+		return &skipBody{idleBody: watched, skip: b.offset}, nil
+	}
+
+	return watched, nil
 }
 
 // roundTrip sends the range request to the registry URL the blob was first requested from, rather
@@ -555,6 +563,15 @@ func (b *resumableBody) acceptable(resp *http.Response) (io.ReadCloser, error) {
 		closeQuietly(resp.Body)
 
 		return nil, fmt.Errorf("%w: "+format, append([]any{errResumeRefused}, args...)...)
+	}
+
+	// a server with no range support answers with the whole blob. that is still usable once what was
+	// already delivered is skipped (reopen does that), costing a re-download rather than the layer.
+	// anything other than the whole blob, in the identity coding, cannot be lined up with the stream
+	if resp.StatusCode == http.StatusOK && resp.ContentLength == b.total && identityEncoded(resp.Header) {
+		b.spanEnd = b.total
+
+		return resp.Body, nil
 	}
 
 	if resp.StatusCode != http.StatusPartialContent {
@@ -683,6 +700,26 @@ func (b *resumableBody) release(closing bool) (io.ReadCloser, bool) {
 	}
 
 	return body, first
+}
+
+// skipBody discards the first skip bytes of a whole blob sent in answer to a range. they are read
+// through the idle clock in small pieces, so a server falling silent while they are skipped is a drop
+// like any other rather than a read blocked for ever.
+type skipBody struct {
+	*idleBody
+	skip int64
+}
+
+func (s *skipBody) Read(p []byte) (int, error) {
+	if s.skip > 0 {
+		n, err := io.CopyN(io.Discard, s.idleBody, s.skip)
+		s.skip -= n
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return s.idleBody.Read(p)
 }
 
 // idleBody closes a segment whose read waits longer than timeout for any bytes, so a connection that

@@ -368,8 +368,8 @@ func TestResumableTransport_refusesAResumeItCannotSplice(t *testing.T) {
 		wantMsg string
 	}{
 		{
-			// a whole body in answer to a range would duplicate everything already written
-			name:    "a 200 in answer to a range",
+			// a 200 that is not the whole blob cannot be lined up with what was already delivered
+			name:    "a partial 200 in answer to a range",
 			server:  func(s *flakyBlobServer) { s.rangeStatus = http.StatusOK },
 			wantMsg: "expected HTTP 206",
 		},
@@ -1042,6 +1042,87 @@ func Test_quoted(t *testing.T) {
 	assert.Contains(t, err.Error(), `\x1b]0;pwned\a`)
 	assert.Less(t, len(err.Error()), maxErrorText+64, "the text must be capped")
 	assert.ErrorIs(t, err, io.ErrUnexpectedEOF, "the error must stay classifiable")
+}
+
+func TestResumableTransport_skipsWhatWasDeliveredWhenTheRangeIsIgnored(t *testing.T) {
+	// a server with no range support sends the whole blob again. that costs a re-download, but it is
+	// still the blob, so failing the layer over it would be worse than what happens with no resuming
+	tests := []struct {
+		name string
+		// cuts is where each response in turn is torn down; the one after the last is served whole
+		cuts []int
+	}{
+		{name: "one drop", cuts: []int{1000}},
+		{name: "a drop while skipping", cuts: []int{4000, 1000}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := payloadOfSize(8192)
+
+			var mu sync.Mutex
+			served := 0
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				mu.Lock()
+				i := served
+				served++
+				mu.Unlock()
+
+				w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+				w.WriteHeader(http.StatusOK)
+				if i < len(tt.cuts) {
+					_, _ = w.Write(payload[:tt.cuts[i]])
+					w.(http.Flusher).Flush()
+					panic(http.ErrAbortHandler)
+				}
+				_, _ = w.Write(payload)
+			}))
+			t.Cleanup(srv.Close)
+
+			got, err := fetch(t, newTestTransport(), srv.URL+blobPath)
+			require.NoError(t, err)
+			assert.Equal(t, payload, got)
+
+			mu.Lock()
+			defer mu.Unlock()
+			assert.Equal(t, len(tt.cuts)+1, served)
+		})
+	}
+}
+
+func TestResumableTransport_aPauseOnARangelessServerStillCompletes(t *testing.T) {
+	// the idle clock reopens a body that is merely slow, so a server that cannot resume must not turn
+	// a pause that waiting would have outlasted into a failed layer
+	payload := payloadOfSize(8192)
+
+	var mu sync.Mutex
+	served := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		served++
+		pause := served == 1
+		mu.Unlock()
+
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		w.WriteHeader(http.StatusOK)
+		if pause {
+			_, _ = w.Write(payload[:1000])
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	t.Cleanup(srv.Close)
+
+	transport := newTestTransport()
+	transport.idleTimeout = 200 * time.Millisecond
+
+	got, err := fetch(t, transport, srv.URL+blobPath)
+	require.NoError(t, err)
+	assert.Equal(t, payload, got)
 }
 
 func TestResumableTransport_refusesARangeRunningPastTheEnd(t *testing.T) {
