@@ -188,7 +188,7 @@ func (b *resumableBody) Read(p []byte) (int, error) {
 	}
 
 	for {
-		body, err := b.currentBody()
+		body, err := b.currentBody() //nolint:closecheck // borrowed: b.body is owned by b and closed by Close/closeCurrent
 		if err != nil {
 			return 0, err
 		}
@@ -325,7 +325,7 @@ func (b *resumableBody) resume(cause error, spanEnded bool) error {
 			return err
 		}
 
-		body, err := b.reopen()
+		body, err := b.reopen() //nolint:closecheck // ownership passes to adopt, which installs or closes it
 		if err != nil {
 			// a Close or a cancelled pull ends the reopen by design, and the read with it
 			if b.isClosed() {
@@ -432,7 +432,7 @@ func (b *resumableBody) reopen() (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	body, err := b.acceptable(resp)
+	body, err := b.acceptable(resp) //nolint:closecheck // ownership passes to watchIdle, whose wrapper is returned
 	if err != nil {
 		cancel()
 
@@ -649,7 +649,7 @@ func (b *resumableBody) isClosed() bool {
 
 // closeCurrent drops the failed connection without marking the body closed to callers.
 func (b *resumableBody) closeCurrent() {
-	if body, _ := b.release(false); body != nil {
+	if body, _ := b.release(false); body != nil { //nolint:closecheck // closed by closeQuietly
 		closeQuietly(body)
 	}
 }
