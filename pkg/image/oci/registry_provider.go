@@ -272,7 +272,12 @@ func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, 
 	// one slot held across the registry ping, so concurrent first resumes wait on a single build. a
 	// channel rather than a mutex, so a resume closed or cancelled meanwhile stops waiting
 	slot := make(chan struct{}, 1)
-	var client *http.Client
+	var (
+		client *http.Client
+		// a refusal is settled once for the whole pull. it will not mend, and every blob that drops
+		// would otherwise repeat the ping and token exchange to be told the same thing
+		refused error
+	)
 
 	return func(ctx context.Context) (*http.Client, error) {
 		select {
@@ -282,8 +287,8 @@ func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, 
 		}
 		defer func() { <-slot }()
 
-		if client != nil {
-			return client, nil
+		if client != nil || refused != nil {
+			return client, refused
 		}
 
 		// a credential or auth failure will not mend on retry, so it ends the resume rather than
@@ -292,7 +297,8 @@ func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, 
 		// go-containerregistry puts up to 64 KiB of an error response body into its message
 		authenticator, err := auth(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%w: unable to resolve credentials: %w", errResumeRefused, quoted(err))
+			refused = fmt.Errorf("%w: unable to resolve credentials: %w", errResumeRefused, quoted(err))
+			return nil, refused
 		}
 
 		repo := ref.Context()
@@ -300,7 +306,8 @@ func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, 
 			[]string{repo.Scope(transport.PullScope)})
 		var regErr *transport.Error
 		if errors.As(err, &regErr) && !regErr.Temporary() {
-			return nil, fmt.Errorf("%w: unable to authenticate: %w", errResumeRefused, quoted(err))
+			refused = fmt.Errorf("%w: unable to authenticate: %w", errResumeRefused, quoted(err))
+			return nil, refused
 		}
 		if err != nil {
 			return nil, err

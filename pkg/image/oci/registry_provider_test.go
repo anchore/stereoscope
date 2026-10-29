@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -731,8 +732,10 @@ func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var requests atomic.Int64
 			var srv *httptest.Server
 			srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
 				if r.URL.Path == "/token" {
 					w.WriteHeader(tt.tokenStatus)
 					_, _ = io.WriteString(w, tt.tokenBody)
@@ -761,6 +764,18 @@ func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
 			if tt.wantClipped {
 				assert.NotContains(t, err.Error(), "\x1b", "control characters must be escaped")
 				assert.Less(t, len(err.Error()), maxErrorText+256, "the server's text must be capped")
+			}
+
+			// every blob of a fat image drops independently, so a refusal that is re-derived rather
+			// than remembered costs another ping and token exchange each time
+			spent := requests.Load()
+			_, again := clientFor(context.Background())
+			require.Error(t, again)
+			if tt.refused {
+				assert.Equal(t, spent, requests.Load(), "a settled refusal must not ping the registry again")
+				assert.ErrorIs(t, again, errResumeRefused)
+			} else {
+				assert.Greater(t, requests.Load(), spent, "a transient failure must be retried")
 			}
 		})
 	}
