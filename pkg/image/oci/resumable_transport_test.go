@@ -572,9 +572,9 @@ func Test_checkRedirect(t *testing.T) {
 		// full-width digits, which the transport maps onto 127.0.0.1 when it dials
 		{to: "https://１２７．０．０．１/blob"},
 		{to: "https://cdn.exämple.com/blob"},
-		// a downgrade, even to the same host
-		{to: "http://registry.example.com/blob"},
-		{to: "http://cdn.example.com/blob"},
+		// a downgrade go-containerregistry follows on the pull, so a resume must follow it too
+		{to: "http://registry.example.com/blob", allowed: true},
+		{to: "http://cdn.example.com/blob", allowed: true},
 	}
 
 	for _, tt := range tests {

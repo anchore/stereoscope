@@ -475,19 +475,18 @@ func (b *resumableBody) roundTrip(ctx context.Context) (*http.Response, error) {
 
 // checkRedirect is go-containerregistry's checkRedirectSSRF for the reopen client: a redirect may
 // change host, but not to a loopback, private, link-local or unspecified address. it is stricter in
-// three ways. a host made only of numbers is refused rather than decoded, since the resolver accepts
+// two ways. a host made only of numbers is refused rather than decoded, since the resolver accepts
 // legacy spellings such as 127.1 that netip does not. a host that is not plain ASCII is refused, since
 // the transport maps full-width digits onto an address netip never sees. that also turns away a
 // registry redirecting to a genuine IDN host, which folding the name first would not, but folding
-// means taking a direct dependency on x/net/idna for a case no registry has been seen to need. and
-// https may not drop to http, as go-containerregistry already insists for foreign layers.
+// means taking a direct dependency on x/net/idna for a case no registry has been seen to need.
+//
+// a redirect from https to http is followed, as go-containerregistry follows it for the pull. the
+// idle clock can send a healthy pull through here, so refusing what the pull already accepted (a
+// registry fronting plain-http storage, say) would fail a pull that waiting would have finished.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return fmt.Errorf("%w: stopped after 10 redirects", errResumeRefused)
-	}
-
-	if via[0].URL.Scheme == "https" && req.URL.Scheme != "https" {
-		return fmt.Errorf("%w: redirect from https to %q denied", errResumeRefused, clip(req.URL.Scheme))
 	}
 
 	from, to := via[0].URL.Hostname(), req.URL.Hostname()
