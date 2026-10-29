@@ -203,7 +203,8 @@ func (i *Image) applyOverrideMetadata() error {
 }
 
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
-// metadata, layer file trees, and layer squash trees (which implies the image squash tree).
+// metadata, layer file trees, and layer squash trees (which implies the image squash tree). Under
+// WithImageSquashOnly only the top layer's squash, the image squash, is kept.
 //
 // The context bounds the read: cancelling it abandons work that has not started and stops the
 // layer pools from picking up more. It does not return until the layer work already in flight has
@@ -309,7 +310,7 @@ func (i *Image) readAndSquashLayers(ctx context.Context, layers []*Layer, fileCa
 	squashDigest := i.Metadata.ID
 	go func() {
 		squashStart := time.Now()
-		err := i.squashLayers(layers, gates, readProg)
+		err := i.squashLayers(layers, gates, readProg, !imageSquashOnly(ctx))
 		log.WithFields("digest", squashDigest, "time", time.Since(squashStart)).Trace("completed image squash")
 		squashDone <- err
 	}()
@@ -510,6 +511,27 @@ const (
 	LayerIndexExecutor = "layer-index"
 )
 
+type imageSquashOnlyKey struct{}
+
+// WithImageSquashOnly returns a context that tells Read to keep only the image squash. By default
+// every layer keeps its own squashed tree, and since each one is a full copy of the tree below it,
+// memory grows with layers x files. Use this when nothing needs a per-layer squash (for example a
+// squashed-scope scan): Layer.SquashedTree and Layer.SquashedSearchContext are then nil on every
+// layer except the top one. On those layers ResolveLinkByLayerSquash and the Layer *FromSquash
+// accessors (OpenPathFromSquash, FileContentsFromSquash, FilesByMIMETypeFromSquash) return an error.
+//
+// It applies to every Read under the returned context and cannot be switched back off in a child
+// context, so set it on a context scoped to the one read, never on one shared with reads that need
+// per-layer squashes. stereoscope.WithImageSquashOnly scopes it to a single GetImage call.
+func WithImageSquashOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, imageSquashOnlyKey{}, true)
+}
+
+func imageSquashOnly(ctx context.Context) bool {
+	v, _ := ctx.Value(imageSquashOnlyKey{}).(bool)
+	return v
+}
+
 // withLayerExecutors fills in the stage executors this image should use for any the caller has not
 // supplied. Never bounded at zero: a zero-concurrency go-sync executor runs inline on the caller's
 // goroutine, which would collapse the two stages back into one and lose the overlap.
@@ -628,7 +650,10 @@ func layerReadWorkers(layers int) int {
 
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
-func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.Manual) error {
+//
+// Without keepLayerSquashes only the top layer gets a squash (and search context). Nothing else
+// can see the squash below the top, so each layer is merged onto it in place rather than onto a copy.
+func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.Manual, keepLayerSquashes bool) error {
 	var lastSquashTree filetree.ReadWriter
 
 	for idx, layer := range layers {
@@ -640,28 +665,40 @@ func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.
 			return fmt.Errorf("unable to squash: layer %d was not indexed", idx)
 		}
 
-		// the lowest layer has nothing under it to merge into, but it is still squashed rather than
-		// used as-is: a layer tree keeps the whiteout entries of its own changeset, a squashed tree
-		// must not carry them
-		var unionTree = filetree.NewUnionFileTree()
-		if idx > 0 {
-			unionTree.PushTree(lastSquashTree)
-		}
-		unionTree.PushTree(layer.Tree.(filetree.ReadWriter))
-
-		squashedTree, err := unionTree.Squash()
+		squashedTree, err := squashOnto(lastSquashTree, layer.Tree.(filetree.ReadWriter), keepLayerSquashes)
 		if err != nil {
 			return fmt.Errorf("failed to squash tree %d: %w", idx, err)
 		}
-
-		layer.SquashedTree = squashedTree
-		layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 		lastSquashTree = squashedTree
+
+		if keepLayerSquashes || idx == len(layers)-1 {
+			layer.SquashedTree = squashedTree
+			layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
+		}
 
 		prog.Increment()
 	}
 
 	return nil
+}
+
+// squashOnto applies layerTree onto the squash below it (nil for the lowest layer). The lower squash
+// is left untouched when keepLower is set, otherwise it is merged into and returned.
+func squashOnto(lower, layerTree filetree.ReadWriter, keepLower bool) (filetree.ReadWriter, error) {
+	if lower != nil && !keepLower {
+		// a squash never carries whiteouts, so this is exactly what Squash would do after copying it
+		return lower, lower.Merge(layerTree)
+	}
+
+	// the lowest layer has nothing under it to merge into, but it is still squashed rather than
+	// used as-is: a layer tree keeps the whiteout entries of its own changeset, a squashed tree
+	// must not carry them
+	unionTree := filetree.NewUnionFileTree()
+	if lower != nil {
+		unionTree.PushTree(lower)
+	}
+	unionTree.PushTree(layerTree)
+	return unionTree.Squash()
 }
 
 // SquashedTree returns the pre-computed image squash file tree.
@@ -727,6 +764,9 @@ func (i *Image) FileContentsByRef(ref file.Reference) (io.ReadCloser, error) {
 // the image (a cycle, or a chain too deep to follow), resolves to nil with a nil error: callers are resolving one
 // file out of many and one bad link should not fail the whole set.
 func (i *Image) ResolveLinkByLayerSquash(ref file.Reference, layer int, options ...filetree.LinkResolutionOption) (*file.Resolution, error) {
+	if i.Layers[layer].SquashedTree == nil {
+		return nil, i.Layers[layer].errNoSquash()
+	}
 	allOptions := append([]filetree.LinkResolutionOption{filetree.FollowBasenameLinks}, options...)
 	_, resolvedRef, err := i.Layers[layer].SquashedTree.File(ref.RealPath, allOptions...)
 	if filetree.IsUnresolvableLink(err) {
