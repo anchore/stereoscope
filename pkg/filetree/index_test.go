@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
@@ -652,9 +653,91 @@ func TestFileCatalog_GetByBasenameGlob(t *testing.T) {
 			},
 		},
 		{
-			name:    "get basename with path expression",
-			input:   "somewhere/file?1.d",
-			wantErr: require.Error,
+			name:  "get name by character class",
+			input: "file-[23].txt",
+			want: []IndexEntry{
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
+					Metadata: file.Metadata{
+						Path:     "/path/branch.d/two/file-2.txt",
+						Type:     file.TypeRegular,
+						MIMEType: "text/plain",
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/file-3.txt"},
+					Metadata: file.Metadata{
+						Path:     "/path/file-3.txt",
+						Type:     file.TypeRegular,
+						MIMEType: "text/plain",
+					},
+				},
+			},
+		},
+		{
+			name:  "get name by negated character class",
+			input: "file-[!1].txt",
+			want: []IndexEntry{
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/two/file-2.txt"},
+					Metadata: file.Metadata{
+						Path:     "/path/branch.d/two/file-2.txt",
+						Type:     file.TypeRegular,
+						MIMEType: "text/plain",
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/file-3.txt"},
+					Metadata: file.Metadata{
+						Path:     "/path/file-3.txt",
+						Type:     file.TypeRegular,
+						MIMEType: "text/plain",
+					},
+				},
+			},
+		},
+		{
+			name:  "get name by alternation",
+			input: "file-1.{d,txt}",
+			want: []IndexEntry{
+				{
+					Reference: file.Reference{RealPath: "/path/common/file-1.d"},
+					Metadata: file.Metadata{
+						Path:            "/path/common/file-1.d",
+						LinkDestination: "path/branch.d/one/file-1.txt",
+						Type:            file.TypeSymLink,
+					},
+				},
+				{
+					Reference: file.Reference{RealPath: "/path/branch.d/one/file-1.txt"},
+					Metadata: file.Metadata{
+						Path:     "/path/branch.d/one/file-1.txt",
+						Type:     file.TypeRegular,
+						MIMEType: "text/plain",
+					},
+				},
+			},
+		},
+		{
+			name:  "invalid pattern",
+			input: "file-[",
+			wantErr: func(t require.TestingT, err error, _ ...interface{}) {
+				require.ErrorIs(t, err, doublestar.ErrBadPattern)
+			},
+		},
+		{
+			name:  "get basename with path expression",
+			input: "somewhere/file?1.d",
+			wantErr: func(t require.TestingT, err error, _ ...interface{}) {
+				require.ErrorIs(t, err, doublestar.ErrBadPattern)
+			},
+		},
+		{
+			name:  "get basename with recursive glob",
+			input: "**.d",
+			wantErr: func(t require.TestingT, err error, _ ...interface{}) {
+				require.ErrorIs(t, err, doublestar.ErrBadPattern)
+			},
 		},
 	}
 	for _, tt := range tests {

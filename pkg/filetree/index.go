@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/becheran/wildmatch-go"
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/scylladb/go-set/strset"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -26,6 +26,9 @@ type IndexReader interface {
 	GetByFileType(fTypes ...file.Type) ([]IndexEntry, error)
 	GetByExtension(extensions ...string) ([]IndexEntry, error)
 	GetByBasename(basenames ...string) ([]IndexEntry, error)
+	// GetByBasenameGlob returns the entries whose basename matches any of the given doublestar globs. A glob
+	// matches a single path segment, so one containing '/' or '**' is rejected. Rejected and invalid globs return an
+	// error wrapping doublestar.ErrBadPattern.
 	GetByBasenameGlob(globs ...string) ([]IndexEntry, error)
 }
 
@@ -85,14 +88,16 @@ func (c *index) Add(f file.Reference, m file.Metadata) {
 		c.byMIMEType[m.MIMEType].Add(id)
 	}
 
-	basename := path.Base(string(f.RealPath))
+	// the root has no basename (path.Base gives "/"), and indexing it would let a class like [!.] match a
+	// separator that getByBasename then rejects, failing the whole basename glob search
+	if basename := path.Base(string(f.RealPath)); basename != "/" {
+		if _, ok := c.byBasename[basename]; !ok {
+			c.byBasename[basename] = file.NewIDSet()
+		}
 
-	if _, ok := c.byBasename[basename]; !ok {
-		c.byBasename[basename] = file.NewIDSet()
+		c.byBasename[basename].Add(id)
+		c.basenames.Add(basename)
 	}
-
-	c.byBasename[basename].Add(id)
-	c.basenames.Add(basename)
 
 	for _, ext := range fileExtensions(string(f.RealPath)) {
 		if _, ok := c.byExtension[ext]; !ok {
@@ -237,22 +242,27 @@ func (c *index) getByBasename(basenames ...string) ([]IndexEntry, error) {
 }
 
 func (c *index) GetByBasenameGlob(globs ...string) ([]IndexEntry, error) {
+	// validate every glob up front, so that every basename is matched against a known-good pattern
+	for _, glob := range globs {
+		if strings.Contains(glob, "**") {
+			return nil, fmt.Errorf("%w: basename glob %q contains '**'", doublestar.ErrBadPattern, glob)
+		}
+		if strings.Contains(glob, "/") {
+			return nil, fmt.Errorf("%w: basename glob %q contains a directory separator", doublestar.ErrBadPattern, glob)
+		}
+		if !doublestar.ValidatePattern(glob) {
+			return nil, fmt.Errorf("%w: invalid basename glob %q", doublestar.ErrBadPattern, glob)
+		}
+	}
+
 	c.RLock()
 	defer c.RUnlock()
 
 	var entries []IndexEntry
 	for _, glob := range globs {
-		if strings.Contains(glob, "**") {
-			return nil, fmt.Errorf("basename glob patterns with '**' are not supported")
-		}
-		if strings.Contains(glob, "/") {
-			return nil, fmt.Errorf("found directory separator in a basename")
-		}
-
-		patternObj := wildmatch.NewWildMatch(glob)
 		var e error
 		c.basenames.Each(func(b string) bool {
-			if patternObj.IsMatch(b) {
+			if doublestar.MatchUnvalidated(glob, b) {
 				bns, err := c.getByBasename(b)
 				if err != nil {
 					e = fmt.Errorf("unable to fetch file references by basename (%q): %w", b, err)

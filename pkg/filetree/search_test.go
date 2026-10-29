@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/file"
@@ -435,28 +437,24 @@ func Test_searchContext_SearchByMIMEType_SkipsLinkCycles(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	var paths []string
-	for _, result := range results {
-		paths = append(paths, string(result.RealPath))
-	}
 	require.ElementsMatch(t, []string{
 		"/usr/bin/a-before",
 		"/usr/bin/zz-after",
-	}, paths)
+	}, realPaths(results))
 }
 
 func Test_complexSymlinkPerformance(t *testing.T) {
 	tr := New()
 	idx := NewIndex()
 
-	var realPaths []string
+	var pkgPaths []string
 
 	numPkgs := 30 // with this few packages, the allPathsToNode behavior would essentially hang
 
 	for num := range numPkgs {
 		// add a concrete path
 		realPath := fmt.Sprintf("/pkgs/lib-%d/package.json", num)
-		realPaths = append(realPaths, realPath)
+		pkgPaths = append(pkgPaths, realPath)
 		r, err := tr.AddFile(file.Path(realPath))
 		require.NoError(t, err)
 		require.NotNil(t, r)
@@ -477,7 +475,7 @@ func Test_complexSymlinkPerformance(t *testing.T) {
 	}{
 		{
 			glob:     "**/package.json",
-			expected: realPaths,
+			expected: pkgPaths,
 		},
 	}
 
@@ -487,11 +485,7 @@ func Test_complexSymlinkPerformance(t *testing.T) {
 			gotResolutions, err := sc.SearchByGlob(tt.glob, FollowBasenameLinks)
 			require.NoError(t, err)
 			require.NotNil(t, gotResolutions)
-			var got []string
-			for _, gotResolution := range gotResolutions {
-				got = append(got, string(gotResolution.RealPath))
-			}
-			require.ElementsMatch(t, tt.expected, got)
+			require.ElementsMatch(t, tt.expected, realPaths(gotResolutions))
 		})
 	}
 }
@@ -589,14 +583,10 @@ func Test_searchContext_SearchByGlob_SubDirectory_SkipsLinkCycles(t *testing.T) 
 	results, err := NewSearchContext(tree, idx).SearchByGlob("**/status.d/*")
 	require.NoError(t, err)
 
-	var paths []string
-	for _, result := range results {
-		paths = append(paths, string(result.RealPath))
-	}
 	require.ElementsMatch(t, []string{
 		"/var/lib/dpkg/status.d/a-before",
 		"/var/lib/dpkg/status.d/zz-after",
-	}, paths)
+	}, realPaths(results))
 }
 
 func Test_searchContext_SearchByMIMEType_SkipsExcessiveLinkDepth(t *testing.T) {
@@ -621,11 +611,7 @@ func Test_searchContext_SearchByMIMEType_SkipsExcessiveLinkDepth(t *testing.T) {
 	results, err := NewSearchContext(tree, idx).SearchByMIMEType(mimeType)
 	require.NoError(t, err)
 
-	var paths []string
-	for _, result := range results {
-		paths = append(paths, string(result.RealPath))
-	}
-	require.Subset(t, paths, []string{"/usr/bin/a-before", "/usr/bin/zz-after"})
+	require.Subset(t, realPaths(results), []string{"/usr/bin/a-before", "/usr/bin/zz-after"})
 }
 
 // a malformed link anywhere in the image must not cost us the backward-reference index, which is what
@@ -685,18 +671,9 @@ func Test_searchContext_LinkCycleDoesNotDropUnrelatedResults(t *testing.T) {
 		return NewSearchContext(tree, idx)
 	}
 
-	paths := func(t *testing.T, refs []file.Resolution) []string {
-		t.Helper()
-		var out []string
-		for _, r := range refs {
-			out = append(out, string(r.RealPath))
-		}
-		return out
-	}
-
 	clean, err := build(t, noCycle).SearchByGlob("/bin/leg*")
 	require.NoError(t, err)
-	require.Equal(t, []string{"/usr/bin/legit"}, paths(t, clean))
+	require.Equal(t, []string{"/usr/bin/legit"}, realPaths(clean))
 
 	for name, mode := range map[string]int{
 		"cycle via a link in the tree":  cycleViaTreeLink,
@@ -707,7 +684,165 @@ func Test_searchContext_LinkCycleDoesNotDropUnrelatedResults(t *testing.T) {
 			require.NoError(t, err)
 
 			// the cycle is unrelated to this glob, so the results must be identical
-			require.Equal(t, paths(t, clean), paths(t, withCycle))
+			require.Equal(t, realPaths(clean), realPaths(withCycle))
 		})
 	}
+}
+
+func Test_searchContext_SearchByGlob_altAndClassBasenames(t *testing.T) {
+	// basename globs with alternations and character classes reach the basename index (see parseGlobBasename)
+	// while escaped globs skip it (see parseGlob), so the indexed search must agree with the authoritative tree
+	// walk rather than silently returning less
+	paths := []string{
+		"/usr/lib/foo.jar",
+		"/usr/lib/bar.war",
+		"/usr/bin/python2",
+		"/usr/bin/python3",
+		"/opt/app/go.mod",
+		"/opt/app/go.sum",
+		"/usr/lib/aaab",
+		"/usr/lib/foo*",
+		"/usr/lib/foo*bar",
+		"/srv/foobaz/x",
+		"/a/b{",
+		"/opt/foobar",
+		"/opt/x1,y",
+		"/opt/z",
+	}
+
+	tree := New()
+	idx := NewIndex()
+
+	// layers with a "./" tar entry (and every squashfs layer) index the root directory itself
+	root, err := tree.AddDir("/")
+	require.NoError(t, err)
+	idx.Add(*root, file.Metadata{Path: "/", Type: file.TypeDirectory})
+
+	for _, p := range paths {
+		ref, err := tree.AddFile(file.Path(p))
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		idx.Add(*ref, file.Metadata{Path: p, Type: file.TypeRegular})
+	}
+
+	tests := []struct {
+		name    string
+		glob    string
+		want    []string
+		wantErr bool
+	}{
+		{
+			name: "alternation in the basename",
+			glob: "**/*.{jar,war}",
+			want: []string{"/usr/lib/bar.war", "/usr/lib/foo.jar"},
+		},
+		{
+			name: "alternation suffixing the basename",
+			glob: "**/python{2,3}",
+			want: []string{"/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name: "character class in the basename",
+			glob: "**/python[23]",
+			want: []string{"/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name: "character class followed by a wildcard",
+			glob: "**/go.[ms]*",
+			want: []string{"/opt/app/go.mod", "/opt/app/go.sum"},
+		},
+		{
+			name: "plain wildcard basename still works",
+			glob: "**/python*",
+			want: []string{"/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name: "negated class that would match the root",
+			glob: "**/[!a-z]*",
+			want: nil,
+		},
+		{
+			name: "alternation that matches nothing",
+			glob: "**/*.{deb,rpm}",
+			want: nil,
+		},
+		{
+			name: "wildcard that must backtrack",
+			glob: "**/*aab",
+			want: []string{"/usr/lib/aaab"},
+		},
+		{
+			name: "escaped wildcard",
+			glob: `**/foo\*`,
+			want: []string{"/usr/lib/foo*"},
+		},
+		{
+			name: "escaped brace in an alternation spanning a directory",
+			glob: `**/{a/b\{}`,
+			want: []string{"/a/b{"},
+		},
+		{
+			name: "escaped literal basename",
+			glob: `**/foo\bar`,
+			want: []string{"/opt/foobar"},
+		},
+		{
+			name: "escaped parent of a wildcard basename",
+			glob: `**/foo\baz/*`,
+			want: []string{"/srv/foobaz/x"},
+		},
+		{
+			name: "escaped parent of a recursive basename",
+			glob: `**/foo\baz/**`,
+			want: []string{"/srv/foobaz/x"},
+		},
+		{
+			name: "escaped asterisk followed by a wildcard",
+			glob: `**/foo\**`,
+			want: []string{"/usr/lib/foo*", "/usr/lib/foo*bar"},
+		},
+		{
+			name: "escaped comma in a simple list",
+			glob: `**/{x*\,y,z}`,
+			want: []string{"/opt/x1,y", "/opt/z"},
+		},
+		{
+			name: "simple list with a wildcard section",
+			glob: "**/{python*,go.mod}",
+			want: []string{"/opt/app/go.mod", "/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name:    "invalid basename glob falls back to the tree walk",
+			glob:    "**/foo][",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			indexed, indexedErr := NewSearchContext(tree, idx).SearchByGlob(tt.glob)
+
+			// the tree walk takes no part in the index lookup, so it is the reference answer
+			walked, walkedErr := searchContext{tree: tree}.SearchByGlob(tt.glob)
+
+			if tt.wantErr {
+				require.ErrorIs(t, indexedErr, doublestar.ErrBadPattern, "indexed search")
+				require.ErrorIs(t, walkedErr, doublestar.ErrBadPattern, "tree walk")
+				return
+			}
+			require.NoError(t, indexedErr)
+			require.NoError(t, walkedErr)
+
+			assert.Equal(t, tt.want, realPaths(indexed), "indexed search")
+			assert.Equal(t, tt.want, realPaths(walked), "tree walk")
+		})
+	}
+}
+
+func realPaths(refs []file.Resolution) []string {
+	var paths []string
+	for _, r := range refs {
+		paths = append(paths, string(r.RealPath))
+	}
+	return paths
 }

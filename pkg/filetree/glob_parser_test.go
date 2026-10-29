@@ -199,6 +199,56 @@ func Test_parseGlob(t *testing.T) {
 			},
 		},
 		{
+			name: "escaped brace balances the counts but is not a valid basename glob",
+			glob: `**/{a/b\{}`,
+			want: []searchRequest{
+				{
+					searchBasis: searchByGlob,
+					glob:        `**/{a/b\{}`,
+				},
+			},
+		},
+		{
+			name: "escaped literal basename is matched against the tree",
+			glob: `**/foo\bar`,
+			want: []searchRequest{
+				{
+					searchBasis: searchByGlob,
+					glob:        `**/foo\bar`,
+				},
+			},
+		},
+		{
+			name: "escaped parent of a wildcard basename is not a subdirectory lookup",
+			glob: `**/foo\bar/*`,
+			want: []searchRequest{
+				{
+					searchBasis: searchByGlob,
+					glob:        `**/foo\bar/*`,
+				},
+			},
+		},
+		{
+			name: "escaped asterisk is not collapsed into the wildcard after it",
+			glob: `**/foo\**`,
+			want: []searchRequest{
+				{
+					searchBasis: searchByGlob,
+					glob:        `**/foo\**`,
+				},
+			},
+		},
+		{
+			name: "simple list with an escaped comma is not split",
+			glob: `**/{x*\,y,z}`,
+			want: []searchRequest{
+				{
+					searchBasis: searchByGlob,
+					glob:        `**/{x*\,y,z}`,
+				},
+			},
+		},
+		{
 			name: "match alternative matches in the basename",
 			glob: "**/var/lib/rpm/{Packages,Packages.db,rpmdb.sqlite}",
 			want: []searchRequest{
