@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/becheran/wildmatch-go"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/scylladb/go-set/strset"
 
@@ -27,6 +26,9 @@ type IndexReader interface {
 	GetByFileType(fTypes ...file.Type) ([]IndexEntry, error)
 	GetByExtension(extensions ...string) ([]IndexEntry, error)
 	GetByBasename(basenames ...string) ([]IndexEntry, error)
+	// GetByBasenameGlob returns the entries whose basename matches any of the given doublestar globs. A glob
+	// matches a single path segment, so one containing '/' or '**' is rejected. Rejected and invalid globs return an
+	// error wrapping doublestar.ErrBadPattern.
 	GetByBasenameGlob(globs ...string) ([]IndexEntry, error)
 }
 
@@ -86,14 +88,16 @@ func (c *index) Add(f file.Reference, m file.Metadata) {
 		c.byMIMEType[m.MIMEType].Add(id)
 	}
 
-	basename := path.Base(string(f.RealPath))
+	// the root has no basename (path.Base gives "/"), and indexing it would let a class like [!.] match a
+	// separator that getByBasename then rejects, failing the whole basename glob search
+	if basename := path.Base(string(f.RealPath)); basename != "/" {
+		if _, ok := c.byBasename[basename]; !ok {
+			c.byBasename[basename] = file.NewIDSet()
+		}
 
-	if _, ok := c.byBasename[basename]; !ok {
-		c.byBasename[basename] = file.NewIDSet()
+		c.byBasename[basename].Add(id)
+		c.basenames.Add(basename)
 	}
-
-	c.byBasename[basename].Add(id)
-	c.basenames.Add(basename)
 
 	for _, ext := range fileExtensions(string(f.RealPath)) {
 		if _, ok := c.byExtension[ext]; !ok {
@@ -238,26 +242,27 @@ func (c *index) getByBasename(basenames ...string) ([]IndexEntry, error) {
 }
 
 func (c *index) GetByBasenameGlob(globs ...string) ([]IndexEntry, error) {
+	// validate every glob up front, so that every basename is matched against a known-good pattern
+	for _, glob := range globs {
+		if strings.Contains(glob, "**") {
+			return nil, fmt.Errorf("%w: basename glob %q contains '**'", doublestar.ErrBadPattern, glob)
+		}
+		if strings.Contains(glob, "/") {
+			return nil, fmt.Errorf("%w: basename glob %q contains a directory separator", doublestar.ErrBadPattern, glob)
+		}
+		if !doublestar.ValidatePattern(glob) {
+			return nil, fmt.Errorf("%w: invalid basename glob %q", doublestar.ErrBadPattern, glob)
+		}
+	}
+
 	c.RLock()
 	defer c.RUnlock()
 
 	var entries []IndexEntry
 	for _, glob := range globs {
-		if strings.Contains(glob, "**") {
-			return nil, fmt.Errorf("basename glob patterns with '**' are not supported")
-		}
-		if strings.Contains(glob, "/") {
-			return nil, fmt.Errorf("found directory separator in a basename")
-		}
-
-		isMatch, err := basenameGlobMatcher(glob)
-		if err != nil {
-			return nil, err
-		}
-
 		var e error
 		c.basenames.Each(func(b string) bool {
-			if isMatch(b) {
+			if doublestar.MatchUnvalidated(glob, b) {
 				bns, err := c.getByBasename(b)
 				if err != nil {
 					e = fmt.Errorf("unable to fetch file references by basename (%q): %w", b, err)
@@ -273,28 +278,6 @@ func (c *index) GetByBasenameGlob(globs ...string) ([]IndexEntry, error) {
 	}
 
 	return entries, nil
-}
-
-// basenameGlobMatcher returns a predicate that reports whether a basename satisfies the given glob.
-//
-// wildmatch understands only '*' and '?', so it compares a character class or an alternation
-// literally and matches nothing. parseGlob hands both kinds of pattern to GetByBasenameGlob (see
-// parseBasenameAltAndClassGlobSections), so those need the same matcher the rest of the search
-// uses. wildmatch is kept for the patterns it does cover, which is the overwhelming majority.
-func basenameGlobMatcher(glob string) (func(string) bool, error) {
-	if !strings.ContainsAny(glob, "[]{}") {
-		return wildmatch.NewWildMatch(glob).IsMatch, nil
-	}
-
-	if !doublestar.ValidatePattern(glob) {
-		return nil, fmt.Errorf("invalid basename glob pattern: %q", glob)
-	}
-
-	return func(b string) bool {
-		// the pattern is already validated, so the only error Match can return cannot happen here
-		matched, err := doublestar.Match(glob, b)
-		return err == nil && matched
-	}, nil
 }
 
 func fileExtensions(p string) []string {
