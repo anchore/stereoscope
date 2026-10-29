@@ -492,6 +492,8 @@ func (b *resumableBody) roundTrip(ctx context.Context) (*http.Response, error) {
 // a redirect from https to http is followed, as go-containerregistry follows it for the pull. the
 // idle clock can send a healthy pull through here, so refusing what the pull already accepted (a
 // registry fronting plain-http storage, say) would fail a pull that waiting would have finished.
+// credentials are not exposed by it: go-containerregistry only attaches them for the registry host,
+// whose scheme its schemeTransport puts back, and the request a resume builds starts without any.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return fmt.Errorf("%w: stopped after 10 redirects", errResumeRefused)
