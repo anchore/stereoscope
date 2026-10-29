@@ -24,6 +24,22 @@ type RegistryOptions struct {
 	Credentials           []RegistryCredentials
 	Keychain              authn.Keychain
 	CAFileOrDir           string
+
+	// DisableBlobResume turns off resuming a registry blob download from where it stopped when the
+	// connection drops partway through, so the layer fails outright instead. Resuming is on by
+	// default, and applies to the OCI registry provider only. It also turns off what comes with it:
+	// a read that receives nothing for two minutes is treated as a drop, and the first resume of a
+	// pull pings and authenticates against the registry again.
+	//
+	// The idle clock is the part worth knowing, since it is the one piece that changes a pull which
+	// previously only ran slowly: a registry that pauses longer than that mid-blob is reopened rather
+	// than waited on. One that then ignores the range costs a re-download of what had already
+	// arrived, and one that refuses it outright (a 416, say) fails the layer where waiting would have
+	// finished it. Two minutes is picked to sit well above a pull-through cache filling from upstream.
+	//
+	// Note that this is a Go API only: syft, grype and anchorectl would each need to plumb a config
+	// key through before an operator meeting such a registry could reach it.
+	DisableBlobResume bool
 }
 
 type credentialSelection struct {

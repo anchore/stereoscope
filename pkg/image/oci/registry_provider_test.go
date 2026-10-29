@@ -2,17 +2,24 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -327,6 +334,284 @@ func pushRandomRegistryImage(t *testing.T, registryHost, repo, tag string) {
 	require.NoError(t, err)
 }
 
+// truncatingProxy forwards to upstream behind basic auth (user / pass), tearing the connection down partway through the first
+// `drops` responses to each blob, so that the read has to be resumed repeatedly. more than one
+// drop matters: a single splice exercises neither the budgets nor a second pass through
+// verify.ReadCloser's running hash. it returns the proxy's host and a count of the truncations it
+// has made.
+func truncatingProxy(t *testing.T, upstream string, drops int) (string, func() int) {
+	t.Helper()
+
+	var mu sync.Mutex
+	truncated := make(map[string]int)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// basic auth in front, so a resume has to authenticate the way the pull did
+		if user, pass, ok := r.BasicAuth(); !ok || user != "user" || pass != "pass" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, "http://"+upstream+r.URL.RequestURI(), nil)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		req.Header = r.Header.Clone()
+
+		resp, err := http.DefaultTransport.RoundTrip(req)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+
+		for key, values := range resp.Header {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+
+		mu.Lock()
+		truncate := r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") &&
+			len(body) > 1 && truncated[r.URL.Path] < drops
+		if truncate {
+			truncated[r.URL.Path]++
+		}
+		mu.Unlock()
+
+		if truncate {
+			_, _ = w.Write(body[:len(body)/2])
+			w.(http.Flusher).Flush()
+			panic(http.ErrAbortHandler)
+		}
+
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+
+	count := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+
+		total := 0
+		for _, n := range truncated {
+			total += n
+		}
+		return total
+	}
+
+	return strings.TrimPrefix(srv.URL, "http://"), count
+}
+
+func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T) {
+	// the resumable transport under the real go-containerregistry stack (remote.Get, the retry
+	// transport, verify.ReadCloser's digest check, and the reopen client built by reopenClient with
+	// the pull's own credentials) against go-containerregistry's own registry, which answers 416 to
+	// an open-ended range. the proxy in front demands basic auth, so a resume that did not
+	// authenticate the way the pull did would fail. a bearer registry is not exercised, the token
+	// exchange being go-containerregistry's own
+	upstream := makeRegistry(t)
+	pushRandomRegistryImage(t, upstream, "resume-probe", "latest")
+
+	generator := file.TempDirGenerator{}
+	defer func() { _ = generator.Cleanup() }()
+
+	// two drops per blob, so each is spliced more than once and the stall backoff engages. blobs this
+	// small never make enough progress to reset it, so each extra drop costs a real second
+	proxy, truncations := truncatingProxy(t, upstream, 2)
+	imageStr := fmt.Sprintf("%s/resume-probe:latest", proxy)
+	options := image.RegistryOptions{
+		InsecureUseHTTP: true,
+		Credentials:     []image.RegistryCredentials{{Authority: proxy, Username: "user", Password: "pass"}},
+	}
+	provider := NewRegistryProvider(&generator, options, imageStr, nil)
+
+	img, err := provider.Provide(context.TODO())
+	require.NoError(t, err, "the layer must survive a mid-stream drop and pass the digest check")
+	require.NotNil(t, img)
+	t.Cleanup(func() { _ = img.Cleanup() })
+
+	// two layers and a config, and every drop asked for must actually have happened, or this test
+	// passes without exercising a resume at all
+	assert.Equal(t, 3*2, truncations())
+}
+
+func Test_RegistryProvider_blobResumeCanBeDisabled(t *testing.T) {
+	// a caller meeting a registry that mishandles range requests needs a way to turn resuming off.
+	// the flag governs three things and all three ride on the transport: the resume itself, the idle
+	// clock that decides a silent read is a drop, and the client a reopen is reissued through
+	ref, err := name.ParseReference("registry.example.com/img:latest")
+	require.NoError(t, err)
+
+	enabled := newEffectiveURLTransport(nil)
+	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{}, nil, enabled)
+
+	resumable, ok := enabled.base.(*resumableTransport)
+	require.True(t, ok, "resuming is on by default")
+	assert.NotNil(t, resumable.clientFor, "a reopen goes through its own authenticated client")
+	assert.Positive(t, resumable.idleTimeout, "a read that falls silent is on a clock")
+
+	disabled := newEffectiveURLTransport(nil)
+	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{DisableBlobResume: true}, nil, disabled)
+
+	assert.IsType(t, &http.Transport{}, disabled.base,
+		"DisableBlobResume removes the transport, and the idle clock and reopen client with it")
+}
+
+func Test_reopenClient_aWaitingResumeCanBeCancelled(t *testing.T) {
+	// a resume waiting on another's client build must still honour its own Close or cancellation,
+	// which a mutex held across the build would not
+	ref, err := name.ParseReference("registry.example.com/img:latest")
+	require.NoError(t, err)
+
+	building := make(chan struct{})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+
+	clientFor := reopenClient(ref, http.DefaultTransport, "stereoscope-test", func(context.Context) (authn.Authenticator, error) {
+		close(building)
+		<-release
+		return nil, errors.New("never built")
+	})
+
+	go func() { _, _ = clientFor(context.Background()) }()
+	<-building
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := clientFor(ctx)
+		done <- err
+	}()
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(5 * time.Second):
+		t.Fatal("a cancelled resume kept waiting on another's client build")
+	}
+}
+
+// basicAuthRegistry serves one blob behind basic auth, the way a self-hosted registry does: /v2/
+// challenges, the first GET of the blob drops partway, and every range request is redirected to cdn
+// with location, as a registry fronted by a CDN does.
+type basicAuthRegistry struct {
+	payload  []byte
+	location func(r *http.Request) string
+
+	mu         sync.Mutex
+	pings      int
+	userAgents []string
+}
+
+func (s *basicAuthRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if r.URL.Path == "/v2/" {
+		s.pings++
+	}
+
+	if user, pass, ok := r.BasicAuth(); !ok || user != "user" || pass != "pass" {
+		w.Header().Set("WWW-Authenticate", `Basic realm="test"`)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if r.Header.Get("Range") != "" {
+		s.userAgents = append(s.userAgents, r.Header.Get("User-Agent"))
+		http.Redirect(w, r, s.location(r), http.StatusTemporaryRedirect)
+		return
+	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(len(s.payload)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(s.payload[:1000])
+	w.(http.Flusher).Flush()
+	panic(http.ErrAbortHandler)
+}
+
+func Test_reopenClient(t *testing.T) {
+	// the resume client is built by hand beside go-containerregistry's, so its wiring is tested here
+	// through go-containerregistry's own basic auth transport rather than a stand-in
+	payload := payloadOfSize(8192)
+	auth := func(context.Context) (authn.Authenticator, error) {
+		return &authn.Basic{Username: "user", Password: "pass"}, nil
+	}
+
+	fetch := func(t *testing.T, registry *basicAuthRegistry) ([]byte, error) {
+		t.Helper()
+
+		srv := httptest.NewServer(registry)
+		t.Cleanup(srv.Close)
+
+		ref, err := name.ParseReference(strings.TrimPrefix(srv.URL, "http://")+"/img:latest", name.Insecure)
+		require.NoError(t, err)
+
+		transport := newResumableTransport(http.DefaultTransport, reopenClient(ref, http.DefaultTransport, "stereoscope-test", auth))
+		transport.backoff = 0
+		transport.idleTimeout = 5 * time.Second
+
+		// the original request carries credentials the way go-containerregistry leaves them on it
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/v2/img/blobs/sha256:abc", nil)
+		require.NoError(t, err)
+		req.SetBasicAuth("user", "pass")
+
+		resp, err := (&http.Client{Transport: transport}).Do(req)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = resp.Body.Close() })
+
+		return io.ReadAll(resp.Body)
+	}
+
+	t.Run("resumes through auth and a redirect without leaking credentials", func(t *testing.T) {
+		cdn := &flakyBlobServer{payload: payload, dropsLeft: 1, bytesPerDrop: 1000}
+		cdnSrv := httptest.NewServer(cdn)
+		t.Cleanup(cdnSrv.Close)
+
+		registry := &basicAuthRegistry{payload: payload, location: func(*http.Request) string { return cdnSrv.URL }}
+
+		got, err := fetch(t, registry)
+		require.NoError(t, err)
+		assert.Equal(t, payload, got)
+
+		// the cdn shares the registry's hostname on another port, which is exactly where http.Client
+		// would forward an Authorization it had been handed
+		for i, h := range cdn.seenHeaders() {
+			assert.Empty(t, h.Get("Authorization"), "the cdn saw credentials on request %d", i)
+		}
+
+		registry.mu.Lock()
+		defer registry.mu.Unlock()
+		assert.Equal(t, 1, registry.pings, "the client should be built once and reused across resumes")
+		require.Len(t, registry.userAgents, 2)
+		for _, ua := range registry.userAgents {
+			assert.Contains(t, ua, "stereoscope-test")
+		}
+	})
+
+	t.Run("refuses a redirect to a private address", func(t *testing.T) {
+		registry := &basicAuthRegistry{payload: payload, location: func(*http.Request) string {
+			return "http://10.0.0.1/blob?sig=sekrit"
+		}}
+
+		_, err := fetch(t, registry)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, errResumeRefused)
+		assert.NotContains(t, err.Error(), "sekrit", "a signed URL must not reach the error")
+	})
+}
+
 func makeRegistry(t *testing.T) (registryHost string) {
 	memoryBlobHandler := registry.NewInMemoryBlobHandler()
 	registryInstance := registry.New(registry.WithBlobHandler(memoryBlobHandler))
@@ -425,4 +710,95 @@ type mockRoundTripper struct {
 
 func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m.resp, m.err
+}
+
+func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
+	// a rejected token request will not mend on retry, so it must end the resume rather than spend the
+	// stall budget on backoff. anything else is retried, since the pull itself already got this far
+	tests := []struct {
+		name        string
+		authErr     error
+		pingStatus  int
+		tokenStatus int
+		tokenBody   string
+		refused     bool
+		wantClipped bool
+	}{
+		// a networked helper (ecr-login, gcloud) can fail for the same reason the blob dropped
+		{name: "credential helper fails", authErr: errors.New("docker-credential-ecr-login: dial tcp: i/o timeout")},
+		{name: "token request rejected", tokenStatus: http.StatusUnauthorized, refused: true},
+		{name: "token server busy", tokenStatus: http.StatusServiceUnavailable},
+		{
+			// this registry is pinged over https and http, and the https attempt fails at the handshake.
+			// the 400 is all go-containerregistry has to report, but it says nothing about credentials
+			name:       "a ping that fails without rejecting credentials",
+			pingStatus: http.StatusBadRequest,
+		},
+		{
+			// go-containerregistry copies the response body into its error message, up to a 64 KiB
+			// limit it refuses outright above. that error is wrapped into the one the layer read
+			// fails with, so a registry must not be able to push raw bytes to a terminal through it
+			name:        "a hostile token response is escaped and capped",
+			tokenStatus: http.StatusForbidden,
+			tokenBody:   "\x1b]0;pwned\x07" + strings.Repeat("A", 32*1024),
+			refused:     true,
+			wantClipped: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// a retry may stop at the credential helper and never reach the registry, so both count
+			var attempts atomic.Int64
+			var srv *httptest.Server
+			srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				if r.URL.Path == "/token" {
+					w.WriteHeader(tt.tokenStatus)
+					_, _ = io.WriteString(w, tt.tokenBody)
+					return
+				}
+				if tt.pingStatus != 0 {
+					w.WriteHeader(tt.pingStatus)
+					return
+				}
+				w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="test"`, srv.URL))
+				w.WriteHeader(http.StatusUnauthorized)
+			}))
+			t.Cleanup(srv.Close)
+
+			ref, err := name.ParseReference(strings.TrimPrefix(srv.URL, "http://") + "/img:latest")
+			require.NoError(t, err)
+
+			clientFor := reopenClient(ref, http.DefaultTransport, "stereoscope-test", func(context.Context) (authn.Authenticator, error) {
+				attempts.Add(1)
+				return authn.Anonymous, tt.authErr
+			})
+
+			_, err = clientFor(context.Background())
+			require.Error(t, err)
+			if tt.refused {
+				assert.ErrorIs(t, err, errResumeRefused)
+			} else {
+				assert.NotErrorIs(t, err, errResumeRefused)
+			}
+
+			if tt.wantClipped {
+				assert.NotContains(t, err.Error(), "\x1b", "control characters must be escaped")
+				assert.Less(t, len(err.Error()), maxErrorText+256, "the server's text must be capped")
+			}
+
+			// every blob of a fat image drops independently, so a refusal that is re-derived rather
+			// than remembered costs another ping and token exchange each time
+			spent := attempts.Load()
+			_, again := clientFor(context.Background())
+			require.Error(t, again)
+			if tt.refused {
+				assert.Equal(t, spent, attempts.Load(), "a settled refusal must not ping the registry again")
+				assert.ErrorIs(t, again, errResumeRefused)
+			} else {
+				assert.Greater(t, attempts.Load(), spent, "a transient failure must be retried")
+			}
+		})
+	}
 }
