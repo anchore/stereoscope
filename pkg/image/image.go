@@ -517,7 +517,8 @@ type imageSquashOnlyKey struct{}
 // every layer keeps its own squashed tree, and since each one is a full copy of the tree below it,
 // memory grows with layers x files. Use this when nothing needs a per-layer squash (for example a
 // squashed-scope scan): Layer.SquashedTree and Layer.SquashedSearchContext are then nil on every
-// layer except the top one, and ResolveLinkByLayerSquash only works for the top layer.
+// layer except the top one. On those layers ResolveLinkByLayerSquash and the Layer *FromSquash
+// accessors (OpenPathFromSquash, FileContentsFromSquash, FilesByMIMETypeFromSquash) return an error.
 //
 // It applies to every Read under the returned context and cannot be switched back off in a child
 // context, so set it on a context scoped to the one read, never on one shared with reads that need
