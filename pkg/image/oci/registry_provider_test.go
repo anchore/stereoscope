@@ -710,11 +710,23 @@ func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
 		name        string
 		authErr     error
 		tokenStatus int
+		tokenBody   string
 		refused     bool
+		wantClipped bool
 	}{
 		{name: "credential helper fails", authErr: errors.New("docker-credential-ecr-login not found"), refused: true},
 		{name: "token request rejected", tokenStatus: http.StatusUnauthorized, refused: true},
 		{name: "token server busy", tokenStatus: http.StatusServiceUnavailable},
+		{
+			// go-containerregistry copies the response body into its error message, up to a 64 KiB
+			// limit it refuses outright above. that error is wrapped into the one the layer read
+			// fails with, so a registry must not be able to push raw bytes to a terminal through it
+			name:        "a hostile token response is escaped and capped",
+			tokenStatus: http.StatusForbidden,
+			tokenBody:   "\x1b]0;pwned\x07" + strings.Repeat("A", 32*1024),
+			refused:     true,
+			wantClipped: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -723,6 +735,7 @@ func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
 			srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/token" {
 					w.WriteHeader(tt.tokenStatus)
+					_, _ = io.WriteString(w, tt.tokenBody)
 					return
 				}
 				w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="test"`, srv.URL))
@@ -743,6 +756,11 @@ func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
 				assert.ErrorIs(t, err, errResumeRefused)
 			} else {
 				assert.NotErrorIs(t, err, errResumeRefused)
+			}
+
+			if tt.wantClipped {
+				assert.NotContains(t, err.Error(), "\x1b", "control characters must be escaped")
+				assert.Less(t, len(err.Error()), maxErrorText+256, "the server's text must be capped")
 			}
 		})
 	}

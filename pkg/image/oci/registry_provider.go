@@ -287,10 +287,12 @@ func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, 
 		}
 
 		// a credential or auth failure will not mend on retry, so it ends the resume rather than
-		// spending the stall budget on backoff. a network error while pinging still gets retried
+		// spending the stall budget on backoff. a network error while pinging still gets retried.
+		// both errors are quoted: this is where text the registry chose crosses into ours, and
+		// go-containerregistry puts up to 64 KiB of an error response body into its message
 		authenticator, err := auth(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%w: unable to resolve credentials: %w", errResumeRefused, err)
+			return nil, fmt.Errorf("%w: unable to resolve credentials: %w", errResumeRefused, quoted(err))
 		}
 
 		repo := ref.Context()
@@ -298,7 +300,7 @@ func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, 
 			[]string{repo.Scope(transport.PullScope)})
 		var regErr *transport.Error
 		if errors.As(err, &regErr) && !regErr.Temporary() {
-			return nil, fmt.Errorf("%w: unable to authenticate: %w", errResumeRefused, err)
+			return nil, fmt.Errorf("%w: unable to authenticate: %w", errResumeRefused, quoted(err))
 		}
 		if err != nil {
 			return nil, err
