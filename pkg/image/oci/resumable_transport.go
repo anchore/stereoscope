@@ -47,6 +47,9 @@ const (
 
 	// statusClientClosedRequest is the non-standard 499 some proxies answer with.
 	statusClientClosedRequest = 499
+
+	// maxErrorText caps how much of a server-influenced message reaches a log line or an error.
+	maxErrorText = 200
 )
 
 // errResumeRefused marks a reopen another attempt cannot mend. anything else spends a stall.
@@ -474,8 +477,10 @@ func (b *resumableBody) roundTrip(ctx context.Context) (*http.Response, error) {
 // change host, but not to a loopback, private, link-local or unspecified address. it is stricter in
 // three ways. a host made only of numbers is refused rather than decoded, since the resolver accepts
 // legacy spellings such as 127.1 that netip does not. a host that is not plain ASCII is refused, since
-// the transport maps full-width digits onto an address netip never sees. and https may not drop to
-// http, as go-containerregistry already insists for foreign layers.
+// the transport maps full-width digits onto an address netip never sees. that also turns away a
+// registry redirecting to a genuine IDN host, which folding the name first would not, but folding
+// means taking a direct dependency on x/net/idna for a case no registry has been seen to need. and
+// https may not drop to http, as go-containerregistry already insists for foreign layers.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return fmt.Errorf("%w: stopped after 10 redirects", errResumeRefused)
@@ -768,9 +773,6 @@ func forLog(req *http.Request) string {
 	// escaped, since a foreign layer URL comes from the manifest and its path may decode to anything
 	return u.Host + u.EscapedPath()
 }
-
-// maxErrorText caps how much of a server-influenced message reaches a log line or an error.
-const maxErrorText = 200
 
 // clip caps text a server chose before it goes into a log line or an error.
 func clip(s string) string {

@@ -446,17 +446,25 @@ func Test_RegistryProvider_resumesAgainstAGoContainerRegistryServer(t *testing.T
 }
 
 func Test_RegistryProvider_blobResumeCanBeDisabled(t *testing.T) {
-	// a caller meeting a registry that mishandles range requests needs a way to turn resuming off
+	// a caller meeting a registry that mishandles range requests needs a way to turn resuming off.
+	// the flag governs three things and all three ride on the transport: the resume itself, the idle
+	// clock that decides a silent read is a drop, and the client a reopen is reissued through
 	ref, err := name.ParseReference("registry.example.com/img:latest")
 	require.NoError(t, err)
 
-	effective := newEffectiveURLTransport(nil)
+	enabled := newEffectiveURLTransport(nil)
+	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{}, nil, enabled)
 
-	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{}, nil, effective)
-	assert.IsType(t, &resumableTransport{}, effective.base, "resuming is on by default")
+	resumable, ok := enabled.base.(*resumableTransport)
+	require.True(t, ok, "resuming is on by default")
+	assert.NotNil(t, resumable.clientFor, "a reopen goes through its own authenticated client")
+	assert.Positive(t, resumable.idleTimeout, "a read that falls silent is on a clock")
 
-	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{DisableBlobResume: true}, nil, effective)
-	assert.IsType(t, &http.Transport{}, effective.base, "DisableBlobResume removes it from the chain")
+	disabled := newEffectiveURLTransport(nil)
+	prepareRemoteOptions(context.Background(), ref, image.RegistryOptions{DisableBlobResume: true}, nil, disabled)
+
+	assert.IsType(t, &http.Transport{}, disabled.base,
+		"DisableBlobResume removes the transport, and the idle clock and reopen client with it")
 }
 
 func Test_reopenClient_aWaitingResumeCanBeCancelled(t *testing.T) {
