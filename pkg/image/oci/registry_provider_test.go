@@ -713,19 +713,27 @@ func (m *mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
-	// a missing credential helper or a rejected token request will not mend on retry, so it must end
-	// the resume rather than spend the stall budget on backoff. a busy token server still gets retried
+	// a rejected token request will not mend on retry, so it must end the resume rather than spend the
+	// stall budget on backoff. anything else is retried, since the pull itself already got this far
 	tests := []struct {
 		name        string
 		authErr     error
+		pingStatus  int
 		tokenStatus int
 		tokenBody   string
 		refused     bool
 		wantClipped bool
 	}{
-		{name: "credential helper fails", authErr: errors.New("docker-credential-ecr-login not found"), refused: true},
+		// a networked helper (ecr-login, gcloud) can fail for the same reason the blob dropped
+		{name: "credential helper fails", authErr: errors.New("docker-credential-ecr-login: dial tcp: i/o timeout")},
 		{name: "token request rejected", tokenStatus: http.StatusUnauthorized, refused: true},
 		{name: "token server busy", tokenStatus: http.StatusServiceUnavailable},
+		{
+			// this registry is pinged over https and http, and the https attempt fails at the handshake.
+			// the 400 is all go-containerregistry has to report, but it says nothing about credentials
+			name:       "a ping that fails without rejecting credentials",
+			pingStatus: http.StatusBadRequest,
+		},
 		{
 			// go-containerregistry copies the response body into its error message, up to a 64 KiB
 			// limit it refuses outright above. that error is wrapped into the one the layer read
@@ -740,13 +748,18 @@ func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var requests atomic.Int64
+			// a retry may stop at the credential helper and never reach the registry, so both count
+			var attempts atomic.Int64
 			var srv *httptest.Server
 			srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests.Add(1)
+				attempts.Add(1)
 				if r.URL.Path == "/token" {
 					w.WriteHeader(tt.tokenStatus)
 					_, _ = io.WriteString(w, tt.tokenBody)
+					return
+				}
+				if tt.pingStatus != 0 {
+					w.WriteHeader(tt.pingStatus)
 					return
 				}
 				w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="test"`, srv.URL))
@@ -758,6 +771,7 @@ func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
 			require.NoError(t, err)
 
 			clientFor := reopenClient(ref, http.DefaultTransport, "stereoscope-test", func(context.Context) (authn.Authenticator, error) {
+				attempts.Add(1)
 				return authn.Anonymous, tt.authErr
 			})
 
@@ -776,14 +790,14 @@ func Test_reopenClient_permanentAuthFailuresAreRefused(t *testing.T) {
 
 			// every blob of a fat image drops independently, so a refusal that is re-derived rather
 			// than remembered costs another ping and token exchange each time
-			spent := requests.Load()
+			spent := attempts.Load()
 			_, again := clientFor(context.Background())
 			require.Error(t, again)
 			if tt.refused {
-				assert.Equal(t, spent, requests.Load(), "a settled refusal must not ping the registry again")
+				assert.Equal(t, spent, attempts.Load(), "a settled refusal must not ping the registry again")
 				assert.ErrorIs(t, again, errResumeRefused)
 			} else {
-				assert.Greater(t, requests.Load(), spent, "a transient failure must be retried")
+				assert.Greater(t, attempts.Load(), spent, "a transient failure must be retried")
 			}
 		})
 	}

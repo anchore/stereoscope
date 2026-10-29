@@ -291,21 +291,24 @@ func reopenClient(ref name.Reference, base http.RoundTripper, userAgent string, 
 			return client, refused
 		}
 
-		// a credential or auth failure will not mend on retry, so it ends the resume rather than
-		// spending the stall budget on backoff. a network error while pinging still gets retried.
-		// both errors are quoted: this is where text the registry chose crosses into ours, and
-		// go-containerregistry puts up to 64 KiB of an error response body into its message
+		// only the registry rejecting our credentials is settled for the pull. anything else spends a
+		// stall and is tried again, and is quoted by resume when it does. the pull already resolved
+		// credentials once, so a helper failing now is most likely the same network trouble that dropped
+		// the blob. a refusal is quoted here, since this is where text the registry chose crosses into
+		// ours, and go-containerregistry puts up to 64 KiB of an error response body into its message
 		authenticator, err := auth(ctx)
 		if err != nil {
-			refused = fmt.Errorf("%w: unable to resolve credentials: %w", errResumeRefused, quoted(err))
-			return nil, refused
+			return nil, fmt.Errorf("unable to resolve credentials: %w", err)
 		}
 
 		repo := ref.Context()
 		rt, err := transport.NewWithContext(ctx, repo.Registry, authenticator, transport.NewUserAgent(base, userAgent),
 			[]string{repo.Scope(transport.PullScope)})
+		// matched on status rather than Temporary: a registry pinged over both https and http reports
+		// both failures, and a transient one on the scheme that works can sit beside a permanent-looking
+		// one (a TLS port answering plain http with 400) on the scheme that does not
 		var regErr *transport.Error
-		if errors.As(err, &regErr) && !regErr.Temporary() {
+		if errors.As(err, &regErr) && (regErr.StatusCode == http.StatusUnauthorized || regErr.StatusCode == http.StatusForbidden) {
 			refused = fmt.Errorf("%w: unable to authenticate: %w", errResumeRefused, quoted(err))
 			return nil, refused
 		}
