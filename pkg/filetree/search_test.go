@@ -690,8 +690,9 @@ func Test_searchContext_LinkCycleDoesNotDropUnrelatedResults(t *testing.T) {
 }
 
 func Test_searchContext_SearchByGlob_altAndClassBasenames(t *testing.T) {
-	// basename globs with alternations and character classes reach the basename index (see parseGlobBasename),
-	// so the indexed search must agree with the authoritative tree walk rather than silently returning less
+	// basename globs with alternations and character classes reach the basename index (see parseGlobBasename)
+	// while escaped globs skip it (see parseGlob), so the indexed search must agree with the authoritative tree
+	// walk rather than silently returning less
 	paths := []string{
 		"/usr/lib/foo.jar",
 		"/usr/lib/bar.war",
@@ -700,6 +701,13 @@ func Test_searchContext_SearchByGlob_altAndClassBasenames(t *testing.T) {
 		"/opt/app/go.mod",
 		"/opt/app/go.sum",
 		"/usr/lib/aaab",
+		"/usr/lib/foo*",
+		"/usr/lib/foo*bar",
+		"/srv/foobaz/x",
+		"/a/b{",
+		"/opt/foobar",
+		"/opt/x1,y",
+		"/opt/z",
 	}
 
 	tree := New()
@@ -762,6 +770,41 @@ func Test_searchContext_SearchByGlob_altAndClassBasenames(t *testing.T) {
 			name: "wildcard that must backtrack",
 			glob: "**/*aab",
 			want: []string{"/usr/lib/aaab"},
+		},
+		{
+			name: "escaped wildcard",
+			glob: `**/foo\*`,
+			want: []string{"/usr/lib/foo*"},
+		},
+		{
+			name: "escaped brace in an alternation spanning a directory",
+			glob: `**/{a/b\{}`,
+			want: []string{"/a/b{"},
+		},
+		{
+			name: "escaped literal basename",
+			glob: `**/foo\bar`,
+			want: []string{"/opt/foobar"},
+		},
+		{
+			name: "escaped parent of a wildcard basename",
+			glob: `**/foo\baz/*`,
+			want: []string{"/srv/foobaz/x"},
+		},
+		{
+			name: "escaped parent of a recursive basename",
+			glob: `**/foo\baz/**`,
+			want: []string{"/srv/foobaz/x"},
+		},
+		{
+			name: "escaped asterisk followed by a wildcard",
+			glob: `**/foo\**`,
+			want: []string{"/usr/lib/foo*", "/usr/lib/foo*bar"},
+		},
+		{
+			name: "escaped comma in a simple list",
+			glob: `**/{x*\,y,z}`,
+			want: []string{"/opt/x1,y", "/opt/z"},
 		},
 		{
 			name: "simple list with a wildcard section",

@@ -62,6 +62,17 @@ func (s searchRequest) String() string {
 }
 
 func parseGlob(glob string) []searchRequest {
+	if strings.Contains(glob, `\`) && !exactMatch(glob) {
+		// escapes are only understood by doublestar, while the cleanup and basename parsing below read a glob a
+		// character at a time and would take an escaped character for a live one. Match the whole glob instead.
+		return []searchRequest{
+			{
+				searchBasis: searchByGlob,
+				glob:        glob,
+			},
+		}
+	}
+
 	glob = cleanGlob(glob)
 
 	if exactMatch(glob) {
