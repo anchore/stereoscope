@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -336,7 +337,7 @@ func TestResumableTransport_terminatesAgainstATricklingServer(t *testing.T) {
 	select {
 	case readErr := <-done:
 		require.Error(t, readErr)
-		assert.Contains(t, readErr.Error(), "without progress")
+		assert.Contains(t, readErr.Error(), "delivered less than")
 		assert.LessOrEqual(t, server.count(), maxConsecutiveStalls+1)
 	case <-time.After(10 * time.Second):
 		t.Fatalf("read never terminated; %d requests issued", server.count())
@@ -352,7 +353,7 @@ func TestResumableTransport_givesUpWhenNoProgressIsMade(t *testing.T) {
 
 	_, err := fetch(t, newTestTransport(), srv.URL+blobPath)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "without progress")
+	assert.Contains(t, err.Error(), "delivered less than")
 
 	// the initial attempt plus exactly the stall budget, and no more
 	assert.Len(t, server.seenRanges(), maxConsecutiveStalls+1)
@@ -1152,7 +1153,7 @@ func TestResumableTransport_classifiesARefusedResume(t *testing.T) {
 			}
 
 			assert.NotErrorIs(t, err, errResumeRefused, "a busy server must not be reported as a refusal")
-			assert.Contains(t, err.Error(), "without progress")
+			assert.Contains(t, err.Error(), "delivered less than")
 			assert.Len(t, server.seenRanges(), maxConsecutiveStalls+1, "the whole stall budget is spent")
 		})
 	}
@@ -1200,7 +1201,7 @@ func TestResumableTransport_givesUpOnceTheTotalBudgetIsSpent(t *testing.T) {
 
 	_, err := fetch(t, newTestTransport(), srv.URL+blobPath)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "in total")
+	assert.Contains(t, err.Error(), "resumes")
 
 	// the initial request plus exactly the total budget, and no more
 	assert.Len(t, server.seenRanges(), maxTotalResumes+1)
@@ -1342,7 +1343,7 @@ func TestResumableTransport_aSilentReopenTimesOutWithoutLookingCancelled(t *test
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no response to the resumed range request")
 	assert.NotErrorIs(t, err, context.Canceled, "a timeout must not be reported as a cancellation")
-	assert.Contains(t, err.Error(), "without progress", "a timeout is retried like any other stall")
+	assert.Contains(t, err.Error(), "delivered less than", "a timeout is retried like any other stall")
 }
 
 func TestResumableTransport_resumesABodyThatFallsSilent(t *testing.T) {
@@ -1532,32 +1533,58 @@ func TestResumableTransport_aReopenThatIsNeverAnsweredIsNotACleanEndOfStream(t *
 }
 
 func TestResumableTransport_cappedSpans(t *testing.T) {
-	// a CDN that caps range spans answers every resume with a short, honest 206. a span ending where
-	// it said it would is not a failure and must not spend the total budget, but one cut short of its
-	// own Content-Range is a drop, even when connection-close framing reports it as a clean io.EOF
-	const span = 64 * 1024
-	payload := payloadOfSize(16 * span)
+	// a CDN that caps range spans answers every resume with a short, honest 206. the server answered
+	// correctly and promptly, so a span ending where it said it would must spend neither the total
+	// budget nor the backoff, however many of them it takes. a span cut short of its own
+	// Content-Range is a drop, and a span too small to be worth a round trip is bounded instead by
+	// the stall budget, since no number of those replenishes it
+	const blob = 1 << 20
 
 	tests := []struct {
 		name    string
-		deliver int64
+		span    int64
+		deliver int64 // 0 delivers the whole span
 		wantErr string
 	}{
-		{name: "spans that end where they said cost nothing", deliver: span},
-		{name: "spans cut short of their Content-Range spend the budget", deliver: span / 2, wantErr: "attempts in total"},
+		{name: "spans at the progress threshold cost nothing", span: minResumeProgress},
+		{name: "spans far above it cost nothing", span: 8 * minResumeProgress},
+		{
+			// below minResumeProgress a span replenishes nothing on its own, so maxConsecutiveStalls
+			// of them have to add up to it. this is the smallest span for which they do
+			name: "the smallest span that still makes progress finishes",
+			span: (minResumeProgress + maxConsecutiveStalls - 1) / maxConsecutiveStalls,
+		},
+		{
+			// one byte per span short of that, so the stall budget runs out first
+			name:    "spans too small to be worth a round trip are refused",
+			span:    minResumeProgress / maxConsecutiveStalls,
+			wantErr: "delivered less than",
+		},
+		{
+			name:    "spans cut short of their Content-Range spend the budget",
+			span:    minResumeProgress,
+			deliver: minResumeProgress / 2,
+			wantErr: "resumes",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := &flakyBlobServer{payload: payload, dropsLeft: 1, bytesPerDrop: 4096}
+			payload := payloadOfSize(blob)
 
+			server := &flakyBlobServer{payload: payload, dropsLeft: 1, bytesPerDrop: 4096}
 			srv := httptest.NewServer(server)
 			t.Cleanup(srv.Close)
 
+			var reopens atomic.Int64
 			capped := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				reopens.Add(1)
 				start, _ := parseRangeRequest(req.Header.Get("Range"))
-				end := min(start+span, int64(len(payload))) - 1
-				sent := min(end+1, start+tt.deliver)
+				end := min(start+tt.span, int64(len(payload))) - 1
+				sent := end + 1
+				if tt.deliver > 0 {
+					sent = min(sent, start+tt.deliver)
+				}
 				return &http.Response{
 					StatusCode:    http.StatusPartialContent,
 					ContentLength: -1,
@@ -1568,17 +1595,40 @@ func TestResumableTransport_cappedSpans(t *testing.T) {
 			})
 
 			transport := newResumableTransport(http.DefaultTransport, directClient(capped))
-			transport.backoff = 0
+			// a backoff no run may pay. a capped span is not a stall, so the only sleeps left are on
+			// the drop and on a cut-short span, which the budget ends well before this elapses
+			transport.backoff = time.Hour
+			// one resume, so any run that charges a capped span to the total budget fails here
 			transport.maxResumes = 1
 
-			got, err := fetch(t, transport, srv.URL+blobPath)
+			done := make(chan struct{})
+			var (
+				got []byte
+				err error
+			)
+			go func() {
+				defer close(done)
+				got, err = fetch(t, transport, srv.URL+blobPath)
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(30 * time.Second):
+				t.Fatalf("read never terminated after %d reopens; a capped span paid a backoff", reopens.Load())
+			}
+
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Less(t, reopens.Load(), int64(blob/tt.span), "the read must give up, not walk the blob")
 				return
 			}
+
 			require.NoError(t, err)
 			assert.Equal(t, payload, got)
+			// one reopen per span for the rest of the blob, plus the one that recovers the drop
+			assert.GreaterOrEqual(t, reopens.Load(), int64(len(payload))/tt.span-1,
+				"every capped span must be reopened rather than the budget cutting the read short")
 		})
 	}
 }

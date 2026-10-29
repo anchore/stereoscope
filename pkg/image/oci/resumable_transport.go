@@ -19,17 +19,21 @@ import (
 
 const (
 	// maxConsecutiveStalls is how many attempts in a row may fail to deliver minResumeProgress
-	// before the read is abandoned.
+	// before the read is abandoned. it is also what bounds a server whose spans are too small to be
+	// worth a round trip, since no number of those replenishes anything.
 	maxConsecutiveStalls = 5
 
-	// maxTotalResumes bounds the reopens for one body however much progress each makes, so a path
-	// dropping every few kilobytes fails rather than reconnecting indefinitely. one more is earned
-	// per resumeCreditSize delivered, so a long transfer is not held to the same count as a short one.
+	// maxTotalResumes bounds the reopens a dropped connection may cost one body, so a path dropping
+	// every few kilobytes fails rather than reconnecting indefinitely. one more is earned per
+	// resumeCreditSize delivered, so a long transfer is not held to the same count as a short one.
+	// a span ending where its Content-Range declared is not a drop and does not spend this; those
+	// are bounded by the stall budget above and by the length of the blob.
 	maxTotalResumes  = 20
 	resumeCreditSize = 64 * 1024 * 1024
 
 	// minResumeProgress is how much must arrive to replenish the stall budget. any n > 0 is not
-	// enough, since one byte per connection would replenish it for ever.
+	// enough, since one byte per connection would replenish it for ever. the surplus above it is
+	// discarded rather than banked, so each replenishment is earned afresh.
 	minResumeProgress = 64 * 1024
 
 	// idleTimeout bounds how long a reopen may take to get a response, re-authenticating included,
@@ -267,38 +271,50 @@ func (b *resumableBody) finished() (bool, error) {
 
 // resume closes the failed connection and reopens the request from the current offset, retrying
 // until it succeeds or runs out of budget.
+//
+// spanEnded says the segment stopped exactly where its own Content-Range declared, as on a CDN that
+// caps spans. the server answered correctly and promptly, so that is not a drop: the first attempt
+// after one spends no total budget and waits no backoff. its retries are drops like any other.
 func (b *resumableBody) resume(cause error, spanEnded bool) error {
 	b.closeCurrent()
 
 	// a drop is info, since it is the only sign an operator has that a slow pull is recovering rather
-	// than wedged. a capped span is routine and would otherwise log one line per span
-	logger := log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause)
+	// than wedged. a capped span is routine and would otherwise log one line per span. it carries no
+	// error either: the stream ended where the server said it would, and cause has been renamed to
+	// io.ErrUnexpectedEOF for the terminal error it may yet become, which is not what happened here
 	if spanEnded {
-		logger.Debug("blob span ended, continuing from the current offset")
+		log.WithFields("url", forLog(b.req), "offset", b.offset).
+			Debug("blob span ended, continuing from the current offset")
 	} else {
-		logger.Info("blob stream ended early, resuming from the current offset")
+		log.WithFields("url", forLog(b.req), "offset", b.offset, "error", cause).
+			Info("blob stream ended early, resuming from the current offset")
 	}
 
 	for attempt := 0; ; attempt++ {
-		// the reopen after a capped span is routine, so only its retries spend the total budget. tiny
-		// spans still spend stalls, which is what stops a server serving a few bytes per request
-		if attempt > 0 || !spanEnded {
+		// the first reopen after a capped span is routine rather than a recovery, so it is charged
+		// neither the total budget nor the backoff
+		routine := attempt == 0 && spanEnded
+
+		if !routine {
 			b.resumes++
-		}
-		if b.resumes > b.t.maxResumes+int(b.offset/b.t.resumeCredit) {
-			return fmt.Errorf("unable to resume %s at byte %d after %d attempts in total: %w",
-				forLog(b.req), b.offset, b.resumes-1, cause)
+			if b.resumes > b.t.maxResumes+int(b.offset/b.t.resumeCredit) {
+				return fmt.Errorf("unable to resume %s at byte %d after %d resumes: %w",
+					forLog(b.req), b.offset, b.resumes-1, cause)
+			}
 		}
 
+		// every attempt spends a stall, routine or not. that is what bounds a server whose spans are
+		// too small to be worth a round trip: they replenish nothing, so the budget runs out
 		b.stalls++
 		if b.stalls > b.t.maxStalls {
-			return fmt.Errorf("unable to resume %s at byte %d after %d attempts without progress: %w",
-				forLog(b.req), b.offset, b.t.maxStalls, cause)
+			return fmt.Errorf("unable to resume %s at byte %d after %d attempts delivered less than %d bytes between them: %w",
+				forLog(b.req), b.offset, b.t.maxStalls, b.t.minProgress, cause)
 		}
 
-		// sleep is called even with no delay, so cancellation and Close are noticed on every attempt
+		// sleep is called even with no delay, so cancellation and Close are noticed on every attempt.
+		// a routine reopen waits no backoff: there is nothing to back off from
 		var delay time.Duration
-		if b.stalls > 1 {
+		if b.stalls > 1 && !routine {
 			delay = time.Duration(b.stalls-1) * b.t.backoff
 		}
 
