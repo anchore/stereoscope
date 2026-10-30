@@ -337,15 +337,12 @@ func TestTree(t *testing.T) {
 					zero.ID(): zero,
 					one.ID():  one,
 				},
-				children: map[node.ID]map[node.ID]node.Node{
-					one.ID(): {
-						two.ID():   two,
-						three.ID(): nil,
-					},
+				children: map[node.ID]node.IDSet{
+					one.ID(): node.NewIDSet(two.ID(), three.ID()),
 				},
-				parent: map[node.ID]node.Node{
-					four.ID(): nil,
-					one.ID():  one,
+				parent: map[node.ID]node.ID{
+					four.ID(): zero.ID(),
+					one.ID():  one.ID(),
 				},
 			},
 			roots:    node.Nodes{zero},
