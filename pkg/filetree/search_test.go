@@ -443,6 +443,277 @@ func Test_searchContext_SearchByMIMEType_SkipsLinkCycles(t *testing.T) {
 	}, realPaths(results))
 }
 
+// layeredSearchFixture models the same path written by several layers against an image-wide index:
+//   - lower: /app is a directory and /app/run.sh is a script
+//   - upper: /app is written again and /app/run.sh is overwritten with a binary
+//   - relinked: /app/run.sh is replaced with a symlink to /app/real.sh
+type layeredSearchFixture struct {
+	idx                        Index
+	lower, upper               *FileTree
+	squashed, squashedRelinked *FileTree
+	scriptID, binID, realID    file.ID
+}
+
+func newLayeredSearchFixture(t *testing.T) layeredSearchFixture {
+	t.Helper()
+	idx := NewIndex()
+
+	addDir := func(tr *FileTree, p file.Path) {
+		ref, err := tr.AddDir(p)
+		require.NoError(t, err)
+		idx.Add(*ref, file.Metadata{Path: string(p), Type: file.TypeDirectory})
+	}
+
+	lower := New()
+	addDir(lower, "/app")
+	scriptRef, err := lower.AddFile("/app/run.sh")
+	require.NoError(t, err)
+	idx.Add(*scriptRef, file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
+
+	upper := New()
+	addDir(upper, "/app")
+	binRef, err := upper.AddFile("/app/run.sh")
+	require.NoError(t, err)
+	idx.Add(*binRef, file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-executable"})
+
+	relinked := New()
+	linkRef, err := relinked.AddSymLink("/app/run.sh", "/app/real.sh")
+	require.NoError(t, err)
+	idx.Add(*linkRef, file.Metadata{Type: file.TypeSymLink})
+	realRef, err := relinked.AddFile("/app/real.sh")
+	require.NoError(t, err)
+	idx.Add(*realRef, file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-executable"})
+
+	return layeredSearchFixture{
+		idx:              idx,
+		lower:            lower,
+		upper:            upper,
+		squashed:         squashTrees(t, lower, upper),
+		squashedRelinked: squashTrees(t, lower, relinked),
+		scriptID:         scriptRef.ID(),
+		binID:            binRef.ID(),
+		realID:           realRef.ID(),
+	}
+}
+
+func squashTrees(t *testing.T, layers ...*FileTree) *FileTree {
+	t.Helper()
+	tr, err := layers[0].Copy()
+	require.NoError(t, err)
+	for _, l := range layers[1:] {
+		require.NoError(t, tr.Merge(l))
+	}
+	return tr.(*FileTree)
+}
+
+type searchHit struct {
+	RequestPath file.Path
+	ID          file.ID
+}
+
+func searchHits(refs []file.Resolution) []searchHit {
+	var hits []searchHit
+	for _, r := range refs {
+		hits = append(hits, searchHit{RequestPath: r.RequestPath, ID: r.ID()})
+	}
+	return hits
+}
+
+func Test_searchContext_SearchByMIMEType_layeredPaths(t *testing.T) {
+	f := newLayeredSearchFixture(t)
+
+	tests := []struct {
+		name     string
+		tree     Reader
+		mimeType []string
+		want     []searchHit
+	}{
+		{
+			name:     "squashed: shadowed lower layer type does not match",
+			tree:     f.squashed,
+			mimeType: []string{"text/x-shellscript"},
+		},
+		{
+			name:     "squashed: live top layer type matches",
+			tree:     f.squashed,
+			mimeType: []string{"application/x-executable"},
+			want:     []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			// the stale lower layer entry is returned by the index first, the live one must still be found
+			name:     "squashed: stale entry ahead of live entry for the same path",
+			tree:     f.squashed,
+			mimeType: []string{"text/x-shellscript", "application/x-executable"},
+			want:     []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			name:     "squashed: repeated type does not duplicate results",
+			tree:     f.squashed,
+			mimeType: []string{"application/x-executable", "application/x-executable"},
+			want:     []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			name:     "lower layer: its own type matches",
+			tree:     f.lower,
+			mimeType: []string{"text/x-shellscript"},
+			want:     []searchHit{{"/app/run.sh", f.scriptID}},
+		},
+		{
+			name:     "upper layer: lower layer type does not match",
+			tree:     f.upper,
+			mimeType: []string{"text/x-shellscript"},
+		},
+		{
+			// the stale entry's path is now a symlink, it must not resolve through to the link target
+			name:     "squashed relinked: shadowed type does not match through the new symlink",
+			tree:     f.squashedRelinked,
+			mimeType: []string{"text/x-shellscript"},
+		},
+		{
+			name:     "squashed relinked: link target matches only at its own path",
+			tree:     f.squashedRelinked,
+			mimeType: []string{"application/x-executable"},
+			want:     []searchHit{{"/app/real.sh", f.realID}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewSearchContext(tt.tree, f.idx).SearchByMIMEType(tt.mimeType...)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, searchHits(got))
+		})
+	}
+}
+
+func Test_searchContext_SearchByGlob_layeredPaths(t *testing.T) {
+	f := newLayeredSearchFixture(t)
+
+	tests := []struct {
+		name string
+		tree Reader
+		glob string
+		want []searchHit
+	}{
+		{
+			name: "squashed: basename returns the live file once",
+			tree: f.squashed,
+			glob: "**/run.sh",
+			want: []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			name: "squashed: basename glob returns the live file once",
+			tree: f.squashed,
+			glob: "**/run*",
+			want: []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			name: "squashed: extension returns the live file once",
+			tree: f.squashed,
+			glob: "**/*.sh",
+			want: []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			// /app is indexed once per layer that wrote it, its children must still be listed once
+			name: "squashed: parent directory returns the live child once",
+			tree: f.squashed,
+			glob: "**/app/*",
+			want: []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			// only the symlink's own entry should produce the link resolution, not the stale script entry
+			name: "squashed relinked: basename resolves the live symlink once",
+			tree: f.squashedRelinked,
+			glob: "**/run.sh",
+			want: []searchHit{{"/app/run.sh", f.realID}},
+		},
+		{
+			name: "squashed relinked: extension returns the symlink and its target once each",
+			tree: f.squashedRelinked,
+			glob: "**/*.sh",
+			want: []searchHit{{"/app/real.sh", f.realID}, {"/app/run.sh", f.realID}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewSearchContext(tt.tree, f.idx).SearchByGlob(tt.glob)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, searchHits(got))
+		})
+	}
+}
+
+// Test_searchContext_layeredAncestors covers upper layers that remove a lower layer's entry without writing a
+// node at the same path: replacing an ancestor directory with a symlink, or whiting the path out.
+func Test_searchContext_layeredAncestors(t *testing.T) {
+	idx := NewIndex()
+	add := func(tr *FileTree, p file.Path, m file.Metadata) *file.Reference {
+		var ref *file.Reference
+		var err error
+		switch m.Type {
+		case file.TypeDirectory:
+			ref, err = tr.AddDir(p)
+		default:
+			ref, err = tr.AddFile(p)
+		}
+		require.NoError(t, err)
+		idx.Add(*ref, m)
+		return ref
+	}
+
+	// lower: /lib and /usr/lib are real directories, /a/status.d and /b/status.d are dpkg-style status dirs
+	lower := New()
+	add(lower, "/lib/x.so", file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-sharedlib"})
+	usrRef := add(lower, "/usr/lib/x.so", file.Metadata{Type: file.TypeRegular, MIMEType: "text/plain"})
+	add(lower, "/a/status.d", file.Metadata{Type: file.TypeDirectory})
+	add(lower, "/b/status.d", file.Metadata{Type: file.TypeDirectory})
+	statusRef := add(lower, "/b/status.d/y", file.Metadata{Type: file.TypeRegular, MIMEType: "text/plain"})
+	add(lower, "/app/gone.sh", file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
+
+	// upper: usrmerge-style /lib -> usr/lib, /a -> /b, and a whiteout for /app/gone.sh
+	upper := New()
+	_, err := upper.AddSymLink("/lib", "usr/lib")
+	require.NoError(t, err)
+	_, err = upper.AddSymLink("/a", "/b")
+	require.NoError(t, err)
+	_, err = upper.AddFile("/app/.wh.gone.sh")
+	require.NoError(t, err)
+
+	sc := NewSearchContext(squashTrees(t, lower, upper), idx)
+
+	t.Run("shadowed type does not match through a replaced ancestor", func(t *testing.T) {
+		got, err := sc.SearchByMIMEType("application/x-sharedlib")
+		require.NoError(t, err)
+		require.Empty(t, searchHits(got))
+	})
+
+	t.Run("live type under the link target matches at its real path", func(t *testing.T) {
+		got, err := sc.SearchByMIMEType("text/plain")
+		require.NoError(t, err)
+		require.Equal(t, []searchHit{{"/b/status.d/y", statusRef.ID()}, {"/usr/lib/x.so", usrRef.ID()}}, searchHits(got))
+	})
+
+	t.Run("whited out path does not match", func(t *testing.T) {
+		got, err := sc.SearchByMIMEType("text/x-shellscript")
+		require.NoError(t, err)
+		require.Empty(t, searchHits(got))
+
+		got, err = sc.SearchByGlob("**/gone.sh")
+		require.NoError(t, err)
+		require.Empty(t, searchHits(got))
+	})
+
+	t.Run("parent directory under a replaced ancestor is not listed", func(t *testing.T) {
+		// basename and parent directory searches should agree: /b/status.d/y is only reachable via /a by the link
+		got, err := sc.SearchByGlob("**/status.d/*")
+		require.NoError(t, err)
+		require.Equal(t, []searchHit{{"/b/status.d/y", statusRef.ID()}}, searchHits(got))
+
+		got, err = sc.SearchByGlob("**/y")
+		require.NoError(t, err)
+		require.Equal(t, []searchHit{{"/b/status.d/y", statusRef.ID()}}, searchHits(got))
+	})
+}
+
 func Test_complexSymlinkPerformance(t *testing.T) {
 	tr := New()
 	idx := NewIndex()
@@ -810,6 +1081,11 @@ func Test_searchContext_SearchByGlob_altAndClassBasenames(t *testing.T) {
 			name: "simple list with a wildcard section",
 			glob: "**/{python*,go.mod}",
 			want: []string{"/opt/app/go.mod", "/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name: "overlapping alternation sections",
+			glob: "**/{go.mod,go.*}",
+			want: []string{"/opt/app/go.mod", "/opt/app/go.sum"},
 		},
 		{
 			name:    "invalid basename glob falls back to the tree walk",
