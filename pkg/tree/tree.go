@@ -13,7 +13,7 @@ import (
 // a node, Replace it with a new one.
 type Tree struct {
 	nodes    map[node.ID]entry                // {node-id: node + parent-id}
-	children map[node.ID]map[node.ID]struct{} // {parent-id: {child-id}} (only for nodes that have had children)
+	children map[node.ID]map[node.ID]struct{} // {parent-id: {child-id}} (absent or empty for nodes with no children)
 }
 
 // entry keeps the parent next to the node so a Tree costs one key per node, not two.
@@ -175,7 +175,12 @@ func (t *Tree) RemoveNode(n node.Node) (node.Nodes, error) {
 		return nil, fmt.Errorf("unable to remove node: %+v", nid)
 	}
 	for cid := range t.children[nid] {
-		subNodes, err := t.RemoveNode(t.nodes[cid].node)
+		child, ok := t.nodes[cid]
+		if !ok {
+			// a stale edge (see AddChild) to a node that is already gone
+			continue
+		}
+		subNodes, err := t.RemoveNode(child.node)
 		removedNodes = append(removedNodes, subNodes...)
 		if err != nil {
 			return nil, err

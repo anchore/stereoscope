@@ -20,7 +20,7 @@ import (
 // layer trees and squashes share FileNodes (see tree.Tree). This builds an image that exercises every squash
 // path, then works over copies of all of its trees with every mutating operation, and checks that no node any
 // original tree holds was changed and that no original tree's structure moved.
-func TestSharedNodesAreNeverMutated(t *testing.T) {
+func TestLayerSquash_SharedNodesAreNeverMutated(t *testing.T) {
 	reg, dir, sym, hard := byte(tar.TypeReg), byte(tar.TypeDir), byte(tar.TypeSymlink), byte(tar.TypeLink)
 	layers, _ := chimeraLayers(t, true)
 	layers = append(layers,
@@ -69,7 +69,7 @@ func TestSharedNodesAreNeverMutated(t *testing.T) {
 	require.NotZero(t, shared, "expected trees to share nodes, otherwise this test proves nothing")
 
 	for _, tr := range originals {
-		cp, err := tr.(filetree.Copier).Copy()
+		cp, err := tr.Copy()
 		require.NoError(t, err)
 		mutateCopy(t, cp, img)
 

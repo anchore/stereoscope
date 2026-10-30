@@ -568,7 +568,7 @@ func (t *FileTree) AddHardLink(realPath file.Path, linkPath file.Path) (*file.Re
 		if fna.FileNode.FileType != file.TypeHardLink {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a hardlink file", realPath)
 		}
-		// this is a symlink file, provide a new or existing file.Reference
+		// this is a hardlink file, provide a new or existing file.Reference
 		return t.ensureReference(fna.FileNode, realPath)
 	}
 
@@ -617,7 +617,10 @@ func (t *FileTree) ensureReference(fn *filenode.FileNode, realPath file.Path) (*
 	}
 	withRef := *fn
 	withRef.Reference = file.NewFileReference(realPath)
-	return withRef.Reference, t.tree.Replace(fn, &withRef)
+	if err := t.tree.Replace(fn, &withRef); err != nil {
+		return nil, err
+	}
+	return withRef.Reference, nil
 }
 
 // addParentPaths adds paths into the Tree for all constituent paths, but does NOT attach a file.Reference for each new path.
@@ -877,11 +880,10 @@ func (t *FileTree) Merge(upper Reader) error {
 			graft = &withRef
 		}
 
-		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory && lowerNode.FileNode.FileType == file.TypeDirectory {
-			// NOTE: both upperNode and lowerNode paths are the same, and does not have an effect
-			// on removal of child paths. No link is followed: lowerNode was found at the literal real
-			// path and the condition above proves it is a directory.
-			err := t.RemoveChildPaths(upperNode.RealPath)
+		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory {
+			// a non-directory masks everything under its path, whatever the lower node is (a malformed lower layer
+			// can hold children under a symlink). Clear by real path, never through a link.
+			err := t.removeChildPaths(upperNode.RealPath, linkResolutionStrategy{})
 			if err != nil {
 				return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
 			}
@@ -900,9 +902,9 @@ func (t *FileTree) Merge(upper Reader) error {
 	return tree.NewDepthFirstWalkerWithConditions(upper.TreeReader(), visitor, conditions).WalkAll()
 }
 
-// hasOpaqueDirectory reports whether the directory at the given real path holds an opaque whiteout marker. This is
-// an exact node lookup with no link resolution (the expensive part of HasPath), so a symlink that points at an opaque
-// directory is not itself opaque.
+// hasOpaqueDirectory reports whether the given real path holds an opaque whiteout marker. Merge asks this of every
+// upper node, so a non-directory simply reports false. This is an exact node lookup with no link resolution (the
+// expensive part of HasPath), so a symlink that points at an opaque directory is not itself opaque.
 func hasOpaqueDirectory(t Reader, directoryPath file.Path) bool {
 	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
 	return t.TreeReader().Node(filenode.IDByPath(opaqueWhiteoutChild)) != nil

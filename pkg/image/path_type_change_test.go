@@ -18,23 +18,24 @@ import (
 // the #268 scenario: /chimera goes dir with files -> empty dir -> removed -> file -> removed ->
 // symlink -> removed -> dir again (optionally opaque), then a.txt comes back.
 func chimeraLayers(t *testing.T, opaque bool) ([]v1.Layer, []map[string]file.Type) {
-	last := []tarEntry{{path: "chimera/", typeFlag: tar.TypeDir}}
+	reg, dir, sym := byte(tar.TypeReg), byte(tar.TypeDir), byte(tar.TypeSymlink)
+	last := []tarEntry{{path: "chimera/", typeFlag: dir}}
 	if opaque {
-		last = append(last, tarEntry{path: "chimera/.wh..wh..opq", typeFlag: tar.TypeReg})
+		last = append(last, tarEntry{path: "chimera/.wh..wh..opq", typeFlag: reg})
 	}
 	layers := []v1.Layer{
-		layerFromTarEntries(t, tarEntry{path: "etc/", typeFlag: tar.TypeDir}, tarEntry{path: "etc/hostname", typeFlag: tar.TypeReg, contents: "h"}),
-		layerFromTarEntries(t, tarEntry{path: "chimera/", typeFlag: tar.TypeDir}, tarEntry{path: "chimera/a.txt", typeFlag: tar.TypeReg, contents: "a"}, tarEntry{path: "chimera/b.txt", typeFlag: tar.TypeReg, contents: "b"}),
-		layerFromTarEntries(t, tarEntry{path: "chimera/", typeFlag: tar.TypeDir}, tarEntry{path: "chimera/.wh.a.txt", typeFlag: tar.TypeReg}, tarEntry{path: "chimera/.wh.b.txt", typeFlag: tar.TypeReg}),
-		layerFromTarEntries(t, tarEntry{path: ".wh.chimera", typeFlag: tar.TypeReg}),
-		layerFromTarEntries(t, tarEntry{path: "chimera", typeFlag: tar.TypeReg, contents: "f"}),
-		layerFromTarEntries(t, tarEntry{path: ".wh.chimera", typeFlag: tar.TypeReg}),
-		layerFromTarEntries(t, tarEntry{path: "chimera", typeFlag: tar.TypeSymlink, linkPath: "/etc/hostname"}),
-		layerFromTarEntries(t, tarEntry{path: ".wh.chimera", typeFlag: tar.TypeReg}),
+		layerFromTarEntries(t, tarEntry{path: "etc/", typeFlag: dir}, tarEntry{path: "etc/hostname", typeFlag: reg, contents: "h"}),
+		layerFromTarEntries(t, tarEntry{path: "chimera/", typeFlag: dir}, tarEntry{path: "chimera/a.txt", typeFlag: reg, contents: "a"}, tarEntry{path: "chimera/b.txt", typeFlag: reg, contents: "b"}),
+		layerFromTarEntries(t, tarEntry{path: "chimera/", typeFlag: dir}, tarEntry{path: "chimera/.wh.a.txt", typeFlag: reg}, tarEntry{path: "chimera/.wh.b.txt", typeFlag: reg}),
+		layerFromTarEntries(t, tarEntry{path: ".wh.chimera", typeFlag: reg}),
+		layerFromTarEntries(t, tarEntry{path: "chimera", typeFlag: reg, contents: "f"}),
+		layerFromTarEntries(t, tarEntry{path: ".wh.chimera", typeFlag: reg}),
+		layerFromTarEntries(t, tarEntry{path: "chimera", typeFlag: sym, linkPath: "/etc/hostname"}),
+		layerFromTarEntries(t, tarEntry{path: ".wh.chimera", typeFlag: reg}),
 		layerFromTarEntries(t, last...),
-		layerFromTarEntries(t, tarEntry{path: "chimera/a.txt", typeFlag: tar.TypeReg, contents: "a2"}),
+		layerFromTarEntries(t, tarEntry{path: "chimera/a.txt", typeFlag: reg, contents: "a2"}),
 		// layer 10: back to a file on top of a populated dir
-		layerFromTarEntries(t, tarEntry{path: "chimera", typeFlag: tar.TypeReg, contents: "f2"}),
+		layerFromTarEntries(t, tarEntry{path: "chimera", typeFlag: reg, contents: "f2"}),
 	}
 	expect := []map[string]file.Type{
 		{},
@@ -86,9 +87,16 @@ func chimeraSnapshot(t *testing.T, tr filetree.Reader) map[string]file.Type {
 }
 
 func TestLayerSquash_PathTypeChangeAcrossLayers(t *testing.T) {
-	for _, opaque := range []bool{false, true} {
-		t.Run(map[bool]string{false: "plain", true: "opaque"}[opaque], func(t *testing.T) {
-			layers, expect := chimeraLayers(t, opaque)
+	tests := []struct {
+		name   string
+		opaque bool
+	}{
+		{name: "plain"},
+		{name: "opaque", opaque: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			layers, expect := chimeraLayers(t, tt.opaque)
 			img := readImageFromLayers(t, layers...)
 			require.Len(t, img.Layers, len(expect))
 			for idx, l := range img.Layers {
