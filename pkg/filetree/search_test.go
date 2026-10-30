@@ -444,8 +444,8 @@ func Test_searchContext_SearchByMIMEType_SkipsLinkCycles(t *testing.T) {
 }
 
 // layeredSearchFixture models the same path written by several layers against an image-wide index:
-//   - lower: /app/run.sh is a script
-//   - upper: /app/run.sh is overwritten with a binary
+//   - lower: /app is a directory and /app/run.sh is a script
+//   - upper: /app is written again and /app/run.sh is overwritten with a binary
 //   - relinked: /app/run.sh is replaced with a symlink to /app/real.sh
 type layeredSearchFixture struct {
 	idx                        Index
@@ -458,12 +458,20 @@ func newLayeredSearchFixture(t *testing.T) layeredSearchFixture {
 	t.Helper()
 	idx := NewIndex()
 
+	addDir := func(tr *FileTree, p file.Path) {
+		ref, err := tr.AddDir(p)
+		require.NoError(t, err)
+		idx.Add(*ref, file.Metadata{Path: string(p), Type: file.TypeDirectory})
+	}
+
 	lower := New()
+	addDir(lower, "/app")
 	scriptRef, err := lower.AddFile("/app/run.sh")
 	require.NoError(t, err)
 	idx.Add(*scriptRef, file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
 
 	upper := New()
+	addDir(upper, "/app")
 	binRef, err := upper.AddFile("/app/run.sh")
 	require.NoError(t, err)
 	idx.Add(*binRef, file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-executable"})
@@ -601,6 +609,13 @@ func Test_searchContext_SearchByGlob_layeredPaths(t *testing.T) {
 			name: "squashed: extension returns the live file once",
 			tree: f.squashed,
 			glob: "**/*.sh",
+			want: []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			// /app is indexed once per layer that wrote it, its children must still be listed once
+			name: "squashed: parent directory returns the live child once",
+			tree: f.squashed,
+			glob: "**/app/*",
 			want: []searchHit{{"/app/run.sh", f.binID}},
 		},
 		{
@@ -993,6 +1008,11 @@ func Test_searchContext_SearchByGlob_altAndClassBasenames(t *testing.T) {
 			name: "simple list with a wildcard section",
 			glob: "**/{python*,go.mod}",
 			want: []string{"/opt/app/go.mod", "/usr/bin/python2", "/usr/bin/python3"},
+		},
+		{
+			name: "overlapping alternation sections",
+			glob: "**/{go.mod,go.*}",
+			want: []string{"/opt/app/go.mod", "/opt/app/go.sum"},
 		},
 		{
 			name:    "invalid basename glob falls back to the tree walk",
