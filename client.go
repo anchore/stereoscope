@@ -64,12 +64,12 @@ func WithPlatform(platform string) Option {
 	}
 }
 
-// WithImageSquashOnly keeps only the image squash, dropping the squash every lower layer would
-// otherwise hold, for callers that never look at a per-layer squash (for example a squashed-scope
-// scan). It applies to this GetImage call only. See image.WithImageSquashOnly for what is left nil.
-func WithImageSquashOnly() Option {
+// WithLazyLayerSquashes builds only the image squash during the read, and each lower layer's squash the
+// first time something uses it. It applies to this call only. A context from image.WithLazyLayerSquashes
+// gets lazy squashes with or without it. See image.WithLazyLayerSquashes for what changes for lower layers.
+func WithLazyLayerSquashes() Option {
 	return func(c *config) error {
-		c.ImageSquashOnly = true
+		c.LazyLayerSquashes = true
 		return nil
 	}
 }
@@ -103,8 +103,8 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 		return nil, err
 	}
 
-	if cfg.ImageSquashOnly {
-		ctx = image.WithImageSquashOnly(ctx)
+	if cfg.LazyLayerSquashes {
+		ctx = image.WithLazyLayerSquashes(ctx)
 	}
 
 	// select image provider

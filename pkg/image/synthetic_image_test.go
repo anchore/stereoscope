@@ -32,7 +32,7 @@ type tarEntry struct {
 	mode int64
 }
 
-func layerFromTarEntries(t *testing.T, entries ...tarEntry) v1.Layer {
+func layerFromTarEntries(t testing.TB, entries ...tarEntry) v1.Layer {
 	t.Helper()
 
 	tarPath := filepath.Join(t.TempDir(), "layer.tar")
@@ -85,6 +85,14 @@ func tryReadImageFromLayers(t *testing.T, layers ...v1.Layer) (*Image, error) {
 // tryReadImageFromLayersWithContext is tryReadImageFromLayers with the context handed to Read.
 func tryReadImageFromLayersWithContext(t *testing.T, ctx context.Context, layers ...v1.Layer) (*Image, error) {
 	t.Helper()
+	img := newImageFromLayers(t, layers...)
+	return img, img.Read(ctx)
+}
+
+// newImageFromLayers returns an image over the given layers that has not been read yet, for tests that
+// need to set something on it (like a test hook) before Read.
+func newImageFromLayers(t *testing.T, layers ...v1.Layer) *Image {
+	t.Helper()
 
 	v1Img, err := mutate.AppendLayers(empty.Image, layers...)
 	require.NoError(t, err)
@@ -93,8 +101,7 @@ func tryReadImageFromLayersWithContext(t *testing.T, ctx context.Context, layers
 	t.Cleanup(func() {
 		require.NoError(t, img.Cleanup())
 	})
-
-	return img, img.Read(ctx)
+	return img
 }
 
 // readImageFromLayersWithConfig is readImageFromLayers with the image config rewritten before the
