@@ -44,22 +44,27 @@ func TestGetImageFromSource_lazyLayerSquashes(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "image.tar")
 	require.NoError(t, tarball.WriteToFile(archive, tag, img))
 
-	get := func(ctx context.Context) *image.Image {
-		got, err := GetImageFromSource(ctx, archive, image.DockerTarballSource)
+	get := func(ctx context.Context, options ...Option) *image.Image {
+		got, err := GetImageFromSource(ctx, archive, image.DockerTarballSource, options...)
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, got.Cleanup()) })
 		require.Len(t, got.Layers, 3)
 		return got
 	}
 
-	eager := get(context.Background())
-	lazy := get(image.WithLazyLayerSquashes(context.Background()))
+	ctx := context.Background()
+	lazy := get(ctx, WithLazyLayerSquashes())
+	// the option is scoped to its call, the same ctx without it is still eager
+	eager := get(ctx)
+	ctxLazy := get(image.WithLazyLayerSquashes(ctx))
 
 	// the image squash is built during the read either way, lower layers only when lazy was not asked for
 	require.IsType(t, &filetree.FileTree{}, lazy.Layers[2].SquashedTree)
 	require.IsType(t, &filetree.FileTree{}, eager.Layers[0].SquashedTree)
-	_, isTree := lazy.Layers[0].SquashedTree.(*filetree.FileTree)
-	require.False(t, isTree, "lower layer squash was built during a lazy read")
+	for _, l := range []*image.Image{lazy, ctxLazy} {
+		_, isTree := l.Layers[0].SquashedTree.(*filetree.FileTree)
+		require.False(t, isTree, "lower layer squash was built during a lazy read")
+	}
 
 	for idx := range eager.Layers {
 		require.ElementsMatchf(t,

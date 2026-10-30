@@ -64,6 +64,16 @@ func WithPlatform(platform string) Option {
 	}
 }
 
+// WithLazyLayerSquashes builds only the image squash during the read, and each lower layer's squash the
+// first time something uses it. It applies to this GetImage call only. See image.WithLazyLayerSquashes
+// for what changes for lower layers.
+func WithLazyLayerSquashes() Option {
+	return func(c *config) error {
+		c.LazyLayerSquashes = true
+		return nil
+	}
+}
+
 // GetImage parses the user provided image string and provides an image object;
 // note: the source where the image should be referenced from is automatically inferred.
 //
@@ -91,6 +101,10 @@ func getImageFromSource(ctx context.Context, imgStr string, source image.Source,
 	cfg := config{}
 	if err := applyOptions(&cfg, options...); err != nil {
 		return nil, err
+	}
+
+	if cfg.LazyLayerSquashes {
+		ctx = image.WithLazyLayerSquashes(ctx)
 	}
 
 	// select image provider
