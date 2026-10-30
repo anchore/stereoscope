@@ -354,23 +354,24 @@ func TestTree(t *testing.T) {
 }
 
 func TestTree_AddChild_Reparent(t *testing.T) {
-	setup := func(t *testing.T) (*Tree, node.Node, node.Node, node.Node) {
+	// 0 -> 1 -> 3 -> 4 and 0 -> 2, then 3 (with its subtree) is moved from 1 to 2
+	setup := func(t *testing.T) (*Tree, node.Node, node.Node, node.Node, node.Node) {
 		tr := NewTree()
-		zero, one, two, three := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3)
+		zero, one, two, three, four := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3), newTestNode(4)
 		require.NoError(t, tr.AddRoot(zero))
 		require.NoError(t, tr.AddChild(zero, one))
 		require.NoError(t, tr.AddChild(zero, two))
 		require.NoError(t, tr.AddChild(one, three))
-		// reparent three from one to two
+		require.NoError(t, tr.AddChild(three, four))
 		require.NoError(t, tr.AddChild(two, three))
 		assert.Empty(t, tr.Children(one))
 		assert.Equal(t, node.Nodes{three}, tr.Children(two))
 		assert.Equal(t, two, tr.Parent(three))
-		return tr, one, two, three
+		return tr, one, two, three, four
 	}
 
 	t.Run("remove new parent first", func(t *testing.T) {
-		tr, one, two, _ := setup(t)
+		tr, one, two, _, _ := setup(t)
 		_, err := tr.RemoveNode(two)
 		require.NoError(t, err)
 		_, err = tr.RemoveNode(one)
@@ -379,9 +380,45 @@ func TestTree_AddChild_Reparent(t *testing.T) {
 	})
 
 	t.Run("remove old parent first", func(t *testing.T) {
-		tr, one, _, three := setup(t)
+		tr, one, _, three, four := setup(t)
 		_, err := tr.RemoveNode(one)
 		require.NoError(t, err)
 		assert.True(t, tr.HasNode(three.ID()), "reparented node must not go with its old parent")
+		assert.True(t, tr.HasNode(four.ID()), "subtree must move with the reparented node")
+		assert.Equal(t, three, tr.Parent(four))
+	})
+
+	t.Run("re-add under the same parent", func(t *testing.T) {
+		tr, _, two, three, _ := setup(t)
+		require.NoError(t, tr.AddChild(two, three))
+		assert.Equal(t, node.Nodes{three}, tr.Children(two))
+		assert.Equal(t, two, tr.Parent(three))
+	})
+
+	t.Run("reparent a root", func(t *testing.T) {
+		tr := NewTree()
+		root, other := newTestNode(0), newTestNode(1)
+		require.NoError(t, tr.AddRoot(root))
+		require.NoError(t, tr.AddRoot(other))
+		require.NoError(t, tr.AddChild(other, root))
+		assert.Equal(t, node.Nodes{other}, tr.Roots())
+		assert.Equal(t, other, tr.Parent(root))
+	})
+
+	t.Run("reject cycles", func(t *testing.T) {
+		tr, one, two, three, four := setup(t)
+		// under a direct child
+		require.Error(t, tr.AddChild(three, two))
+		// under a deeper descendant
+		require.Error(t, tr.AddChild(four, two))
+		// a root under its own child
+		zero := tr.Node(toId(0))
+		require.Error(t, tr.AddChild(one, zero))
+
+		// rejected edges leave the tree untouched
+		assert.Equal(t, node.Nodes{zero}, tr.Roots())
+		assert.Equal(t, two, tr.Parent(three))
+		assert.Equal(t, three, tr.Parent(four))
+		assert.Equal(t, zero, tr.Parent(two))
 	})
 }
