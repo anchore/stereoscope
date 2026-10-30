@@ -32,6 +32,8 @@ type searchContext struct {
 	linkBackwardRefs map[node.ID]node.IDSet // {link-destination-node-id: str([link-node-id, ...])}
 }
 
+// NewSearchContext creates a Searcher for the given tree. The index is optional: when nil, glob searches fall back
+// to walking the tree and MIME type searches return an error.
 func NewSearchContext(tree Reader, index IndexReader) Searcher {
 	c := &searchContext{
 		tree:             tree.(*FileTree),
@@ -47,6 +49,11 @@ func NewSearchContext(tree Reader, index IndexReader) Searcher {
 }
 
 func (sc *searchContext) buildLinkResolutionIndex() error {
+	if sc.index == nil {
+		// link resolution only matters for index-based searches
+		return nil
+	}
+
 	entries, err := sc.index.GetByFileType(file.TypeSymLink, file.TypeHardLink)
 	if err != nil {
 		return err
@@ -100,6 +107,11 @@ func (sc searchContext) SearchByPath(path string, options ...LinkResolutionOptio
 }
 
 func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution, error) {
+	if sc.index == nil {
+		// the tree alone has no MIME type information, so there is nothing to search against
+		return nil, fmt.Errorf("unable to search by MIME type: no index available")
+	}
+
 	var fileEntries []IndexEntry
 
 	for _, mType := range mimeTypes {
@@ -119,8 +131,6 @@ func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution
 
 	return refs, nil
 }
-
-// add case for status.d/* like things that hook up directly into filetree.ListPaths()
 
 func (sc searchContext) SearchByGlob(pattern string, options ...LinkResolutionOption) ([]file.Resolution, error) {
 	if sc.index == nil {
@@ -205,7 +215,7 @@ func (sc searchContext) searchByRequest(request searchRequest, options ...LinkRe
 func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Resolution, error) {
 	indexes, err := sc.index.GetByBasename(request.indexLookup)
 	if err != nil {
-		return nil, fmt.Errorf("unable to search by extension=%q: %w", request.indexLookup, err)
+		return nil, fmt.Errorf("unable to search by basename=%q: %w", request.indexLookup, err)
 	}
 
 	var results []file.Resolution
