@@ -624,10 +624,34 @@ func TestImage_squashLayers_reportsAnUnindexedLayer(t *testing.T) {
 	require.NoError(t, layers[0].fetch(0, i.contentCacheDir))
 	require.NoError(t, layers[0].index(NewFileCatalog()))
 
-	err := i.squashLayers(layers, gates, &progress.Manual{}, true)
+	err := i.squashLayers(context.Background(), layers, gates, &progress.Manual{}, true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "layer 1")
 	assert.Contains(t, err.Error(), "not indexed")
+}
+
+func TestImage_squashLayers_stopsWhenCancelled(t *testing.T) {
+	// the squash outlives the read stages, so it has to watch ctx itself or a cancel after the last
+	// layer is indexed waits out every remaining copy
+	layers := randomLayers(t, 3)
+	gates := newLayerGates(len(layers))
+	i := testImage(t, layers)
+	catalog := NewFileCatalog()
+	for idx, l := range layers {
+		require.NoError(t, l.fetch(idx, i.contentCacheDir))
+		require.NoError(t, l.index(catalog))
+		gates.done(idx, true)
+	}
+
+	for _, eager := range []bool{true, false} {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := i.squashLayers(ctx, layers, gates, &progress.Manual{}, eager)
+		require.ErrorIsf(t, err, context.Canceled, "eager=%v", eager)
+		for idx, l := range layers {
+			assert.Nilf(t, l.SquashedTree, "eager=%v: layer %d was squashed after the cancel", eager, idx)
+		}
+	}
 }
 
 // panickingLayer panics where a stage will run it, with a media type that passes Read's

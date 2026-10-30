@@ -219,7 +219,7 @@ func (i *Image) applyOverrideMetadata() error {
 // How long that wait is depends on the source. A registry fetch aborts with the caller's context,
 // but a daemon or archive fetch reads a local tar through go-containerregistry, which takes no
 // context, and indexing a layer is never interruptible. So a cancelled read costs up to one fetch
-// plus one index per in-flight worker slot.
+// plus one index per in-flight worker slot, plus the one layer squash in progress.
 func (i *Image) Read(ctx context.Context) error {
 	startTime := time.Now()
 
@@ -315,7 +315,7 @@ func (i *Image) readAndSquashLayers(ctx context.Context, layers []*Layer, fileCa
 	squashDigest := i.Metadata.ID
 	go func() {
 		squashStart := time.Now()
-		err := i.squashLayers(layers, gates, readProg, !lazyLayerSquashes(ctx))
+		err := i.squashLayers(ctx, layers, gates, readProg, !lazyLayerSquashes(ctx))
 		log.WithFields("digest", squashDigest, "time", time.Since(squashStart)).Trace("completed image squash")
 		squashDone <- err
 	}()
@@ -665,7 +665,7 @@ func layerReadWorkers(layers int) int {
 // With eager set every layer's squash is built here, each onto a copy of the one below. Otherwise only
 // the top layer's squash (the image squash) is built here, merged in place since no layer below it keeps
 // that tree, and every lower layer gets a lazy squash that is built from its own chain on first use.
-func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.Manual, eager bool) error {
+func (i *Image) squashLayers(ctx context.Context, layers []*Layer, gates *layerGates, prog *progress.Manual, eager bool) error {
 	// eager: the squash of the layer below. Lazy: the image squash so far, merged into in place.
 	var lastSquashTree filetree.ReadWriter
 	// lazy only: the lazy squash of the layer below, which the next lazy squash is built from
@@ -678,6 +678,11 @@ func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.
 			// error is ever lost, a nil return here lets Read carry on and build the image search
 			// context over a layer that was never squashed, which panics on the nil tree.
 			return fmt.Errorf("unable to squash: layer %d was not indexed", idx)
+		}
+		// checked per layer since the squash keeps running after the last layer is indexed, and Read
+		// waits for it, so without this a cancel can't stop the copies left to do
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("unable to squash layer %d: %w", idx, err)
 		}
 
 		layerTree := layer.Tree.(filetree.ReadWriter)
