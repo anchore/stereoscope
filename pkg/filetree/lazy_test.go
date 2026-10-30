@@ -816,8 +816,15 @@ func TestNewLazySquash_matchesUnionSquash(t *testing.T) {
 	assert.True(t, squashes[3].HasPath("/a"))
 	assert.True(t, squashes[3].HasPath("/link"))
 
-	// a squash over anything but another lazy squash counts from 1
-	assert.Equal(t, 1, NewLazySquash(New(), New()).(*lazyReader).idx)
+}
+
+func TestNewLazySquash_rejectsWhatItCannotSquash(t *testing.T) {
+	// a layer tree as below would keep its whiteouts, since the build relies on below being a squash
+	assert.Panics(t, func() { NewLazySquash(New(), New()) }, "layer tree as below")
+	assert.Panics(t, func() { NewLazySquash((*lazyReader)(nil), New()) }, "typed nil below")
+	assert.Panics(t, func() { NewLazySquash(nil, nil) }, "nil layer")
+	assert.Panics(t, func() { NewLazySquash(nil, (*FileTree)(nil)) }, "typed nil layer")
+	assert.NotPanics(t, func() { NewLazySquash(NewLazySquash(nil, New()), New()) })
 }
 
 // countingCopy is a lower squash that counts how often a build copies it.
@@ -834,7 +841,7 @@ func (c *countingCopy) Copy() (ReadWriter, error) {
 func TestNewLazySquash_buildsOnFirstUseOnly(t *testing.T) {
 	fixture, idx := newLazyFixture(t)
 	below := &countingCopy{Reader: fixture}
-	squash := NewLazySquash(below, New())
+	squash := newLazySquash(1, below, New())
 
 	_ = NewSearchContext(squash, idx)
 	assert.Zero(t, below.copies.Load(), "built before first use")
@@ -879,13 +886,39 @@ func TestNewLazySquash_mergeErrorNamesTheLayer(t *testing.T) {
 
 func TestNewLazySquash_aboveAFailureTriesOnce(t *testing.T) {
 	// a squash above a failed one tries once, gets the failure, and never retries. below is wrapped to count
-	// the attempts, so it is no longer a lazy squash and this one numbers itself 1, which doesn't matter here
+	// the attempts, which NewLazySquash would refuse
 	below := &countingCopy{Reader: newLazyReader(2, func() (ReadWriter, error) { return nil, errLazyBuild })}
-	above := NewLazySquash(below, New())
+	above := newLazySquash(3, below, New())
 	for range 3 {
 		for name, call := range readerErrCalls {
 			assert.ErrorIs(t, call(above), errLazyBuild, name)
 		}
 	}
 	assert.EqualValues(t, 1, below.copies.Load())
+}
+
+func TestNewLazySquash_aboveAFailureConcurrently(t *testing.T) {
+	// many first touches above one failed squash at once: each squash still tries once, every caller gets the
+	// failure, and it is logged once
+	counter := countWarnings(t)
+	below := &countingCopy{Reader: newLazyReader(2, func() (ReadWriter, error) { return nil, errLazyBuild })}
+	above := newLazySquash(3, below, New())
+	top := NewLazySquash(above, New())
+	search := NewSearchContext(top, NewIndex())
+
+	raceN(t, lazyRacers, func(i int) {
+		var err error
+		switch i % 3 {
+		case 0:
+			_, _, err = above.File("/a")
+		case 1:
+			_, _, err = top.File("/a")
+		default:
+			_, err = search.SearchByPath("/a")
+		}
+		assert.ErrorIs(t, err, errLazyBuild)
+	})
+
+	assert.EqualValues(t, 1, below.copies.Load())
+	assert.Equal(t, int32(1), counter.warnings.Load(), "warnings logged for one failed build")
 }

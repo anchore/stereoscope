@@ -110,6 +110,9 @@ func TestImage_lazyLayerSquashesMatchEagerOnFixtureImages(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, lazy.Cleanup()) })
 
 			require.Len(t, lazy.Layers, len(eager.Layers))
+			// otherwise both reads could be eager (the ctx never reaching Read) and still match
+			_, isTree := lazy.Layers[0].SquashedTree.(*filetree.FileTree)
+			require.False(t, isTree, "lower layer squash was built during a lazy read")
 			// top down, so the first touch of a high layer builds the chain below it
 			for idx := len(eager.Layers) - 1; idx >= 0; idx-- {
 				assert.Equalf(t, describeLayerSquash(t, eager, idx), describeLayerSquash(t, lazy, idx), "layer %d", idx)

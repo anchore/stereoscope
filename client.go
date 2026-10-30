@@ -65,8 +65,8 @@ func WithPlatform(platform string) Option {
 }
 
 // WithLazyLayerSquashes builds only the image squash during the read, and each lower layer's squash the
-// first time something uses it. It applies to this GetImage call only. See image.WithLazyLayerSquashes
-// for what changes for lower layers.
+// first time something uses it. It applies to this call only. A context from image.WithLazyLayerSquashes
+// gets lazy squashes with or without it. See image.WithLazyLayerSquashes for what changes for lower layers.
 func WithLazyLayerSquashes() Option {
 	return func(c *config) error {
 		c.LazyLayerSquashes = true

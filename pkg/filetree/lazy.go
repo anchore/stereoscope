@@ -21,20 +21,36 @@ var _ Searcher = (*lazySearcher)(nil)
 // The build runs at most once, even when the reader is used from many goroutines at once: the first caller
 // runs it and every other caller blocks until it is done. That first call does all of the work and cannot be
 // cancelled, since none of the Reader methods take a context. below and layer are only read, never written,
-// so they can be shared with other squashes and readers.
+// so they can be shared with other squashes and readers. The build reads them whenever it runs, so neither may
+// be modified after this call.
+//
+// below must be nil or another squash from NewLazySquash, and layer must not be nil: anything else panics. A
+// squash never carries whiteouts, so the build relies on below being one rather than a layer tree.
 //
 // If the build fails it is not retried. Every method that can return an error returns that failure, now and on
 // every later call, and the methods that cannot (AllFiles, AllRealPaths, HasPath and TreeReader) behave as if
-// the tree were empty. The failure names the layer that broke, by its position in the chain (the lowest is 0,
-// and a squash over anything other than another lazy squash counts from 1). Every squash above it returns the
-// same failure. It is logged once and returned wrapped, so compare it with errors.Is or errors.As rather than ==.
+// the tree were empty. The failure names the layer that broke, by its position in the chain (the lowest is 0).
+// Every squash above it returns the same failure. It is logged once and returned wrapped, so compare it with
+// errors.Is or errors.As rather than ==.
 func NewLazySquash(below Reader, layer ReadWriter) Reader {
-	idx := 0
-	if b, ok := below.(*lazyReader); ok {
-		idx = b.idx + 1
-	} else if below != nil {
-		idx = 1
+	if layer == nil {
+		panic("filetree.NewLazySquash: nil layer")
 	}
+	if ft, ok := layer.(*FileTree); ok && ft == nil {
+		panic("filetree.NewLazySquash: nil layer")
+	}
+	if below == nil {
+		return newLazySquash(0, nil, layer)
+	}
+	b, ok := below.(*lazyReader)
+	if !ok || b == nil {
+		panic(fmt.Sprintf("filetree.NewLazySquash: below must be nil or from NewLazySquash, got %T", below))
+	}
+	return newLazySquash(b.idx+1, b, layer)
+}
+
+// newLazySquash is NewLazySquash without the checks on below, so tests can put a wrapper under a squash.
+func newLazySquash(idx int, below Reader, layer ReadWriter) *lazyReader {
 	return newLazyReader(idx, func() (ReadWriter, error) {
 		if below == nil {
 			// a layer tree keeps the whiteout entries of its own changeset, which Squash strips
@@ -52,7 +68,8 @@ func NewLazySquash(below Reader, layer ReadWriter) Reader {
 			return nil, err
 		}
 		// lower is this build's own copy, so merging into it in place is safe. A squash never carries
-		// whiteouts, so this is exactly what Squash would do after copying it
+		// whiteouts, so this is exactly what Squash would do after copying it. The eager image squash
+		// (squashOnto in pkg/image) makes the same assumption, keep the two in step
 		if err := lower.Merge(layer); err != nil {
 			return nil, fmt.Errorf("failed to squash tree %d: %w", idx, err)
 		}

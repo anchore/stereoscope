@@ -718,7 +718,8 @@ func (i *Image) squashLayers(ctx context.Context, layers []*Layer, gates *layerG
 // is left untouched when keepLower is set, otherwise it is merged into and returned.
 func squashOnto(lower, layerTree filetree.ReadWriter, keepLower bool) (filetree.ReadWriter, error) {
 	if lower != nil && !keepLower {
-		// a squash never carries whiteouts, so this is exactly what Squash would do after copying it
+		// a squash never carries whiteouts, so this is exactly what Squash would do after copying it.
+		// filetree.NewLazySquash builds lazy squashes the same way, keep the two in step
 		return lower, lower.Merge(layerTree)
 	}
 
