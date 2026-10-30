@@ -900,7 +900,10 @@ func (t *FileTree) Merge(upper Reader) error {
 	return tree.NewDepthFirstWalkerWithConditions(upper.TreeReader(), visitor, conditions).WalkAll()
 }
 
+// hasOpaqueDirectory reports whether the directory at the given real path holds an opaque whiteout marker. This is
+// an exact node lookup with no link resolution (the expensive part of HasPath), so a symlink that points at an opaque
+// directory is not itself opaque.
 func hasOpaqueDirectory(t Reader, directoryPath file.Path) bool {
 	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
-	return t.HasPath(opaqueWhiteoutChild)
+	return t.TreeReader().Node(filenode.IDByPath(opaqueWhiteoutChild)) != nil
 }

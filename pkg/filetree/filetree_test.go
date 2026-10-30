@@ -518,6 +518,35 @@ func TestFileTree_Merge_OpaqueWhiteoutUnderResolvableLinkAncestor(t *testing.T) 
 	assert.True(t, lower.HasPath("/lib/jvm/new.txt"), "the upper tree's file should be present")
 }
 
+// the opaque marker is looked up by the real path it sits in, so an upper symlink pointing at an opaque directory is
+// not itself opaque. For well-formed layers that is the same result as resolving the link (a symlink has no children
+// to clear), so the lower link target it used to point at keeps its contents either way.
+func TestFileTree_Merge_OpaqueWhiteoutBehindUpperSymlink(t *testing.T) {
+	lower := New()
+	_, err := lower.AddFile("/b/old.txt")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/c/keep.txt")
+	require.NoError(t, err)
+	_, err = lower.AddSymLink("/a", "/c")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddSymLink("/a", "/b")
+	require.NoError(t, err)
+	_, err = upper.AddFile(file.Path("/b/" + file.OpaqueWhiteout))
+	require.NoError(t, err)
+	_, err = upper.AddFile("/b/new.txt")
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper))
+
+	assert.Falsef(t, lower.HasPath("/b/old.txt"), "the opaque directory should be cleared; real paths are %v", lower.AllRealPaths())
+	assert.True(t, lower.HasPath("/b/new.txt"), "the upper tree's file should be present")
+	assert.Truef(t, lower.HasPath("/c/keep.txt"), "the old link target is not opaque; real paths are %v", lower.AllRealPaths())
+	a := lower.TreeReader().Node(filenode.IDByPath("/a")).(*filenode.FileNode)
+	assert.Equal(t, file.Path("/b"), a.LinkPath, "the upper symlink should replace the lower one")
+}
+
 // a link cycle in an ancestor resolves to no node, so there is nothing to clear and the squash
 // carries on.
 func TestFileTree_Merge_OpaqueWhiteoutUnderLinkCycleAncestor(t *testing.T) {
@@ -1498,4 +1527,31 @@ func TestFileTree_Copy_SharedNodesAreNotMutated(t *testing.T) {
 	_, cpRes, err := cp.File("/a")
 	require.NoError(t, err)
 	assert.Equal(t, ref, cpRes.Reference)
+}
+
+// a realistic shape (nested dirs, an upper layer that overlaps the lower one) rather than a flat one
+func BenchmarkFileTree_Merge(b *testing.B) {
+	build := func(prefix string) *FileTree {
+		ft := New()
+		for i := 0; i < 10; i++ {
+			for j := 0; j < 10; j++ {
+				for k := 0; k < 100; k++ {
+					_, err := ft.AddFile(file.Path(fmt.Sprintf("/usr/%d/%d/%s%d", i, j, prefix, k)))
+					require.NoError(b, err)
+				}
+			}
+		}
+		return ft
+	}
+	lower, upper := build("lower-"), build("upper-") // ~10k files each, sharing every dir
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		cp, err := lower.Copy()
+		require.NoError(b, err)
+		b.StartTimer()
+		require.NoError(b, cp.Merge(upper))
+	}
 }
