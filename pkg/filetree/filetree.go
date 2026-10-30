@@ -228,8 +228,11 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 
 	var currentNode *nodeAccess
 	var err error
+	// one budget for the whole lookup (like the kernel's MAXSYMLINKS), otherwise nested resolutions each get a fresh
+	// budget and the total work can grow exponentially with the number of links.
+	linkBudget := maxLinkResolutionDepth
 	if strategy.FollowAncestorLinks {
-		currentNode, err = t.resolveAncestorLinks(normalizedPath, nil, maxLinkResolutionDepth)
+		currentNode, err = t.resolveAncestorLinks(normalizedPath, nil, &linkBudget)
 		if err != nil {
 			if currentNode != nil {
 				currentNode.RequestPath = normalizedPath
@@ -255,7 +258,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 	}
 
 	if strategy.FollowBasenameLinks {
-		currentNode, err = t.resolveNodeLinks(currentNode, !strategy.DoNotFollowDeadBasenameLinks, nil, maxLinkResolutionDepth)
+		currentNode, err = t.resolveNodeLinks(currentNode, !strategy.DoNotFollowDeadBasenameLinks, nil, &linkBudget)
 	}
 	if currentNode != nil {
 		currentNode.RequestPath = normalizedPath
@@ -266,7 +269,7 @@ func (t *FileTree) node(p file.Path, strategy linkResolutionStrategy) (*nodeAcce
 
 // return FileNode of the basename in the given path (no resolution is done at or past the basename). Note: it is
 // assumed that the given path has already been normalized.
-func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPaths file.PathCountSet, maxLinkDepth int) (*nodeAccess, error) {
+func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPaths file.PathCountSet, linkBudget *int) (*nodeAccess, error) {
 	// performance optimization... see if there is a node at the path (as if it is a real path). If so,
 	// use it, otherwise, continue with ancestor resolution
 	currentNodeAccess, err := t.node(path, linkResolutionStrategy{})
@@ -322,7 +325,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPa
 		// links until the next Node is resolved (or not).
 		isLastPart := idx == len(pathParts)-1
 		if !isLastPart && currentNodeAccess.FileNode.IsLink() {
-			currentNodeAccess, err = t.resolveNodeLinks(currentNodeAccess, true, currentlyResolvingLinkPaths, maxLinkDepth)
+			currentNodeAccess, err = t.resolveNodeLinks(currentNodeAccess, true, currentlyResolvingLinkPaths, linkBudget)
 			if err != nil {
 				// only expected to happen on cycles
 				return currentNodeAccess, err
@@ -340,7 +343,7 @@ func (t *FileTree) resolveAncestorLinks(path file.Path, currentlyResolvingLinkPa
 
 // resolveNodeLinks takes the given FileNode and resolves all links at the base of the real path for the node (this implies
 // that NO ancestors are considered).
-func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, currentlyResolvingLinkPaths file.PathCountSet, maxLinkDepth int) (*nodeAccess, error) {
+func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool, currentlyResolvingLinkPaths file.PathCountSet, linkBudget *int) (*nodeAccess, error) {
 	if n == nil {
 		return nil, fmt.Errorf("cannot resolve links with nil Node given")
 	}
@@ -365,9 +368,9 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 	var err error
 	for {
 		// we need to short-circuit link resolution that never resolves (depth) due to a cycle referencing
-		// maxLinkDepth is counted across all calls to resolveAncestorLinks and resolveNodeLinks
-		maxLinkDepth--
-		if maxLinkDepth < 1 {
+		// linkBudget is shared across all calls to resolveAncestorLinks and resolveNodeLinks for one lookup
+		*linkBudget--
+		if *linkBudget < 1 {
 			return nil, ErrLinkResolutionDepth
 		}
 
@@ -414,7 +417,7 @@ func (t *FileTree) resolveNodeLinks(n *nodeAccess, followDeadBasenameLinks bool,
 		// get the next Node (based on the next path)
 		// attempted paths maintains state across calls to resolveAncestorLinks
 		currentlyResolvingLinkPaths.Add(nextPath)
-		currentNodeAccess, err = t.resolveAncestorLinks(nextPath, currentlyResolvingLinkPaths, maxLinkDepth)
+		currentNodeAccess, err = t.resolveAncestorLinks(nextPath, currentlyResolvingLinkPaths, linkBudget)
 		if err != nil {
 			if currentNodeAccess != nil {
 				currentNodeAccess.LeafLinkResolution = append(currentNodeAccess.LeafLinkResolution, nodePath...)
