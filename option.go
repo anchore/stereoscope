@@ -13,7 +13,6 @@ type config struct {
 	Registry           image.RegistryOptions
 	AdditionalMetadata []image.AdditionalMetadata
 	Platform           *image.Platform
-	ImageSquashOnly    bool
 }
 
 func applyOptions(cfg *config, options ...Option) error {
