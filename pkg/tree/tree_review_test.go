@@ -83,3 +83,22 @@ func TestTree_Copy_IsolatedAfterChildSetEmptied(t *testing.T) {
 	assert.False(t, original.HasNode(b.ID()))
 	assert.False(t, cp.HasNode(a.ID()))
 }
+
+// AddChild of a node that already has a parent leaves it in the old parent's child set (pre-existing, split out by the
+// author to fix/add-child-reparent). With edges stored as IDs, removing both parents then reaches an ID that is no
+// longer in the tree: main returned an error here, the PR head panics.
+func TestTree_RemoveNode_StaleChildEdgeDoesNotPanic(t *testing.T) {
+	root, p1, p2, x := newTestNode("r"), newTestNode("p1"), newTestNode("p2"), newTestNode("x")
+	tr := NewTree()
+	require.NoError(t, tr.AddRoot(root))
+	require.NoError(t, tr.AddChild(root, p1))
+	require.NoError(t, tr.AddChild(root, p2))
+	require.NoError(t, tr.AddChild(p1, x))
+	require.NoError(t, tr.AddChild(p2, x)) // reparents x; p1 keeps a stale edge to it
+
+	_, err := tr.RemoveNode(p2)
+	require.NoError(t, err)
+	assert.NotPanics(t, func() {
+		_, _ = tr.RemoveNode(p1)
+	})
+}
