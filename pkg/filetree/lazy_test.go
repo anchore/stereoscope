@@ -15,6 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anchore/go-logger"
+	"github.com/anchore/go-logger/adapter/discard"
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 )
@@ -886,4 +889,57 @@ func TestLazyReader_concurrent_copyIsIndependent(t *testing.T) {
 			}
 		}
 	}
+}
+
+// warnCounter counts the warnings logged through internal/log (copied from the capturing logger in
+// internal/podman/ssh_knownhosts_test.go). The embedded discard logger handles every other level.
+type warnCounter struct {
+	logger.Logger
+	warnings atomic.Int32
+}
+
+func (w *warnCounter) WithFields(...any) logger.MessageLogger { return w }
+func (w *warnCounter) Warn(...any)                            { w.warnings.Add(1) }
+func (w *warnCounter) Warnf(string, ...any)                   { w.warnings.Add(1) }
+
+func countWarnings(t *testing.T) *warnCounter {
+	t.Helper()
+	counter := &warnCounter{Logger: discard.New()}
+	prev := log.Log
+	log.Log = counter
+	t.Cleanup(func() { log.Log = prev })
+	return counter
+}
+
+func TestNewLazyReader_aWrappedFailureIsLoggedAgain(t *testing.T) {
+	// a build that adds its own context to a lower reader's failure says something new, so it gets its
+	// own warning, and the original is still reachable with errors.Is
+	counter := countWarnings(t)
+
+	lower := NewLazyReader(func() (ReadWriter, error) { return nil, errLazyBuild })
+	upper := NewLazyReader(func() (ReadWriter, error) {
+		_, err := lower.Copy()
+		return nil, fmt.Errorf("building upper: %w", err)
+	})
+
+	_, _, err := upper.File("/a")
+	require.ErrorIs(t, err, errLazyBuild)
+	assert.ErrorContains(t, err, "building upper: ")
+	assert.Equal(t, int32(2), counter.warnings.Load(), "warnings for the lower failure and the upper one wrapping it")
+}
+
+func TestLazySearcher_ownPanicIsLogged(t *testing.T) {
+	// a search context that can't be built over a tree that could is a failure nothing else logs, so it
+	// must keep its own warning whatever is done to stop repeats of a failed build's
+	counter := countWarnings(t)
+	_, idx := newLazyFixture(t)
+	lazy := NewLazyReader(func() (ReadWriter, error) { return notAFileTree{ReadWriter: New()}, nil })
+
+	s := NewSearchContext(lazy, idx)
+	_, err := s.SearchByPath("/a")
+	require.ErrorContains(t, err, "panicked")
+	_, err = s.SearchByGlob("**/*")
+	require.ErrorContains(t, err, "panicked")
+
+	assert.Equal(t, int32(1), counter.warnings.Load(), "warnings for one search context that failed to build")
 }

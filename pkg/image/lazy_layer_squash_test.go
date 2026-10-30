@@ -3,6 +3,7 @@ package image
 import (
 	"archive/tar"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -472,4 +473,79 @@ func TestImage_Read_lazyLayerSquashFailureNamesTheLayer(t *testing.T) {
 	// failures are final: nothing is retried, however many times the layers are touched
 	_ = img.Layers[4].SquashedTree.AllFiles()
 	assert.Equal(t, map[int]int{0: 1, 1: 1, 2: 1, 3: 1, 4: 1}, counter.snapshot())
+}
+
+// describeSquash renders what a caller can observe of one layer's squash (every real path with its type, link
+// target and contents, and what its search context resolves the path to) in terms that don't depend on file
+// reference IDs, so squashes from two separate reads can be compared.
+func describeSquash(t *testing.T, img *Image, idx int) []string {
+	t.Helper()
+	layer := img.Layers[idx]
+	var out []string
+	for _, p := range sortedPaths(layer.SquashedTree.AllRealPaths()) {
+		_, res, err := layer.SquashedTree.File(p)
+		require.NoErrorf(t, err, "layer %d: %s", idx, p)
+		if !res.HasReference() {
+			// a parent directory no tar entry named
+			out = append(out, fmt.Sprintf("%s implied", p))
+			continue
+		}
+		entry, err := img.FileCatalog.Get(*res.Reference)
+		require.NoErrorf(t, err, "layer %d: %s", idx, p)
+		line := fmt.Sprintf("%s type=%v link=%s", p, entry.Metadata.Type, entry.Metadata.LinkDestination)
+		if entry.Metadata.Type == file.TypeRegular {
+			line += " contents=" + readAllFrom(t, func() (io.ReadCloser, error) { return layer.OpenPathFromSquash(p) })
+		}
+		found, err := layer.SquashedSearchContext.SearchByPath(string(p), filetree.FollowBasenameLinks)
+		require.NoErrorf(t, err, "layer %d: %s", idx, p)
+		if found != nil && found.Reference != nil {
+			line += " search=" + string(found.Reference.RealPath)
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func TestImage_Read_lazyLayerSquashesMatchAnEagerRead(t *testing.T) {
+	// the expected squashes come from a second, independent eager read, never from the lazy image's own
+	// layer trees, so a read that wrote into a layer tree while squashing can't corrupt both sides alike
+	layers := lazySquashFixtureLayers(t)
+	eager := readImageFromLayers(t, layers...)
+	lazy, _ := readLazyImage(t, layers...)
+	require.Len(t, lazy.Layers, len(eager.Layers))
+
+	// top down, so the first touch of a high layer builds the chain below it
+	for idx := len(eager.Layers) - 1; idx >= 0; idx-- {
+		require.NotNilf(t, lazy.Layers[idx].SquashedTree, "layer %d has no squashed tree", idx)
+		require.NotNilf(t, lazy.Layers[idx].SquashedSearchContext, "layer %d has no squashed search context", idx)
+		assert.Equalf(t, describeSquash(t, eager, idx), describeSquash(t, lazy, idx), "layer %d", idx)
+	}
+}
+
+// copyReturns is a lower squash whose Copy hands back a tree of the test's choosing.
+type copyReturns struct {
+	filetree.Reader
+	copied filetree.ReadWriter
+}
+
+func (c copyReturns) Copy() (filetree.ReadWriter, error) { return c.copied, nil }
+
+// refusesMerge is a tree that can't have a layer merged into it.
+type refusesMerge struct{ filetree.ReadWriter }
+
+func (refusesMerge) Merge(filetree.Reader) error { return errors.New("merge refused") }
+
+func TestLazyLayerSquash_mergeErrorNamesTheLayer(t *testing.T) {
+	// hand-built: nothing in a real image reaches this, since a merge that fails here fails the eager image
+	// squash in Read first. It pins the error a lazy build returns, rather than panics, when merging fails
+	below := copyReturns{Reader: filetree.New(), copied: refusesMerge{ReadWriter: filetree.New()}}
+	squash := lazyLayerSquash(3, below, filetree.New(), nil)
+
+	_, _, err := squash.File("/a")
+	require.ErrorContains(t, err, "failed to squash tree 3: merge refused")
+
+	// a layer above inherits the failure, still naming the layer that broke
+	above := lazyLayerSquash(4, squash, filetree.New(), nil)
+	_, _, err = above.File("/a")
+	assert.ErrorContains(t, err, "failed to squash tree 3: merge refused")
 }
