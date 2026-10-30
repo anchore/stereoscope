@@ -818,13 +818,40 @@ func TestNewLazySquash_matchesUnionSquash(t *testing.T) {
 
 }
 
-func TestNewLazySquash_rejectsWhatItCannotSquash(t *testing.T) {
-	// a layer tree as below would keep its whiteouts, since the build relies on below being a squash
-	assert.Panics(t, func() { NewLazySquash(New(), New()) }, "layer tree as below")
+func TestNewLazySquash_rejectsNilTrees(t *testing.T) {
 	assert.Panics(t, func() { NewLazySquash((*lazyReader)(nil), New()) }, "typed nil below")
 	assert.Panics(t, func() { NewLazySquash(nil, nil) }, "nil layer")
 	assert.Panics(t, func() { NewLazySquash(nil, (*FileTree)(nil)) }, "typed nil layer")
 	assert.NotPanics(t, func() { NewLazySquash(NewLazySquash(nil, New()), New()) })
+}
+
+func TestNewLazySquash_anyTreeBelow(t *testing.T) {
+	// below need not be a lazy squash: a built squash or even a layer tree works, and the build strips the
+	// whiteouts a layer tree carries, the same as squashing [below, layer] with a UnionFileTree would
+	below := New()
+	_, err := below.AddFile("/keep")
+	require.NoError(t, err)
+	_, err = below.AddFile("/.wh.gone")
+	require.NoError(t, err)
+	layer := New()
+	_, err = layer.AddFile("/added")
+	require.NoError(t, err)
+
+	u := NewUnionFileTree()
+	u.PushTree(below)
+	u.PushTree(layer)
+	want, err := u.Squash()
+	require.NoError(t, err)
+
+	squash := NewLazySquash(below, layer)
+	assert.Equal(t, sortedPaths(want.AllRealPaths()), sortedPaths(squash.AllRealPaths()))
+	assert.False(t, squash.HasPath("/.wh.gone"))
+	assert.True(t, below.HasPath("/.wh.gone"), "below is read, never written")
+
+	// a failure above a non-lazy below names it as the first layer up the chain
+	cannotMerge := copyReturns{ReadWriter: New(), copied: refusesMerge{ReadWriter: New()}}
+	_, _, err = NewLazySquash(cannotMerge, New()).File("/a")
+	assert.ErrorContains(t, err, "failed to squash tree 1: merge refused")
 }
 
 // countingCopy is a lower squash that counts how often a build copies it.
@@ -841,7 +868,7 @@ func (c *countingCopy) Copy() (ReadWriter, error) {
 func TestNewLazySquash_buildsOnFirstUseOnly(t *testing.T) {
 	fixture, idx := newLazyFixture(t)
 	below := &countingCopy{Reader: fixture}
-	squash := newLazySquash(1, below, New())
+	squash := NewLazySquash(below, New())
 
 	_ = NewSearchContext(squash, idx)
 	assert.Zero(t, below.copies.Load(), "built before first use")
@@ -886,9 +913,9 @@ func TestNewLazySquash_mergeErrorNamesTheLayer(t *testing.T) {
 
 func TestNewLazySquash_aboveAFailureTriesOnce(t *testing.T) {
 	// a squash above a failed one tries once, gets the failure, and never retries. below is wrapped to count
-	// the attempts, which NewLazySquash would refuse
+	// the attempts
 	below := &countingCopy{Reader: newLazyReader(2, func() (ReadWriter, error) { return nil, errLazyBuild })}
-	above := newLazySquash(3, below, New())
+	above := NewLazySquash(below, New())
 	for range 3 {
 		for name, call := range readerErrCalls {
 			assert.ErrorIs(t, call(above), errLazyBuild, name)
@@ -902,7 +929,7 @@ func TestNewLazySquash_aboveAFailureConcurrently(t *testing.T) {
 	// failure, and it is logged once
 	counter := countWarnings(t)
 	below := &countingCopy{Reader: newLazyReader(2, func() (ReadWriter, error) { return nil, errLazyBuild })}
-	above := newLazySquash(3, below, New())
+	above := NewLazySquash(below, New())
 	top := NewLazySquash(above, New())
 	search := NewSearchContext(top, NewIndex())
 
