@@ -81,7 +81,7 @@ type notAFileTree struct {
 
 func countedLazy(build func() (ReadWriter, error)) (Reader, *atomic.Int32) {
 	var n atomic.Int32
-	return NewLazyReader(func() (ReadWriter, error) {
+	return newLazyReader(0, func() (ReadWriter, error) {
 		n.Add(1)
 		return build()
 	}), &n
@@ -332,20 +332,6 @@ func TestLazyReader_buildFailures(t *testing.T) {
 			build: func() (ReadWriter, error) { return nil, errLazyBuild },
 			wantErr: func(t *testing.T, err error) {
 				assert.ErrorIs(t, err, errLazyBuild)
-			},
-		},
-		{
-			name:  "nil tree and nil error",
-			build: func() (ReadWriter, error) { return nil, nil },
-			wantErr: func(t *testing.T, err error) {
-				assert.ErrorContains(t, err, "returned no tree")
-			},
-		},
-		{
-			name:  "typed nil tree and nil error",
-			build: func() (ReadWriter, error) { return (*FileTree)(nil), nil },
-			wantErr: func(t *testing.T, err error) {
-				assert.ErrorContains(t, err, "returned no tree")
 			},
 		},
 		{
@@ -730,13 +716,13 @@ func countWarnings(t *testing.T) *warnCounter {
 	return counter
 }
 
-func TestNewLazyReader_aWrappedFailureIsLoggedAgain(t *testing.T) {
+func TestLazyReader_aWrappedFailureIsLoggedAgain(t *testing.T) {
 	// a build that adds its own context to a lower reader's failure says something new, so it gets its
 	// own warning, and the original is still reachable with errors.Is
 	counter := countWarnings(t)
 
-	lower := NewLazyReader(func() (ReadWriter, error) { return nil, errLazyBuild })
-	upper := NewLazyReader(func() (ReadWriter, error) {
+	lower := newLazyReader(0, func() (ReadWriter, error) { return nil, errLazyBuild })
+	upper := newLazyReader(0, func() (ReadWriter, error) {
 		_, err := lower.Copy()
 		return nil, fmt.Errorf("building upper: %w", err)
 	})
@@ -752,7 +738,7 @@ func TestLazySearcher_ownPanicIsLogged(t *testing.T) {
 	// must keep its own warning whatever is done to stop repeats of a failed build's
 	counter := countWarnings(t)
 	_, idx := newLazyFixture(t)
-	lazy := NewLazyReader(func() (ReadWriter, error) { return notAFileTree{ReadWriter: New()}, nil })
+	lazy := newLazyReader(0, func() (ReadWriter, error) { return notAFileTree{ReadWriter: New()}, nil })
 
 	s := NewSearchContext(lazy, idx)
 	_, err := s.SearchByPath("/a")
@@ -763,15 +749,15 @@ func TestLazySearcher_ownPanicIsLogged(t *testing.T) {
 	assert.Equal(t, int32(1), counter.warnings.Load(), "warnings for one search context that failed to build")
 }
 
-func TestNewLazyReader_aFailedBuildIsLoggedOnce(t *testing.T) {
+func TestLazyReader_aFailedBuildIsLoggedOnce(t *testing.T) {
 	// one failure seen through a chain of lazy readers (as image layer squashes are: each one's build copies
 	// the one below) and through a search context should be one warning, not one per reader and searcher
 	// that passes it on. In a 40-layer image a failure at layer 2 would otherwise log the same warning 74
 	// times: once in the build and once in the search context of each lazy layer from 2 up to 38
 	counter := countWarnings(t)
 
-	lower := NewLazyReader(func() (ReadWriter, error) { return nil, errLazyBuild })
-	upper := NewLazyReader(func() (ReadWriter, error) { return lower.Copy() })
+	lower := newLazyReader(0, func() (ReadWriter, error) { return nil, errLazyBuild })
+	upper := newLazyReader(0, func() (ReadWriter, error) { return lower.Copy() })
 	search := NewSearchContext(upper, NewIndex())
 
 	_, err := search.SearchByPath("/a")
@@ -782,4 +768,111 @@ func TestNewLazyReader_aFailedBuildIsLoggedOnce(t *testing.T) {
 	require.ErrorIs(t, err, errLazyBuild)
 
 	assert.Equal(t, int32(1), counter.warnings.Load(), "warnings logged for one failed build")
+}
+
+func TestNewLazySquash_matchesUnionSquash(t *testing.T) {
+	// a chain of lazy squashes gives each layer what squashing every layer up to it at once gives
+	layer := func(paths ...string) *FileTree {
+		lt := New()
+		for _, p := range paths {
+			_, err := lt.AddFile(file.Path(p))
+			require.NoError(t, err)
+		}
+		return lt
+	}
+	layers := []*FileTree{
+		// the lowest layer's own whiteout must not survive into its squash
+		layer("/a", "/b", "/.wh.c", "/d/e"),
+		layer("/c", "/d/g"),
+		layer("/.wh.a", "/d/"+file.OpaqueWhiteout, "/d/f"),
+		layer("/a"),
+	}
+	_, err := layers[3].AddSymLink("/link", "/b")
+	require.NoError(t, err)
+
+	var below Reader
+	squashes := make([]Reader, len(layers))
+	for k := range layers {
+		squash := NewLazySquash(below, layers[k])
+		squashes[k] = squash
+		assert.Equal(t, k, squash.(*lazyReader).idx, "layer %d is numbered by its place in the chain", k)
+
+		u := NewUnionFileTree()
+		for _, lt := range layers[:k+1] {
+			u.PushTree(lt)
+		}
+		want, err := u.Squash()
+		require.NoError(t, err)
+		assert.Equal(t, sortedPaths(want.AllRealPaths()), sortedPaths(squash.AllRealPaths()), "layer %d", k)
+		below = squash
+	}
+
+	// spot checks, so the comparison above isn't only against the same code path
+	assert.False(t, squashes[0].HasPath("/.wh.c"), "whiteout kept in the lowest squash")
+	assert.True(t, squashes[1].HasPath("/a"))
+	assert.False(t, squashes[2].HasPath("/a"), "whiteout not applied")
+	assert.False(t, squashes[2].HasPath("/d/e"), "opaque dir not applied")
+	assert.True(t, squashes[2].HasPath("/d/f"))
+	assert.True(t, squashes[3].HasPath("/a"))
+	assert.True(t, squashes[3].HasPath("/link"))
+
+	// a squash over anything but another lazy squash counts from 1
+	assert.Equal(t, 1, NewLazySquash(New(), New()).(*lazyReader).idx)
+}
+
+// countingCopy is a lower squash that counts how often a build copies it.
+type countingCopy struct {
+	Reader
+	copies atomic.Int32
+}
+
+func (c *countingCopy) Copy() (ReadWriter, error) {
+	c.copies.Add(1)
+	return c.Reader.Copy()
+}
+
+func TestNewLazySquash_buildsOnFirstUseOnly(t *testing.T) {
+	fixture, idx := newLazyFixture(t)
+	below := &countingCopy{Reader: fixture}
+	squash := NewLazySquash(below, New())
+
+	_ = NewSearchContext(squash, idx)
+	assert.Zero(t, below.copies.Load(), "built before first use")
+
+	for range 3 {
+		for _, c := range readerCalls() {
+			c.call(squash)
+		}
+	}
+	assert.EqualValues(t, 1, below.copies.Load())
+	assert.Equal(t, sortedPaths(fixture.AllRealPaths()), sortedPaths(squash.AllRealPaths()))
+}
+
+// copyReturns is a squash whose Copy hands back a tree of the test's choosing.
+type copyReturns struct {
+	ReadWriter
+	copied ReadWriter
+}
+
+func (c copyReturns) Copy() (ReadWriter, error) { return c.copied, nil }
+
+// refusesMerge is a tree that can't have a layer merged into it.
+type refusesMerge struct{ ReadWriter }
+
+func (refusesMerge) Merge(Reader) error { return errors.New("merge refused") }
+
+func TestNewLazySquash_mergeErrorNamesTheLayer(t *testing.T) {
+	// hand-built: nothing in a real image reaches this, since a merge that fails here fails the eager image
+	// squash in Read first. It pins the error a lazy build returns, rather than panics, when merging fails
+	layer2 := newLazyReader(2, func() (ReadWriter, error) {
+		return copyReturns{ReadWriter: New(), copied: refusesMerge{ReadWriter: New()}}, nil
+	})
+	layer3 := NewLazySquash(layer2, New())
+
+	_, _, err := layer3.File("/a")
+	require.ErrorContains(t, err, "failed to squash tree 3: merge refused")
+
+	// a layer above inherits the failure, still naming the layer that broke
+	_, _, err = NewLazySquash(layer3, New()).File("/a")
+	assert.ErrorContains(t, err, "failed to squash tree 3: merge refused")
 }

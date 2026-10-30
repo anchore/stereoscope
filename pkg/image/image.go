@@ -50,9 +50,9 @@ type Image struct {
 
 	overrideMetadata []AdditionalMetadata
 
-	// onLazySquashBuild is a test hook: when set, it is called with the layer index every time a lazy layer
-	// squash starts building
-	onLazySquashBuild func(layerIdx int)
+	// wrapLazyLayerTree is a test hook: when set, each layer tree handed to a lazy layer squash goes through
+	// it, so a test can see (or break) the build that reads it
+	wrapLazyLayerTree func(layerIdx int, layerTree filetree.ReadWriter) filetree.ReadWriter
 }
 
 type AdditionalMetadata func(*Image) error
@@ -529,7 +529,7 @@ type lazyLayerSquashesKey struct{}
 //     it that has not been built yet. That call can take a while and cannot be cancelled, since no
 //     context reaches it. Concurrent callers wait for the same build rather than repeating it.
 //   - a failed build no longer fails Read. Methods that return an error report it, and the rest see
-//     an empty tree (see filetree.NewLazyReader). A caller that must not miss files (a scanner) should
+//     an empty tree (see filetree.NewLazySquash). A caller that must not miss files (a scanner) should
 //     read lower layers through the methods that return an error: SquashedSearchContext, and
 //     SquashedTree's File, FilesByGlob, ListPaths and Walk, rather than AllFiles or HasPath.
 //   - a lower layer's SquashedTree is not a *filetree.FileTree, so type assertions on it fail.
@@ -698,7 +698,11 @@ func (i *Image) squashLayers(ctx context.Context, layers []*Layer, gates *layerG
 			layer.SquashedTree = squashedTree
 		} else {
 			// never the in-place tree above: it keeps changing as later layers are merged into it
-			layer.SquashedTree = lazyLayerSquash(idx, lowerLazySquash, layerTree, i.onLazySquashBuild)
+			lazyLayerTree := layerTree
+			if i.wrapLazyLayerTree != nil {
+				lazyLayerTree = i.wrapLazyLayerTree(idx, layerTree)
+			}
+			layer.SquashedTree = filetree.NewLazySquash(lowerLazySquash, lazyLayerTree)
 			lowerLazySquash = layer.SquashedTree
 		}
 		// for a lazy squash this is lazy too, and builds nothing until the first search
@@ -708,41 +712,6 @@ func (i *Image) squashLayers(ctx context.Context, layers []*Layer, gates *layerG
 	}
 
 	return nil
-}
-
-// lazyLayerSquash returns the squash for layer idx, built on first use from the squash of the layer
-// below it (nil for the lowest layer). Calling below.Copy() realizes the lower squash first, so the
-// first use of layer k builds every layer from 0 to k that has not been built yet, each exactly once.
-// Only layer trees and realized lower squashes are read, and neither is ever written, so concurrent
-// builds are safe.
-func lazyLayerSquash(idx int, below filetree.Reader, layerTree filetree.ReadWriter, onBuild func(int)) filetree.Reader {
-	return filetree.NewLazyReader(func() (_ filetree.ReadWriter, err error) {
-		// recovered here rather than left to NewLazyReader so the error names this layer, which is what
-		// every layer above it reports too
-		defer func() {
-			if p := recover(); p != nil {
-				err = fmt.Errorf("failed to squash tree %d: panicked: %v", idx, p)
-			}
-		}()
-		if onBuild != nil {
-			onBuild(idx)
-		}
-		var lower filetree.ReadWriter
-		if below != nil {
-			copied, err := below.Copy()
-			if err != nil {
-				// already names the layer that failed, every layer above it fails the same way
-				return nil, err
-			}
-			lower = copied
-		}
-		// lower is this build's own copy, so merging into it in place is safe
-		squashedTree, err := squashOnto(lower, layerTree, false)
-		if err != nil {
-			return nil, fmt.Errorf("failed to squash tree %d: %w", idx, err)
-		}
-		return squashedTree, nil
-	})
 }
 
 // squashOnto applies layerTree onto the squash below it (nil for the lowest layer). The lower squash

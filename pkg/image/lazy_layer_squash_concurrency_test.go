@@ -233,7 +233,7 @@ func readFixtureImage(t *testing.T, lazy bool, layers ...v1.Layer) (*Image, *laz
 	}
 	img := newImageFromLayers(t, layers...)
 	counter := &lazyBuildCounter{}
-	img.onLazySquashBuild = counter.hook
+	img.wrapLazyLayerTree = onLazySquashBuild(counter.hook)
 	require.NoError(t, img.Read(context.Background()))
 	return img, counter
 }
@@ -357,7 +357,7 @@ func TestImage_lazyLayerSquashesConcurrent_reReadWhileOldLayersInUse(t *testing.
 
 	// the hook is captured per read, so swapping it splits the build counts by generation
 	newCounter := &lazyBuildCounter{}
-	img.onLazySquashBuild = newCounter.hook
+	img.wrapLazyLayerTree = onLazySquashBuild(newCounter.hook)
 	require.NoError(t, img.Read(WithLazyLayerSquashes(context.Background())))
 	newLayers := img.Layers
 	require.Len(t, newLayers, len(oldLayers))

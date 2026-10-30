@@ -34,7 +34,7 @@ type searchContext struct {
 }
 
 // NewSearchContext returns a Searcher over the given tree, using the index to answer searches. Given a
-// reader from NewLazyReader, neither the tree nor the link resolution index is built until the first
+// reader from NewLazySquash, neither the tree nor the link resolution index is built until the first
 // search. The index is optional: when it is a nil interface value (not a typed nil pointer), glob searches
 // fall back to walking the whole tree and MIME type searches return an error. Path searches never use the index.
 func NewSearchContext(tree Reader, index IndexReader) Searcher {

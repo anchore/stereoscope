@@ -3,7 +3,6 @@ package image
 import (
 	"archive/tar"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -20,6 +19,7 @@ import (
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/anchore/stereoscope/pkg/tree"
 )
 
 const lazyFixtureLayers = 6
@@ -65,7 +65,42 @@ func lazySquashFixtureLayers(t *testing.T) []v1.Layer {
 	return layers
 }
 
-// lazyBuildCounter counts lazy layer squash builds per layer index, for the onLazySquashBuild hook.
+// layerTreeSpy is a layer tree that calls onRead the first time a lazy squash build reads it. A build reads
+// its layer tree through Copy (the lowest layer, via UnionFileTree.Squash) or Merge (HasPath and TreeReader),
+// and nothing else reads the tree handed to NewLazySquash, so the first read is the build starting. Each
+// squash builds at most once (pkg/filetree pins that), so firing once per tree is enough.
+type layerTreeSpy struct {
+	filetree.ReadWriter
+	once   sync.Once
+	onRead func()
+}
+
+func (s *layerTreeSpy) read() { s.once.Do(s.onRead) }
+
+func (s *layerTreeSpy) Copy() (filetree.ReadWriter, error) {
+	s.read()
+	return s.ReadWriter.Copy()
+}
+
+func (s *layerTreeSpy) HasPath(p file.Path, options ...filetree.LinkResolutionOption) bool {
+	s.read()
+	return s.ReadWriter.HasPath(p, options...)
+}
+
+func (s *layerTreeSpy) TreeReader() tree.Reader {
+	s.read()
+	return s.ReadWriter.TreeReader()
+}
+
+// onLazySquashBuild returns an Image.wrapLazyLayerTree that calls fn with the layer index when that layer's
+// lazy squash starts building.
+func onLazySquashBuild(fn func(idx int)) func(int, filetree.ReadWriter) filetree.ReadWriter {
+	return func(idx int, layerTree filetree.ReadWriter) filetree.ReadWriter {
+		return &layerTreeSpy{ReadWriter: layerTree, onRead: func() { fn(idx) }}
+	}
+}
+
+// lazyBuildCounter counts lazy layer squash builds per layer index, for onLazySquashBuild.
 type lazyBuildCounter struct {
 	mu     sync.Mutex
 	counts map[int]int
@@ -95,7 +130,7 @@ func readLazyImage(t *testing.T, layers ...v1.Layer) (*Image, *lazyBuildCounter)
 	t.Helper()
 	img := newImageFromLayers(t, layers...)
 	counter := &lazyBuildCounter{}
-	img.onLazySquashBuild = counter.hook
+	img.wrapLazyLayerTree = onLazySquashBuild(counter.hook)
 	require.NoError(t, img.Read(WithLazyLayerSquashes(context.Background())))
 	return img, counter
 }
@@ -394,7 +429,7 @@ func TestImage_Read_lazyLayerSquashesFreshOnEveryRead(t *testing.T) {
 
 	// a second lazy read must not reuse any lazy state from the first
 	second := &lazyBuildCounter{}
-	img.onLazySquashBuild = second.hook
+	img.wrapLazyLayerTree = onLazySquashBuild(second.hook)
 	require.NoError(t, img.Read(WithLazyLayerSquashes(context.Background())))
 	require.Len(t, img.Layers, lazyFixtureLayers)
 	for idx := range img.Layers {
@@ -448,12 +483,12 @@ func TestImage_Read_lazyLayerSquashFailureNamesTheLayer(t *testing.T) {
 	// which layer broke, leave the layers below it working, and never take the caller down
 	img := newImageFromLayers(t, lazySquashFixtureLayers(t)...)
 	counter := &lazyBuildCounter{}
-	img.onLazySquashBuild = func(idx int) {
+	img.wrapLazyLayerTree = onLazySquashBuild(func(idx int) {
 		counter.hook(idx)
 		if idx == 2 {
 			panic("boom")
 		}
-	}
+	})
 	require.NoError(t, img.Read(WithLazyLayerSquashes(context.Background())))
 
 	for _, idx := range []int{4, 3, 2} {
@@ -474,9 +509,10 @@ func TestImage_Read_lazyLayerSquashFailureNamesTheLayer(t *testing.T) {
 	// the image squash was built during the read and is unaffected
 	assert.True(t, img.SquashedTree().HasPath("/shared.txt"))
 
-	// failures are final: nothing is retried, however many times the layers are touched
+	// failures are final: nothing is retried, however many times the layers are touched. Layers 3 and 4 fail
+	// copying the squash below them, before they read their own layer tree, so the hook never sees them
 	_ = img.Layers[4].SquashedTree.AllFiles()
-	assert.Equal(t, map[int]int{0: 1, 1: 1, 2: 1, 3: 1, 4: 1}, counter.snapshot())
+	assert.Equal(t, map[int]int{0: 1, 1: 1, 2: 1}, counter.snapshot())
 }
 
 // describeSquash renders what a caller can observe of one layer's squash (every real path with its type, link
@@ -526,34 +562,6 @@ func TestImage_Read_lazyLayerSquashesMatchAnEagerRead(t *testing.T) {
 	}
 }
 
-// copyReturns is a lower squash whose Copy hands back a tree of the test's choosing.
-type copyReturns struct {
-	filetree.Reader
-	copied filetree.ReadWriter
-}
-
-func (c copyReturns) Copy() (filetree.ReadWriter, error) { return c.copied, nil }
-
-// refusesMerge is a tree that can't have a layer merged into it.
-type refusesMerge struct{ filetree.ReadWriter }
-
-func (refusesMerge) Merge(filetree.Reader) error { return errors.New("merge refused") }
-
-func TestLazyLayerSquash_mergeErrorNamesTheLayer(t *testing.T) {
-	// hand-built: nothing in a real image reaches this, since a merge that fails here fails the eager image
-	// squash in Read first. It pins the error a lazy build returns, rather than panics, when merging fails
-	below := copyReturns{Reader: filetree.New(), copied: refusesMerge{ReadWriter: filetree.New()}}
-	squash := lazyLayerSquash(3, below, filetree.New(), nil)
-
-	_, _, err := squash.File("/a")
-	require.ErrorContains(t, err, "failed to squash tree 3: merge refused")
-
-	// a layer above inherits the failure, still naming the layer that broke
-	above := lazyLayerSquash(4, squash, filetree.New(), nil)
-	_, _, err = above.File("/a")
-	assert.ErrorContains(t, err, "failed to squash tree 3: merge refused")
-}
-
 // squashWarnings counts the warnings logged through internal/log (as pkg/filetree's lazy tests do, after the
 // capturing logger in internal/podman/ssh_knownhosts_test.go).
 type squashWarnings struct {
@@ -574,11 +582,11 @@ func TestImage_Read_lazyLayerSquashes_aBrokenLayerIsLoggedOnce(t *testing.T) {
 	t.Cleanup(func() { log.Log = prev })
 
 	img := newImageFromLayers(t, lazySquashFixtureLayers(t)...)
-	img.onLazySquashBuild = func(idx int) {
+	img.wrapLazyLayerTree = onLazySquashBuild(func(idx int) {
 		if idx == 2 {
 			panic("boom")
 		}
-	}
+	})
 	require.NoError(t, img.Read(WithLazyLayerSquashes(context.Background())))
 
 	for idx, layer := range img.Layers[:len(img.Layers)-1] {

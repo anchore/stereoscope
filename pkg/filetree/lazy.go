@@ -1,7 +1,6 @@
 package filetree
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 
@@ -14,33 +13,59 @@ import (
 var _ Reader = (*lazyReader)(nil)
 var _ Searcher = (*lazySearcher)(nil)
 
-// NewLazyReader returns a Reader that calls build the first time any of its methods is called and then
-// delegates to the tree build returned. This lets a caller hand out a tree that may never be needed
-// without paying to build it up front.
+// NewLazySquash returns layer squashed onto below (nil for the lowest layer), built the first time any of its
+// methods is called. This lets a caller hand out a per-layer squash that may never be needed without paying to
+// build it up front. Chaining one per layer, each with the previous one as below, gives every layer's squash:
+// the first use of one builds it and every squash below it that has not been built yet, each exactly once.
 //
-// build runs at most once, even when the reader is used from many goroutines at once: the first caller
-// runs it and every other caller blocks until it is done, then all of them see the same tree. That
-// first call does all of the work and cannot be cancelled, since none of the Reader methods take a
-// context.
+// The build runs at most once, even when the reader is used from many goroutines at once: the first caller
+// runs it and every other caller blocks until it is done. That first call does all of the work and cannot be
+// cancelled, since none of the Reader methods take a context. below and layer are only read, never written,
+// so they can be shared with other squashes and readers.
 //
-// If build fails (returns an error, returns no tree, or panics) it is not retried. Every method that can
-// return an error returns that failure, now and on every later call, and the methods that cannot
-// (AllFiles, AllRealPaths, HasPath and TreeReader) behave as if the tree were empty. The failure is
-// logged once and returned wrapped, so compare it with errors.Is or errors.As rather than ==. A build
-// that returns another lazy reader's failure unchanged is not logged again.
-//
-// build must not call methods on the reader it is building: the call would wait on itself forever. It
-// should return a tree made with New (or a copy of one) if the reader is going to be passed to
-// NewSearchContext.
-func NewLazyReader(build func() (ReadWriter, error)) Reader {
+// If the build fails it is not retried. Every method that can return an error returns that failure, now and on
+// every later call, and the methods that cannot (AllFiles, AllRealPaths, HasPath and TreeReader) behave as if
+// the tree were empty. The failure names the layer that broke, by its position in the chain (the lowest is 0,
+// and a squash over anything other than another lazy squash counts from 1). Every squash above it returns the
+// same failure. It is logged once and returned wrapped, so compare it with errors.Is or errors.As rather than ==.
+func NewLazySquash(below Reader, layer ReadWriter) Reader {
+	idx := 0
+	if b, ok := below.(*lazyReader); ok {
+		idx = b.idx + 1
+	} else if below != nil {
+		idx = 1
+	}
+	return newLazyReader(idx, func() (ReadWriter, error) {
+		if below == nil {
+			// a layer tree keeps the whiteout entries of its own changeset, which Squash strips
+			u := NewUnionFileTree()
+			u.PushTree(layer)
+			squashed, err := u.Squash()
+			if err != nil {
+				return nil, fmt.Errorf("failed to squash tree %d: %w", idx, err)
+			}
+			return squashed, nil
+		}
+		lower, err := below.Copy()
+		if err != nil {
+			// a lower lazy squash's failure already names its layer, every layer above it fails the same way
+			return nil, err
+		}
+		// lower is this build's own copy, so merging into it in place is safe. A squash never carries
+		// whiteouts, so this is exactly what Squash would do after copying it
+		if err := lower.Merge(layer); err != nil {
+			return nil, fmt.Errorf("failed to squash tree %d: %w", idx, err)
+		}
+		return lower, nil
+	})
+}
+
+func newLazyReader(idx int, build func() (ReadWriter, error)) *lazyReader {
 	// OnceValues drops build once it has run, along with whatever it captured
-	return &lazyReader{realize: sync.OnceValues(func() (t ReadWriter, err error) {
+	return &lazyReader{idx: idx, realize: sync.OnceValues(func() (t ReadWriter, err error) {
 		defer func() {
 			if p := recover(); p != nil {
-				err = fmt.Errorf("building lazy file tree panicked: %v", p)
-			}
-			if err == nil && isNilTree(t) {
-				err = errors.New("building lazy file tree returned no tree")
+				err = fmt.Errorf("failed to squash tree %d: panicked: %v", idx, p)
 			}
 			if err != nil {
 				// a build that returned, as is, the failure of a lazy reader below it (a layer squash
@@ -60,6 +85,8 @@ type lazyReader struct {
 	// realize builds the tree on first use. The tree is never nil, so the methods that cannot report an
 	// error always have something to delegate to.
 	realize func() (ReadWriter, error)
+	// idx is this squash's position in its chain, 0 for the lowest
+	idx int
 }
 
 // loggedBuildError is a failed build's error once realize has logged it, so that whatever passes it on (a
@@ -67,13 +94,6 @@ type lazyReader struct {
 type loggedBuildError struct{ error }
 
 func (e *loggedBuildError) Unwrap() error { return e.error }
-
-// isNilTree reports whether t holds no tree, including a nil *FileTree in a non-nil interface, which would
-// otherwise slip past a nil check and panic on first use.
-func isNilTree(t ReadWriter) bool {
-	ft, ok := t.(*FileTree)
-	return t == nil || ok && ft == nil
-}
 
 func (r *lazyReader) AllFiles(types ...file.Type) []file.Reference {
 	t, _ := r.realize()
