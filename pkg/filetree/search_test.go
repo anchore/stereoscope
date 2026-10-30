@@ -484,25 +484,26 @@ func newLayeredSearchFixture(t *testing.T) layeredSearchFixture {
 	require.NoError(t, err)
 	idx.Add(*realRef, file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-executable"})
 
-	squash := func(layers ...*FileTree) *FileTree {
-		tr, err := layers[0].Copy()
-		require.NoError(t, err)
-		for _, l := range layers[1:] {
-			require.NoError(t, tr.Merge(l))
-		}
-		return tr.(*FileTree)
-	}
-
 	return layeredSearchFixture{
 		idx:              idx,
 		lower:            lower,
 		upper:            upper,
-		squashed:         squash(lower, upper),
-		squashedRelinked: squash(lower, relinked),
+		squashed:         squashTrees(t, lower, upper),
+		squashedRelinked: squashTrees(t, lower, relinked),
 		scriptID:         scriptRef.ID(),
 		binID:            binRef.ID(),
 		realID:           realRef.ID(),
 	}
+}
+
+func squashTrees(t *testing.T, layers ...*FileTree) *FileTree {
+	t.Helper()
+	tr, err := layers[0].Copy()
+	require.NoError(t, err)
+	for _, l := range layers[1:] {
+		require.NoError(t, tr.Merge(l))
+	}
+	return tr.(*FileTree)
 }
 
 type searchHit struct {
@@ -639,6 +640,78 @@ func Test_searchContext_SearchByGlob_layeredPaths(t *testing.T) {
 			require.Equal(t, tt.want, searchHits(got))
 		})
 	}
+}
+
+// Test_searchContext_layeredAncestors covers upper layers that remove a lower layer's entry without writing a
+// node at the same path: replacing an ancestor directory with a symlink, or whiting the path out.
+func Test_searchContext_layeredAncestors(t *testing.T) {
+	idx := NewIndex()
+	add := func(tr *FileTree, p file.Path, m file.Metadata) *file.Reference {
+		var ref *file.Reference
+		var err error
+		switch m.Type {
+		case file.TypeDirectory:
+			ref, err = tr.AddDir(p)
+		default:
+			ref, err = tr.AddFile(p)
+		}
+		require.NoError(t, err)
+		idx.Add(*ref, m)
+		return ref
+	}
+
+	// lower: /lib and /usr/lib are real directories, /a/status.d and /b/status.d are dpkg-style status dirs
+	lower := New()
+	add(lower, "/lib/x.so", file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-sharedlib"})
+	usrRef := add(lower, "/usr/lib/x.so", file.Metadata{Type: file.TypeRegular, MIMEType: "text/plain"})
+	add(lower, "/a/status.d", file.Metadata{Type: file.TypeDirectory})
+	add(lower, "/b/status.d", file.Metadata{Type: file.TypeDirectory})
+	statusRef := add(lower, "/b/status.d/y", file.Metadata{Type: file.TypeRegular, MIMEType: "text/plain"})
+	add(lower, "/app/gone.sh", file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
+
+	// upper: usrmerge-style /lib -> usr/lib, /a -> /b, and a whiteout for /app/gone.sh
+	upper := New()
+	_, err := upper.AddSymLink("/lib", "usr/lib")
+	require.NoError(t, err)
+	_, err = upper.AddSymLink("/a", "/b")
+	require.NoError(t, err)
+	_, err = upper.AddFile("/app/.wh.gone.sh")
+	require.NoError(t, err)
+
+	sc := NewSearchContext(squashTrees(t, lower, upper), idx)
+
+	t.Run("shadowed type does not match through a replaced ancestor", func(t *testing.T) {
+		got, err := sc.SearchByMIMEType("application/x-sharedlib")
+		require.NoError(t, err)
+		require.Empty(t, searchHits(got))
+	})
+
+	t.Run("live type under the link target matches at its real path", func(t *testing.T) {
+		got, err := sc.SearchByMIMEType("text/plain")
+		require.NoError(t, err)
+		require.Equal(t, []searchHit{{"/b/status.d/y", statusRef.ID()}, {"/usr/lib/x.so", usrRef.ID()}}, searchHits(got))
+	})
+
+	t.Run("whited out path does not match", func(t *testing.T) {
+		got, err := sc.SearchByMIMEType("text/x-shellscript")
+		require.NoError(t, err)
+		require.Empty(t, searchHits(got))
+
+		got, err = sc.SearchByGlob("**/gone.sh")
+		require.NoError(t, err)
+		require.Empty(t, searchHits(got))
+	})
+
+	t.Run("parent directory under a replaced ancestor is not listed", func(t *testing.T) {
+		// basename and parent directory searches should agree: /b/status.d/y is only reachable via /a by the link
+		got, err := sc.SearchByGlob("**/status.d/*")
+		require.NoError(t, err)
+		require.Equal(t, []searchHit{{"/b/status.d/y", statusRef.ID()}}, searchHits(got))
+
+		got, err = sc.SearchByGlob("**/y")
+		require.NoError(t, err)
+		require.Equal(t, []searchHit{{"/b/status.d/y", statusRef.ID()}}, searchHits(got))
+	})
 }
 
 func Test_complexSymlinkPerformance(t *testing.T) {

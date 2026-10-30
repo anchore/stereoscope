@@ -55,10 +55,7 @@ func (sc *searchContext) buildLinkResolutionIndex() error {
 	}
 
 	// filter the results relative to the tree
-	nodes, err := sc.fileNodesInTree(entries)
-	if err != nil {
-		return err
-	}
+	nodes := sc.fileNodesInTree(entries)
 
 	// note: the remaining references are all links that exist in the tree
 
@@ -104,7 +101,7 @@ func (sc searchContext) SearchByPath(path string, options ...LinkResolutionOptio
 func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution, error) {
 	var fileEntries []IndexEntry
 
-	// a file has exactly one MIME type, so deduping the requested types is enough to keep results unique
+	// the index keeps each file under exactly one MIME type, so deduping the requested types keeps results unique
 	for _, mType := range strset.New(mimeTypes...).List() {
 		entries, err := sc.index.GetByMIMEType(mType)
 		if err != nil {
@@ -145,8 +142,7 @@ func (sc searchContext) SearchByGlob(pattern string, options ...LinkResolutionOp
 		allRefs = append(allRefs, refs...)
 	}
 
-	// overlapping alternation sections (e.g. {a.txt,*.txt}) and directories written by several layers can
-	// surface the same request path more than once
+	// overlapping alternation sections (e.g. {a.txt,*.txt}) can surface the same request path more than once
 	allRefs = uniqueResolutions(allRefs)
 
 	sort.Sort(file.Resolutions(allRefs))
@@ -226,8 +222,23 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 		return nil, fmt.Errorf("unable to search by extension=%q: %w", request.indexLookup, err)
 	}
 
+	// the index spans all layers, so a directory is indexed once per layer that wrote it, and a lower layer's entry
+	// may no longer exist at its real path (e.g. an ancestor was replaced by a symlink). Only list each directory
+	// once and only where it really lives, otherwise its children surface again through the link. This cannot use
+	// fileNodesInTree: implicitly created parent directories have no reference of their own to match against.
 	var results []file.Resolution
+	listed := file.NewPathSet()
 	for _, i := range indexes {
+		if listed.Contains(i.RealPath) {
+			continue
+		}
+		listed.Add(i.RealPath)
+		// a literal lookup never follows links, so it cannot fail
+		na, _ := sc.tree.node(i.RealPath, linkResolutionStrategy{})
+		if !na.HasFileNode() {
+			continue
+		}
+
 		paths, err := sc.tree.ListPaths(i.RealPath)
 		if err != nil {
 			// this may not be a directory, that's alright, just continue...
@@ -252,10 +263,7 @@ func (sc searchContext) firstMatchingReferences(glob string, entries []IndexEntr
 	// the index spans all layers, so drop entries that are not the node actually at their path in this tree
 	// (e.g. a lower layer's file that was since overwritten). Otherwise the path resolves to whatever lives
 	// there now, which may not match the property the entry was indexed by, and is duplicated per layer.
-	nodes, err := sc.fileNodesInTree(entries)
-	if err != nil {
-		return nil, err
-	}
+	nodes := sc.fileNodesInTree(entries)
 
 	var references []file.Resolution
 	for _, fn := range nodes {
@@ -373,37 +381,22 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 	return nil, nil
 }
 
-func (sc searchContext) fileNodesInTree(fileEntries []IndexEntry) ([]*filenode.FileNode, error) {
+func (sc searchContext) fileNodesInTree(fileEntries []IndexEntry) []*filenode.FileNode {
 	var nodes []*filenode.FileNode
-allFileEntries:
 	for _, entry := range fileEntries {
-		// note: it is important that we don't enable any basename link resolution
-		na, err := sc.tree.file(entry.RealPath)
-		// the index spans multiple trees, so an entry's real path need not exist in this one. When it does not,
-		// file() falls through to ancestor resolution, which is where a malformed link surfaces. Aborting here
-		// would leave the caller with an empty link resolution index (see NewSearchContext) rather than a
-		// missing entry, so every symlink-reached path in the image would silently disappear.
-		if IsUnresolvableLink(err) {
-			log.WithFields("path", entry.RealPath, "error", err).Trace("skipping malformed link while filtering index entries")
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("unable to get ref for path=%q: %w", entry.RealPath, err)
-		}
-
+		// a reference only ever lives at its own real path, so a literal lookup is enough. Following ancestor links
+		// could only land on a different node (whose ID cannot match), and a literal lookup cannot fail.
+		na, _ := sc.tree.node(entry.RealPath, linkResolutionStrategy{})
 		if !na.HasFileNode() {
 			continue
 		}
 
-		// only check the resolved node matches the index entries reference, not via link resolutions...
+		// keep the entry only if it is the node at its path in this tree, dropping entries from other layers
 		if na.FileNode.Reference != nil && na.FileNode.Reference.ID() == entry.ID() {
 			nodes = append(nodes, na.FileNode)
-			continue allFileEntries
 		}
-
-		// we did not find a matching file ID in the tree, so drop this entry
 	}
-	return nodes, nil
+	return nodes
 }
 
 // firstMatchingReference returns the first file reference matching the glob
