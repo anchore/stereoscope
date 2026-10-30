@@ -6,6 +6,10 @@ import (
 	"golang.org/x/tools/go/analysis/analysistest"
 )
 
+func TestAnalyzer_FlagsWritesThroughFileNodePointer(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), Analyzer, "writes")
+}
+
 func TestAnalyzer_FlagsWriteThroughParenthesizedDeref(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), Analyzer, "parenderef")
 }

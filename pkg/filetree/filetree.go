@@ -882,10 +882,11 @@ func (t *FileTree) Merge(upper Reader) error {
 
 		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory {
 			// a non-directory masks everything under its path, whatever the lower node is (a malformed lower layer
-			// can hold children under a symlink). Clear by real path, never through a link.
-			err := t.removeChildPaths(upperNode.RealPath, linkResolutionStrategy{})
-			if err != nil {
-				return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+			// can hold children under a symlink). Clear the lower node found above, never through a link.
+			for _, child := range t.tree.Children(lowerNode.FileNode) {
+				if _, err := t.tree.RemoveNode(child); err != nil {
+					return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+				}
 			}
 		}
 		// graft the upper Node (with potential lower information) into the lower tree

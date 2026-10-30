@@ -1555,3 +1555,78 @@ func BenchmarkFileTree_Merge(b *testing.B) {
 		require.NoError(b, cp.Merge(upper))
 	}
 }
+
+// the opaque marker is looked up at the exact real path: a symlink that points at an opaque directory is not itself
+// opaque, while the directory holding the marker still is
+func TestHasOpaqueDirectory_ExactRealPathOnly(t *testing.T) {
+	upper := New()
+	_, err := upper.AddSymLink("/x", "/t")
+	require.NoError(t, err)
+	_, err = upper.AddDir("/t")
+	require.NoError(t, err)
+	_, err = upper.AddFile(file.Path("/t/" + file.OpaqueWhiteout))
+	require.NoError(t, err)
+
+	assert.True(t, hasOpaqueDirectory(upper, "/t"))
+	assert.False(t, hasOpaqueDirectory(upper, "/x"))
+}
+
+// a malformed lower layer can hold entries under a symlink path (AddFile accepts them as children of the link). An
+// upper non-directory at that path masks everything under it ("non-directories are always opaque",
+// https://docs.kernel.org/filesystems/overlayfs.html), whether or not the upper link's target is opaque.
+func TestFileTree_Merge_UpperSymlinkMasksChildrenOfLowerSymlink(t *testing.T) {
+	lower := New()
+	_, err := lower.AddSymLink("/x", "/y")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/x/vuln")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddSymLink("/x", "/t")
+	require.NoError(t, err)
+	_, err = upper.AddDir("/t")
+	require.NoError(t, err)
+	_, err = upper.AddFile(file.Path("/t/" + file.OpaqueWhiteout))
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper))
+
+	assert.NotContainsf(t, lower.AllRealPaths(), file.Path("/x/vuln"), "an upper symlink masks the lower path's children; real paths are %v", lower.AllRealPaths())
+}
+
+// the same shape, but the upper link's target is not opaque
+func TestFileTree_Merge_UpperSymlinkMasksChildrenOfLowerSymlink_TargetNotOpaque(t *testing.T) {
+	lower := New()
+	_, err := lower.AddSymLink("/x", "/y")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/x/vuln")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddSymLink("/x", "/t")
+	require.NoError(t, err)
+	_, err = upper.AddDir("/t")
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper))
+
+	assert.NotContainsf(t, lower.AllRealPaths(), file.Path("/x/vuln"), "an upper symlink masks the lower path's children; real paths are %v", lower.AllRealPaths())
+}
+
+// the same rule for a lower regular file that holds a child (only a malformed layer can build one): an upper
+// non-directory at that path masks the child
+func TestFileTree_Merge_UpperFileMasksChildrenOfLowerFile(t *testing.T) {
+	lower := New()
+	_, err := lower.AddFile("/x")
+	require.NoError(t, err)
+	_, err = lower.AddFile("/x/vuln")
+	require.NoError(t, err)
+
+	upper := New()
+	_, err = upper.AddFile("/x")
+	require.NoError(t, err)
+
+	require.NoError(t, lower.Merge(upper))
+
+	assert.NotContainsf(t, lower.AllRealPaths(), file.Path("/x/vuln"), "an upper file masks the lower path's children; real paths are %v", lower.AllRealPaths())
+}
