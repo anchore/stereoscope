@@ -519,10 +519,7 @@ func (t *FileTree) AddFile(realPath file.Path) (*file.Reference, error) {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a regular file", realPath)
 		}
 		// this is a regular file, provide a new or existing file.Reference
-		if fna.FileNode.Reference == nil {
-			fna.FileNode.Reference = file.NewFileReference(realPath)
-		}
-		return fna.FileNode.Reference, nil
+		return t.ensureReference(fna.FileNode, realPath)
 	}
 
 	// this is a new path... add the new Node + parents
@@ -547,10 +544,7 @@ func (t *FileTree) AddSymLink(realPath file.Path, linkPath file.Path) (*file.Ref
 			return nil, fmt.Errorf("path=%q already exists but is NOT a symlink file", realPath)
 		}
 		// this is a symlink file, provide a new or existing file.Reference
-		if fna.FileNode.Reference == nil {
-			fna.FileNode.Reference = file.NewFileReference(realPath)
-		}
-		return fna.FileNode.Reference, nil
+		return t.ensureReference(fna.FileNode, realPath)
 	}
 
 	// this is a new path... add the new Node + parents
@@ -574,11 +568,8 @@ func (t *FileTree) AddHardLink(realPath file.Path, linkPath file.Path) (*file.Re
 		if fna.FileNode.FileType != file.TypeHardLink {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a hardlink file", realPath)
 		}
-		// this is a symlink file, provide a new or existing file.Reference
-		if fna.FileNode.Reference == nil {
-			fna.FileNode.Reference = file.NewFileReference(realPath)
-		}
-		return fna.FileNode.Reference, nil
+		// this is a hardlink file, provide a new or existing file.Reference
+		return t.ensureReference(fna.FileNode, realPath)
 	}
 
 	// this is a new path... add the new Node + parents
@@ -606,10 +597,7 @@ func (t *FileTree) AddDir(realPath file.Path) (*file.Reference, error) {
 			return nil, fmt.Errorf("path=%q already exists but is NOT a directory", realPath)
 		}
 		// this is a directory, provide a new or existing file.Reference
-		if fna.FileNode.Reference == nil {
-			fna.FileNode.Reference = file.NewFileReference(realPath)
-		}
-		return fna.FileNode.Reference, nil
+		return t.ensureReference(fna.FileNode, realPath)
 	}
 
 	// this is a new path... add the new Node + parents
@@ -619,6 +607,20 @@ func (t *FileTree) AddDir(realPath file.Path) (*file.Reference, error) {
 
 	newFn := filenode.NewDir(realPath, file.NewFileReference(realPath))
 	return newFn.Reference, t.setFileNode(newFn)
+}
+
+// ensureReference returns the file.Reference of the given existing node, swapping in a copy with a new reference if
+// it has none. Nodes are shared between tree copies, so they are never mutated in place.
+func (t *FileTree) ensureReference(fn *filenode.FileNode, realPath file.Path) (*file.Reference, error) {
+	if fn.Reference != nil {
+		return fn.Reference, nil
+	}
+	withRef := *fn
+	withRef.Reference = file.NewFileReference(realPath)
+	if err := t.tree.Replace(fn, &withRef); err != nil {
+		return nil, err
+	}
+	return withRef.Reference, nil
 }
 
 // addParentPaths adds paths into the Tree for all constituent paths, but does NOT attach a file.Reference for each new path.
@@ -746,7 +748,8 @@ func (t *FileTree) removeChildPaths(path file.Path, strategy linkResolutionStrat
 	return nil
 }
 
-// TreeReader returns a tree.Reader useful for Tree traversal.
+// TreeReader returns a tree.Reader useful for Tree traversal. The nodes it returns are shared with copies of this
+// FileTree (and the trees it was squashed from) and must not be modified.
 func (t *FileTree) TreeReader() tree.Reader {
 	return t.tree
 }
@@ -867,25 +870,28 @@ func (t *FileTree) Merge(upper Reader) error {
 			}
 		}
 
-		nodeCopy := *upperNode
+		// nodes are immutable, so the upper node can be shared as-is unless it needs the lower reference
+		graft := upperNode
 
 		// keep original file references if the upper tree does not have them (only for the same file types)
 		if lowerNode.HasFileNode() && lowerNode.FileNode.Reference != nil && upperNode.Reference == nil && upperNode.FileType == lowerNode.FileNode.FileType {
-			nodeCopy.Reference = lowerNode.FileNode.Reference
+			withRef := *upperNode
+			withRef.Reference = lowerNode.FileNode.Reference
+			graft = &withRef
 		}
 
-		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory && lowerNode.FileNode.FileType == file.TypeDirectory {
-			// NOTE: both upperNode and lowerNode paths are the same, and does not have an effect
-			// on removal of child paths. No link is followed: lowerNode was found at the literal real
-			// path and the condition above proves it is a directory.
-			err := t.RemoveChildPaths(upperNode.RealPath)
-			if err != nil {
-				return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory {
+			// a non-directory masks everything under its path, whatever the lower node is (a malformed lower layer
+			// can hold children under a symlink). Clear the lower node found above, never through a link.
+			for _, child := range t.tree.Children(lowerNode.FileNode) {
+				if _, err := t.tree.RemoveNode(child); err != nil {
+					return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+				}
 			}
 		}
-		// graft a copy of the upper Node with potential lower information into the lower tree
-		if err := t.setFileNode(&nodeCopy); err != nil {
-			return fmt.Errorf("filetree Merge failed to set file Node (Node=%+v): %w", nodeCopy, err)
+		// graft the upper Node (with potential lower information) into the lower tree
+		if err := t.setFileNode(graft); err != nil {
+			return fmt.Errorf("filetree Merge failed to set file Node (Node=%+v): %w", *graft, err)
 		}
 
 		return nil
@@ -897,7 +903,10 @@ func (t *FileTree) Merge(upper Reader) error {
 	return tree.NewDepthFirstWalkerWithConditions(upper.TreeReader(), visitor, conditions).WalkAll()
 }
 
+// hasOpaqueDirectory reports whether the given real path holds an opaque whiteout marker. Merge asks this of every
+// upper node, so a non-directory simply reports false. This is an exact node lookup with no link resolution (the
+// expensive part of HasPath), so a symlink that points at an opaque directory is not itself opaque.
 func hasOpaqueDirectory(t Reader, directoryPath file.Path) bool {
 	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
-	return t.HasPath(opaqueWhiteoutChild)
+	return t.TreeReader().Node(filenode.IDByPath(opaqueWhiteoutChild)) != nil
 }
