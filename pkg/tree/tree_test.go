@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
@@ -350,4 +351,37 @@ func TestTree(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTree_AddChild_Reparent(t *testing.T) {
+	setup := func(t *testing.T) (*Tree, node.Node, node.Node, node.Node) {
+		tr := NewTree()
+		zero, one, two, three := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3)
+		require.NoError(t, tr.AddRoot(zero))
+		require.NoError(t, tr.AddChild(zero, one))
+		require.NoError(t, tr.AddChild(zero, two))
+		require.NoError(t, tr.AddChild(one, three))
+		// reparent three from one to two
+		require.NoError(t, tr.AddChild(two, three))
+		assert.Empty(t, tr.Children(one))
+		assert.Equal(t, node.Nodes{three}, tr.Children(two))
+		assert.Equal(t, two, tr.Parent(three))
+		return tr, one, two, three
+	}
+
+	t.Run("remove new parent first", func(t *testing.T) {
+		tr, one, two, _ := setup(t)
+		_, err := tr.RemoveNode(two)
+		require.NoError(t, err)
+		_, err = tr.RemoveNode(one)
+		require.NoError(t, err)
+		assert.Equal(t, 1, tr.Length())
+	})
+
+	t.Run("remove old parent first", func(t *testing.T) {
+		tr, one, _, three := setup(t)
+		_, err := tr.RemoveNode(one)
+		require.NoError(t, err)
+		assert.True(t, tr.HasNode(three.ID()), "reparented node must not go with its old parent")
+	})
 }

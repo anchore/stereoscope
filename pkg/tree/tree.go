@@ -179,6 +179,11 @@ func (t *Tree) AddChild(from, to node.Node) error {
 		}
 	} else {
 		t.nodes[tid] = to
+		// reparenting an existing node must drop the edge from its old parent, otherwise removing the old parent
+		// would take this node (and its subtree) with it
+		if p := t.parent[tid]; p != nil && p.ID() != fid {
+			delete(t.children[p.ID()], tid)
+		}
 	}
 
 	t.children[fid][tid] = to
