@@ -8,12 +8,16 @@ import (
 	"io"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anchore/go-logger"
+	"github.com/anchore/go-logger/adapter/discard"
+	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
 )
@@ -548,4 +552,42 @@ func TestLazyLayerSquash_mergeErrorNamesTheLayer(t *testing.T) {
 	above := lazyLayerSquash(4, squash, filetree.New(), nil)
 	_, _, err = above.File("/a")
 	assert.ErrorContains(t, err, "failed to squash tree 3: merge refused")
+}
+
+// squashWarnings counts the warnings logged through internal/log (as pkg/filetree's lazy tests do, after the
+// capturing logger in internal/podman/ssh_knownhosts_test.go).
+type squashWarnings struct {
+	logger.Logger
+	warnings atomic.Int32
+}
+
+func (w *squashWarnings) WithFields(...any) logger.MessageLogger { return w }
+func (w *squashWarnings) Warn(...any)                            { w.warnings.Add(1) }
+func (w *squashWarnings) Warnf(string, ...any)                   { w.warnings.Add(1) }
+
+func TestImage_Read_lazyLayerSquashes_aBrokenLayerIsLoggedOnce(t *testing.T) {
+	// one lazy layer that can't be squashed fails every layer above it too, but it is one fault: a caller
+	// that searches and reads every layer should see one warning, not one per layer and search context
+	counter := &squashWarnings{Logger: discard.New()}
+	prev := log.Log
+	log.Log = counter
+	t.Cleanup(func() { log.Log = prev })
+
+	img := newImageFromLayers(t, lazySquashFixtureLayers(t)...)
+	img.onLazySquashBuild = func(idx int) {
+		if idx == 2 {
+			panic("boom")
+		}
+	}
+	require.NoError(t, img.Read(WithLazyLayerSquashes(context.Background())))
+
+	for idx, layer := range img.Layers[:len(img.Layers)-1] {
+		_, err := layer.SquashedSearchContext.SearchByGlob("**/*")
+		_, _, fileErr := layer.SquashedTree.File("/shared.txt")
+		if idx >= 2 {
+			require.Errorf(t, err, "layer %d search", idx)
+			require.Errorf(t, fileErr, "layer %d file", idx)
+		}
+	}
+	assert.Equal(t, int32(1), counter.warnings.Load(), "warnings for one broken layer")
 }

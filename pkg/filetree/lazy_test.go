@@ -943,3 +943,24 @@ func TestLazySearcher_ownPanicIsLogged(t *testing.T) {
 
 	assert.Equal(t, int32(1), counter.warnings.Load(), "warnings for one search context that failed to build")
 }
+
+func TestNewLazyReader_aFailedBuildIsLoggedOnce(t *testing.T) {
+	// one failure seen through a chain of lazy readers (as image layer squashes are: each one's build copies
+	// the one below) and through a search context should be one warning, not one per reader and searcher
+	// that passes it on. In a 40-layer image a failure at layer 2 would otherwise log the same warning 74
+	// times: once in the build and once in the search context of each lazy layer from 2 up to 38
+	counter := countWarnings(t)
+
+	lower := NewLazyReader(func() (ReadWriter, error) { return nil, errLazyBuild })
+	upper := NewLazyReader(func() (ReadWriter, error) { return lower.Copy() })
+	search := NewSearchContext(upper, NewIndex())
+
+	_, err := search.SearchByPath("/a")
+	require.ErrorIs(t, err, errLazyBuild)
+	_, _, err = upper.File("/a")
+	require.ErrorIs(t, err, errLazyBuild)
+	_, _, err = lower.File("/a")
+	require.ErrorIs(t, err, errLazyBuild)
+
+	assert.Equal(t, int32(1), counter.warnings.Load(), "warnings logged for one failed build")
+}
