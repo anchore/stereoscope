@@ -4,8 +4,6 @@ import (
 	"archive/tar"
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -14,14 +12,14 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 
 	"github.com/anchore/stereoscope/pkg/file"
 )
 
 // many-layer image for comparing eager and lazy layer squashes. Layer 0 has benchFilesPerLayer files,
 // every layer above rewrites benchOverwrites of the files below it, adds benchNewFiles new ones and a
-// few symlinks, so the image squash ends up with about 2000 + 39*500 files.
+// few symlinks, so the image squash ends up with benchFilesPerLayer + (benchLayerCount-1)*benchNewFiles
+// files (about 21.5k).
 const (
 	benchLayerCount    = 40
 	benchFilesPerLayer = 2000
@@ -36,7 +34,6 @@ func benchFilePath(n int) string {
 
 func benchLazySquashLayers(b *testing.B) []v1.Layer {
 	b.Helper()
-	dir := b.TempDir()
 	reg, sym := byte(tar.TypeReg), byte(tar.TypeSymlink)
 
 	var layers []v1.Layer
@@ -66,39 +63,9 @@ func benchLazySquashLayers(b *testing.B) []v1.Layer {
 				})
 			}
 		}
-		layers = append(layers, benchWriteLayer(b, filepath.Join(dir, fmt.Sprintf("layer-%02d.tar", idx)), entries))
+		layers = append(layers, layerFromTarEntries(b, entries...))
 	}
 	return layers
-}
-
-// benchWriteLayer is layerFromTarEntries for a benchmark.
-func benchWriteLayer(b *testing.B, tarPath string, entries []tarEntry) v1.Layer {
-	b.Helper()
-	fh, err := os.Create(tarPath)
-	if err != nil {
-		b.Fatal(err)
-	}
-	tw := tar.NewWriter(fh)
-	for _, e := range entries {
-		hdr := &tar.Header{Name: e.path, Typeflag: e.typeFlag, Linkname: e.linkPath, Mode: 0o644, Size: int64(len(e.contents))}
-		if err := tw.WriteHeader(hdr); err != nil {
-			b.Fatal(err)
-		}
-		if _, err := tw.Write([]byte(e.contents)); err != nil {
-			b.Fatal(err)
-		}
-	}
-	if err := tw.Close(); err != nil {
-		b.Fatal(err)
-	}
-	if err := fh.Close(); err != nil {
-		b.Fatal(err)
-	}
-	layer, err := tarball.LayerFromFile(tarPath)
-	if err != nil {
-		b.Fatal(err)
-	}
-	return layer
 }
 
 // heapSampler polls HeapInuse while the timed work runs, since the runtime keeps no peak.

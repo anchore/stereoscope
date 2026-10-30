@@ -32,7 +32,7 @@ type tarEntry struct {
 	mode int64
 }
 
-func layerFromTarEntries(t *testing.T, entries ...tarEntry) v1.Layer {
+func layerFromTarEntries(t testing.TB, entries ...tarEntry) v1.Layer {
 	t.Helper()
 
 	tarPath := filepath.Join(t.TempDir(), "layer.tar")

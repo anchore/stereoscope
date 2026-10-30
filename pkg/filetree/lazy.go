@@ -26,7 +26,9 @@ var _ Searcher = (*lazySearcher)(nil)
 //
 // If build fails (returns an error, returns no tree, or panics) it is not retried. Every method that can
 // return an error returns that failure, now and on every later call, and the methods that cannot
-// (AllFiles, AllRealPaths, HasPath and TreeReader) behave as if the tree were empty.
+// (AllFiles, AllRealPaths, HasPath and TreeReader) behave as if the tree were empty. The failure is
+// logged once and returned wrapped, so compare it with errors.Is or errors.As rather than ==. A build
+// that returns another lazy reader's failure unchanged is not logged again.
 //
 // build must not call methods on the reader it is building: the call would wait on itself forever. It
 // should return a tree made with New (or a copy of one) if the reader is going to be passed to
@@ -54,7 +56,12 @@ func (r *lazyReader) realize() (ReadWriter, error) {
 				r.err = errors.New("building lazy file tree returned no tree")
 			}
 			if r.err != nil {
-				log.WithFields("error", r.err).Warn("unable to build lazy file tree, treating it as empty")
+				// a build that returned, as is, the failure of a lazy reader below it (a layer squash
+				// copying the one under it) was logged there. Anything it wrapped or joined is new
+				if _, logged := r.err.(*loggedBuildError); !logged {
+					log.WithFields("error", r.err).Warn("unable to build lazy file tree")
+					r.err = &loggedBuildError{r.err}
+				}
 				r.tree = New()
 			}
 			// drop the closure and whatever it captured, it can never run again
@@ -64,6 +71,12 @@ func (r *lazyReader) realize() (ReadWriter, error) {
 	})
 	return r.tree, r.err
 }
+
+// loggedBuildError is a failed build's error once realize has logged it, so that whatever passes it on (a
+// lazy reader built from this one, a search context over it) doesn't log it again.
+type loggedBuildError struct{ error }
+
+func (e *loggedBuildError) Unwrap() error { return e.error }
 
 // isNilTree reports whether t holds no tree, including a typed nil (a nil *FileTree in a non-nil
 // interface), which would otherwise slip past a nil check and panic on first use.
@@ -152,10 +165,9 @@ type lazySearcher struct {
 func (s *lazySearcher) get() (Searcher, error) {
 	s.once.Do(func() {
 		defer func() {
+			// only a failure of the search context itself is logged here: realize logs its own
 			if p := recover(); p != nil {
 				s.searcher, s.err = nil, fmt.Errorf("building lazy search context panicked: %v", p)
-			}
-			if s.err != nil {
 				log.WithFields("error", s.err).Warn("unable to build lazy search context")
 			}
 			s.index = nil
