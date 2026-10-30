@@ -846,3 +846,24 @@ func realPaths(refs []file.Resolution) []string {
 	}
 	return paths
 }
+
+func Test_searchContext_nilIndex(t *testing.T) {
+	tree := New()
+	_, err := tree.AddFile("/path/to/file.txt")
+	require.NoError(t, err)
+	_, err = tree.AddSymLink("/link-to-file.txt", "/path/to/file.txt")
+	require.NoError(t, err)
+
+	sc := NewSearchContext(tree, nil)
+
+	// both the file and the link match, and both resolve to the real file
+	got, err := sc.SearchByGlob("**/*.txt")
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	for _, ref := range got {
+		require.Equal(t, file.Path("/path/to/file.txt"), ref.RealPath)
+	}
+
+	_, err = sc.SearchByMIMEType("text/plain")
+	require.ErrorContains(t, err, "no index available")
+}
