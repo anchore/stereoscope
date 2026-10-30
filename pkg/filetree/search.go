@@ -20,6 +20,11 @@ import (
 // Searcher is a facade for searching a file tree with optional indexing support. All three methods skip paths
 // whose links are malformed (see IsUnresolvableLink) rather than failing the search, so a nil or absent result
 // means "absent or unresolvable".
+//
+// Index-backed searches (SearchByMIMEType, and SearchByGlob when an index is present) return at most one resolution
+// per file: at its real path when that matches, otherwise through the lexicographically first link path that does.
+// A tree walk (SearchByGlob without an index) returns every matching access path, so /lib/x.so and /usr/lib/x.so
+// both come back for a usrmerge image where an index-backed search returns only /usr/lib/x.so.
 type Searcher interface {
 	// SearchByPath returns nil with a nil error when the path is absent OR its link cannot be resolved.
 	SearchByPath(path string, options ...LinkResolutionOption) (*file.Resolution, error)
@@ -236,27 +241,36 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 		return nil, fmt.Errorf("unable to search by parent-basename=%q: %w", request.indexLookup, err)
 	}
 
-	// the index spans all layers, so a directory is indexed once per layer that wrote it, and a lower layer's entry
-	// may no longer exist at its real path (e.g. an ancestor was replaced by a symlink). Only list each directory
-	// once and only where it really lives, otherwise its children surface again through the link. This cannot use
-	// fileNodesInTree: implicitly created parent directories have no reference of their own to match against.
+	// unlike the other index searches, stale entries are deliberately kept (no fileNodesInTree filter). An entry only
+	// claims a directory with this basename lives at its path, which still holds when an upper layer reroutes an
+	// ancestor through a symlink, and when the link target was only created implicitly it has no index entry of its
+	// own, so the stale entry is the only way to find it. Each entry is resolved to the directory it really is and
+	// listed there once: this dedupes entries from several layers (or several paths) that land on one directory, and
+	// like the other index searches, a path through a link is only returned when the real path does not match.
 	var results []file.Resolution
 	listed := file.NewPathSet()
 	for _, i := range indexes {
-		if listed.Contains(i.RealPath) {
+		na, err := sc.tree.node(i.RealPath, linkResolutionStrategy{FollowAncestorLinks: true, FollowBasenameLinks: true})
+		if IsUnresolvableLink(err) {
+			log.WithFields("path", i.RealPath, "error", err).Trace("skipping parent directory with malformed link during search")
 			continue
 		}
-		listed.Add(i.RealPath)
-		// a literal lookup never follows links, so it cannot fail
-		na, _ := sc.tree.node(i.RealPath, linkResolutionStrategy{})
-		if !na.HasFileNode() {
-			continue
-		}
-
-		paths, err := sc.tree.ListPaths(i.RealPath)
 		if err != nil {
-			// this may not be a directory, that's alright, just continue...
+			return nil, fmt.Errorf("unable to resolve parent path=%q: %w", i.RealPath, err)
+		}
+		if !na.HasFileNode() || na.FileNode.FileType != file.TypeDirectory {
+			// a missing path or a non-directory has nothing to list
 			continue
+		}
+		dir := na.FileNode.RealPath
+		if listed.Contains(dir) {
+			continue
+		}
+		listed.Add(dir)
+
+		paths, err := sc.tree.ListPaths(dir)
+		if err != nil {
+			return nil, fmt.Errorf("unable to list parent path=%q: %w", dir, err)
 		}
 		for _, p := range paths {
 			nestedRef, err := sc.firstMatchingReference(request.glob, string(p))
@@ -376,8 +390,9 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 
 		nodeID := na.FileNode.ID()
 
-		// check all paths to the node that are linked to any parent dir
-		for _, linkSrcID := range sc.linkBackwardRefs[nodeID].List() {
+		// check all paths to the node that are linked to any parent dir. IDs are paths, so sorting makes the first
+		// matching link path (and therefore the search result) the same from run to run
+		for _, linkSrcID := range sc.linkBackwardRefs[nodeID].Sorted() {
 			pfn := sc.tree.tree.Node(linkSrcID)
 			if pfn == nil {
 				log.WithFields("id", nodeID, "parent", linkSrcID).Trace("found non-existent parent link")

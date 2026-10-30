@@ -647,17 +647,7 @@ func Test_searchContext_SearchByGlob_layeredPaths(t *testing.T) {
 func Test_searchContext_layeredAncestors(t *testing.T) {
 	idx := NewIndex()
 	add := func(tr *FileTree, p file.Path, m file.Metadata) *file.Reference {
-		var ref *file.Reference
-		var err error
-		switch m.Type {
-		case file.TypeDirectory:
-			ref, err = tr.AddDir(p)
-		default:
-			ref, err = tr.AddFile(p)
-		}
-		require.NoError(t, err)
-		idx.Add(*ref, m)
-		return ref
+		return addIndexed(t, idx, tr, p, m)
 	}
 
 	// lower: /lib and /usr/lib are real directories, /a/status.d and /b/status.d are dpkg-style status dirs,
@@ -709,8 +699,9 @@ func Test_searchContext_layeredAncestors(t *testing.T) {
 		require.Empty(t, searchHits(got))
 	})
 
-	t.Run("parent directory under a replaced ancestor is not listed", func(t *testing.T) {
-		// basename and parent directory searches should agree: /b/status.d/y is only reachable via /a by the link
+	t.Run("parent directory under a replaced ancestor is listed once at its real path", func(t *testing.T) {
+		// basename and parent directory searches should agree: the stale /a/status.d entry resolves to /b/status.d,
+		// which is listed once, and /b/status.d/y is returned at its real path rather than through the link
 		got, err := sc.SearchByGlob("**/status.d/*")
 		require.NoError(t, err)
 		require.Equal(t, []searchHit{{"/b/status.d/y", statusRef.ID()}}, searchHits(got))
@@ -721,12 +712,10 @@ func Test_searchContext_layeredAncestors(t *testing.T) {
 	})
 
 	t.Run("implicit directory under a replaced ancestor is still listed", func(t *testing.T) {
-		// the only "conf.d" index entry is the lower layer's /c/conf.d; the
-		// live /d/conf.d is only reachable through the link and has no index entry of its own:
+		// the only "conf.d" index entry is the lower layer's /c/conf.d; the live /d/conf.d is only reachable
+		// through the link and has no index entry of its own, so the stale entry must be followed:
 		//
-		//   index "conf.d" ──> /c/conf.d ──literal lookup──> /c is a symlink, not a dir ──> skipped
-		//                           │
-		//                           └──follow /c -> /d──> /d/conf.d (implicit, unindexed) ──> z   (never reached)
+		//   index "conf.d" ──> /c/conf.d ──follow /c -> /d──> /d/conf.d (implicit, unindexed) ──list──> /d/conf.d/z
 		got, err := sc.SearchByGlob("**/z")
 		require.NoError(t, err)
 		require.Equal(t, []searchHit{{"/d/conf.d/z", confRef.ID()}}, searchHits(got))
@@ -735,6 +724,185 @@ func Test_searchContext_layeredAncestors(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []searchHit{{"/d/conf.d/z", confRef.ID()}}, searchHits(got))
 	})
+}
+
+// Test_searchContext_SearchByGlob_parentDirUnderRelinkedAncestor covers a lower layer's directory entry whose path an
+// upper layer reroutes through a symlink. The entry is stale (no node lives at its real path any more), but the path
+// still resolves to a directory with the same basename, so its children must still be found. When the link target was
+// only created implicitly (no index entry of its own) the stale entry is the only way to find it.
+func Test_searchContext_SearchByGlob_parentDirUnderRelinkedAncestor(t *testing.T) {
+	type hit struct {
+		RequestPath, RealPath file.Path
+	}
+	tests := []struct {
+		name           string
+		indexTargetDir bool // whether /b/status.d has its own index entry or is only an implicit parent
+		link, target   file.Path
+		upper          func(t *testing.T, idx Index, u *FileTree) // replaces the link/target step when set
+		glob           string
+		want           []hit
+		// index searches return a path through a link only when the real path does not match the glob, while a
+		// tree walk returns every path
+		walkFindsMore bool
+	}{
+		{
+			name:           "ancestor relinked, target dir indexed",
+			indexTargetDir: true,
+			link:           "/a",
+			target:         "/b",
+			glob:           "**/status.d/*",
+			want:           []hit{{"/b/status.d/y", "/b/status.d/y"}},
+			walkFindsMore:  true,
+		},
+		{
+			name:           "ancestor relinked, target dir indexed, glob only matches through the link",
+			indexTargetDir: true,
+			link:           "/a",
+			target:         "/b",
+			glob:           "**/a/status.d/*",
+			want:           []hit{{"/a/status.d/y", "/b/status.d/y"}},
+		},
+		{
+			// only the stale /a/status.d entry leads here, since /b/status.d has no entry of its own
+			name:          "ancestor relinked, target dir implicit",
+			link:          "/a",
+			target:        "/b",
+			glob:          "**/status.d/*",
+			want:          []hit{{"/b/status.d/y", "/b/status.d/y"}},
+			walkFindsMore: true,
+		},
+		{
+			name:   "ancestor relinked, target dir implicit, glob only matches through the link",
+			link:   "/a",
+			target: "/b",
+			glob:   "**/a/status.d/*",
+			want:   []hit{{"/a/status.d/y", "/b/status.d/y"}},
+		},
+		{
+			name:           "directory itself relinked",
+			indexTargetDir: true,
+			link:           "/a/status.d",
+			target:         "/c/dpkg",
+			glob:           "**/status.d/*",
+			want:           []hit{{"/b/status.d/y", "/b/status.d/y"}, {"/a/status.d/z", "/c/dpkg/z"}},
+		},
+		{
+			// two links to one directory, neither real path matches: the first link path (sorted) is returned,
+			// every time
+			name:           "two links to one directory",
+			indexTargetDir: true,
+			link:           "/e/status.d",
+			target:         "/c/dpkg",
+			upper: func(t *testing.T, idx Index, u *FileTree) {
+				addIndexedLink(t, idx, u, "/a/status.d", "/c/dpkg")
+				addIndexedLink(t, idx, u, "/e/status.d", "/c/dpkg")
+			},
+			glob:          "**/status.d/*",
+			want:          []hit{{"/b/status.d/y", "/b/status.d/y"}, {"/a/status.d/z", "/c/dpkg/z"}},
+			walkFindsMore: true,
+		},
+		// the stale /a/status.d entry is kept on purpose, so prove a directory that is really gone stays gone
+		{
+			name:           "ancestor whited out",
+			indexTargetDir: true,
+			upper: func(t *testing.T, _ Index, u *FileTree) {
+				_, err := u.AddFile("/.wh.a")
+				require.NoError(t, err)
+			},
+			glob: "**/status.d/*",
+			want: []hit{{"/b/status.d/y", "/b/status.d/y"}},
+		},
+		{
+			name:           "ancestor replaced by a file",
+			indexTargetDir: true,
+			upper: func(t *testing.T, idx Index, u *FileTree) {
+				addIndexed(t, idx, u, "/a", file.Metadata{Type: file.TypeRegular})
+			},
+			glob: "**/status.d/*",
+			want: []hit{{"/b/status.d/y", "/b/status.d/y"}},
+		},
+		{
+			name:           "ancestor in a link cycle",
+			indexTargetDir: true,
+			upper: func(t *testing.T, idx Index, u *FileTree) {
+				addIndexedLink(t, idx, u, "/a", "/e")
+				addIndexedLink(t, idx, u, "/e", "/a")
+			},
+			glob: "**/status.d/*",
+			want: []hit{{"/b/status.d/y", "/b/status.d/y"}},
+		},
+		{
+			name:           "ancestor is a dead link",
+			indexTargetDir: true,
+			link:           "/a",
+			target:         "/nowhere",
+			glob:           "**/status.d/*",
+			want:           []hit{{"/b/status.d/y", "/b/status.d/y"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			idx := NewIndex()
+			lower := New()
+			addIndexed(t, idx, lower, "/a/status.d", file.Metadata{Type: file.TypeDirectory})
+			if tt.indexTargetDir {
+				addIndexed(t, idx, lower, "/b/status.d", file.Metadata{Type: file.TypeDirectory})
+			}
+			addIndexed(t, idx, lower, "/b/status.d/y", file.Metadata{Type: file.TypeRegular})
+			addIndexed(t, idx, lower, "/c/dpkg/z", file.Metadata{Type: file.TypeRegular})
+
+			upper := New()
+			if tt.upper != nil {
+				tt.upper(t, idx, upper)
+			} else {
+				addIndexedLink(t, idx, upper, tt.link, tt.target)
+			}
+
+			squashed := squashTrees(t, lower, upper)
+
+			got, err := NewSearchContext(squashed, idx).SearchByGlob(tt.glob)
+			require.NoError(t, err)
+			var gotHits []hit
+			for _, r := range got {
+				gotHits = append(gotHits, hit{r.RequestPath, r.RealPath})
+			}
+			require.Equal(t, tt.want, gotHits)
+
+			// the index is only an accelerator, it must agree with walking the tree
+			walked, err := NewSearchContext(squashed, nil).SearchByGlob(tt.glob)
+			require.NoError(t, err)
+			if tt.walkFindsMore {
+				require.Subset(t, walked, got)
+				return
+			}
+			require.Equal(t, walked, got)
+		})
+	}
+}
+
+// addIndexed adds a directory or file to the tree and records it in the index with the given metadata
+func addIndexed(t *testing.T, idx Index, tr *FileTree, p file.Path, m file.Metadata) *file.Reference {
+	t.Helper()
+	var ref *file.Reference
+	var err error
+	switch m.Type {
+	case file.TypeDirectory:
+		ref, err = tr.AddDir(p)
+	default:
+		ref, err = tr.AddFile(p)
+	}
+	require.NoError(t, err)
+	idx.Add(*ref, m)
+	return ref
+}
+
+// addIndexedLink adds a symlink to the tree and records it in the index
+func addIndexedLink(t *testing.T, idx Index, tr *FileTree, p, target file.Path) *file.Reference {
+	t.Helper()
+	ref, err := tr.AddSymLink(p, target)
+	require.NoError(t, err)
+	idx.Add(*ref, file.Metadata{Type: file.TypeSymLink})
+	return ref
 }
 
 func Test_complexSymlinkPerformance(t *testing.T) {
