@@ -876,3 +876,16 @@ func TestNewLazySquash_mergeErrorNamesTheLayer(t *testing.T) {
 	_, _, err = NewLazySquash(layer3, New()).File("/a")
 	assert.ErrorContains(t, err, "failed to squash tree 3: merge refused")
 }
+
+func TestNewLazySquash_aboveAFailureTriesOnce(t *testing.T) {
+	// a squash above a failed one tries once, gets the failure, and never retries. below is wrapped to count
+	// the attempts, so it is no longer a lazy squash and this one numbers itself 1, which doesn't matter here
+	below := &countingCopy{Reader: newLazyReader(2, func() (ReadWriter, error) { return nil, errLazyBuild })}
+	above := NewLazySquash(below, New())
+	for range 3 {
+		for name, call := range readerErrCalls {
+			assert.ErrorIs(t, call(above), errLazyBuild, name)
+		}
+	}
+	assert.EqualValues(t, 1, below.copies.Load())
+}
