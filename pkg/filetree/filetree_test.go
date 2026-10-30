@@ -1477,3 +1477,25 @@ func TestFileTree_ListPaths_SkipsLinkCycles(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []file.Path{"/usr/bin/keep"}, paths)
 }
+
+func TestFileTree_Copy_SharedNodesAreNotMutated(t *testing.T) {
+	// copies share nodes, so filling in a reference on one side must not show up on the other
+	original := New()
+	_, err := original.AddFile("/a/b")
+	require.NoError(t, err)
+
+	cp, err := original.Copy()
+	require.NoError(t, err)
+
+	ref, err := cp.AddDir("/a")
+	require.NoError(t, err)
+	require.NotNil(t, ref)
+
+	_, origRes, err := original.File("/a")
+	require.NoError(t, err)
+	assert.Nil(t, origRes.Reference)
+
+	_, cpRes, err := cp.File("/a")
+	require.NoError(t, err)
+	assert.Equal(t, ref, cpRes.Reference)
+}

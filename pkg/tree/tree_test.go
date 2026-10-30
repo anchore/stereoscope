@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/anchore/stereoscope/pkg/tree/node"
 )
@@ -316,19 +317,15 @@ func TestTree(t *testing.T) {
 		{
 			name: "has nodes-children-parent",
 			fields: &Tree{
-				nodes: map[node.ID]node.Node{
-					zero.ID(): zero,
-					one.ID():  one,
+				nodes: map[node.ID]entry{
+					zero.ID(): {node: zero},
+					one.ID():  {node: one, parent: four.ID(), hasParent: true},
 				},
-				children: map[node.ID]map[node.ID]node.Node{
+				children: map[node.ID]map[node.ID]struct{}{
 					one.ID(): {
-						two.ID():   two,
-						three.ID(): nil,
+						two.ID():   {},
+						three.ID(): {},
 					},
-				},
-				parent: map[node.ID]node.Node{
-					four.ID(): nil,
-					one.ID():  one,
 				},
 			},
 			roots:    node.Nodes{zero},
@@ -349,5 +346,53 @@ func TestTree(t *testing.T) {
 				assert.False(t, tt.fields.HasNode(tt.notThere))
 			}
 		})
+	}
+}
+
+func TestTree_Copy_IsIsolated(t *testing.T) {
+	zero, one, two, three, four := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3), newTestNode(4)
+	original := NewTree()
+	require.NoError(t, original.AddRoot(zero))
+	require.NoError(t, original.AddChild(zero, one))
+	require.NoError(t, original.AddChild(one, two))
+	require.NoError(t, original.AddChild(zero, three))
+
+	cp := original.Copy()
+	// every mutating op on the copy, touching existing child sets (the root's, one's) and creating new ones
+	require.NoError(t, cp.AddChild(two, four))
+	require.NoError(t, cp.AddChild(one, newTestNode(5)))
+	require.NoError(t, cp.Replace(three, newTestNode(6)))
+	_, err := cp.RemoveNode(one)
+	require.NoError(t, err)
+
+	assert.Equal(t, 4, original.Length())
+	assert.ElementsMatch(t, node.Nodes{one, three}, original.Children(zero))
+	assert.Equal(t, node.Nodes{two}, original.Children(one))
+	assert.Empty(t, original.Children(two))
+	assert.Equal(t, one, original.Parent(two))
+	assert.False(t, original.HasNode(four.ID()))
+}
+
+// a realistic shape (nested dirs, one child set per dir) rather than a flat one, which flatters the alloc count
+func BenchmarkTree_Copy(b *testing.B) {
+	tr := NewTree()
+	root := newTestNode("/")
+	require.NoError(b, tr.AddRoot(root))
+	var add func(parent node.Node, prefix string, depth int)
+	add = func(parent node.Node, prefix string, depth int) {
+		for i := 0; i < 10; i++ {
+			child := newTestNode(fmt.Sprintf("%s/%d", prefix, i))
+			require.NoError(b, tr.AddChild(parent, child))
+			if depth > 0 {
+				add(child, string(child.ID()), depth-1)
+			}
+		}
+	}
+	add(root, "", 3) // ~11k nodes, ~1.1k dirs
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tr.Copy()
 	}
 }
