@@ -32,7 +32,14 @@ type searchContext struct {
 	linkBackwardRefs map[node.ID]node.IDSet // {link-destination-node-id: str([link-node-id, ...])}
 }
 
+// NewSearchContext returns a Searcher over the given tree, using the index to answer searches. Given a
+// reader from NewLazyReader, neither the tree nor the link resolution index is built until the first
+// search.
 func NewSearchContext(tree Reader, index IndexReader) Searcher {
+	if l, ok := tree.(*lazyReader); ok {
+		return &lazySearcher{tree: l, index: index}
+	}
+
 	c := &searchContext{
 		tree:             tree.(*FileTree),
 		index:            index,
