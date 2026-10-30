@@ -49,6 +49,10 @@ type Image struct {
 	SquashedSearchContext filetree.Searcher
 
 	overrideMetadata []AdditionalMetadata
+
+	// onLazySquashBuild is a test hook: when set, it is called with the layer index every time a lazy layer
+	// squash starts building
+	onLazySquashBuild func(layerIdx int)
 }
 
 type AdditionalMetadata func(*Image) error
@@ -204,7 +208,8 @@ func (i *Image) applyOverrideMetadata() error {
 
 // Read parses information from the underlying image tar into this struct. This includes image metadata, layer
 // metadata, layer file trees, and layer squash trees (which implies the image squash tree). Under
-// WithImageSquashOnly only the top layer's squash, the image squash, is kept.
+// WithLazyLayerSquashes only the top layer's squash, the image squash, is built here, and every lower
+// layer's squash is built the first time something uses it.
 //
 // The context bounds the read: cancelling it abandons work that has not started and stops the
 // layer pools from picking up more. It does not return until the layer work already in flight has
@@ -214,7 +219,7 @@ func (i *Image) applyOverrideMetadata() error {
 // How long that wait is depends on the source. A registry fetch aborts with the caller's context,
 // but a daemon or archive fetch reads a local tar through go-containerregistry, which takes no
 // context, and indexing a layer is never interruptible. So a cancelled read costs up to one fetch
-// plus one index per in-flight worker slot.
+// plus one index per in-flight worker slot, plus the one layer squash in progress.
 func (i *Image) Read(ctx context.Context) error {
 	startTime := time.Now()
 
@@ -310,7 +315,7 @@ func (i *Image) readAndSquashLayers(ctx context.Context, layers []*Layer, fileCa
 	squashDigest := i.Metadata.ID
 	go func() {
 		squashStart := time.Now()
-		err := i.squashLayers(layers, gates, readProg, !imageSquashOnly(ctx))
+		err := i.squashLayers(ctx, layers, gates, readProg, !lazyLayerSquashes(ctx))
 		log.WithFields("digest", squashDigest, "time", time.Since(squashStart)).Trace("completed image squash")
 		squashDone <- err
 	}()
@@ -511,24 +516,30 @@ const (
 	LayerIndexExecutor = "layer-index"
 )
 
-type imageSquashOnlyKey struct{}
+type lazyLayerSquashesKey struct{}
 
-// WithImageSquashOnly returns a context that tells Read to keep only the image squash. By default
-// every layer keeps its own squashed tree, and since each one is a full copy of the tree below it,
-// memory grows with layers x files. Use this when nothing needs a per-layer squash (for example a
-// squashed-scope scan): Layer.SquashedTree and Layer.SquashedSearchContext are then nil on every
-// layer except the top one. On those layers ResolveLinkByLayerSquash and the Layer *FromSquash
-// accessors (OpenPathFromSquash, FileContentsFromSquash, FilesByMIMETypeFromSquash) return an error.
+// WithLazyLayerSquashes returns a context that tells Read to build only the image squash (the top
+// layer's), and to build every lower layer's squash the first time something uses it. By default Read
+// builds every layer's squash, and since each one is a full copy of the tree below it, memory grows
+// with layers x files. Use this when you expect to need only the image squash (for example a
+// squashed-scope scan): lower layers then cost nothing.
 //
-// It applies to every Read under the returned context and cannot be switched back off in a child
-// context, so set it on a context scoped to the one read, never on one shared with reads that need
-// per-layer squashes. stereoscope.WithImageSquashOnly scopes it to a single GetImage call.
-func WithImageSquashOnly(ctx context.Context) context.Context {
-	return context.WithValue(ctx, imageSquashOnlyKey{}, true)
+// Lower layers still work, Layer.SquashedTree and Layer.SquashedSearchContext are never nil, but:
+//   - the first call that touches a lower layer builds its squash, and the squash of every layer below
+//     it that has not been built yet. That call can take a while and cannot be cancelled, since no
+//     context reaches it. Concurrent callers wait for the same build rather than repeating it.
+//   - a failed build no longer fails Read. Methods that return an error report it, and the rest see
+//     an empty tree (see filetree.NewLazyReader).
+//   - a lower layer's SquashedTree is not a *filetree.FileTree, so type assertions on it fail.
+//
+// It applies to every Read under the returned context, so set it on a context scoped to the reads
+// that want it.
+func WithLazyLayerSquashes(ctx context.Context) context.Context {
+	return context.WithValue(ctx, lazyLayerSquashesKey{}, true)
 }
 
-func imageSquashOnly(ctx context.Context) bool {
-	v, _ := ctx.Value(imageSquashOnlyKey{}).(bool)
+func lazyLayerSquashes(ctx context.Context) bool {
+	v, _ := ctx.Value(lazyLayerSquashesKey{}).(bool)
 	return v
 }
 
@@ -651,10 +662,14 @@ func layerReadWorkers(layers int) int {
 // squash generates a squash tree for each layer in the image. For instance, layer 2 squash =
 // squash(layer 0, layer 1, layer 2), layer 3 squash = squash(layer 0, layer 1, layer 2, layer 3), and so on.
 //
-// Without keepLayerSquashes only the top layer gets a squash (and search context). Nothing else
-// can see the squash below the top, so each layer is merged onto it in place rather than onto a copy.
-func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.Manual, keepLayerSquashes bool) error {
+// With eager set every layer's squash is built here, each onto a copy of the one below. Otherwise only
+// the top layer's squash (the image squash) is built here, merged in place since no layer below it keeps
+// that tree, and every lower layer gets a lazy squash that is built from its own chain on first use.
+func (i *Image) squashLayers(ctx context.Context, layers []*Layer, gates *layerGates, prog *progress.Manual, eager bool) error {
+	// eager: the squash of the layer below. Lazy: the image squash so far, merged into in place.
 	var lastSquashTree filetree.ReadWriter
+	// lazy only: the lazy squash of the layer below, which the next lazy squash is built from
+	var lazyBelow filetree.Reader
 
 	for idx, layer := range layers {
 		if !gates.wait(idx) {
@@ -664,22 +679,67 @@ func (i *Image) squashLayers(layers []*Layer, gates *layerGates, prog *progress.
 			// context over a layer that was never squashed, which panics on the nil tree.
 			return fmt.Errorf("unable to squash: layer %d was not indexed", idx)
 		}
+		// checked per layer since the squash keeps running after the last layer is indexed, and Read
+		// waits for it, so without this a cancel can't stop the copies left to do
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("unable to squash layer %d: %w", idx, err)
+		}
 
-		squashedTree, err := squashOnto(lastSquashTree, layer.Tree.(filetree.ReadWriter), keepLayerSquashes)
+		layerTree := layer.Tree.(filetree.ReadWriter)
+		squashedTree, err := squashOnto(lastSquashTree, layerTree, eager)
 		if err != nil {
 			return fmt.Errorf("failed to squash tree %d: %w", idx, err)
 		}
 		lastSquashTree = squashedTree
 
-		if keepLayerSquashes || idx == len(layers)-1 {
+		if eager || idx == len(layers)-1 {
 			layer.SquashedTree = squashedTree
-			layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
+		} else {
+			// never the in-place tree above: it keeps changing as later layers are merged into it
+			layer.SquashedTree = lazyLayerSquash(idx, lazyBelow, layerTree, i.onLazySquashBuild)
+			lazyBelow = layer.SquashedTree
 		}
+		// for a lazy squash this is lazy too, and builds nothing until the first search
+		layer.SquashedSearchContext = filetree.NewSearchContext(layer.SquashedTree, layer.fileCatalog.Index)
 
 		prog.Increment()
 	}
 
 	return nil
+}
+
+// lazyLayerSquash returns the squash for layer idx, built on first use from the squash of the layer
+// below it (nil for the lowest layer). Copying below realizes it first, so the first use of layer k
+// builds every layer from 0 to k that has not been built yet, each exactly once. Only layer trees and
+// realized lower squashes are read, and neither is ever written, so concurrent builds are safe.
+func lazyLayerSquash(idx int, below filetree.Reader, layerTree filetree.ReadWriter, onBuild func(int)) filetree.Reader {
+	return filetree.NewLazyReader(func() (_ filetree.ReadWriter, err error) {
+		// recovered here rather than left to NewLazyReader so the error names this layer, which is what
+		// every layer above it reports too
+		defer func() {
+			if p := recover(); p != nil {
+				err = fmt.Errorf("failed to squash tree %d: panicked: %v", idx, p)
+			}
+		}()
+		if onBuild != nil {
+			onBuild(idx)
+		}
+		var lower filetree.ReadWriter
+		if below != nil {
+			copied, err := below.Copy()
+			if err != nil {
+				// already names the layer that failed, every layer above it fails the same way
+				return nil, err
+			}
+			lower = copied
+		}
+		// lower is this build's own copy, so merging into it in place is safe
+		squashedTree, err := squashOnto(lower, layerTree, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to squash tree %d: %w", idx, err)
+		}
+		return squashedTree, nil
+	})
 }
 
 // squashOnto applies layerTree onto the squash below it (nil for the lowest layer). The lower squash
