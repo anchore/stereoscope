@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -156,9 +157,24 @@ func (sc searchContext) SearchByGlob(pattern string, options ...LinkResolutionOp
 		allRefs = append(allRefs, refs...)
 	}
 
+	// overlapping alternation sections (e.g. {a.txt,*.txt}) and directories written by several layers can
+	// surface the same request path more than once
+	allRefs = uniqueResolutions(allRefs)
+
 	sort.Sort(file.Resolutions(allRefs))
 
 	return allRefs, nil
+}
+
+func uniqueResolutions(refs []file.Resolution) []file.Resolution {
+	seen := file.NewPathSet()
+	return slices.DeleteFunc(refs, func(ref file.Resolution) bool {
+		if seen.Contains(ref.RequestPath) {
+			return true
+		}
+		seen.Add(ref.RequestPath)
+		return false
+	})
 }
 
 // searchByRequest requires a non-nil index (see the guard in SearchByGlob).
