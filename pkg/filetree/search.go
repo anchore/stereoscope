@@ -39,7 +39,7 @@ type searchContext struct {
 // fall back to walking the whole tree and MIME type searches return an error. Path searches never use the index.
 func NewSearchContext(tree Reader, index IndexReader) Searcher {
 	if l, ok := tree.(*lazyReader); ok {
-		return &lazySearcher{tree: l, index: index}
+		return newLazySearcher(l, index)
 	}
 
 	c := &searchContext{

@@ -3,7 +3,6 @@ package filetree
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"sync"
 
 	"github.com/anchore/stereoscope/internal/log"
@@ -34,42 +33,33 @@ var _ Searcher = (*lazySearcher)(nil)
 // should return a tree made with New (or a copy of one) if the reader is going to be passed to
 // NewSearchContext.
 func NewLazyReader(build func() (ReadWriter, error)) Reader {
-	return &lazyReader{build: build}
+	// OnceValues drops build once it has run, along with whatever it captured
+	return &lazyReader{realize: sync.OnceValues(func() (t ReadWriter, err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				err = fmt.Errorf("building lazy file tree panicked: %v", p)
+			}
+			if err == nil && isNilTree(t) {
+				err = errors.New("building lazy file tree returned no tree")
+			}
+			if err != nil {
+				// a build that returned, as is, the failure of a lazy reader below it (a layer squash
+				// copying the one under it) was logged there. Anything it wrapped or joined is new
+				if _, logged := err.(*loggedBuildError); !logged {
+					log.WithFields("error", err).Warn("unable to build lazy file tree")
+					err = &loggedBuildError{err}
+				}
+				t = New()
+			}
+		}()
+		return build()
+	})}
 }
 
 type lazyReader struct {
-	once  sync.Once
-	build func() (ReadWriter, error)
-	tree  ReadWriter
-	err   error
-}
-
-// realize builds the tree on first use. The tree is never nil once this returns, so the methods that
-// cannot report an error always have something to delegate to.
-func (r *lazyReader) realize() (ReadWriter, error) {
-	r.once.Do(func() {
-		defer func() {
-			if p := recover(); p != nil {
-				r.err = fmt.Errorf("building lazy file tree panicked: %v", p)
-			}
-			if r.err == nil && isNilTree(r.tree) {
-				r.err = errors.New("building lazy file tree returned no tree")
-			}
-			if r.err != nil {
-				// a build that returned, as is, the failure of a lazy reader below it (a layer squash
-				// copying the one under it) was logged there. Anything it wrapped or joined is new
-				if _, logged := r.err.(*loggedBuildError); !logged {
-					log.WithFields("error", r.err).Warn("unable to build lazy file tree")
-					r.err = &loggedBuildError{r.err}
-				}
-				r.tree = New()
-			}
-			// drop the closure and whatever it captured, it can never run again
-			r.build = nil
-		}()
-		r.tree, r.err = r.build()
-	})
-	return r.tree, r.err
+	// realize builds the tree on first use. The tree is never nil, so the methods that cannot report an
+	// error always have something to delegate to.
+	realize func() (ReadWriter, error)
 }
 
 // loggedBuildError is a failed build's error once realize has logged it, so that whatever passes it on (a
@@ -78,18 +68,11 @@ type loggedBuildError struct{ error }
 
 func (e *loggedBuildError) Unwrap() error { return e.error }
 
-// isNilTree reports whether t holds no tree, including a typed nil (a nil *FileTree in a non-nil
-// interface), which would otherwise slip past a nil check and panic on first use.
+// isNilTree reports whether t holds no tree, including a nil *FileTree in a non-nil interface, which would
+// otherwise slip past a nil check and panic on first use.
 func isNilTree(t ReadWriter) bool {
-	if t == nil {
-		return true
-	}
-	v := reflect.ValueOf(t)
-	switch v.Kind() {
-	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan:
-		return v.IsNil()
-	}
-	return false
+	ft, ok := t.(*FileTree)
+	return t == nil || ok && ft == nil
 }
 
 func (r *lazyReader) AllFiles(types ...file.Type) []file.Reference {
@@ -155,31 +138,24 @@ func (r *lazyReader) Copy() (ReadWriter, error) {
 // lazySearcher is what NewSearchContext returns for a lazy reader: building the link resolution index
 // walks every link in the index, so it waits for the first search, which also realizes the tree.
 type lazySearcher struct {
-	once     sync.Once
-	tree     *lazyReader
-	index    IndexReader
-	searcher Searcher
-	err      error
+	get func() (Searcher, error)
 }
 
-func (s *lazySearcher) get() (Searcher, error) {
-	s.once.Do(func() {
+func newLazySearcher(tree *lazyReader, index IndexReader) *lazySearcher {
+	return &lazySearcher{get: sync.OnceValues(func() (_ Searcher, err error) {
 		defer func() {
 			// only a failure of the search context itself is logged here: realize logs its own
 			if p := recover(); p != nil {
-				s.searcher, s.err = nil, fmt.Errorf("building lazy search context panicked: %v", p)
-				log.WithFields("error", s.err).Warn("unable to build lazy search context")
+				err = fmt.Errorf("building lazy search context panicked: %v", p)
+				log.WithFields("error", err).Warn("unable to build lazy search context")
 			}
-			s.index = nil
 		}()
-		t, err := s.tree.realize()
+		t, err := tree.realize()
 		if err != nil {
-			s.err = err
-			return
+			return nil, err
 		}
-		s.searcher = NewSearchContext(t, s.index)
-	})
-	return s.searcher, s.err
+		return NewSearchContext(t, index), nil
+	})}
 }
 
 func (s *lazySearcher) SearchByPath(path string, options ...LinkResolutionOption) (*file.Resolution, error) {
