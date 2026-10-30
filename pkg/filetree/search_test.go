@@ -856,11 +856,14 @@ func Test_searchContext_nilIndex(t *testing.T) {
 
 	sc := NewSearchContext(tree, nil)
 
-	got, err := sc.SearchByGlob("**/file.txt")
+	// both the file and the link match, and both resolve to the real file
+	got, err := sc.SearchByGlob("**/*.txt")
 	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, file.Path("/path/to/file.txt"), got[0].RealPath)
+	require.Len(t, got, 2)
+	for _, ref := range got {
+		require.Equal(t, file.Path("/path/to/file.txt"), ref.RealPath)
+	}
 
-	_, err = sc.SearchByMIMEType("plain/text")
-	require.Error(t, err)
+	_, err = sc.SearchByMIMEType("text/plain")
+	require.ErrorContains(t, err, "no index available")
 }

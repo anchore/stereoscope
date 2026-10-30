@@ -1,6 +1,7 @@
 package filetree
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -32,8 +33,9 @@ type searchContext struct {
 	linkBackwardRefs map[node.ID]node.IDSet // {link-destination-node-id: str([link-node-id, ...])}
 }
 
-// NewSearchContext creates a Searcher for the given tree. The index is optional: when nil, glob searches fall back
-// to walking the tree and MIME type searches return an error.
+// NewSearchContext creates a Searcher for the given tree. The index is optional: when it is a nil interface value
+// (not a typed nil pointer), glob searches fall back to walking the whole tree and MIME type searches return an error.
+// Path searches never use the index.
 func NewSearchContext(tree Reader, index IndexReader) Searcher {
 	c := &searchContext{
 		tree:             tree.(*FileTree),
@@ -109,7 +111,7 @@ func (sc searchContext) SearchByPath(path string, options ...LinkResolutionOptio
 func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution, error) {
 	if sc.index == nil {
 		// the tree alone has no MIME type information, so there is nothing to search against
-		return nil, fmt.Errorf("unable to search by MIME type: no index available")
+		return nil, errors.New("unable to search by MIME type: no index available")
 	}
 
 	var fileEntries []IndexEntry
@@ -157,6 +159,7 @@ func (sc searchContext) SearchByGlob(pattern string, options ...LinkResolutionOp
 	return allRefs, nil
 }
 
+// searchByRequest requires a non-nil index (see the guard in SearchByGlob).
 func (sc searchContext) searchByRequest(request searchRequest, options ...LinkResolutionOption) ([]file.Resolution, error) {
 	switch request.searchBasis {
 	case searchByFullPath:
@@ -212,10 +215,11 @@ func (sc searchContext) searchByRequest(request searchRequest, options ...LinkRe
 	return nil, fmt.Errorf("invalid search request: %+v", request.searchBasis)
 }
 
+// searchByParentBasename requires a non-nil index (see the guard in SearchByGlob).
 func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Resolution, error) {
 	indexes, err := sc.index.GetByBasename(request.indexLookup)
 	if err != nil {
-		return nil, fmt.Errorf("unable to search by basename=%q: %w", request.indexLookup, err)
+		return nil, fmt.Errorf("unable to search by parent-basename=%q: %w", request.indexLookup, err)
 	}
 
 	var results []file.Resolution
