@@ -1302,7 +1302,8 @@ func TestFileTreeMaxLinkDepth(t *testing.T) {
 	currentNode, err := tr.node("/usr/local/bin/ksh", rs)
 	require.NoError(t, err)
 
-	_, err = tr.resolveNodeLinks(currentNode, !rs.DoNotFollowDeadBasenameLinks, nil, 2)
+	linkBudget := 2
+	_, err = tr.resolveNodeLinks(currentNode, !rs.DoNotFollowDeadBasenameLinks, nil, &linkBudget)
 	require.Error(t, err, "should have gotten an error on resolution of a dead cycle")
 	// require certain error
 	if err != ErrLinkResolutionDepth {
@@ -1334,6 +1335,32 @@ func TestFileTree_MaximumLinkResolutionExceeded(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, b)
 	assert.Equal(t, ref, fr.Reference)
+}
+
+// each link here points through the next one twice (once as an ancestor, once as the basename), so without a budget
+// shared across nested resolutions the work doubles per link. This should fail fast, not take minutes.
+func TestFileTree_LinkBudgetIsSharedAcrossNestedResolutions(t *testing.T) {
+	const links = 30
+	tr := New()
+	_, err := tr.AddDir("/r")
+	require.NoError(t, err)
+	_, err = tr.AddSymLink(file.Path(fmt.Sprintf("/r/a%d", links)), "/r")
+	require.NoError(t, err)
+	for k := range links {
+		_, err = tr.AddSymLink(
+			file.Path(fmt.Sprintf("/r/a%d", k)),
+			file.Path(fmt.Sprintf("/r/a%d/a%d", k+1, k+1)),
+		)
+		require.NoError(t, err)
+	}
+
+	_, _, err = tr.File("/r/a0/x", FollowBasenameLinks)
+	require.ErrorIs(t, err, ErrLinkResolutionDepth)
+
+	// a short chain of the same shape still resolves
+	exists, _, err := tr.File(file.Path(fmt.Sprintf("/r/a%d/a%d", links-2, links-2)), FollowBasenameLinks)
+	require.NoError(t, err)
+	assert.True(t, exists)
 }
 
 func TestFileTree_AllFiles(t *testing.T) {
