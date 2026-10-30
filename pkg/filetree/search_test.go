@@ -443,6 +443,189 @@ func Test_searchContext_SearchByMIMEType_SkipsLinkCycles(t *testing.T) {
 	}, realPaths(results))
 }
 
+// layeredSearchFixture models the same path written by several layers against an image-wide index:
+//   - lower: /app/run.sh is a script
+//   - upper: /app/run.sh is overwritten with a binary
+//   - relinked: /app/run.sh is replaced with a symlink to /app/real.sh
+type layeredSearchFixture struct {
+	idx                        Index
+	lower, upper               *FileTree
+	squashed, squashedRelinked *FileTree
+	scriptID, binID, realID    file.ID
+}
+
+func newLayeredSearchFixture(t *testing.T) layeredSearchFixture {
+	t.Helper()
+	idx := NewIndex()
+
+	lower := New()
+	scriptRef, err := lower.AddFile("/app/run.sh")
+	require.NoError(t, err)
+	idx.Add(*scriptRef, file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
+
+	upper := New()
+	binRef, err := upper.AddFile("/app/run.sh")
+	require.NoError(t, err)
+	idx.Add(*binRef, file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-executable"})
+
+	relinked := New()
+	linkRef, err := relinked.AddSymLink("/app/run.sh", "/app/real.sh")
+	require.NoError(t, err)
+	idx.Add(*linkRef, file.Metadata{Type: file.TypeSymLink})
+	realRef, err := relinked.AddFile("/app/real.sh")
+	require.NoError(t, err)
+	idx.Add(*realRef, file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-executable"})
+
+	squash := func(layers ...*FileTree) *FileTree {
+		tr, err := layers[0].Copy()
+		require.NoError(t, err)
+		for _, l := range layers[1:] {
+			require.NoError(t, tr.Merge(l))
+		}
+		return tr.(*FileTree)
+	}
+
+	return layeredSearchFixture{
+		idx:              idx,
+		lower:            lower,
+		upper:            upper,
+		squashed:         squash(lower, upper),
+		squashedRelinked: squash(lower, relinked),
+		scriptID:         scriptRef.ID(),
+		binID:            binRef.ID(),
+		realID:           realRef.ID(),
+	}
+}
+
+type searchHit struct {
+	RequestPath file.Path
+	ID          file.ID
+}
+
+func searchHits(refs []file.Resolution) []searchHit {
+	var hits []searchHit
+	for _, r := range refs {
+		hits = append(hits, searchHit{RequestPath: r.RequestPath, ID: r.ID()})
+	}
+	return hits
+}
+
+func Test_searchContext_SearchByMIMEType_layeredPaths(t *testing.T) {
+	f := newLayeredSearchFixture(t)
+
+	tests := []struct {
+		name     string
+		tree     Reader
+		mimeType []string
+		want     []searchHit
+	}{
+		{
+			name:     "squashed: shadowed lower layer type does not match",
+			tree:     f.squashed,
+			mimeType: []string{"text/x-shellscript"},
+		},
+		{
+			name:     "squashed: live top layer type matches",
+			tree:     f.squashed,
+			mimeType: []string{"application/x-executable"},
+			want:     []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			// the stale lower layer entry is returned by the index first, the live one must still be found
+			name:     "squashed: stale entry ahead of live entry for the same path",
+			tree:     f.squashed,
+			mimeType: []string{"text/x-shellscript", "application/x-executable"},
+			want:     []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			name:     "squashed: repeated type does not duplicate results",
+			tree:     f.squashed,
+			mimeType: []string{"application/x-executable", "application/x-executable"},
+			want:     []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			name:     "lower layer: its own type matches",
+			tree:     f.lower,
+			mimeType: []string{"text/x-shellscript"},
+			want:     []searchHit{{"/app/run.sh", f.scriptID}},
+		},
+		{
+			name:     "upper layer: lower layer type does not match",
+			tree:     f.upper,
+			mimeType: []string{"text/x-shellscript"},
+		},
+		{
+			// the stale entry's path is now a symlink, it must not resolve through to the link target
+			name:     "squashed relinked: shadowed type does not match through the new symlink",
+			tree:     f.squashedRelinked,
+			mimeType: []string{"text/x-shellscript"},
+		},
+		{
+			name:     "squashed relinked: link target matches only at its own path",
+			tree:     f.squashedRelinked,
+			mimeType: []string{"application/x-executable"},
+			want:     []searchHit{{"/app/real.sh", f.realID}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewSearchContext(tt.tree, f.idx).SearchByMIMEType(tt.mimeType...)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, searchHits(got))
+		})
+	}
+}
+
+func Test_searchContext_SearchByGlob_layeredPaths(t *testing.T) {
+	f := newLayeredSearchFixture(t)
+
+	tests := []struct {
+		name string
+		tree Reader
+		glob string
+		want []searchHit
+	}{
+		{
+			name: "squashed: basename returns the live file once",
+			tree: f.squashed,
+			glob: "**/run.sh",
+			want: []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			name: "squashed: basename glob returns the live file once",
+			tree: f.squashed,
+			glob: "**/run*",
+			want: []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			name: "squashed: extension returns the live file once",
+			tree: f.squashed,
+			glob: "**/*.sh",
+			want: []searchHit{{"/app/run.sh", f.binID}},
+		},
+		{
+			// only the symlink's own entry should produce the link resolution, not the stale script entry
+			name: "squashed relinked: basename resolves the live symlink once",
+			tree: f.squashedRelinked,
+			glob: "**/run.sh",
+			want: []searchHit{{"/app/run.sh", f.realID}},
+		},
+		{
+			name: "squashed relinked: extension returns the symlink and its target once each",
+			tree: f.squashedRelinked,
+			glob: "**/*.sh",
+			want: []searchHit{{"/app/real.sh", f.realID}, {"/app/run.sh", f.realID}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NewSearchContext(tt.tree, f.idx).SearchByGlob(tt.glob)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, searchHits(got))
+		})
+	}
+}
+
 func Test_complexSymlinkPerformance(t *testing.T) {
 	tr := New()
 	idx := NewIndex()

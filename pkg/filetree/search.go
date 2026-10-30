@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/scylladb/go-set/strset"
 
 	"github.com/anchore/stereoscope/internal/log"
 	"github.com/anchore/stereoscope/pkg/file"
@@ -102,7 +103,8 @@ func (sc searchContext) SearchByPath(path string, options ...LinkResolutionOptio
 func (sc searchContext) SearchByMIMEType(mimeTypes ...string) ([]file.Resolution, error) {
 	var fileEntries []IndexEntry
 
-	for _, mType := range mimeTypes {
+	// a file has exactly one MIME type, so deduping the requested types is enough to keep results unique
+	for _, mType := range strset.New(mimeTypes...).List() {
 		entries, err := sc.index.GetByMIMEType(mType)
 		if err != nil {
 			return nil, fmt.Errorf("unable to fetch file references by MIME type (%q): %w", mType, err)
@@ -231,9 +233,17 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 }
 
 func (sc searchContext) firstMatchingReferences(glob string, entries []IndexEntry) ([]file.Resolution, error) {
+	// the index spans all layers, so drop entries that are not the node actually at their path in this tree
+	// (e.g. a lower layer's file that was since overwritten). Otherwise the path resolves to whatever lives
+	// there now, which may not match the property the entry was indexed by, and is duplicated per layer.
+	nodes, err := sc.fileNodesInTree(entries)
+	if err != nil {
+		return nil, err
+	}
+
 	var references []file.Resolution
-	for _, entry := range entries {
-		ref, err := sc.firstMatchingReference(glob, string(entry.RealPath))
+	for _, fn := range nodes {
+		ref, err := sc.firstMatchingReference(glob, string(fn.RealPath))
 		if err != nil {
 			return nil, err
 		}
