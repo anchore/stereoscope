@@ -140,7 +140,10 @@ func (t *Tree) AddRoot(n node.Node) error {
 	return t.addNode(n)
 }
 
-// AddChild adds a node to the Tree under the given parent.
+// AddChild adds the child node (to) under the parent node (from), adding either to the Tree if missing (a missing
+// parent becomes a root). The stored objects for both nodes are replaced with the ones given. If the child already
+// has a different parent it is moved, along with its subtree, to the new parent. Every node has at most one parent,
+// and an edge that would create a cycle is rejected.
 func (t *Tree) AddChild(from, to node.Node) error {
 	var (
 		fid = from.ID()
@@ -151,9 +154,24 @@ func (t *Tree) AddChild(from, to node.Node) error {
 		return fmt.Errorf("should not add self edge")
 	}
 
+	// a node not yet in the tree has no descendants, so only an existing child can close a cycle
+	if t.HasNode(tid) {
+		for e := t.nodes[fid]; e.hasParent; e = t.nodes[e.parent] {
+			if e.parent == tid {
+				return fmt.Errorf("adding %+v under %+v would create a cycle", tid, fid)
+			}
+		}
+	}
+
 	fe := t.nodes[fid]
 	fe.node = from
 	t.nodes[fid] = fe
+
+	// reparenting an existing node must drop the edge from its old parent, otherwise removing the old parent
+	// would take this node (and its subtree) with it
+	if te, ok := t.nodes[tid]; ok && te.hasParent {
+		delete(t.children[te.parent], tid)
+	}
 
 	t.nodes[tid] = entry{node: to, parent: fid, hasParent: true}
 
