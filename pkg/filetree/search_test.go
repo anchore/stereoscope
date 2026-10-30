@@ -660,21 +660,28 @@ func Test_searchContext_layeredAncestors(t *testing.T) {
 		return ref
 	}
 
-	// lower: /lib and /usr/lib are real directories, /a/status.d and /b/status.d are dpkg-style status dirs
+	// lower: /lib and /usr/lib are real directories, /a/status.d and /b/status.d are dpkg-style status dirs,
+	// /c/conf.d is a directory that only the lower layer wrote a header for
 	lower := New()
 	add(lower, "/lib/x.so", file.Metadata{Type: file.TypeRegular, MIMEType: "application/x-sharedlib"})
 	usrRef := add(lower, "/usr/lib/x.so", file.Metadata{Type: file.TypeRegular, MIMEType: "text/plain"})
 	add(lower, "/a/status.d", file.Metadata{Type: file.TypeDirectory})
 	add(lower, "/b/status.d", file.Metadata{Type: file.TypeDirectory})
 	statusRef := add(lower, "/b/status.d/y", file.Metadata{Type: file.TypeRegular, MIMEType: "text/plain"})
+	add(lower, "/c/conf.d", file.Metadata{Type: file.TypeDirectory})
+	add(lower, "/c/conf.d/z", file.Metadata{Type: file.TypeRegular})
 	add(lower, "/app/gone.sh", file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
 
-	// upper: usrmerge-style /lib -> usr/lib, /a -> /b, and a whiteout for /app/gone.sh
+	// upper: usrmerge-style /lib -> usr/lib, /a -> /b, /c -> /d where /d/conf.d has no header of its own (so it
+	// is an implicit, unindexed directory in the squashed tree), and a whiteout for /app/gone.sh
 	upper := New()
 	_, err := upper.AddSymLink("/lib", "usr/lib")
 	require.NoError(t, err)
 	_, err = upper.AddSymLink("/a", "/b")
 	require.NoError(t, err)
+	_, err = upper.AddSymLink("/c", "/d")
+	require.NoError(t, err)
+	confRef := add(upper, "/d/conf.d/z", file.Metadata{Type: file.TypeRegular})
 	_, err = upper.AddFile("/app/.wh.gone.sh")
 	require.NoError(t, err)
 
@@ -711,6 +718,22 @@ func Test_searchContext_layeredAncestors(t *testing.T) {
 		got, err = sc.SearchByGlob("**/y")
 		require.NoError(t, err)
 		require.Equal(t, []searchHit{{"/b/status.d/y", statusRef.ID()}}, searchHits(got))
+	})
+
+	t.Run("implicit directory under a replaced ancestor is still listed", func(t *testing.T) {
+		// the only "conf.d" index entry is the lower layer's /c/conf.d; the
+		// live /d/conf.d is only reachable through the link and has no index entry of its own:
+		//
+		//   index "conf.d" ──> /c/conf.d ──literal lookup──> /c is a symlink, not a dir ──> skipped
+		//                           │
+		//                           └──follow /c -> /d──> /d/conf.d (implicit, unindexed) ──> z   (never reached)
+		got, err := sc.SearchByGlob("**/z")
+		require.NoError(t, err)
+		require.Equal(t, []searchHit{{"/d/conf.d/z", confRef.ID()}}, searchHits(got))
+
+		got, err = sc.SearchByGlob("**/conf.d/*")
+		require.NoError(t, err)
+		require.Equal(t, []searchHit{{"/d/conf.d/z", confRef.ID()}}, searchHits(got))
 	})
 }
 
