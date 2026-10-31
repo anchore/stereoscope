@@ -5,9 +5,9 @@ go 1.26.8
 require (
 	github.com/GoogleCloudPlatform/docker-credential-gcr v2.0.5+incompatible
 	github.com/adrg/xdg v0.5.3
-	github.com/anchore/go-collections v0.1.1
-	github.com/anchore/go-homedir v0.1.1
-	github.com/anchore/go-logger v0.2.0
+	github.com/anchore/go-collections v0.1.2-0.20261030083500-98793bd11f8d
+	github.com/anchore/go-homedir v0.1.2-0.20261030170605-1196fc7ee242
+	github.com/anchore/go-logger v0.2.1-0.20261030155459-07a374a3c6c4
 	github.com/awslabs/amazon-ecr-credential-helper/ecr-login v0.12.0
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/containerd/containerd/v2 v2.4.2
@@ -37,7 +37,7 @@ require (
 )
 
 require (
-	github.com/anchore/go-sync v0.1.2
+	github.com/anchore/go-sync v0.1.3-0.20261030235548-da6f55679938
 	go.podman.io/image/v5 v5.42.0
 	go.podman.io/storage v1.65.0
 	golang.org/x/tools v0.52.0
