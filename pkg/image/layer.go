@@ -85,12 +85,14 @@ type Layer struct {
 	Tree filetree.Reader
 	// SquashedTree is a filetree that represents the combination of this layers diff tree and all diff trees
 	// in lower layers relative to this one. It never contains whiteout entries: those are changeset metadata
-	// and do not materialize as files in an applied rootfs. It is nil on every layer but the top one when
-	// the image was read with WithImageSquashOnly.
+	// and do not materialize as files in an applied rootfs. It is set for every layer once the image is read.
+	// Below the top layer of an image read with WithLazyLayerSquashes it is built on first use, so it is
+	// not a *filetree.FileTree and its first call can take a while (see WithLazyLayerSquashes).
 	SquashedTree filetree.Reader
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
 	fileCatalog *FileCatalog
-	// SquashedSearchContext searches SquashedTree, and is nil whenever SquashedTree is.
+	// SquashedSearchContext searches SquashedTree. Over a lazy SquashedTree it is lazy too: neither the tree
+	// nor the search context's link index is built until the first search.
 	SquashedSearchContext filetree.Searcher
 	SearchContext         filetree.Searcher
 	// knownDiffID is the layer's diff ID as recorded in the image config, when the image could
@@ -369,10 +371,10 @@ func (l *Layer) FilesByMIMETypeFromSquash(mimeTypes ...string) ([]file.Reference
 	return refs, nil
 }
 
-// errNoSquash is returned by squash accessors on a layer without one, which after a successful read
-// only happens below the top layer of an image read with WithImageSquashOnly.
+// errNoSquash is returned by squash accessors on a layer without one. Image.Read sets one on every layer,
+// so this only happens for a layer that was not read as part of an image (Layer.Read alone does not squash).
 func (l *Layer) errNoSquash() error {
-	return fmt.Errorf("layer %d has no squashed tree (only the top layer keeps one when read with WithImageSquashOnly)", l.Metadata.Index)
+	return fmt.Errorf("layer %d has no squashed tree (squashes are built by Image.Read)", l.Metadata.Index)
 }
 
 // adoptHardLinkInode rewrites metadata for a hardlink tar header to describe the file it names, and
