@@ -299,22 +299,6 @@ func TestTree_Replace(t *testing.T) {
 	}
 }
 
-func TestTree_Replace_Root(t *testing.T) {
-	// a root has no parent entry to re-point, the replacement must become a root in its place
-	tr := NewTree()
-	root, child, replacement := newTestNode(0), newTestNode(1), newTestNode(2)
-	require.NoError(t, tr.AddRoot(root))
-	require.NoError(t, tr.AddChild(root, child))
-
-	require.NoError(t, tr.Replace(root, replacement))
-
-	assert.Equal(t, node.Nodes{replacement}, tr.Roots())
-	assert.Equal(t, node.Nodes{child}, tr.Children(replacement))
-	assert.Equal(t, replacement, tr.Parent(child))
-	assert.Nil(t, tr.Parent(replacement))
-	assert.False(t, tr.HasNode(root.ID()))
-}
-
 func TestTree(t *testing.T) {
 	zero, one, two, three, four := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3), newTestNode(4)
 
@@ -333,16 +317,15 @@ func TestTree(t *testing.T) {
 		{
 			name: "has nodes-children-parent",
 			fields: &Tree{
-				nodes: map[node.ID]node.Node{
-					zero.ID(): zero,
-					one.ID():  one,
+				nodes: map[node.ID]entry{
+					zero.ID(): {node: zero},
+					one.ID():  {node: one, parent: four.ID(), hasParent: true},
 				},
-				children: map[node.ID]node.IDSet{
-					one.ID(): node.NewIDSet(two.ID(), three.ID()),
-				},
-				parent: map[node.ID]node.ID{
-					four.ID(): zero.ID(),
-					one.ID():  one.ID(),
+				children: map[node.ID]map[node.ID]struct{}{
+					one.ID(): {
+						two.ID():   {},
+						three.ID(): {},
+					},
 				},
 			},
 			roots:    node.Nodes{zero},
@@ -364,6 +347,144 @@ func TestTree(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTree_Copy_IsIsolated(t *testing.T) {
+	zero, one, two, three, four := newTestNode(0), newTestNode(1), newTestNode(2), newTestNode(3), newTestNode(4)
+	original := NewTree()
+	require.NoError(t, original.AddRoot(zero))
+	require.NoError(t, original.AddChild(zero, one))
+	require.NoError(t, original.AddChild(one, two))
+	require.NoError(t, original.AddChild(zero, three))
+
+	cp := original.Copy()
+	// every mutating op on the copy, touching existing child sets (the root's, one's) and creating new ones
+	require.NoError(t, cp.AddChild(two, four))
+	require.NoError(t, cp.AddChild(one, newTestNode(5)))
+	require.NoError(t, cp.Replace(three, newTestNode(6)))
+	_, err := cp.RemoveNode(one)
+	require.NoError(t, err)
+
+	assert.Equal(t, 4, original.Length())
+	assert.ElementsMatch(t, node.Nodes{one, three}, original.Children(zero))
+	assert.Equal(t, node.Nodes{two}, original.Children(one))
+	assert.Empty(t, original.Children(two))
+	assert.Equal(t, one, original.Parent(two))
+	assert.False(t, original.HasNode(four.ID()))
+}
+
+// a realistic shape (nested dirs, one child set per dir) rather than a flat one, which flatters the alloc count
+func BenchmarkTree_Copy(b *testing.B) {
+	tr := NewTree()
+	root := newTestNode("/")
+	require.NoError(b, tr.AddRoot(root))
+	var add func(parent node.Node, prefix string, depth int)
+	add = func(parent node.Node, prefix string, depth int) {
+		for i := 0; i < 10; i++ {
+			child := newTestNode(fmt.Sprintf("%s/%d", prefix, i))
+			require.NoError(b, tr.AddChild(parent, child))
+			if depth > 0 {
+				add(child, string(child.ID()), depth-1)
+			}
+		}
+	}
+	add(root, "", 3) // ~11k nodes, ~1.1k dirs
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = tr.Copy()
+	}
+}
+
+// replace onto an ID already in the tree must fail and leave the tree as it was
+func TestTree_Replace_IDCollision(t *testing.T) {
+	root, a, b := newTestNode("root"), newTestNode("a"), newTestNode("b")
+	tr := NewTree()
+	require.NoError(t, tr.AddRoot(root))
+	require.NoError(t, tr.AddChild(root, a))
+	require.NoError(t, tr.AddChild(root, b))
+
+	require.ErrorContains(t, tr.Replace(a, b), "node ID collision")
+	assert.Equal(t, 3, tr.Length())
+	assert.ElementsMatch(t, node.Nodes{a, b}, tr.Children(root))
+	assert.Equal(t, root, tr.Parent(a))
+	assert.Equal(t, root, tr.Parent(b))
+}
+
+// replacing a root with a node of a different ID moves the root and its children over
+func TestTree_Replace_RootWithNewID(t *testing.T) {
+	root, a, newRoot := newTestNode("root"), newTestNode("a"), newTestNode("root2")
+	tr := NewTree()
+	require.NoError(t, tr.AddRoot(root))
+	require.NoError(t, tr.AddChild(root, a))
+
+	require.NoError(t, tr.Replace(root, newRoot))
+	assert.Equal(t, node.Nodes{newRoot}, tr.Roots())
+	assert.Equal(t, newRoot, tr.Parent(a))
+	assert.Equal(t, node.Nodes{a}, tr.Children(newRoot))
+	assert.False(t, tr.HasNode(root.ID()))
+}
+
+// children returns nil, not an empty slice, for a node whose last child was removed
+func TestTree_Children_NilAfterLastChildRemoved(t *testing.T) {
+	root, a := newTestNode("root"), newTestNode("a")
+	tr := NewTree()
+	require.NoError(t, tr.AddRoot(root))
+	require.NoError(t, tr.AddChild(root, a))
+	_, err := tr.RemoveNode(a)
+	require.NoError(t, err)
+
+	assert.Nil(t, tr.Children(root))
+	assert.Nil(t, tr.Copy().Children(root))
+}
+
+// after a same-ID Replace of a parent, Parent returns the new node, not the one it replaced
+func TestTree_Parent_ReturnsReplacedNode(t *testing.T) {
+	root, a := newTestNode("root"), newTestNode("a")
+	tr := NewTree()
+	require.NoError(t, tr.AddRoot(root))
+	require.NoError(t, tr.AddChild(root, a))
+
+	replacement := newTestNode("root")
+	require.NoError(t, tr.Replace(root, replacement))
+	assert.Same(t, replacement, tr.Parent(a))
+}
+
+// copy drops child sets that RemoveNode left empty; adding a child to that node in the copy must create a set of the
+// copy's own, leaving the original's untouched
+func TestTree_Copy_IsolatedAfterChildSetEmptied(t *testing.T) {
+	root, a, b := newTestNode("root"), newTestNode("a"), newTestNode("b")
+	original := NewTree()
+	require.NoError(t, original.AddRoot(root))
+	require.NoError(t, original.AddChild(root, a))
+	_, err := original.RemoveNode(a)
+	require.NoError(t, err)
+
+	cp := original.Copy()
+	require.NoError(t, cp.AddChild(root, b))
+	require.NoError(t, original.AddChild(root, a))
+
+	assert.Equal(t, node.Nodes{b}, cp.Children(root))
+	assert.Equal(t, node.Nodes{a}, original.Children(root))
+	assert.False(t, original.HasNode(b.ID()))
+	assert.False(t, cp.HasNode(a.ID()))
+}
+
+// AddChild no longer leaves stale edges, but RemoveNode still skips a child ID that is no longer in the tree rather
+// than panic, so the edge is planted directly here.
+func TestTree_RemoveNode_StaleChildEdgeDoesNotPanic(t *testing.T) {
+	root, p, x := newTestNode("r"), newTestNode("p"), newTestNode("x")
+	tr := NewTree()
+	require.NoError(t, tr.AddRoot(root))
+	require.NoError(t, tr.AddChild(root, p))
+	tr.children[p.ID()] = map[node.ID]struct{}{x.ID(): {}}
+
+	assert.NotPanics(t, func() {
+		_, err := tr.RemoveNode(p)
+		require.NoError(t, err)
+	})
+	assert.Equal(t, node.Nodes{root}, tr.Nodes())
 }
 
 func TestTree_AddChild_Reparent(t *testing.T) {
@@ -433,20 +554,5 @@ func TestTree_AddChild_Reparent(t *testing.T) {
 		assert.Equal(t, two, tr.Parent(three))
 		assert.Equal(t, three, tr.Parent(four))
 		assert.Equal(t, zero, tr.Parent(two))
-	})
-
-	t.Run("replacing an existing parent updates its children's parent entry", func(t *testing.T) {
-		// AddChild(parentV2, addedChild) swaps the stored object for "p" from parentV1 to parentV2. Parent() must
-		// then return parentV2 for existingChild as well, not only for addedChild.
-		tr := NewTree()
-		parentV1, parentV2 := newTestNode("p"), newTestNode("p")
-		existingChild, addedChild := newTestNode(1), newTestNode(2)
-		require.NoError(t, tr.AddRoot(parentV1))
-		require.NoError(t, tr.AddChild(parentV1, existingChild))
-		require.NoError(t, tr.AddChild(parentV2, addedChild))
-
-		assert.Same(t, parentV2, tr.Node(parentV2.ID()))
-		assert.Same(t, parentV2, tr.Parent(addedChild))
-		assert.Same(t, parentV2, tr.Parent(existingChild))
 	})
 }

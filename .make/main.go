@@ -34,6 +34,14 @@ func main() {
 			},
 		},
 		Task{
+			Name:        "lint:filenodewrite",
+			Description: "flag writes through a shared *filenode.FileNode",
+			RunsOn:      []string{"lint", "lint-fix", "static-analysis"},
+			Run: func() {
+				Run("go run ./test/linter/filenodewrite ./...")
+			},
+		},
+		Task{
 			Name:         "integration",
 			Description:  "run integration tests",
 			Dependencies: Deps("integration-tools"),

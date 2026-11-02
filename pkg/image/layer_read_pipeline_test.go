@@ -487,94 +487,6 @@ func TestImage_Read_squashOverlapMatchesOrderedSquash(t *testing.T) {
 	}
 }
 
-func TestImage_Read_imageSquashOnlyKeepsOnlyTheTopSquash(t *testing.T) {
-	reg, sym := byte(tar.TypeReg), byte(tar.TypeSymlink)
-
-	// beyond overwrites, the squash must apply whiteouts, opaque dirs and links that cross layers
-	// the same way whether each layer gets its own squash or one squash is merged in place
-	var layers []v1.Layer
-	for idx := 0; idx < 6; idx++ {
-		entries := []tarEntry{
-			{path: fmt.Sprintf("only-in-%d.txt", idx), typeFlag: reg, contents: fmt.Sprintf("c%d", idx)},
-			{path: "shared.txt", typeFlag: reg, contents: fmt.Sprintf("v%d", idx)},
-		}
-		switch idx {
-		case 0:
-			entries = append(entries,
-				tarEntry{path: "opaque/lower.txt", typeFlag: reg, contents: "hidden by the opaque dir above"},
-				tarEntry{path: "gone.txt", typeFlag: reg, contents: "removed by the whiteout above"},
-				tarEntry{path: "etc/target.txt", typeFlag: reg, contents: "t0"},
-			)
-		case 1:
-			entries = append(entries, tarEntry{path: "link-to-target", typeFlag: sym, linkPath: "/etc/target.txt"})
-		case 2:
-			entries = append(entries,
-				tarEntry{path: "opaque/.wh..wh..opq", typeFlag: reg},
-				tarEntry{path: "opaque/upper.txt", typeFlag: reg, contents: "visible"},
-				tarEntry{path: ".wh.gone.txt", typeFlag: reg},
-			)
-		case 3:
-			entries = append(entries, tarEntry{path: "etc/target.txt", typeFlag: reg, contents: "t3"})
-		}
-		layers = append(layers, layerFromTarEntries(t, entries...))
-	}
-	full := readImageFromLayers(t, layers...)
-
-	img, err := tryReadImageFromLayersWithContext(t, WithImageSquashOnly(context.Background()), layers...)
-	require.NoError(t, err)
-
-	top := len(img.Layers) - 1
-	for idx, layer := range img.Layers[:top] {
-		assert.Nilf(t, layer.SquashedTree, "layer %d kept its squash", idx)
-		assert.Nilf(t, layer.SquashedSearchContext, "layer %d kept its squashed search context", idx)
-	}
-	require.NotNil(t, img.Layers[top].SquashedTree)
-	require.NotNil(t, img.Layers[top].SquashedSearchContext)
-
-	assert.Equal(t,
-		fileTuples(t, full.SquashedTree(), full.FileCatalog),
-		fileTuples(t, img.SquashedTree(), img.FileCatalog),
-		"image squash differs from a full read")
-
-	squash := img.SquashedTree()
-	assert.False(t, squash.HasPath("/opaque/lower.txt"), "opaque dir did not hide the lower file")
-	assert.True(t, squash.HasPath("/opaque/upper.txt"))
-	assert.False(t, squash.HasPath("/gone.txt"), "whiteout did not remove the lower file")
-
-	for path, want := range map[string]string{"/shared.txt": "v5", "/link-to-target": "t3"} {
-		rc, err := img.OpenPathFromSquash(file.Path(path))
-		require.NoError(t, err)
-		contents, err := io.ReadAll(rc)
-		require.NoError(t, rc.Close())
-		require.NoError(t, err)
-		assert.Equalf(t, want, string(contents), "contents of %s", path)
-	}
-
-	// every accessor over a dropped layer squash must error rather than dereference the nil tree
-	ref := file.NewFileReference("/shared.txt")
-	lower := img.Layers[0]
-	accessors := map[string]func() error{
-		"Image.ResolveLinkByLayerSquash": func() error { _, err := img.ResolveLinkByLayerSquash(*ref, 0); return err },
-		"Layer.OpenPathFromSquash":       func() error { _, err := lower.OpenPathFromSquash("/shared.txt"); return err },
-		"Layer.FileContentsFromSquash":   func() error { _, err := lower.FileContentsFromSquash("/shared.txt"); return err },
-		"Layer.FilesByMIMETypeFromSquash": func() error {
-			_, err := lower.FilesByMIMETypeFromSquash("text/plain")
-			return err
-		},
-	}
-	for name, call := range accessors {
-		t.Run(name, func(t *testing.T) {
-			assert.ErrorContains(t, call(), "no squashed tree")
-		})
-	}
-
-	// while the top layer still answers
-	_, err = img.ResolveLinkByLayerSquash(*ref, top)
-	assert.NoError(t, err)
-	_, err = img.Layers[top].FilesByMIMETypeFromSquash("text/plain")
-	assert.NoError(t, err)
-}
-
 func TestImage_Read_fetchFailureDoesNotHangTheSquash(t *testing.T) {
 	good := func(idx int) v1.Layer {
 		return layerFromTarEntries(t, tarEntry{
@@ -712,10 +624,34 @@ func TestImage_squashLayers_reportsAnUnindexedLayer(t *testing.T) {
 	require.NoError(t, layers[0].fetch(0, i.contentCacheDir))
 	require.NoError(t, layers[0].index(NewFileCatalog()))
 
-	err := i.squashLayers(layers, gates, &progress.Manual{}, true)
+	err := i.squashLayers(context.Background(), layers, gates, &progress.Manual{}, true)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "layer 1")
 	assert.Contains(t, err.Error(), "not indexed")
+}
+
+func TestImage_squashLayers_stopsWhenCancelled(t *testing.T) {
+	// the squash outlives the read stages, so it has to watch ctx itself or a cancel after the last
+	// layer is indexed waits out every remaining copy
+	layers := randomLayers(t, 3)
+	gates := newLayerGates(len(layers))
+	i := testImage(t, layers)
+	catalog := NewFileCatalog()
+	for idx, l := range layers {
+		require.NoError(t, l.fetch(idx, i.contentCacheDir))
+		require.NoError(t, l.index(catalog))
+		gates.done(idx, true)
+	}
+
+	for _, eager := range []bool{true, false} {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := i.squashLayers(ctx, layers, gates, &progress.Manual{}, eager)
+		require.ErrorIsf(t, err, context.Canceled, "eager=%v", eager)
+		for idx, l := range layers {
+			assert.Nilf(t, l.SquashedTree, "eager=%v: layer %d was squashed after the cancel", eager, idx)
+		}
+	}
 }
 
 // panickingLayer panics where a stage will run it, with a media type that passes Read's

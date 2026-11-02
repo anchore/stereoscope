@@ -277,50 +277,54 @@ func TestDFS_WalkAll_ConditionalBranchPruning(t *testing.T) {
 	assertExpectedTraversal(t, possiblePaths, actualPaths)
 }
 
-func TestDFS_WalkAll_MaxDirDepthTerminatesTraversal(t *testing.T) {
+// a self-referential directory link runs out of link budget long before the directory depth cap, at which point
+// the deeper paths are unresolvable (like ELOOP) and get skipped rather than failing the walk.
+func TestDFS_WalkAll_SelfReferentialLinkTerminatesTraversal(t *testing.T) {
 	tr := New()
 
-	possiblePaths := make(map[string]*file.Reference)
-
-	// absolute symlink
 	_, err := tr.AddSymLink("/home/wagoodman", "/home")
 	if err != nil {
 		t.Fatalf("could not setup link: %+v", err)
 	}
-	// since we are following base links on walk, we should NOT expect the symlink ref at the link destination
-	possiblePaths["/home/wagoodman"] = nil
-	possiblePaths["/home"] = nil
-
-	// start the test
 
 	actualMaxDepth := -1
-	shouldTerminate := func(path file.Path, node filenode.FileNode) bool {
-		if actualMaxDepth > maxDirDepth*2 {
-			// test stop gap
-			t.Fatalf("did not prevent max dir depth traversal")
-			return true
-		}
-		return false
+	visitor := func(path file.Path, node filenode.FileNode) error {
+		actualMaxDepth = max(actualMaxDepth, strings.Count(string(path.Normalize()), file.DirSeparator))
+		return nil
 	}
 
+	walker := NewDepthFirstPathWalker(tr, visitor, nil)
+	if err = walker.WalkAll(); err != nil {
+		t.Fatalf("could not walk: %+v", err)
+	}
+
+	if actualMaxDepth < 2 || actualMaxDepth >= maxDirDepth {
+		t.Fatalf("never traversed the link or went above allowable threshold: %d", actualMaxDepth)
+	}
+}
+
+func TestDFS_WalkAll_MaxDirDepthTerminatesTraversal(t *testing.T) {
+	tr := New()
+
+	deepest := strings.Repeat("/d", maxDirDepth+10)
+	if _, err := tr.AddDir(file.Path(deepest)); err != nil {
+		t.Fatalf("could not setup dir: %+v", err)
+	}
+
+	actualMaxDepth := -1
 	visitor := func(path file.Path, node filenode.FileNode) error {
 		actualMaxDepth = strings.Count(string(path.Normalize()), file.DirSeparator)
 		return nil
 	}
 
-	walker := NewDepthFirstPathWalker(tr, visitor, &WalkConditions{
-		ShouldTerminate: shouldTerminate,
-	})
-	if err = walker.WalkAll(); !errors.Is(err, ErrMaxTraversalDepth) {
+	walker := NewDepthFirstPathWalker(tr, visitor, nil)
+	if err := walker.WalkAll(); !errors.Is(err, ErrMaxTraversalDepth) {
 		t.Fatalf("expected max traversal error, but got another error instead: %+v", err)
-	} else if err == nil {
-		t.Fatalf("expected max traversal error, but got none")
 	}
 
 	if actualMaxDepth == -1 || actualMaxDepth > maxDirDepth {
 		t.Fatalf("never traversed or went above allowable threshold")
 	}
-
 }
 
 func assertExpectedTraversal(t *testing.T, expected, actual map[string]*file.Reference) {

@@ -854,6 +854,28 @@ func TestFileCatalog_GetByMimeType(t *testing.T) {
 	}
 }
 
+func TestIndex_Add_replacesMetadataBuckets(t *testing.T) {
+	// a layer tar may hold the same path twice (last one wins), and the tree hands back the same reference both times
+	idx := NewIndex()
+	ref := file.NewFileReference("/app/run.sh")
+	idx.Add(*ref, file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
+	idx.Add(*ref, file.Metadata{Type: file.TypeCharacterDevice, MIMEType: "application/x-executable"})
+
+	got, err := idx.GetByMIMEType("text/x-shellscript")
+	require.NoError(t, err)
+	assert.Empty(t, got)
+
+	got, err = idx.GetByFileType(file.TypeRegular)
+	require.NoError(t, err)
+	assert.Empty(t, got)
+
+	got, err = idx.GetByMIMEType("text/x-shellscript", "application/x-executable")
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "application/x-executable", got[0].MIMEType)
+	assert.Equal(t, file.TypeCharacterDevice, got[0].Type)
+}
+
 func TestFileCatalog_GetBasenames(t *testing.T) {
 	fileIndex := commonIndexFixture(t)
 

@@ -75,8 +75,14 @@ func (c *index) Add(f file.Reference, m file.Metadata) {
 
 	id := f.ID()
 
-	if _, ok := c.index[id]; ok {
+	if existing, ok := c.index[id]; ok {
 		log.WithFields("id", id, "path", f.RealPath).Debug("overwriting existing file index entry")
+		// the path (and so basename and extensions) is fixed by the ID, but the metadata may differ (e.g. a layer
+		// tar holding the same path twice), so drop the ID from the buckets keyed by the old metadata
+		if existing.MIMEType != "" {
+			c.byMIMEType[existing.MIMEType].Remove(id)
+		}
+		c.byFileType[existing.Type].Remove(id)
 	}
 
 	if m.MIMEType != "" {
