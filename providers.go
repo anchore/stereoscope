@@ -1,6 +1,8 @@
 package stereoscope
 
 import (
+	"crypto"
+
 	"github.com/anchore/go-collections"
 	containerdClient "github.com/anchore/stereoscope/internal/containerd"
 	"github.com/anchore/stereoscope/pkg/image"
@@ -32,29 +34,39 @@ type ImageProviderConfig struct {
 	UserInput string
 	Platform  *image.Platform
 	Registry  image.RegistryOptions
+	// FileDigestAlgorithms requests that these content hashes be computed for every regular file
+	// while the image is indexed, recorded on each file's Metadata.Digests. Empty by default:
+	// no digests are computed unless a consumer asks for them. See image.WithFileDigestAlgorithms.
+	FileDigestAlgorithms []crypto.Hash
 }
 
 func ImageProviders(cfg ImageProviderConfig) []collections.TaggedValue[image.Provider] {
 	tempDirGenerator := rootTempDirGenerator.NewGenerator()
+
+	var extra []image.AdditionalMetadata
+	if len(cfg.FileDigestAlgorithms) > 0 {
+		extra = append(extra, image.WithFileDigestAlgorithms(cfg.FileDigestAlgorithms...))
+	}
+
 	return []collections.TaggedValue[image.Provider]{
 		// file providers
-		taggedProvider(docker.NewArchiveProvider(tempDirGenerator, cfg.UserInput), FileTag),
-		taggedProvider(oci.NewArchiveProviderWithPlatform(tempDirGenerator, cfg.UserInput, cfg.Platform), FileTag),
-		taggedProvider(oci.NewDirectoryProviderWithPlatform(tempDirGenerator, cfg.UserInput, cfg.Platform), FileTag, DirTag),
-		taggedProvider(sif.NewArchiveProvider(tempDirGenerator, cfg.UserInput), FileTag),
+		taggedProvider(docker.NewArchiveProvider(tempDirGenerator, cfg.UserInput, extra...), FileTag),
+		taggedProvider(oci.NewArchiveProviderWithPlatform(tempDirGenerator, cfg.UserInput, cfg.Platform, extra...), FileTag),
+		taggedProvider(oci.NewDirectoryProviderWithPlatform(tempDirGenerator, cfg.UserInput, cfg.Platform, extra...), FileTag, DirTag),
+		taggedProvider(sif.NewArchiveProvider(tempDirGenerator, cfg.UserInput, extra...), FileTag),
 
 		// daemon providers
-		taggedProvider(docker.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
-		taggedProvider(podman.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
-		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, cfg.Registry, containerdClient.Namespace(), cfg.UserInput, cfg.Platform), DaemonTag, PullTag),
+		taggedProvider(docker.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform, extra...), DaemonTag, PullTag),
+		taggedProvider(podman.NewDaemonProvider(tempDirGenerator, cfg.UserInput, cfg.Platform, extra...), DaemonTag, PullTag),
+		taggedProvider(containerd.NewDaemonProvider(tempDirGenerator, cfg.Registry, containerdClient.Namespace(), cfg.UserInput, cfg.Platform, extra...), DaemonTag, PullTag),
 
 		// daemonless local store providers (e.g. buildah / rootless podman); checked before the OCI registry so that
 		// locally built images resolve before falling back to a remote pull. Tagged PullTag (not DaemonTag) since
 		// there's no daemon involved, despite doing no network I/O itself; see PullTag's doc comment above.
-		taggedProvider(containerstorage.NewProvider(tempDirGenerator, cfg.UserInput, cfg.Platform), PullTag),
+		taggedProvider(containerstorage.NewProvider(tempDirGenerator, cfg.UserInput, cfg.Platform, extra...), PullTag),
 
 		// registry providers
-		taggedProvider(oci.NewRegistryProvider(tempDirGenerator, cfg.Registry, cfg.UserInput, cfg.Platform), RegistryTag, PullTag),
+		taggedProvider(oci.NewRegistryProvider(tempDirGenerator, cfg.Registry, cfg.UserInput, cfg.Platform, extra...), RegistryTag, PullTag),
 	}
 }
 
