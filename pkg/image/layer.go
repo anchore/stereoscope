@@ -102,6 +102,9 @@ type Layer struct {
 	contentPath string
 	// readMonitor reports indexing progress for this layer
 	readMonitor *progress.Manual
+	// unadoptedHardLinks are this layer's hardlinks that indexing could not adopt because the file they
+	// name is not in this layer. squashLayers adopts them against the squash of the layers below.
+	unadoptedHardLinks []file.Reference
 }
 
 // NewLayer provides a new, unread layer object.
@@ -410,12 +413,13 @@ func (l *Layer) errNoSquash() error {
 //   - when adoption fails, or is undone by the caller because the adopted type collides with a node
 //     already at that path, that one name keeps TypeHardLink, size 0 and an empty data section: the
 //     lopsided picture this function exists to avoid.
-//   - only this layer is searched. extraction resolves a link name against everything applied so
-//     far, so a name pointing into a lower layer does work in a real runtime and is not adopted
-//     here. matching that needs the squash as of the previous layer, not a walk of each lower tree,
-//     which would resolve names that an intervening whiteout had already deleted. squashing runs
-//     after all layers are read, so threading it in would make every layer's indexing wait on the
-//     one below it. no mainstream builder emits these: they keep the inode table per archive.
+//   - at index time only this layer is searched. extraction resolves a link name against everything
+//     applied so far, so a name pointing into a lower layer does work in a real runtime. matching that
+//     needs the squash as of the previous layer, not a walk of each lower tree, which would resolve
+//     names that an intervening whiteout had already deleted. threading that squash into indexing
+//     would make every layer's indexing wait on the one below it, so such names are recorded instead
+//     and adopted when the layer is squashed (see adoptLowerLayerHardLinks). Windows images are full of
+//     them: an update layer links WinSxS names to System32 files that only the base layer carries.
 func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *file.Metadata) (file.Opener, bool) {
 	// a hardlink's link name refers to an earlier member of this same archive, relative to its root.
 	// the lookup below is not literal: a miss retries following ancestor symlinks, which is what
@@ -487,6 +491,7 @@ func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int
 		// its contents through that file's opener rather than this header's empty data section
 		var hardLinkOpener file.Opener
 		var preAdoptionMetadata *file.Metadata
+		var namesLowerLayer bool
 		if metadata.Type == file.TypeHardLink {
 			original := metadata
 			var adopted bool
@@ -496,10 +501,11 @@ func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int
 				// entry claims, which can conflict with what an earlier header put at the same path
 				preAdoptionMetadata = &original
 			} else {
-				// trace, not warn: resolution still works via the link path, and a per-header warning
-				// would be noisy on any archive that trips this
+				// trace, not warn: the squash gets a second chance at it against the layers below, and a
+				// per-header warning would be noisy on any archive that trips this
 				log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination).
-					Trace("hardlink names a file that is not in this layer, indexing it from its own header")
+					Trace("hardlink names a file that is not in this layer, deferring it to the squash")
+				namesLowerLayer = true
 			}
 		}
 
@@ -545,12 +551,73 @@ func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int
 			}
 		}
 		fileCatalog.addImageReferences(ref.ID(), layerRef, opener)
+		if namesLowerLayer && layerRef != nil {
+			layerRef.unadoptedHardLinks = append(layerRef.unadoptedHardLinks, *ref)
+		}
 
 		if monitor != nil {
 			monitor.Increment()
 		}
 		return nil
 	}
+}
+
+// adoptLowerLayerHardLinks adopts the hardlinks that indexing could not, because the file they name is in
+// a lower layer, against lower: the squash of every layer below this one. That is exactly what extraction
+// resolves such a name against, whiteouts included, so a name whose target a lower layer deleted stays
+// unadopted, as it would fail to link on a real extraction.
+//
+// Each adopted name's link node is replaced in this layer's tree by a node of the adopted type. Updating
+// the catalog alone is not enough: lookups follow a link node to its destination, so the name would still
+// be reported at the target's path rather than its own. The replaced node gets a new reference; the old
+// one stays in the catalog index, as an entry no tree reaches.
+//
+// It must run before the layer is merged into the squash, and it invalidates the layer's search context,
+// which indexes link nodes, so that is rebuilt when anything was adopted.
+func adoptLowerLayerHardLinks(lower filetree.Reader, layer *Layer) error {
+	pending := layer.unadoptedHardLinks
+	layer.unadoptedHardLinks = nil
+	if lower == nil || len(pending) == 0 {
+		return nil
+	}
+
+	tree, ok := layer.Tree.(filetree.ReadWriter)
+	if !ok {
+		return fmt.Errorf("layer %d tree is not writable", layer.Metadata.Index)
+	}
+	builder := filetree.NewBuilder(tree, layer.fileCatalog.Index)
+
+	adopted := 0
+	for _, ref := range pending {
+		entry, err := layer.fileCatalog.Get(ref)
+		if err != nil {
+			return fmt.Errorf("unable to read hardlink %q from the catalog: %w", ref.RealPath, err)
+		}
+		metadata := entry.Metadata
+		opener, ok := adoptHardLinkInode(lower, layer.fileCatalog, &metadata)
+		if !ok {
+			log.WithFields("path", metadata.Path, "linkName", metadata.LinkDestination).
+				Trace("hardlink names a file in no layer below it either, indexing it from its own header")
+			continue
+		}
+
+		if err := tree.RemovePath(ref.RealPath); err != nil {
+			return fmt.Errorf("unable to replace hardlink %q: %w", ref.RealPath, err)
+		}
+		newRef, err := builder.Add(metadata)
+		if err != nil {
+			return fmt.Errorf("unable to replace hardlink %q: %w", ref.RealPath, err)
+		}
+		layer.fileCatalog.addImageReferences(newRef.ID(), layer, opener)
+		adopted++
+	}
+
+	if adopted > 0 {
+		layer.SearchContext = filetree.NewSearchContext(layer.Tree, layer.fileCatalog.Index)
+	}
+	log.WithFields("index", layer.Metadata.Index, "adopted", adopted, "pending", len(pending)).
+		Trace("adopted hardlinks naming files in lower layers")
+	return nil
 }
 
 // squashfsReader implements an io.ReadCloser that reads a file from within a SquashFS filesystem.
