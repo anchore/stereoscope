@@ -426,6 +426,22 @@ func TestTree_Replace_RootWithNewID(t *testing.T) {
 	assert.False(t, tr.HasNode(root.ID()))
 }
 
+func TestTree_Replace_Root(t *testing.T) {
+	// a root has no parent entry to re-point, the replacement must become a root in its place
+	tr := NewTree()
+	root, child, replacement := newTestNode(0), newTestNode(1), newTestNode(2)
+	require.NoError(t, tr.AddRoot(root))
+	require.NoError(t, tr.AddChild(root, child))
+
+	require.NoError(t, tr.Replace(root, replacement))
+
+	assert.Equal(t, node.Nodes{replacement}, tr.Roots())
+	assert.Equal(t, node.Nodes{child}, tr.Children(replacement))
+	assert.Equal(t, replacement, tr.Parent(child))
+	assert.Nil(t, tr.Parent(replacement))
+	assert.False(t, tr.HasNode(root.ID()))
+}
+
 // children returns nil, not an empty slice, for a node whose last child was removed
 func TestTree_Children_NilAfterLastChildRemoved(t *testing.T) {
 	root, a := newTestNode("root"), newTestNode("a")
@@ -554,5 +570,20 @@ func TestTree_AddChild_Reparent(t *testing.T) {
 		assert.Equal(t, two, tr.Parent(three))
 		assert.Equal(t, three, tr.Parent(four))
 		assert.Equal(t, zero, tr.Parent(two))
+	})
+
+	t.Run("replacing an existing parent updates its children's parent entry", func(t *testing.T) {
+		// AddChild(parentV2, addedChild) swaps the stored object for "p" from parentV1 to parentV2. Parent() must
+		// then return parentV2 for existingChild as well, not only for addedChild.
+		tr := NewTree()
+		parentV1, parentV2 := newTestNode("p"), newTestNode("p")
+		existingChild, addedChild := newTestNode(1), newTestNode(2)
+		require.NoError(t, tr.AddRoot(parentV1))
+		require.NoError(t, tr.AddChild(parentV1, existingChild))
+		require.NoError(t, tr.AddChild(parentV2, addedChild))
+
+		assert.Same(t, parentV2, tr.Node(parentV2.ID()))
+		assert.Same(t, parentV2, tr.Parent(addedChild))
+		assert.Same(t, parentV2, tr.Parent(existingChild))
 	})
 }
