@@ -687,6 +687,12 @@ func (i *Image) squashLayers(ctx context.Context, layers []*Layer, gates *layerG
 			return fmt.Errorf("unable to squash layer %d: %w", idx, err)
 		}
 
+		// before the merge, while lastSquashTree is still the filesystem as of the layer below: that is
+		// what a hardlink naming a lower layer's file resolves against
+		if err := adoptLowerLayerHardLinks(lastSquashTree, layer); err != nil {
+			return fmt.Errorf("failed to adopt hardlinks in layer %d: %w", idx, err)
+		}
+
 		layerTree := layer.Tree.(filetree.ReadWriter)
 		squashedTree, err := squashOnto(lastSquashTree, layerTree, eager)
 		if err != nil {

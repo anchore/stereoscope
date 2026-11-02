@@ -2,6 +2,7 @@ package image
 
 import (
 	"archive/tar"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -31,8 +32,11 @@ import (
 //   - The data section goes to the ALPHABETICALLY FIRST name, not to the name that was created
 //     first. `printf > orig.txt && ln orig.txt hard.txt` yields a REG header for hard.txt and a
 //     HARDLINK header for orig.txt, because the tar writer walks the directory sorted.
-//   - A hardlink header's target is ALWAYS in the same layer, and always precedes it. `ln` across
-//     layers forces an overlayfs copy-up, so it emits a full REG copy rather than a hardlink header.
+//   - From docker on overlayfs, a hardlink header's target is always in the same layer, and always
+//     precedes it. `ln` across layers forces an overlayfs copy-up, so it emits a full REG copy rather
+//     than a hardlink header. Other producers do not hold to this: Windows container images routinely
+//     carry update layers whose hardlink headers name a base-layer file (see
+//     TestHardLinkSemantics_LinkIntoLowerLayer).
 //
 // The rule the cases below encode: a hardlink is a second name for an inode, fixed when the link is
 // created. Replacing, overwriting or deleting the OTHER name of that inode in a later layer does not
@@ -460,6 +464,82 @@ func TestLayerRead_ConcurrentReadsShareCatalogSafely(t *testing.T) {
 
 	for i, err := range errs {
 		require.NoErrorf(t, err, "layer %d failed to read", i)
+	}
+}
+
+// TestHardLinkSemantics_LinkIntoLowerLayer covers hardlink headers whose target is only in a lower
+// layer. Docker never emits these, but Windows images do at scale: the update layer of
+// mcr.microsoft.com/windows/nanoserver:sac2016 holds 3,816 of them, WinSxS names for System32 files
+// that only the base layer carries. Extraction resolves the link name against everything applied so
+// far, so the name is the lower file's inode, fixed when the layer is applied.
+func TestHardLinkSemantics_LinkIntoLowerLayer(t *testing.T) {
+	const (
+		lowerPayload = "LOWER-LAYER-PAYLOAD"
+		oldPayload   = "PINNED-ORIGINAL"
+		newPayload   = "PINNED-REPLACED-LATER"
+	)
+
+	reg := byte(tar.TypeReg)
+	lnk := byte(tar.TypeLink)
+
+	layers := func() []v1.Layer {
+		return []v1.Layer{
+			layerFromTarEntries(t,
+				tarEntry{path: "lower/gone.txt", typeFlag: reg, contents: "DELETED-BEFORE-LINKED"},
+				tarEntry{path: "lower/pinned.txt", typeFlag: reg, contents: oldPayload},
+				tarEntry{path: "lower/target.txt", typeFlag: reg, contents: lowerPayload},
+			),
+			layerFromTarEntries(t,
+				tarEntry{path: "lower/.wh.gone.txt", typeFlag: reg},
+				tarEntry{path: "upper/link.txt", typeFlag: lnk, linkPath: "lower/target.txt"},
+				tarEntry{path: "upper/pinned.txt", typeFlag: lnk, linkPath: "lower/pinned.txt"},
+			),
+			layerFromTarEntries(t,
+				tarEntry{path: "lower/pinned.txt", typeFlag: reg, contents: newPayload},
+				tarEntry{path: "upper/dangling.txt", typeFlag: lnk, linkPath: "lower/gone.txt"},
+			),
+		}
+	}
+
+	for _, mode := range []struct {
+		name string
+		ctx  context.Context
+	}{
+		{name: "eager squashes", ctx: context.Background()},
+		{name: "lazy squashes", ctx: WithLazyLayerSquashes(context.Background())},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			img, err := tryReadImageFromLayersWithContext(t, mode.ctx, layers()...)
+			require.NoError(t, err)
+
+			entry := catalogEntryForTest(t, img, "/upper/link.txt")
+			assert.Equal(t, file.TypeRegular, entry.Metadata.Type, "adopted from the lower layer's file")
+			assert.Equal(t, int64(len(lowerPayload)), entry.Metadata.Size())
+			assert.Equal(t, "text/plain", entry.Metadata.MIMEType)
+			assert.Equal(t, uint(1), img.FileCatalog.Layer(entry.Reference).Metadata.Index,
+				"the name belongs to the layer whose header created it")
+
+			contents, err := hardlinkContentsForTest(img, "/upper/link.txt")
+			require.NoError(t, err)
+			assert.Equal(t, lowerPayload, contents)
+
+			resolutions, err := img.SquashedSearchContext.SearchByMIMEType("text/plain")
+			require.NoError(t, err)
+			found := false
+			for _, resolution := range resolutions {
+				found = found || (resolution.Reference != nil && resolution.RealPath == "/upper/link.txt")
+			}
+			assert.True(t, found, "the adopted name must be reachable by MIME search at its own path")
+
+			contents, err = hardlinkContentsForTest(img, "/upper/pinned.txt")
+			require.NoError(t, err)
+			assert.Equal(t, oldPayload, contents, "replacing the other name later does not change this one")
+
+			dangling := catalogEntryForTest(t, img, "/upper/dangling.txt")
+			assert.Equal(t, file.TypeHardLink, dangling.Metadata.Type,
+				"a lower layer deleted the target, so extraction would fail to link it")
+			assert.Equal(t, int64(0), dangling.Metadata.Size())
+		})
 	}
 }
 
