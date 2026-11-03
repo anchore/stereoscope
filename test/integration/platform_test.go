@@ -154,13 +154,15 @@ func TestPlatformSelectionWithOciLocalSources(t *testing.T) {
 	// Skopeo would need to convert it to OCI format first, which would change the config digest and make the test flaky.
 	// It's safer to use an image already in an OCI format, like version 1.38.0 of busybox.
 	// `skopeo copy --preserve-digests` will error if the source image is not in OCI format.
-	remoteImage := "docker.io/library/busybox:1.38.0"
+	// The index is pinned by digest because Docker Hub re-pushes official image tags: busybox:1.38.0 was
+	// rebuilt with new per-platform configs, which broke the expected digests below while they named a tag.
+	remoteImage := "docker.io/library/busybox@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4" // 1.38.0
 
 	// Digests were obtained by copying the actual values from the OCI layout directory.
-	arm64Digest := "sha256:e0e8b3cbfed68a90084781e2962f9c0deead51c5a3f11a488eef0283a4284bc2"
-	s390xDigest := "sha256:0cf160e720a8e4f20883b72276a6eaded83b79539f3f1d39e35a3336154b9960"
-	amd64Digest := "sha256:c6348fa86ba0fb2108c9334f5fe913ddc6d853313e655891f133a0127c30099f"
-	ppc64leDigest := "sha256:b144fc0e06537d07956cde340b878a81a717e394edb736d3110858a12a6635cb"
+	arm64Digest := "sha256:d2482869a6b838d3b4c9cad0c8085c06277909482771eb525d298fc3a7d07927"
+	s390xDigest := "sha256:e55a0fa55032cceac2d983f4b4a25b28e42303b46a2f1915fc0fa45051e6ca70"
+	amd64Digest := "sha256:aaef90e065235eb0b2d9938be85d1b81add2902cf89affe2cdfa19be33476ac0"
+	ppc64leDigest := "sha256:8158829b015d1c5285d63d54d37e95998ef0af4177e3f416678decbcaff3170c"
 
 	tests := []struct {
 		source         image.Source
