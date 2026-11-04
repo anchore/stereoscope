@@ -110,6 +110,8 @@ func TestHardLinkSemantics_LinuxLinkIntoLowerLayerIsNotAdopted(t *testing.T) {
 	}
 }
 
+// the path rules themselves are pinned in windows_hardlinks_test.go. These are the cases that depend on how a real
+// read indexes, orders and squashes the layers
 func TestHardLinkSemantics_WindowsLowerLayerLookup(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -147,60 +149,14 @@ func TestHardLinkSemantics_WindowsLowerLayerLookup(t *testing.T) {
 			want:   "REAL",
 		},
 		{
-			// the utility VM is cloned from the parent, so a whiteout there really deletes the file
-			name:   "a utility VM target whited out in between",
-			layers: [][]tarEntry{{reg(uvm32, "REAL")}, {reg("UtilityVM/Files/Windows/System32/.wh.x.dll", "")}, {lnk(uvmSxS, uvm32)}},
-			link:   uvmSxS,
-		},
-		{
-			name:   "a utility VM target under a directory whited out in between",
-			layers: [][]tarEntry{{reg(uvm32, "REAL")}, {reg("UtilityVM/Files/Windows/.wh.System32", "")}, {lnk(uvmSxS, uvm32)}},
-			link:   uvmSxS,
-		},
-		{
 			// the link is created after the layer's files, so it would get this layer's file
 			name:   "a utility VM target this layer writes after the link",
 			layers: [][]tarEntry{{reg(uvm32, "OLD")}, {lnk(uvmSxS, uvm32), reg(uvm32, "NEW")}},
 			link:   uvmSxS,
 		},
 		{
-			name:   "in no layer below",
-			layers: [][]tarEntry{{reg("Files/other.dll", "X")}, {lnk(winSxS, sys32)}},
-		},
-		{
-			// an NTFS lookup would find the nearer layer's file, which the literal path doesn't name
-			name:   "a nearer layer has the name in another case",
-			layers: [][]tarEntry{{reg(sys32, "REAL")}, {reg("Files/windows/system32/X.DLL", "EVIL")}, {lnk(winSxS, sys32)}},
-		},
-		{
-			// an NTFS directory can't hold both, so which one Windows would see is unknown
-			name:   "the target's layer has the name in two cases",
-			layers: [][]tarEntry{{reg(sys32, "REAL"), reg("Files/windows/system32/X.DLL", "EVIL")}, {lnk(winSxS, sys32)}},
-		},
-		{
-			name:   "a nearer layer has an ancestor in another case that is not a directory",
-			layers: [][]tarEntry{{reg(sys32, "REAL")}, {tarEntry{path: "Files/WINDOWS", typeFlag: tar.TypeSymlink, linkPath: "/elsewhere"}}, {lnk(winSxS, sys32)}},
-		},
-		{
 			name:   "a reparse point on the way in the target's layer",
 			layers: [][]tarEntry{{tarEntry{path: "Files/Windows", typeFlag: tar.TypeSymlink, linkPath: "/elsewhere"}, reg(sys32, "REAL")}, {lnk(winSxS, sys32)}},
-		},
-		{
-			name:   "a target outside Files",
-			layers: [][]tarEntry{{reg("Hives/x", "REAL")}, {lnk(winSxS, "Hives/x")}},
-		},
-		{
-			// hcsshim cleans without a root, so this climbs out of Files and fails the import
-			name:   "a target that climbs out of Files",
-			layers: [][]tarEntry{{reg(sys32, "REAL")}, {lnk(winSxS, "../"+sys32)}},
-		},
-		{
-			name:   "a target with a backslash",
-			layers: [][]tarEntry{{reg(`Files/Windows\System32/x.dll`, "REAL")}, {lnk(winSxS, `Files/Windows\System32/x.dll`)}},
-		},
-		{
-			name:   "a target that is a directory",
-			layers: [][]tarEntry{{reg(sys32, "REAL")}, {lnk(winSxS, "Files/Windows/System32")}},
 		},
 		{
 			// links are created after the layer's files, so this one would fail the import
