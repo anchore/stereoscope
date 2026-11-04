@@ -772,7 +772,22 @@ type lowerLayerLookup struct {
 	own *Layer
 	// below is nearest first
 	below  []*Layer
-	folded map[*Layer]map[string]*filenode.FileNode
+	folded map[*Layer]map[foldedName]foldedNode
+}
+
+// foldedName is one upper-cased path component inside a folded directory. Looking a name up one component at a
+// time keeps the work linear in its length, where hashing every prefix would cost its depth times its length.
+type foldedName struct {
+	dir  int
+	name string
+	// whiteout is set for the whiteout of name, rather than name itself
+	whiteout bool
+}
+
+// foldedNode is what a foldedName names: its node, or nil when two paths fold together, and its own folded id.
+type foldedNode struct {
+	node *filenode.FileNode
+	id   int
 }
 
 func newLowerLayerLookup(own *Layer, bottomFirst []*Layer) *lowerLayerLookup {
@@ -780,11 +795,10 @@ func newLowerLayerLookup(own *Layer, bottomFirst []*Layer) *lowerLayerLookup {
 	for i, l := range bottomFirst {
 		below[len(bottomFirst)-1-i] = l
 	}
-	return &lowerLayerLookup{own: own, below: below, folded: make(map[*Layer]map[string]*filenode.FileNode)}
+	return &lowerLayerLookup{own: own, below: below, folded: make(map[*Layer]map[foldedName]foldedNode)}
 }
 
-// maxWindowsLinkName bounds the link names this resolves. Each lookup hashes every prefix of the name, so a deep name
-// from a crafted header would cost its depth times its length.
+// maxWindowsLinkName bounds the link names this resolves, and so the work per link and layer.
 // ponytail: real WinSxS names are a few hundred bytes. Raise it if a real image has longer ones
 const maxWindowsLinkName = 4096
 
@@ -805,37 +819,49 @@ func (l *lowerLayerLookup) adopt(fileCatalog *FileCatalog, metadata *file.Metada
 	want := file.Path(file.DirSeparator + name)
 	// ponytail: Unicode simple case folding, which NTFS's upcase table follows outside a few scripts. A name that
 	// folds differently there is matched in the wrong layer
-	key := strings.ToUpper(string(want))
+	components := strings.Split(strings.ToUpper(name), file.DirSeparator)
 
 	for _, layer := range layers {
 		folded := l.foldedPaths(layer)
-		for i := 1; i <= len(key); i++ {
-			if i < len(key) && key[i] != '/' {
-				continue
+		dir := 0
+		var hit *filenode.FileNode
+		for i, c := range components {
+			if _, ok := folded[foldedName{dir: dir, name: c, whiteout: true}]; ok && uvm {
+				return nil
+			}
+			f, ok := folded[foldedName{dir: dir, name: c}]
+			if !ok {
+				// nothing deeper is in this layer
+				break
+			}
+			// nil is a name this layer has in more than one case
+			if f.node == nil {
+				return nil
+			}
+			if i == len(components)-1 {
+				hit = f.node
+				break
 			}
 			// a non-directory on the way is a reparse point or a file, and either fails the lookup with an error
 			// that stops the import, rather than a miss that moves on to the next layer
-			if n, ok := folded[key[:i]]; i < len(key) && ok && (n == nil || n.FileType != file.TypeDirectory) {
+			if f.node.FileType != file.TypeDirectory {
 				return nil
 			}
-			if uvm && whitedOut(folded, key[:i]) {
-				return nil
-			}
+			dir = f.id
 		}
-		n, ok := folded[key]
-		if !ok {
+		if hit == nil {
 			continue
 		}
-		// nil is a name this layer has in more than one case. And a utility VM target this layer has may have
-		// been written before or after the link, which the tree doesn't order
-		if n == nil || n.RealPath != want || n.Reference == nil || layer == l.own {
+		// a utility VM target this layer has may have been written before or after the link, which the tree
+		// doesn't order
+		if hit.RealPath != want || hit.Reference == nil || layer == l.own {
 			return nil
 		}
-		target, err := fileCatalog.Get(*n.Reference)
+		target, err := fileCatalog.Get(*hit.Reference)
 		if err != nil || target.Type == file.TypeDirectory || target.Type == file.TypeHardLink {
 			return nil
 		}
-		opener := fileCatalog.opener(n.Reference.ID())
+		opener := fileCatalog.opener(hit.Reference.ID())
 		if opener != nil {
 			bindHardLink(target.Metadata, metadata)
 		}
@@ -844,31 +870,42 @@ func (l *lowerLayerLookup) adopt(fileCatalog *FileCatalog, metadata *file.Metada
 	return nil
 }
 
-// whitedOut reports whether folded has a whiteout of p, both upper-cased.
-func whitedOut(folded map[string]*filenode.FileNode, p string) bool {
-	j := strings.LastIndex(p, file.DirSeparator)
-	_, ok := folded[p[:j+1]+strings.ToUpper(file.WhiteoutPrefix)+p[j+1:]]
-	return ok
-}
-
-// foldedPaths maps every path in layer's tree, upper-cased, to its node, or to nil when two paths fold together.
-func (l *lowerLayerLookup) foldedPaths(layer *Layer) map[string]*filenode.FileNode {
+// foldedPaths indexes every path in layer's tree by its upper-cased components (see foldedName).
+func (l *lowerLayerLookup) foldedPaths(layer *Layer) map[foldedName]foldedNode {
 	if m, ok := l.folded[layer]; ok {
 		return m
 	}
 	nodes := layer.Tree.TreeReader().Nodes()
-	m := make(map[string]*filenode.FileNode, len(nodes))
+	// ids numbers each folded directory path; the root is 0
+	ids := map[string]int{file.DirSeparator: 0}
+	id := func(p string) int {
+		if i, ok := ids[p]; ok {
+			return i
+		}
+		ids[p] = len(ids)
+		return ids[p]
+	}
+	whiteoutPrefix := strings.ToUpper(file.WhiteoutPrefix)
+	m := make(map[foldedName]foldedNode, len(nodes))
 	for _, n := range nodes {
 		fn, ok := n.(*filenode.FileNode)
-		if !ok || fn == nil {
+		if !ok || fn == nil || fn.RealPath == file.DirSeparator {
 			continue
 		}
-		k := strings.ToUpper(string(fn.RealPath))
+		p := strings.ToUpper(string(fn.RealPath))
+		i := strings.LastIndex(p, file.DirSeparator)
+		parent, base := p[:i], p[i+1:]
+		if parent == "" {
+			parent = file.DirSeparator
+		}
+		k := foldedName{dir: id(parent), name: base}
 		if _, dup := m[k]; dup {
-			m[k] = nil
-			continue
+			fn = nil
 		}
-		m[k] = fn
+		m[k] = foldedNode{node: fn, id: id(p)}
+		if strings.HasPrefix(base, whiteoutPrefix) {
+			m[foldedName{dir: k.dir, name: strings.TrimPrefix(base, whiteoutPrefix), whiteout: true}] = foldedNode{}
+		}
 	}
 	l.folded[layer] = m
 	return m
