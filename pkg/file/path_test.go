@@ -1,6 +1,11 @@
 package file
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestPath_Normalize(t *testing.T) {
 	cases := []struct {
@@ -183,4 +188,32 @@ func TestPath_UnWhiteoutPath(t *testing.T) {
 			t.Errorf("expected an error for a non-whiteout path '%v'", notWhiteout)
 		}
 	}
+}
+
+func TestPath_ConstituentPaths(t *testing.T) {
+	tests := []struct {
+		path string
+		want []Path
+	}{
+		{path: "", want: []Path{"/"}},
+		{path: "/", want: []Path{"/"}},
+		{path: "/a", want: []Path{"/"}},
+		{path: "/a/b/c", want: []Path{"/", "/a", "/a/b"}},
+		{path: "a/b/c", want: []Path{"/", "/a", "/a/b"}},
+		{path: "/a/b/c/", want: []Path{"/", "/a", "/a/b"}},
+		{path: "/a//b", want: []Path{"/", "/a", "/a/"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			assert.Equal(t, tt.want, Path(tt.path).ConstituentPaths())
+		})
+	}
+}
+
+// a deep path must cost memory linear in its length: each result is a prefix of one string, not a copy
+func TestPath_ConstituentPaths_DeepPathIsLinear(t *testing.T) {
+	p := Path(strings.Repeat("/a", 200_000))
+	allocs := testing.AllocsPerRun(1, func() { _ = p.ConstituentPaths() })
+	// the result slice grows by doubling, plus the one joined string: far below one allocation per component
+	assert.Less(t, allocs, float64(100))
 }
