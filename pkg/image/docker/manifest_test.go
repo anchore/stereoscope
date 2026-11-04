@@ -156,3 +156,19 @@ func TestAssembleOCIManifest(t *testing.T) {
 	// to update snapshots, run: UPDATE_SNAPS=true go test -run TestAssembleOCIManifest ./...
 	snaps.MatchJSON(t, actualBytes)
 }
+
+func TestAssembleOCIManifestLayerCountMismatch(t *testing.T) {
+	fixturePath := testutil.GetFixturePath(t, "engine-config.json")
+	configBytes, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("could not read config: %+v", err)
+	}
+
+	// the config declares 7 diff_ids, but the manifest only declares 3 layers
+	sizes := []int64{210882560, 20480, 64316928}
+
+	_, err = assembleOCIManifest(configBytes, sizes)
+	if err == nil {
+		t.Fatal("expected an error when the config has more diff_ids than the manifest has layers")
+	}
+}
