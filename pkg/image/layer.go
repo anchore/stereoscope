@@ -22,6 +22,7 @@ import (
 	"github.com/anchore/stereoscope/pkg/event"
 	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/filetree"
+	"github.com/anchore/stereoscope/pkg/filetree/filenode"
 )
 
 const (
@@ -470,6 +471,62 @@ func adoptHardLinkInode(ft filetree.Reader, fileCatalog *FileCatalog, metadata *
 	return opener, true
 }
 
+// literalNode is the node at exactly p in ft, following no links, or nil.
+func literalNode(ft filetree.Reader, p file.Path) *filenode.FileNode {
+	n, _ := ft.TreeReader().Node(filenode.IDByPath(p)).(*filenode.FileNode)
+	return n
+}
+
+// hasNonDirAncestor reports whether some ancestor of p in ft is not a directory. The tree can hold a literal
+// child under a symlink node, and anything that resolves such a path follows the symlink instead.
+func hasNonDirAncestor(ft filetree.Reader, p file.Path) bool {
+	for _, c := range p.ConstituentPaths() {
+		n := literalNode(ft, c)
+		if n == nil {
+			// every node has its parent in the tree, so nothing deeper is there either
+			return false
+		}
+		if n.FileType != file.TypeDirectory {
+			return true
+		}
+	}
+	return false
+}
+
+// removeLiteralLeaf removes the node at exactly p from ft, and its reference from the catalog, when that node has
+// no children. It leaves the tree alone when there is no such node, when p is the root, or when an ancestor of p
+// is not a directory, since RemovePath would follow that ancestor and remove some other path.
+func removeLiteralLeaf(ft filetree.ReadWriter, fileCatalog *FileCatalog, p file.Path) error {
+	existing := literalNode(ft, p)
+	if existing == nil || p == file.Path(file.DirSeparator) || len(ft.TreeReader().Children(existing)) > 0 || hasNonDirAncestor(ft, p) {
+		return nil
+	}
+	if err := ft.RemovePath(p); err != nil {
+		return err
+	}
+	if existing.Reference != nil {
+		fileCatalog.remove(*existing.Reference)
+	}
+	return nil
+}
+
+// removeEarlierEntry clears the way for a tar entry over whatever an earlier entry of the same layer put at its
+// path. Extraction applies entries in order and, unless both are directories, removes whatever is at the path
+// before writing the next one there (containerd and docker pkg/archive). Doing the same here gives the header its
+// own reference, so the later entry wins even with the same type, and the replaced reference leaves the catalog.
+//
+// a node with children is kept (see removeLiteralLeaf): those children may have been written through a lower
+// symlink at this path, so a rootfs applier still has them under the symlink's target. There, and under a
+// non-directory ancestor, the builder reuses the node or refuses a retype and fails the read, as before.
+func removeEarlierEntry(ft filetree.ReadWriter, fileCatalog *FileCatalog, metadata file.Metadata) error {
+	p := file.Path(metadata.Path).Normalize()
+	existing := literalNode(ft, p)
+	if existing == nil || (existing.FileType == file.TypeDirectory && metadata.Type == file.TypeDirectory) {
+		return nil
+	}
+	return removeLiteralLeaf(ft, fileCatalog, p)
+}
+
 func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int64, layerRef *Layer, monitor *progress.Manual) file.TarIndexVisitor {
 	builder := filetree.NewBuilder(ft, fileCatalog.Index)
 
@@ -484,6 +541,12 @@ func layerTarIndexer(ft filetree.ReadWriter, fileCatalog *FileCatalog, size *int
 			}
 		}()
 		metadata := file.NewMetadata(entry.Header, contents)
+
+		// first, as extraction does: an earlier entry at this path is gone before this one is written, even
+		// for a hardlink naming it
+		if err = removeEarlierEntry(ft, fileCatalog, metadata); err != nil {
+			return err
+		}
 
 		// a hardlink names a file already present in this layer; describe it as that file and read
 		// its contents through that file's opener rather than this header's empty data section
