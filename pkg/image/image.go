@@ -687,6 +687,17 @@ func (i *Image) squashLayers(ctx context.Context, layers []*Layer, gates *layerG
 			return fmt.Errorf("unable to squash layer %d: %w", idx, err)
 		}
 
+		// before the merge. Only Windows layers link into the layers below, and only hcsshim imports them, so
+		// that is the one model followed; a Linux image's links stay as their headers describe them. The
+		// config is part of the image digest, so this stays a function of the image
+		var below []*Layer
+		if i.Metadata.Config.OS == "windows" {
+			below = layers[:idx]
+		}
+		if err := adoptLowerLayerHardLinks(below, layer); err != nil {
+			return fmt.Errorf("failed to adopt hardlinks in layer %d: %w", idx, err)
+		}
+
 		layerTree := layer.Tree.(filetree.ReadWriter)
 		squashedTree, err := squashOnto(lastSquashTree, layerTree, eager)
 		if err != nil {

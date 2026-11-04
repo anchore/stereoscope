@@ -31,8 +31,11 @@ import (
 //   - The data section goes to the ALPHABETICALLY FIRST name, not to the name that was created
 //     first. `printf > orig.txt && ln orig.txt hard.txt` yields a REG header for hard.txt and a
 //     HARDLINK header for orig.txt, because the tar writer walks the directory sorted.
-//   - A hardlink header's target is ALWAYS in the same layer, and always precedes it. `ln` across
-//     layers forces an overlayfs copy-up, so it emits a full REG copy rather than a hardlink header.
+//   - From docker on overlayfs, a hardlink header's target is always in the same layer, and always
+//     precedes it. `ln` across layers forces an overlayfs copy-up, so it emits a full REG copy rather
+//     than a hardlink header. Other producers do not hold to this: Windows container images routinely
+//     carry update layers whose hardlink headers name a base-layer file (see
+//     hardlink_lower_layer_test.go).
 //
 // The rule the cases below encode: a hardlink is a second name for an inode, fixed when the link is
 // created. Replacing, overwriting or deleting the OTHER name of that inode in a later layer does not

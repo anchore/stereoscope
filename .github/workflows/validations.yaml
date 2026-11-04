@@ -82,6 +82,29 @@ jobs:
       - name: Run unit tests
         run: make unit
 
+  Windows-Image-Test:
+    name: "Windows image tests"
+    # reads a real Windows image from its registry on a Windows host: fetch, layer cache, indexing and
+    # squashing all run on Windows. No container is started, so the host build need not match the image.
+    # Left out of the required checks on purpose: it depends on Microsoft's CDN, the gated Linux integration
+    # job runs the same test, and the gated Windows unit tests cover the host-specific code. It calls go test
+    # directly since `make integration` builds Linux-only tool images first
+    runs-on: windows-2025
+    # the image's foreign layers come from Microsoft's CDN, so a stalled download should not hold a runner for 6h
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap environment
+        uses: $/.github/actions/bootstrap
+
+      - name: Run Windows image tests
+        run: go test -v -count=1 -run '^TestImageHardLinks_WindowsLinkIntoLowerLayer$' ./test/integration/
+
   Integration-Test:
     # Note: changing this job name requires making the same update in the .github/workflows/release.yaml pipeline
     name: "Integration tests"
