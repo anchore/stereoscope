@@ -100,11 +100,14 @@ func (p Path) AllPaths() []Path {
 
 // ConstituentPaths returns all constituent paths for the current path (not including the current path itself) (e.g. /home/wagoodman/file.txt -> /, /home, /home/wagoodman )
 func (p Path) ConstituentPaths() []Path {
-	parents := strings.Split(strings.Trim(string(p), DirSeparator), DirSeparator)
-	fullPaths := make([]Path, len(parents))
-	for idx := range parents {
-		cur := DirSeparator + strings.Join(parents[:idx], DirSeparator)
-		fullPaths[idx] = Path(cur)
+	// every result is a prefix of one string, so memory is linear in the path length rather than in depth x length,
+	// which a deep path from a tar header would otherwise blow up
+	s := DirSeparator + strings.Trim(string(p), DirSeparator)
+	fullPaths := []Path{DirSeparator}
+	for i := 1; i < len(s); i++ {
+		if s[i] == DirSeparator[0] {
+			fullPaths = append(fullPaths, Path(s[:i]))
+		}
 	}
 	return fullPaths
 }
