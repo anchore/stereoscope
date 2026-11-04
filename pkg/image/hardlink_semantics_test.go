@@ -355,6 +355,8 @@ func TestHardLinkSemantics_AdoptedTypeConflictDoesNotAbortRead(t *testing.T) {
 		layerFromTarEntries(t,
 			// dangling, so nothing is adopted and /p is indexed as the hardlink its header describes
 			tarEntry{path: "p", typeFlag: tar.TypeLink, linkPath: "does-not-exist"},
+			// a child keeps the earlier /p from being replaced by the later member at that path
+			tarEntry{path: "p/c", typeFlag: tar.TypeReg, contents: "C"},
 			tarEntry{path: "t", typeFlag: tar.TypeReg, contents: "DATA"},
 			// a duplicate member for the same path, this one adopting a regular file, which cannot be
 			// added over the hardlink node already at /p

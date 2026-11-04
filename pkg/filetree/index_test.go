@@ -959,3 +959,44 @@ func TestIndex_GetByBasenameGlob_concurrentAddDoesNotDeadlock(t *testing.T) {
 		t.Fatal("GetByBasenameGlob and Add deadlocked: a nested RLock inside GetByBasenameGlob blocked behind a pending writer")
 	}
 }
+
+func TestIndex_Remove(t *testing.T) {
+	idx := NewIndex().(*index)
+	keep := file.NewFileReference("/a/run.sh")
+	gone := file.NewFileReference("/b/run.sh")
+	only := file.NewFileReference("/c/lib.tar.gz")
+	idx.Add(*keep, file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
+	idx.Add(*gone, file.Metadata{Type: file.TypeRegular, MIMEType: "text/x-shellscript"})
+	idx.Add(*only, file.Metadata{Type: file.TypeSymLink, MIMEType: "application/gzip"})
+
+	idx.Remove(*gone)
+	idx.Remove(*only)
+	idx.Remove(*only) // removing twice is a no-op
+
+	assert.False(t, idx.Exists(*gone))
+	assert.True(t, idx.Exists(*keep))
+
+	// a bucket shared with a remaining entry keeps it
+	for name, get := range map[string]func() ([]IndexEntry, error){
+		"basename":  func() ([]IndexEntry, error) { return idx.GetByBasename("run.sh") },
+		"extension": func() ([]IndexEntry, error) { return idx.GetByExtension(".sh") },
+		"mime type": func() ([]IndexEntry, error) { return idx.GetByMIMEType("text/x-shellscript") },
+		"file type": func() ([]IndexEntry, error) { return idx.GetByFileType(file.TypeRegular) },
+	} {
+		got, err := get()
+		require.NoError(t, err, name)
+		require.Len(t, got, 1, name)
+		assert.Equal(t, keep.ID(), got[0].ID(), name)
+	}
+
+	// a bucket left empty is dropped, so nothing lists a key with no entry behind it
+	assert.NotContains(t, idx.basenames.List(), "lib.tar.gz")
+	assert.NotContains(t, idx.byBasename, "lib.tar.gz")
+	assert.NotContains(t, idx.byExtension, ".gz")
+	assert.NotContains(t, idx.byExtension, ".tar.gz")
+	assert.NotContains(t, idx.byMIMEType, "application/gzip")
+	assert.NotContains(t, idx.byFileType, file.TypeSymLink)
+	got, err := idx.GetByBasenameGlob("lib*")
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}

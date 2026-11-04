@@ -123,6 +123,47 @@ func (c *index) Add(f file.Reference, m file.Metadata) {
 	}
 }
 
+// Remove drops the entry for the given file reference, if any. It is deliberately not on IndexWriter, which
+// outside code may implement: callers that need it assert for it.
+func (c *index) Remove(f file.Reference) {
+	c.Lock()
+	defer c.Unlock()
+
+	id := f.ID()
+	existing, ok := c.index[id]
+	if !ok {
+		return
+	}
+	if existing.MIMEType != "" {
+		removeFromBucket(c.byMIMEType, existing.MIMEType, id)
+	}
+	removeFromBucket(c.byFileType, existing.Type, id)
+	if basename := path.Base(string(f.RealPath)); basename != "/" {
+		if removeFromBucket(c.byBasename, basename, id) {
+			c.basenames.Remove(basename)
+		}
+	}
+	for _, ext := range fileExtensions(string(f.RealPath)) {
+		removeFromBucket(c.byExtension, ext, id)
+	}
+	delete(c.index, id)
+}
+
+// removeFromBucket removes id from the set at key, dropping the set once it is empty so lookups and listings of the
+// keys never see one with nothing behind it. It reports whether the set was dropped.
+func removeFromBucket[K comparable](buckets map[K]file.IDSet, key K, id file.ID) bool {
+	set, ok := buckets[key]
+	if !ok {
+		return false
+	}
+	set.Remove(id)
+	if len(set) > 0 {
+		return false
+	}
+	delete(buckets, key)
+	return true
+}
+
 // Exists indicates if the given file reference exists in the index.
 func (c *index) Exists(f file.Reference) bool {
 	c.RLock()
