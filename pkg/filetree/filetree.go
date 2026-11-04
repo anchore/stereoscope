@@ -812,6 +812,19 @@ func (t *FileTree) Walk(fn func(path file.Path, f filenode.FileNode) error, cond
 // Merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
 // are path conflicts. This is the basis function for squashing (where the current Tree is the bottom Tree and the
 // given Tree is the top Tree).
+//
+// Upper entries, whiteouts included, apply at their literal paths and never through a lower symlink. A lower symlink
+// at an ancestor of an upper entry is masked by the upper directory: the link is replaced, nothing that was under the
+// link node survives, and the link's target is left alone (a whiteout under the link does not delete from it).
+//
+// This follows appliers that unpack each layer into its own directory (overlay snapshotters such as containerd
+// overlayfs, and docker overlay2 with native diff). Appliers that unpack onto the merged rootfs (the containerd native
+// snapshotter, naive diff, vfs) agree only when the upper layer has a header for the directory ahead of its entries,
+// since they remove the link before creating the directory. When the directory is only implied by its entries, or its
+// header comes after them, they resolve the entries through the link instead. The squash follows overlay so results
+// only depend on the image. For such runtime-ambiguous images this means the squash can omit files those runtimes
+// keep, or keep files they delete. The per-layer trees still hold every entry at its literal path. (Applier behavior
+// as of containerd 2.x.)
 func (t *FileTree) Merge(upper Reader) error {
 	conditions := tree.WalkConditions{
 		ShouldContinueBranch: func(n node.Node) bool {
@@ -883,13 +896,9 @@ func (t *FileTree) Merge(upper Reader) error {
 			graft = &withRef
 		}
 
-		if lowerNode.HasFileNode() && upperNode.FileType != file.TypeDirectory {
-			// a non-directory masks everything under its path, whatever the lower node is (a malformed lower layer
-			// can hold children under a symlink). Clear the lower node found above, never through a link.
-			for _, child := range t.tree.Children(lowerNode.FileNode) {
-				if _, err := t.tree.RemoveNode(child); err != nil {
-					return fmt.Errorf("filetree Merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
-				}
+		if lowerNode.HasFileNode() {
+			if err := t.maskLowerChildren(lowerNode.FileNode, upperNode); err != nil {
+				return err
 			}
 		}
 		// graft the upper Node (with potential lower information) into the lower tree
@@ -904,6 +913,22 @@ func (t *FileTree) Merge(upper Reader) error {
 	// with no consideration to virtual paths (paths that are valid in the filetree because constituent paths
 	// contain symlinks).
 	return tree.NewDepthFirstWalkerWithConditions(upper.TreeReader(), visitor, conditions).WalkAll()
+}
+
+// maskLowerChildren clears the lower node's children unless both nodes are directories. Only a directory over a
+// directory merges; anything else masks everything under the lower path, whatever the lower node is (a malformed
+// lower layer can hold children under a symlink or file). The lower node is the one at the literal path, so this
+// never clears through a link.
+func (t *FileTree) maskLowerChildren(lower, upper *filenode.FileNode) error {
+	if upper.FileType == file.TypeDirectory && lower.FileType == file.TypeDirectory {
+		return nil
+	}
+	for _, child := range t.tree.Children(lower) {
+		if _, err := t.tree.RemoveNode(child); err != nil {
+			return fmt.Errorf("filetree Merge failed to mask children of lower node (%s): %w", upper.RealPath, err)
+		}
+	}
+	return nil
 }
 
 // hasOpaqueDirectory reports whether the given real path holds an opaque whiteout marker. Merge asks this of every

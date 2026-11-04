@@ -87,7 +87,9 @@ type Layer struct {
 	// in lower layers relative to this one. It never contains whiteout entries: those are changeset metadata
 	// and do not materialize as files in an applied rootfs. It is set for every layer once the image is read.
 	// Below the top layer of an image read with WithLazyLayerSquashes it is built on first use, so it is
-	// not a *filetree.FileTree and its first call can take a while (see WithLazyLayerSquashes).
+	// not a *filetree.FileTree and its first call can take a while (see WithLazyLayerSquashes). Entries under a
+	// lower-layer symlink are squashed with overlay semantics, which some runtimes disagree with (see
+	// filetree.FileTree.Merge), so Tree is the place to look for everything a layer wrote.
 	SquashedTree filetree.Reader
 	// fileCatalog contains all file metadata for all files in all layers (not just this layer)
 	fileCatalog *FileCatalog

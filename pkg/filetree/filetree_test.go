@@ -1657,3 +1657,79 @@ func TestFileTree_Merge_UpperFileMasksChildrenOfLowerFile(t *testing.T) {
 
 	assert.NotContainsf(t, lower.AllRealPaths(), file.Path("/x/vuln"), "an upper file masks the lower path's children; real paths are %v", lower.AllRealPaths())
 }
+
+// an upper directory over a lower symlink masks the link (see Merge): entries land at their literal paths, whiteouts
+// under the link do not reach its target, and nothing under the link node (only a malformed layer puts anything
+// there) survives
+func TestFileTree_Merge_UpperDirMasksLowerSymlink(t *testing.T) {
+	tests := []struct {
+		name    string
+		lower   func(t *testing.T, tr *FileTree)
+		upper   func(t *testing.T, tr *FileTree)
+		present []file.Path
+		absent  []file.Path
+	}{
+		{
+			name: "write lands at the literal path",
+			lower: func(t *testing.T, tr *FileTree) {
+				_, err := tr.AddDir("/t")
+				require.NoError(t, err)
+			},
+			upper: func(t *testing.T, tr *FileTree) {
+				_, err := tr.AddFile("/s/x")
+				require.NoError(t, err)
+			},
+			present: []file.Path{"/s/x"},
+			absent:  []file.Path{"/t/x"},
+		},
+		{
+			name: "whiteout does not reach the link target",
+			lower: func(t *testing.T, tr *FileTree) {
+				_, err := tr.AddFile("/t/x")
+				require.NoError(t, err)
+			},
+			upper: func(t *testing.T, tr *FileTree) {
+				_, err := tr.AddFile(file.Path("/s/" + file.WhiteoutPrefix + "x"))
+				require.NoError(t, err)
+			},
+			present: []file.Path{"/t/x"},
+		},
+		{
+			name: "children of the link node are masked",
+			lower: func(t *testing.T, tr *FileTree) {
+				_, err := tr.AddFile("/s/y")
+				require.NoError(t, err)
+			},
+			upper: func(t *testing.T, tr *FileTree) {
+				_, err := tr.AddDir("/s")
+				require.NoError(t, err)
+			},
+			absent: []file.Path{"/s/y"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lower := New()
+			_, err := lower.AddSymLink("/s", "/t")
+			require.NoError(t, err)
+			tt.lower(t, lower)
+			upper := New()
+			tt.upper(t, upper)
+
+			require.NoError(t, lower.Merge(upper))
+
+			n, err := lower.node("/s", linkResolutionStrategy{})
+			require.NoError(t, err)
+			require.True(t, n.HasFileNode())
+			assert.Equal(t, file.TypeDirectory, n.FileNode.FileType, "the upper directory should replace the link")
+
+			paths := lower.AllRealPaths()
+			for _, p := range tt.present {
+				assert.Containsf(t, paths, p, "real paths are %v", paths)
+			}
+			for _, p := range tt.absent {
+				assert.NotContainsf(t, paths, p, "real paths are %v", paths)
+			}
+		})
+	}
+}
