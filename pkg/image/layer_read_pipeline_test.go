@@ -401,7 +401,11 @@ func TestImage_readLayers_stageBoundsAreIndependent(t *testing.T) {
 	filled := withLayerExecutors(layerConcurrency(1, 0), layerCount)
 	assert.True(t, async.HasContextExecutor(filled, LayerFetchExecutor))
 	assert.True(t, async.HasContextExecutor(filled, LayerIndexExecutor))
-	assert.Greater(t, layerReadWorkers(layerCount), 1, "the index default should not be serial")
+	// layerReadWorkers scales with the CPU count, so on a single-CPU machine serial is the
+	// correct default and there is nothing for this assertion to prove.
+	if runtime.NumCPU() > 1 {
+		assert.Greater(t, layerReadWorkers(layerCount), 1, "the index default should not be serial")
+	}
 }
 
 func TestImage_readLayers_cancelledContextStopsTheRead(t *testing.T) {
