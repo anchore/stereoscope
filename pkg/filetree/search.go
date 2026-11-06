@@ -241,9 +241,20 @@ func (sc searchContext) searchByRequest(request searchRequest, options ...LinkRe
 
 // searchByParentBasename requires a non-nil index (see the guard in SearchByGlob).
 func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Resolution, error) {
-	indexes, err := sc.index.GetByBasename(request.indexLookup)
-	if err != nil {
-		return nil, fmt.Errorf("unable to search by parent-basename=%q: %w", request.indexLookup, err)
+	var candidates []file.Path
+	if parent, ok := literalParent(request.glob); ok {
+		// a parent written out in full (e.g. "/a/b/*") is one directory, so list just that one. Children of any other
+		// directory with the same basename can never match, but proving it costs a walk back through every symlink
+		// to each of their ancestors, which is very expensive in trees with many links (e.g. pnpm workspaces).
+		candidates = []file.Path{parent}
+	} else {
+		indexes, err := sc.index.GetByBasename(request.indexLookup)
+		if err != nil {
+			return nil, fmt.Errorf("unable to search by parent-basename=%q: %w", request.indexLookup, err)
+		}
+		for _, i := range indexes {
+			candidates = append(candidates, i.RealPath)
+		}
 	}
 
 	// unlike the other index searches, stale entries are deliberately kept (no fileNodesInTree filter). An entry only
@@ -254,14 +265,14 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 	// like the other index searches, a path through a link is only returned when the real path does not match.
 	var results []file.Resolution
 	listed := file.NewPathSet()
-	for _, i := range indexes {
-		na, err := sc.tree.node(i.RealPath, linkResolutionStrategy{FollowAncestorLinks: true, FollowBasenameLinks: true})
+	for _, candidate := range candidates {
+		na, err := sc.tree.node(candidate, linkResolutionStrategy{FollowAncestorLinks: true, FollowBasenameLinks: true})
 		if IsUnresolvableLink(err) {
-			log.WithFields("path", i.RealPath, "error", err).Trace("skipping parent directory with malformed link during search")
+			log.WithFields("path", candidate, "error", err).Trace("skipping parent directory with malformed link during search")
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("unable to resolve parent path=%q: %w", i.RealPath, err)
+			return nil, fmt.Errorf("unable to resolve parent path=%q: %w", candidate, err)
 		}
 		if !na.HasFileNode() || na.FileNode.FileType != file.TypeDirectory {
 			// a missing path or a non-directory has nothing to list
@@ -280,7 +291,7 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 		for _, p := range paths {
 			nestedRef, err := sc.firstMatchingReference(request.glob, string(p))
 			if err != nil {
-				return nil, fmt.Errorf("unable to fetch file reference from parent path %q for path=%q: %w", i.RealPath, p, err)
+				return nil, fmt.Errorf("unable to fetch file reference from parent path %q for path=%q: %w", candidate, p, err)
 			}
 			if !nestedRef.HasReference() {
 				continue
@@ -290,6 +301,16 @@ func (sc searchContext) searchByParentBasename(request searchRequest) ([]file.Re
 	}
 
 	return results, nil
+}
+
+// literalParent returns the parent directory of a parent glob (e.g. "/a/b" for "/a/b/*") when it holds no glob
+// expression of its own, so that it names exactly one path.
+func literalParent(glob string) (file.Path, bool) {
+	parent, _ := splitAtBasename(glob)
+	if !strings.HasPrefix(parent, "/") || !exactMatch(parent) {
+		return "", false
+	}
+	return file.Path(parent), true
 }
 
 func (sc searchContext) firstMatchingReferences(glob string, entries []IndexEntry) ([]file.Resolution, error) {
