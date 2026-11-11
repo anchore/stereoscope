@@ -373,6 +373,12 @@ func (sc searchContext) firstPathToNode(observedPaths file.PathSet, glob string,
 		dir := file.Path(symlinkCheckedPath[:i])
 		remain := string(fullPath[i:])
 
+		// every path this loop can produce ends in remain, so when no path with that suffix can match the
+		// glob, expanding links to this directory would only re-walk fan-out that cannot be a result
+		if !globCouldMatchSuffix(glob, remain) {
+			continue
+		}
+
 		if observedPaths.Contains(dir) {
 			// we've already observed this path, don't get in a loop, e.g. /usr/bin/X11 -> /usr/bin
 			continue
@@ -436,6 +442,61 @@ func (sc searchContext) fileNodesInTree(fileEntries []IndexEntry) []*filenode.Fi
 // firstMatchingReference returns the first file reference matching the glob
 func (sc searchContext) firstMatchingReference(glob string, realPath string) (*file.Resolution, error) {
 	return sc.firstPathToNode(file.PathSet{}, glob, realPath, "")
+}
+
+// globCouldMatchSuffix conservatively reports whether the glob could match some path ending in the given
+// segment-aligned suffix. It is not an exact existence check: glob segments left over once the suffix is
+// exhausted are treated as satisfiable by the unknown leading path, and a segment pattern that cannot be
+// evaluated answers "could match". A matching path is therefore never pruned, while a non-matching path may
+// still go unpruned. The glob is expected in parseGlob's normalized form (rooted or **-prefixed, redundant
+// separators collapsed); patterns with escapes never reach this helper, as parseGlob routes them to a full
+// tree walk instead.
+func globCouldMatchSuffix(glob, suffix string) bool {
+	suffix = strings.TrimPrefix(suffix, "/")
+	if glob == "" || suffix == "" {
+		return true
+	}
+	globSegs := strings.Split(strings.TrimPrefix(glob, "/"), "/")
+	suffixSegs := strings.Split(suffix, "/")
+	ng, ns := len(globSegs), len(suffixSegs)
+
+	// free[g][s] is true when glob segments g: can match some path ending in suffix segments s: (the leading
+	// part of that path is unconstrained); exact[g][s] is the same with nothing allowed before the suffix.
+	free := make([][]bool, ng+1)
+	exact := make([][]bool, ng+1)
+	for g := range free {
+		free[g] = make([]bool, ns+1)
+		exact[g] = make([]bool, ns+1)
+	}
+	// an exhausted suffix leaves only the unknown leading path, which any valid glob can match
+	for g := 0; g <= ng; g++ {
+		free[g][ns] = true
+	}
+	// an exhausted suffix and remaining glob is an exact match only when all remaining segments are "**"
+	exact[ng][ns] = true
+	for g := ng - 1; g >= 0; g-- {
+		exact[g][ns] = globSegs[g] == "**" && exact[g+1][ns]
+	}
+
+	for g := ng - 1; g >= 0; g-- {
+		for s := ns - 1; s >= 0; s-- {
+			if globSegs[g] == "**" {
+				// "**" absorbs only leading-path segments, or the next suffix segment as well
+				free[g][s] = free[g+1][s] || exact[g][s+1]
+				exact[g][s] = exact[g+1][s] || exact[g][s+1]
+				continue
+			}
+			matched, err := doublestar.Match(globSegs[g], suffixSegs[s])
+			if err != nil {
+				// do not prune on a pattern that cannot be evaluated
+				return true
+			}
+			// the segment matches either a leading-path segment or the next suffix segment itself
+			free[g][s] = free[g+1][s] || (matched && exact[g+1][s+1])
+			exact[g][s] = matched && exact[g+1][s+1]
+		}
+	}
+	return free[0][0]
 }
 
 // nextSegment returns the next index a slash is found, the end of the string, or -1 if the request is >= string len
