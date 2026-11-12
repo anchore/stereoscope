@@ -50,12 +50,36 @@ type Image struct {
 
 	overrideMetadata []AdditionalMetadata
 
+	// layerBlobLocator finds layer blobs on local disk so uncompressed ones are indexed in place (see
+	// WithLayerBlobLocator)
+	layerBlobLocator LayerBlobLocator
+	// disableInPlaceLayers is a test hook: when set, every layer is copied into the cache directory as if no
+	// blob locator had been given
+	disableInPlaceLayers bool
+
 	// wrapLazyLayerTree is a test hook: when set, each layer tree handed to a lazy layer squash goes through
 	// it, so a test can see (or break) the build that reads it
 	wrapLazyLayerTree func(layerIdx int, layerTree filetree.ReadWriter) filetree.ReadWriter
 }
 
 type AdditionalMetadata func(*Image) error
+
+// LayerBlobLocator returns the path of a local file holding the blob with the given digest exactly as the
+// image source stores it (not decompressed), or false if there is no such file.
+type LayerBlobLocator func(digest v1.Hash) (path string, ok bool)
+
+// WithLayerBlobLocator lets the image index layers whose blob is an uncompressed tar directly from the file
+// the locator returns, instead of copying each one into the layer cache first. The file is only ever read:
+// it is never written, moved or removed, including by Cleanup. A blob that is compressed, missing, or does
+// not look like a tar is copied as usual. A nil locator changes nothing.
+func WithLayerBlobLocator(locator LayerBlobLocator) AdditionalMetadata {
+	return func(image *Image) error {
+		if locator != nil {
+			image.layerBlobLocator = locator
+		}
+		return nil
+	}
+}
 
 func WithTags(tags ...string) AdditionalMetadata {
 	return func(image *Image) error {
@@ -292,7 +316,12 @@ func (i *Image) buildLayers() ([]*Layer, error) {
 	if err := validateLayerMediaTypes(v1Layers); err != nil {
 		return nil, err
 	}
-	return newLayers(v1Layers, i.Metadata.Config.RootFS.DiffIDs), nil
+	// readMetadata has already applied the overrides, so the locator option (if any) is set by now
+	locator := i.layerBlobLocator
+	if i.disableInPlaceLayers {
+		locator = nil
+	}
+	return newLayers(v1Layers, i.Metadata.Config.RootFS.DiffIDs, locator), nil
 }
 
 // releasePreviousLayers releases every layer tar a previous Read left open and forgets the layers.

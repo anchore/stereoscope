@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
@@ -111,6 +114,8 @@ func (p *directoryImageProvider) Provide(ctx context.Context) (*image.Image, err
 
 	metadata := []image.AdditionalMetadata{
 		image.WithManifestDigest(selectedImageDigest.String()),
+		// uncompressed blobs (e.g. from skopeo copy --dest-decompress) are indexed where they sit
+		image.WithLayerBlobLocator(layoutBlobLocator(p.path)),
 	}
 
 	// make a best-effort attempt at getting the raw indexManifest
@@ -131,6 +136,23 @@ func (p *directoryImageProvider) Provide(ctx context.Context) (*image.Image, err
 		return nil, errors.Join(err, cleanErr)
 	}
 	return out, err
+}
+
+// layoutBlobLocator finds a blob in the OCI layout rooted at root, where the image spec puts it:
+// blobs/<algorithm>/<encoded digest>.
+func layoutBlobLocator(root string) image.LayerBlobLocator {
+	return func(h v1.Hash) (string, bool) {
+		// a digest is image data, so refuse anything that could name a path outside the blobs directory
+		if h.Algorithm == "" || h.Hex == "" || strings.ContainsAny(h.Algorithm+h.Hex, `/\.`) {
+			return "", false
+		}
+		blobPath := filepath.Join(root, "blobs", h.Algorithm, h.Hex)
+		info, err := os.Stat(blobPath)
+		if err != nil || !info.Mode().IsRegular() {
+			return "", false
+		}
+		return blobPath, true
+	}
 }
 
 type imageReference struct {
