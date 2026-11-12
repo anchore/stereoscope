@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -469,8 +470,18 @@ type cacheSink struct {
 	err     error
 }
 
+// ceiling is limit+slack, saturated at MaxInt64 instead of wrapping.
+func (s *cacheSink) ceiling() int64 {
+	if s.slack > math.MaxInt64-s.limit {
+		return math.MaxInt64
+	}
+	return s.limit + s.slack
+}
+
 func (s *cacheSink) Write(p []byte) (int, error) {
-	if s.written+int64(len(p)) > s.limit+s.slack {
+	// compared as remaining room rather than written+len(p) > limit+slack: with a cap near
+	// MaxInt64 (slack is the cap again) that sum wraps negative and every layer would bypass
+	if int64(len(p)) > s.ceiling()-s.written {
 		s.err = fmt.Errorf("layer is larger than the cache size cap of %d bytes", s.limit)
 		return 0, s.err
 	}

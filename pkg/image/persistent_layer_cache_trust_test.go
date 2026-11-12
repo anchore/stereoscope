@@ -3,6 +3,7 @@ package image
 import (
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -291,6 +292,23 @@ func TestPersistentLayerCache_cacheSinkWritesToCapPlusSlack(t *testing.T) {
 
 	_, err = sink.Write(make([]byte, 60))
 	require.Error(t, err, "cap plus slack is the ceiling")
+}
+
+func TestPersistentLayerCache_cacheSinkHugeCapDoesNotOverflow(t *testing.T) {
+	// populate passes the cap as both limit and slack; for a cap above MaxInt64/2 the sum used to
+	// wrap negative and the very first write was refused, so every layer bypassed the cache.
+	for _, limit := range []int64{math.MaxInt64/2 + 1, math.MaxInt64} {
+		sink := &cacheSink{w: io.Discard, limit: limit, slack: limit}
+		n, err := sink.Write(make([]byte, 4096))
+		require.NoError(t, err, "limit=%d", limit)
+		assert.Equal(t, 4096, n)
+		require.NoError(t, sink.err)
+	}
+
+	// the saturated ceiling still refuses a write that would take written past MaxInt64
+	sink := &cacheSink{w: io.Discard, limit: math.MaxInt64, slack: math.MaxInt64, written: math.MaxInt64 - 10}
+	_, err := sink.Write(make([]byte, 11))
+	require.Error(t, err)
 }
 
 func TestPersistentLayerCache_layerPastCapPlusSlackIsAbandoned(t *testing.T) {
