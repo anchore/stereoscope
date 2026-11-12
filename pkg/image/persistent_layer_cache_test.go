@@ -186,6 +186,8 @@ func TestPersistentLayerCache_diffIDMismatchIsNeverCached(t *testing.T) {
 func TestPersistentLayerCache_damagedEntriesAreReplaced(t *testing.T) {
 	cases := map[string]func(t *testing.T, tarPath, sidecarPath string){
 		"truncated": func(t *testing.T, tarPath, _ string) {
+			// entries are stored read-only; only root could truncate one without making it writable first
+			require.NoError(t, os.Chmod(tarPath, 0o644))
 			require.NoError(t, os.Truncate(tarPath, 1000))
 		},
 		"head zeroed": func(t *testing.T, tarPath, _ string) {

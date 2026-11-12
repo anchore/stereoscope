@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -20,6 +21,15 @@ import (
 // it. A hit is accepted on what the sidecar says (diff ID, size, spot-check digest of the two ends of
 // the tar), so whoever can write in the directory chooses what a later scan indexes. These tests plant
 // exactly that: a tar and a sidecar that agree with each other.
+
+// skipWithoutModeBits skips tests that make the cache directory group/other-writable via mode bits: on
+// Windows the trust check does not read mode bits at all (see persistent_layer_cache_access_windows.go).
+func skipWithoutModeBits(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("directory trust is not derived from mode bits on windows")
+	}
+}
 
 // plantAnEntry drops a self-consistent entry under a digest -- which is all a lookup can check without
 // re-hashing the layer.
@@ -36,6 +46,7 @@ func plantAnEntry(t *testing.T, pc *persistentLayerCache, diffID string, content
 }
 
 func TestPersistentLayerCache_groupWritableDirIsNotUsed(t *testing.T) {
+	skipWithoutModeBits(t)
 	pc := newPersistentLayerCacheFromConfig(LayerCacheConfig{Dir: t.TempDir()})
 	require.NoError(t, os.MkdirAll(pc.dir, 0o700))
 	require.NoError(t, os.Chmod(pc.dir, 0o770))
@@ -55,6 +66,7 @@ func TestPersistentLayerCache_groupWritableDirIsNotUsed(t *testing.T) {
 }
 
 func TestPersistentLayerCache_worldWritableDirIsNotUsed(t *testing.T) {
+	skipWithoutModeBits(t)
 	pc := newPersistentLayerCacheFromConfig(LayerCacheConfig{Dir: t.TempDir()})
 	require.NoError(t, os.MkdirAll(pc.dir, 0o700))
 	require.NoError(t, os.Chmod(pc.dir, 0o757))
@@ -86,6 +98,7 @@ func TestPersistentLayerCache_foreignOwnedDirIsNotUsed(t *testing.T) {
 }
 
 func TestPersistentLayerCache_evictNeverDeletesInAnUntrustedDir(t *testing.T) {
+	skipWithoutModeBits(t)
 	pc := newPersistentLayerCacheFromConfig(LayerCacheConfig{Dir: t.TempDir(), MaxBytes: 1})
 	require.NoError(t, os.MkdirAll(pc.dir, 0o700))
 
@@ -155,6 +168,7 @@ func TestPersistentLayerCache_fileInPlaceOfADirIsReported(t *testing.T) {
 }
 
 func TestPersistentLayerCache_guardWarnsOnce(t *testing.T) {
+	skipWithoutModeBits(t)
 	pc := newPersistentLayerCacheFromConfig(LayerCacheConfig{Dir: t.TempDir()})
 	require.NoError(t, os.MkdirAll(pc.dir, 0o700))
 	require.NoError(t, os.Chmod(pc.dir, 0o770))

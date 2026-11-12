@@ -40,6 +40,7 @@ require (
 	github.com/anchore/go-sync v0.1.2
 	go.podman.io/image/v5 v5.42.0
 	go.podman.io/storage v1.65.0
+	golang.org/x/sys v0.49.0
 	golang.org/x/tools v0.52.0
 )
 
@@ -159,7 +160,6 @@ require (
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect
