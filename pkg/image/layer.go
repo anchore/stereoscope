@@ -158,18 +158,16 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 		return "", fmt.Errorf("no cache directory given")
 	}
 
-	// the digest is what the image claims about the layer, not something we verified, so two layers
-	// can claim the same one. Key on the index as well so a layer can never be handed another
-	// layer's unpacked content. The digest's colon is swapped out since NTFS reads "name:stream" as
-	// an alternate data stream, which a create tolerates but a rename into place does not.
-	name := fmt.Sprintf("%d-%s", l.Metadata.Index, strings.ReplaceAll(l.Metadata.Digest, ":", "-"))
-	path := path.Join(uncompressedLayersCacheDir, name)
+	if l.Metadata.Digest == "" {
+		return "", fmt.Errorf("layer has no digest")
+	}
+	cachePath := path.Join(uncompressedLayersCacheDir, l.runCacheName())
 
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		return path, nil
+	if _, err := os.Stat(cachePath); !os.IsNotExist(err) {
+		return cachePath, nil
 	}
 
-	log.WithFields("index", l.Metadata.Index, "path", path).Trace("start uncompressed layer cache")
+	log.WithFields("index", l.Metadata.Index, "path", cachePath).Trace("start uncompressed layer cache")
 	startTime := time.Now()
 
 	rawReader, err := l.layer.Uncompressed()
@@ -182,7 +180,7 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 	// layer: a write that dies partway leaves nothing for a later os.Stat to trust
 	fh, err := os.CreateTemp(uncompressedLayersCacheDir, "partial-")
 	if err != nil {
-		return "", fmt.Errorf("unable to create layer cache path=%q : %w", path, err)
+		return "", fmt.Errorf("unable to create layer cache path=%q : %w", cachePath, err)
 	}
 	tmpPath := fh.Name()
 	defer func() {
@@ -191,17 +189,29 @@ func (l *Layer) uncompressedCache(uncompressedLayersCacheDir string) (string, er
 	}()
 
 	if _, err := io.Copy(fh, rawReader); err != nil {
-		return "", fmt.Errorf("unable to populate layer cache path=%q : %w", path, err)
+		return "", fmt.Errorf("unable to populate layer cache path=%q : %w", cachePath, err)
 	}
 	if err := fh.Close(); err != nil {
-		return "", fmt.Errorf("unable to finish layer cache path=%q : %w", path, err)
+		return "", fmt.Errorf("unable to finish layer cache path=%q : %w", cachePath, err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return "", fmt.Errorf("unable to place layer cache path=%q : %w", path, err)
+	if err := os.Rename(tmpPath, cachePath); err != nil {
+		return "", fmt.Errorf("unable to place layer cache path=%q : %w", cachePath, err)
 	}
-	log.WithFields("index", l.Metadata.Index, "path", path, "time", time.Since(startTime)).Trace("completed uncompressed layer cache")
+	log.WithFields("index", l.Metadata.Index, "path", cachePath, "time", time.Since(startTime)).Trace("completed uncompressed layer cache")
 
-	return path, nil
+	return cachePath, nil
+}
+
+// runCacheName returns the name this layer's uncompressed tar goes by inside a per-run cache
+// directory. persistentLayerCache.handOver builds the same name when it hands over a layer the cache
+// could not keep, so this is the only place that computes it.
+//
+// The digest is what the image claims about the layer, not something we verified, so two layers can
+// claim the same one; key on the index as well so a layer can never be handed another layer's
+// unpacked content. The digest's colon is swapped out since NTFS reads "name:stream" as an alternate
+// data stream, which a create tolerates but a rename into place does not.
+func (l *Layer) runCacheName() string {
+	return fmt.Sprintf("%d-%s", l.Metadata.Index, strings.ReplaceAll(l.Metadata.Digest, ":", "-"))
 }
 
 // close releases the layer's unpacked tar. Readers opened from this layer fail afterwards.

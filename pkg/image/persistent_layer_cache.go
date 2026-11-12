@@ -110,6 +110,10 @@ type persistentLayerCache struct {
 	hits      atomic.Int64
 	populated atomic.Int64
 	bypassed  atomic.Int64
+
+	// guardWarned is set the first time the directory fails the trust check, so a directory that is
+	// never going to work is reported once per read instead of once per layer.
+	guardWarned atomic.Bool
 }
 
 // newPersistentLayerCache returns the cache configured on ctx, or nil when there is none.
@@ -182,6 +186,11 @@ func (c *persistentLayerCache) materialize(l *Layer) (path string, ok bool, err 
 		log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest).Trace("layer is not eligible for the persistent layer cache")
 		return "", false, nil
 	}
+	if reason := c.trustCheck(); reason != "" {
+		c.warnUntrusted(reason)
+		c.bypassed.Add(1)
+		return "", false, nil
+	}
 
 	if p, hit := c.lookup(key, l.Metadata.Digest); hit {
 		c.hits.Add(1)
@@ -211,6 +220,45 @@ func (c *persistentLayerCache) materialize(l *Layer) (path string, ok bool, err 
 	c.populated.Add(1)
 	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest).Trace("persistent layer cache populated")
 	return p, true, nil
+}
+
+// trustCheck returns why the cache directory cannot be trusted, or "" when it can.
+//
+// A hit is accepted on what the sidecar says: the diff ID, the size, and a spot-check digest of the
+// two ends of the tar. Whoever can write in the directory therefore chooses what a scan indexes --
+// they can plant a tar and a sidecar that agree with each other, and the spot check cannot tell it
+// from a layer this cache unpacked. The write path verifies the whole tar against the diff ID; the
+// read path cannot afford to re-hash a layer every time, so the directory itself has to carry the
+// trust: it must belong to us, and nobody else may write to it. That is what makes "one OS user per
+// cache directory" a requirement rather than advice.
+//
+// It is two stats, and it runs before anything is read out of the directory, written into it, or
+// deleted from it.
+func (c *persistentLayerCache) trustCheck() string {
+	for _, dir := range []string{c.root, c.dir} {
+		// Stat, not Lstat: a symlink is judged for what it points at, which is the directory we
+		// would actually use. A dangling one fails here, and again on the write.
+		info, err := os.Stat(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue // populate creates it, 0700, owned by us
+		}
+		if err != nil {
+			return fmt.Sprintf("unable to check %q: %v", dir, err)
+		}
+		if !info.IsDir() {
+			return fmt.Sprintf("%q is not a directory", dir)
+		}
+		if reason := layerCacheDirAccess(dir, info); reason != "" {
+			return reason
+		}
+	}
+	return ""
+}
+
+func (c *persistentLayerCache) warnUntrusted(reason string) {
+	if c.guardWarned.CompareAndSwap(false, true) {
+		log.WithFields("dir", c.root).Warn("not using the persistent layer cache: " + reason)
+	}
 }
 
 // lookup reports whether a trustworthy entry exists for key. A damaged entry is removed so it cannot
@@ -264,9 +312,20 @@ func (c *persistentLayerCache) invalidate(key, reason string) {
 
 // populate unpacks the layer into the cache. Errors reading the layer are returned as they are;
 // anything to do with the cache itself is wrapped in errLayerCacheBypass.
+//
+// The scan needs this layer unpacked whether or not the cache gets to keep it, so a bypass that
+// happens once the bytes are already on disk hands them to the caller instead of making it unpack the
+// layer again: handOver moves the finished tar to the path Layer.uncompressedCache would have
+// written, and that function returns it from its opening Stat without calling Uncompressed() a second
+// time. For a layer from a registry that is the difference between one pull per run and two.
 func (c *persistentLayerCache) populate(l *Layer, key string) (string, error) {
 	if err := os.MkdirAll(c.dir, 0o700); err != nil {
 		return "", fmt.Errorf("%w: unable to create %q: %v", errLayerCacheBypass, c.dir, err)
+	}
+	// The directory may have appeared, or been swapped for another user's, since materialize checked.
+	if reason := c.trustCheck(); reason != "" {
+		c.warnUntrusted(reason)
+		return "", fmt.Errorf("%w: %s", errLayerCacheBypass, reason)
 	}
 
 	rawReader, err := l.layer.Uncompressed()
@@ -288,19 +347,38 @@ func (c *persistentLayerCache) populate(l *Layer, key string) (string, error) {
 	// the file and the hash are written through one tracked writer so that a failure writing the
 	// cache (disk full) can be told apart from a failure reading the layer (dropped connection)
 	digester := sha256.New()
-	sink := &cacheSink{w: io.MultiWriter(fh, digester), limit: c.maxBytes}
-	if _, err := io.Copy(sink, rawReader); err != nil {
-		if sink.err != nil {
-			return "", fmt.Errorf("%w: %v", errLayerCacheBypass, sink.err)
-		}
-		return "", err
-	}
+	sink := &cacheSink{w: io.MultiWriter(fh, digester), limit: c.maxBytes, slack: c.maxBytes}
+	copyErr := func() error {
+		_, err := io.Copy(sink, rawReader)
+		return err
+	}()
 	if err := fh.Close(); err != nil {
 		return "", fmt.Errorf("%w: unable to finish cache file: %v", errLayerCacheBypass, err)
 	}
+	// A failed read is reported as itself: it is the more specific diagnosis, and the layer cannot be
+	// cached either way.
+	if copyErr != nil {
+		if sink.err != nil {
+			// the cache write gave out (disk full, or the layer is past cap+slack and was abandoned)
+			return "", fmt.Errorf("%w: %v", errLayerCacheBypass, sink.err)
+		}
+		return "", copyErr
+	}
 
-	// the diff ID is only what the image claims; nothing is kept under a name its content does not match
+	// Past the cap the layer cannot be cached, but the copy keeps going to cap+slack (see cacheSink) so
+	// that the unpack this run is already paying for yields the layer the scan needs instead of being
+	// thrown away and redone. Reaching here means the whole layer was read, which is what makes the
+	// file safe to hand over: the per-run cache trusts whatever is at the name it looks for.
+	if sink.written > c.maxBytes {
+		c.handOver(l, tmpPath)
+		return "", fmt.Errorf("%w: layer is larger than the cache size cap of %d bytes", errLayerCacheBypass, c.maxBytes)
+	}
+
+	// the diff ID is only what the image claims, so nothing is kept under a name its content does not
+	// match. The bytes are still usable -- the per-run cache never verified the claim either -- so they
+	// are handed over rather than unpacked a second time.
 	if computed := "sha256:" + hex.EncodeToString(digester.Sum(nil)); computed != l.Metadata.Digest {
+		c.handOver(l, tmpPath)
 		return "", fmt.Errorf("%w: layer content digest %s does not match diff ID %s", errLayerCacheBypass, computed, l.Metadata.Digest)
 	}
 
@@ -328,6 +406,31 @@ func (c *persistentLayerCache) populate(l *Layer, key string) (string, error) {
 	return tarPath, nil
 }
 
+// handOver moves a complete tar that the cache cannot keep to the path Layer.uncompressedCache
+// would have written, so the layer is still unpacked only once. Best effort: if the two directories
+// are on different filesystems, or the per-run directory is not usable, there is nothing to hand over
+// and the caller unpacks the layer the usual way, as it did before this existed.
+//
+// The file is left at the 0600 CreateTemp gave it: the per-run cache owns it and deletes it with the
+// run, unlike a cache entry, which is read-only so that only eviction can change it.
+//
+// Callers must hand over a tar that was read to completion. The per-run cache takes whatever is
+// already at that name without checking it, so a truncated file would be indexed as the layer.
+func (c *persistentLayerCache) handOver(l *Layer, tmpPath string) {
+	if l.runCacheDir == "" {
+		return
+	}
+	dst := filepath.Join(l.runCacheDir, l.runCacheName())
+	if err := os.MkdirAll(l.runCacheDir, 0o700); err != nil {
+		return
+	}
+	if err := os.Rename(tmpPath, dst); err != nil {
+		// EXDEV (cache and temp dir on different devices) is the expected failure; the layer is
+		// decompressed again in that case, which is what happened before this function existed
+		log.WithFields("index", l.Metadata.Index, "error", err).Trace("could not hand the unpacked layer to the per-run cache")
+	}
+}
+
 func (c *persistentLayerCache) writeSidecar(key string, sc layerCacheSidecar) error {
 	raw, err := json.Marshal(sc)
 	if err != nil {
@@ -351,16 +454,23 @@ func (c *persistentLayerCache) writeSidecar(key string, sc layerCacheSidecar) er
 	return os.Rename(tmpPath, c.sidecarPath(key))
 }
 
-// cacheSink records why a write failed, and stops a layer larger than the cap from filling the disk.
+// cacheSink records why a write failed and bounds how much of an uncachable layer is written.
+//
+// limit is the cap: past it the layer will not be cached. Writing continues to limit+slack because
+// the layer has to be unpacked for the scan either way, and stopping dead at the cap meant the caller
+// pulled and decompressed it a second time, on every run, for any layer over the cap. slack is what
+// bounds that: a layer larger than limit+slack is abandoned here and unpacked the per-run way, so the
+// cache directory is never asked to hold much more than its owner allowed it to hold.
 type cacheSink struct {
 	w       io.Writer
 	limit   int64
+	slack   int64
 	written int64
 	err     error
 }
 
 func (s *cacheSink) Write(p []byte) (int, error) {
-	if s.written+int64(len(p)) > s.limit {
+	if s.written+int64(len(p)) > s.limit+s.slack {
 		s.err = fmt.Errorf("layer is larger than the cache size cap of %d bytes", s.limit)
 		return 0, s.err
 	}
@@ -375,6 +485,13 @@ func (s *cacheSink) Write(p []byte) (int, error) {
 // layerCacheEdgeDigest hashes the first and last layerCacheEdgeBytes of the file (all of it when it
 // is no larger than both together) and returns that with the file's size.
 func layerCacheEdgeDigest(path string) (string, int64, error) {
+	// Lstat before opening: an open of a FIFO blocks until a writer appears, which would hang every
+	// scan, and a symlink would let an entry point anywhere. An entry is only ever a regular file.
+	if pre, err := os.Lstat(path); err != nil {
+		return "", 0, err
+	} else if !pre.Mode().IsRegular() {
+		return "", 0, fmt.Errorf("%s is not a regular file", filepath.Base(path))
+	}
 	fh, err := os.Open(path)
 	if err != nil {
 		return "", 0, err
@@ -383,6 +500,9 @@ func layerCacheEdgeDigest(path string) (string, int64, error) {
 	info, err := fh.Stat()
 	if err != nil {
 		return "", 0, err
+	}
+	if !info.Mode().IsRegular() { // swapped between the Lstat and the open
+		return "", 0, fmt.Errorf("%s is not a regular file", filepath.Base(path))
 	}
 	size := info.Size()
 
@@ -439,6 +559,10 @@ func (c *persistentLayerCache) logSummary() {
 // stay above the cap while every remaining entry is that fresh. Every failure is logged and skipped:
 // eviction is housekeeping and never fails a read.
 func (c *persistentLayerCache) evict() {
+	if reason := c.trustCheck(); reason != "" {
+		c.warnUntrusted(reason)
+		return // never delete files in a directory we would not read from
+	}
 	dirEntries, err := os.ReadDir(c.dir)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
