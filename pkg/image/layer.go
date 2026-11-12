@@ -103,6 +103,13 @@ type Layer struct {
 	knownDiffID string
 	// contentPath is where Fetch materialized the uncompressed layer
 	contentPath string
+	// contentPersistent is set when contentPath is an entry in a persistent layer cache, which
+	// another process may evict between fetch and index (see indexStandardImageLayer)
+	contentPersistent bool
+	// runCacheDir and persistentCache are what fetch materialized the layer with, kept so that
+	// index can materialize it again if a persistent entry vanished in between
+	runCacheDir     string
+	persistentCache *persistentLayerCache
 	// readMonitor reports indexing progress for this layer
 	readMonitor *progress.Manual
 	// deferredHardLinks are this layer's hardlinks naming a file that is not in this layer, and those naming
@@ -212,7 +219,7 @@ func (l *Layer) close() error {
 // Read parses information from the underlying layer tar into this struct. This includes layer metadata, the layer
 // file tree, and the layer squash tree. It is fetch followed by index.
 func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir string) error {
-	if err := l.fetch(idx, uncompressedLayersCacheDir); err != nil {
+	if err := l.fetch(idx, uncompressedLayersCacheDir, nil); err != nil {
 		return err
 	}
 	return l.index(catalog)
@@ -226,7 +233,10 @@ func (l *Layer) Read(catalog *FileCatalog, idx int, uncompressedLayersCacheDir s
 // type can enforce for an outside caller. FileCatalog.Layer hands a *Layer to any consumer, so an
 // exported pair would let one of them rebuild a layer out from under every other reader of the
 // same image. Layer lifetime belongs to the Image that read it; Layer.Read is the entry point.
-func (l *Layer) fetch(idx int, uncompressedLayersCacheDir string) error {
+//
+// pc, when not nil, is the persistent layer cache to take the layer from or add it to. A layer the
+// persistent cache cannot take (see errLayerCacheBypass) falls back to uncompressedLayersCacheDir.
+func (l *Layer) fetch(idx int, uncompressedLayersCacheDir string, pc *persistentLayerCache) error {
 	mediaType, err := l.layer.MediaType()
 	if err != nil {
 		return err
@@ -241,7 +251,28 @@ func (l *Layer) fetch(idx int, uncompressedLayersCacheDir string) error {
 	}
 
 	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Trace("fetching image layer")
-	l.contentPath, err = l.uncompressedCache(uncompressedLayersCacheDir)
+	l.runCacheDir = uncompressedLayersCacheDir
+	l.persistentCache = pc
+	return l.materialize()
+}
+
+// materialize puts the uncompressed layer on disk and records where: in the persistent cache when
+// there is one that will take it, otherwise in the per-run cache directory.
+func (l *Layer) materialize() error {
+	l.contentPersistent = false
+	if l.persistentCache != nil {
+		p, ok, err := l.persistentCache.materialize(l)
+		if err != nil {
+			return err
+		}
+		if ok {
+			l.contentPath = p
+			l.contentPersistent = true
+			return nil
+		}
+	}
+	var err error
+	l.contentPath, err = l.uncompressedCache(l.runCacheDir)
 	return err
 }
 
@@ -291,6 +322,19 @@ func (l *Layer) indexStandardImageLayer(tree *filetree.FileTree) error {
 		l.contentPath,
 		layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, l.readMonitor),
 	)
+	if err != nil && l.contentPersistent && errors.Is(err, fs.ErrNotExist) {
+		// another scan on this host evicted the entry between our fetch and this open. The open
+		// failed before the visitor saw a single entry, so nothing was indexed: materialize the
+		// layer again and retry once. Once open, a later eviction cannot hurt us - the descriptor
+		// keeps the content alive on POSIX, and Windows refuses the delete.
+		log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest).Debug("persistent layer cache entry vanished before indexing, fetching it again")
+		if err = l.materialize(); err == nil {
+			l.indexedContent, err = file.NewTarIndex(
+				l.contentPath,
+				layerTarIndexer(tree, l.fileCatalog, &l.Metadata.Size, l, l.readMonitor),
+			)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("failed to read layer=%q tar : %w", l.Metadata.Digest, err)
 	}
