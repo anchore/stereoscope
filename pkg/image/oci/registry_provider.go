@@ -231,6 +231,12 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		options = append(options, remote.WithAuth(authenticator))
 	case keychain != nil:
 		options = append(options, remote.WithAuthFromKeychain(keychain))
+	case registryOptions.DisableDefaultKeychain:
+		// set here rather than left to go-containerregistry's own default, so that a resumed blob is
+		// reissued anonymously as well instead of resolving against a nil keychain
+		log.Debugf("no registry credentials configured for %q, using anonymous access", registryName)
+		authenticator = authn.Anonymous
+		options = append(options, remote.WithAuth(authenticator))
 	default:
 		// use the Keychain specified from a docker config file.
 		log.Debugf("no registry credentials configured for %q, using the default keychain", registryName)

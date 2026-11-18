@@ -2,9 +2,12 @@ package oci
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -12,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/anchore/stereoscope/pkg/file"
 	"github.com/anchore/stereoscope/pkg/image"
 )
 
@@ -96,5 +100,71 @@ func Test_RemoteOptions(t *testing.T) {
 		var transportErr *transport.Error
 		require.ErrorAs(t, err, &transportErr)
 		assert.Equal(t, http.StatusUnauthorized, transportErr.StatusCode)
+	})
+}
+
+func Test_RegistryProvider_DisableDefaultKeychain(t *testing.T) {
+	// the docker config the default keychain would find holds working credentials for the registry,
+	// so the pull succeeding or not shows whether that file was consulted
+	guarded, upstream := makeBasicAuthRegistry(t)
+	pushRandomRegistryImage(t, upstream, "my-image", "the-tag")
+
+	dockerConfig := t.TempDir()
+	auth := base64.StdEncoding.EncodeToString([]byte("user:pass"))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dockerConfig, "config.json"),
+		[]byte(fmt.Sprintf(`{"auths":{%q:{"auth":%q}}}`, guarded, auth)),
+		0o600,
+	))
+	t.Setenv("DOCKER_CONFIG", dockerConfig)
+
+	imageStr := fmt.Sprintf("%s/my-image:the-tag", guarded)
+	provide := func(t *testing.T, registryOptions image.RegistryOptions) (*image.Image, error) {
+		t.Helper()
+
+		generator := file.TempDirGenerator{}
+		t.Cleanup(func() { _ = generator.Cleanup() })
+
+		return NewRegistryProvider(&generator, registryOptions, imageStr, nil).Provide(context.Background())
+	}
+
+	t.Run("the default keychain is used by default", func(t *testing.T) {
+		img, err := provide(t, image.RegistryOptions{})
+		require.NoError(t, err)
+		require.NotNil(t, img)
+		require.NoError(t, img.Cleanup())
+	})
+
+	t.Run("the default keychain is not used when disabled", func(t *testing.T) {
+		img, err := provide(t, image.RegistryOptions{DisableDefaultKeychain: true})
+		assert.Nil(t, img)
+
+		var transportErr *transport.Error
+		require.ErrorAs(t, err, &transportErr)
+		assert.Equal(t, http.StatusUnauthorized, transportErr.StatusCode)
+	})
+
+	t.Run("credentials that do not match the registry do not bring the default keychain back", func(t *testing.T) {
+		img, err := provide(t, image.RegistryOptions{
+			DisableDefaultKeychain: true,
+			Credentials: []image.RegistryCredentials{
+				{Authority: "registry.example.com", Username: "someone", Password: "else"},
+			},
+		})
+		assert.Nil(t, img)
+
+		var transportErr *transport.Error
+		require.ErrorAs(t, err, &transportErr)
+		assert.Equal(t, http.StatusUnauthorized, transportErr.StatusCode)
+	})
+
+	t.Run("supplied credentials still work when disabled", func(t *testing.T) {
+		img, err := provide(t, image.RegistryOptions{
+			DisableDefaultKeychain: true,
+			Credentials:            []image.RegistryCredentials{{Authority: guarded, Username: "user", Password: "pass"}},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, img)
+		require.NoError(t, img.Cleanup())
 	})
 }

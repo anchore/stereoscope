@@ -17,7 +17,7 @@ import (
 
 // RegistryOptions for the OCI registry provider and containerd provider.
 // If no specific Credential is found in the RegistryCredentials, will check
-// for Keychain, and barring that will use Default Keychain.
+// for Keychain, and barring that will use Default Keychain (unless DisableDefaultKeychain is set).
 type RegistryOptions struct {
 	InsecureSkipTLSVerify bool
 	InsecureUseHTTP       bool
@@ -40,6 +40,14 @@ type RegistryOptions struct {
 	// Note that this is a Go API only: syft, grype and anchorectl would each need to plumb a config
 	// key through before an operator meeting such a registry could reach it.
 	DisableBlobResume bool
+
+	// DisableDefaultKeychain stops the OCI registry provider from falling back to
+	// authn.DefaultKeychain when neither Credentials nor Keychain yields an authenticator for the
+	// registry, and has it connect anonymously instead. The default keychain reads the docker and
+	// podman config files of the current user (found through $HOME, $DOCKER_CONFIG, $XDG_CONFIG_HOME,
+	// $XDG_RUNTIME_DIR and $REGISTRY_AUTH_FILE) and runs any credential helper they name, which a
+	// caller that must only ever present the credentials it was handed cannot allow.
+	DisableDefaultKeychain bool
 }
 
 type credentialSelection struct {
