@@ -113,6 +113,10 @@ func (p *directoryImageProvider) Provide(ctx context.Context) (*image.Image, err
 		image.WithManifestDigest(selectedImageDigest.String()),
 	}
 
+	if rawIndex, indexMediaType, ok := layoutImageIndex(index, selectedImageDigest); ok {
+		metadata = append(metadata, image.WithIndex(rawIndex, indexMediaType))
+	}
+
 	// make a best-effort attempt at getting the raw indexManifest
 	rawManifest, err := selectedImage.RawManifest()
 	if err == nil {
