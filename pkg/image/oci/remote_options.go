@@ -25,10 +25,13 @@ func ParseRegistryReference(imageStr string, registryOptions image.RegistryOptio
 // The reference should come from ParseRegistryReference. A nil platform leaves the platform to
 // go-containerregistry, whereas the provider picks a default one when resolving an image index.
 //
+// An error is returned when the TLS settings cannot be loaded, such as a CA file or client
+// certificate that is missing or does not parse.
+//
 // The options are specific to the registry of ref and should not be reused for another. They
 // already carry a transport and either an authenticator or a keychain, so credentials belong in
 // registryOptions: appending remote.WithTransport discards the transport configured here, and
 // go-containerregistry rejects an authenticator and a keychain given together.
 func RemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, platform *image.Platform) ([]remote.Option, error) {
-	return prepareRemoteOptions(ctx, ref, registryOptions, platform, newEffectiveURLTransport(nil)), nil
+	return prepareRemoteOptions(ctx, ref, registryOptions, platform, newEffectiveURLTransport(nil))
 }
