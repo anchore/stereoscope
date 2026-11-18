@@ -104,7 +104,7 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		return nil, err
 	}
 
-	ref, err := name.ParseReference(p.imageStr, prepareReferenceOptions(p.registryOptions)...)
+	ref, err := ParseRegistryReference(p.imageStr, p.registryOptions)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse registry reference=%q: %w", p.imageStr, err)
 	}
