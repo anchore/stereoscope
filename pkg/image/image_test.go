@@ -75,6 +75,27 @@ func TestImageAdditionalMetadata(t *testing.T) {
 			},
 		},
 		{
+			name: "with index",
+			options: []AdditionalMetadata{
+				WithIndex([]byte("some bytes"), v1Types.DockerManifestList),
+			},
+			image: Image{
+				Metadata: Metadata{
+					RawIndex:       []byte("some bytes"),
+					IndexDigest:    fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("some bytes"))),
+					IndexMediaType: v1Types.DockerManifestList,
+				},
+			},
+		},
+		{
+			// the zero values are how Metadata says the image did not come from an index
+			name: "with empty index",
+			options: []AdditionalMetadata{
+				WithIndex(nil, v1Types.OCIImageIndex),
+			},
+			image: Image{},
+		},
+		{
 			name: "with config",
 			options: []AdditionalMetadata{
 				WithConfig([]byte("some bytes")),

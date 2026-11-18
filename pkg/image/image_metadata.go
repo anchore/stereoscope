@@ -23,6 +23,15 @@ type Metadata struct {
 	Architecture   string
 	Variant        string
 	OS             string
+	// --- below fields are only set when the image was selected from an image index (a manifest list). The zero
+	// values mean the source was not resolved through an index, or that the provider cannot tell.
+
+	// RawIndex is the index exactly as the source served it, so that its sha256 is IndexDigest
+	RawIndex []byte
+	// IndexDigest is the digest of the index, where ManifestDigest is that of the image selected from it
+	IndexDigest string
+	// IndexMediaType is the media type of the index, where MediaType is that of the image selected from it
+	IndexMediaType v1Types.MediaType
 }
 
 // readImageMetadata extracts the most pertinent information from the underlying image tar.

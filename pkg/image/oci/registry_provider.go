@@ -152,6 +152,12 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		image.WithRepoDigests(repoDigest),
 	}
 
+	// the reference resolved to an index and the image is one of its children. Keep the index, which is
+	// otherwise only recoverable as the digest within the repo digest
+	if descriptor.MediaType.IsIndex() {
+		metadata = append(metadata, image.WithIndex(descriptor.Manifest, descriptor.MediaType))
+	}
+
 	// make a best effort to get the manifest, should not block getting an image though if it fails
 	if manifestBytes, err := img.RawManifest(); err == nil {
 		metadata = append(metadata, image.WithManifest(manifestBytes))
