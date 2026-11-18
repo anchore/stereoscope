@@ -257,6 +257,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 
 	// one base transport, so the pull and any resume share a connection pool
 	baseTransport := getTransport(tlsConfig)
+	applyTransportTimeouts(baseTransport, registryOptions)
 
 	// a resumed blob is reissued through its own client, authenticated the same way as the pull
 	var reopen reopenClientFunc
@@ -272,6 +273,7 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	// Use our custom transport that captures effective URLs after redirects
 	rt := getTransportWithEffectiveURL(baseTransport, effectiveTransport, reopen)
 	options = append(options, remote.WithTransport(rt))
+	options = append(options, retryOptions(registryOptions)...)
 
 	return options, nil
 }
