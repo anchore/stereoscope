@@ -106,7 +106,7 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 
 	ref, err := name.ParseReference(p.imageStr, prepareReferenceOptions(p.registryOptions)...)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
+		return nil, fmt.Errorf("unable to parse registry reference=%q: %w", p.imageStr, err)
 	}
 
 	platform := defaultPlatformIfNil(p.platform)
@@ -120,19 +120,19 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 
 	descriptor, err := remote.Get(ref, options...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
+		return nil, fmt.Errorf("failed to get image descriptor from registry: %w", err)
 	}
 
 	p.finalizePlatform(descriptor, &platform)
 
 	img, err := descriptor.Image()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image from registry: %+v", err)
+		return nil, fmt.Errorf("failed to get image from registry: %w", err)
 	}
 
 	c, err := img.ConfigFile()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image config from registry: %+v", err)
+		return nil, fmt.Errorf("failed to get image config from registry: %w", err)
 	}
 
 	if err := validatePlatform(platform, c.OS, c.Architecture, c.Variant); err != nil {

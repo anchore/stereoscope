@@ -152,7 +152,7 @@ func (r RegistryOptions) TLSConfig(registry string) (*tls.Config, error) {
 			log.Tracef("loading CA certificate from %q", certFile)
 			pem, err := os.ReadFile(certFile)
 			if err != nil {
-				return nil, fmt.Errorf("could not read CA certificate %q: %v", certFile, err)
+				return nil, fmt.Errorf("could not read CA certificate %q: %w", certFile, err)
 			}
 			if !rootCAs.AppendCertsFromPEM(pem) {
 				return nil, fmt.Errorf("failed to append certificates from PEM file: %q", certFile)
