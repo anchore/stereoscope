@@ -39,7 +39,7 @@ require (
 require (
 	github.com/anchore/go-sync v0.1.2
 	go.podman.io/image/v5 v5.42.0
-	go.podman.io/storage v1.65.0
+	go.podman.io/storage v1.65.1
 	golang.org/x/tools v0.52.0
 )
 
