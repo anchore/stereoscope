@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1Types "github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/scylladb/go-set/strset"
 	"github.com/wagoodman/go-partybus"
 	"github.com/wagoodman/go-progress"
@@ -96,6 +97,21 @@ func WithManifest(manifest []byte) AdditionalMetadata {
 func WithManifestDigest(digest string) AdditionalMetadata {
 	return func(image *Image) error {
 		image.Metadata.ManifestDigest = digest
+		return nil
+	}
+}
+
+// WithIndex records the image index (manifest list) the image was selected from. The bytes must be the index
+// exactly as it was served, since the digest is taken from them. An empty index is ignored, as the zero values
+// are how Metadata says the image did not come from an index.
+func WithIndex(index []byte, mediaType v1Types.MediaType) AdditionalMetadata {
+	return func(image *Image) error {
+		if len(index) == 0 {
+			return nil
+		}
+		image.Metadata.RawIndex = index
+		image.Metadata.IndexDigest = fmt.Sprintf("sha256:%x", sha256.Sum256(index))
+		image.Metadata.IndexMediaType = mediaType
 		return nil
 	}
 }
