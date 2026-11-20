@@ -1334,3 +1334,133 @@ func Test_searchContext_nilIndex(t *testing.T) {
 	_, err = sc.SearchByMIMEType("text/plain")
 	require.ErrorContains(t, err, "no index available")
 }
+
+func Test_globCouldMatchSuffix(t *testing.T) {
+	tests := []struct {
+		glob   string
+		suffix string
+		want   bool
+	}{
+		// a literal parent in the glob cannot be satisfied by a different literal parent in the suffix
+		{glob: "**/missing/file.txt", suffix: "/d0/file.txt", want: false},
+		{glob: "missing/file.txt", suffix: "/d0/file.txt", want: false},
+		// the parent dir may still be supplied by a leading (link) path
+		{glob: "**/missing/file.txt", suffix: "/file.txt", want: true},
+		{glob: "**/missing/file.txt", suffix: "/missing/file.txt", want: true},
+		// wildcard parents are not pruned
+		{glob: "**/*/file.txt", suffix: "/d0/file.txt", want: true},
+		{glob: "**/d?/file.txt", suffix: "/d0/file.txt", want: true},
+		{glob: "**/file.txt", suffix: "/d0/file.txt", want: true},
+		// glob more specific than the suffix can still match through the leading path
+		{glob: "**/alias0/d0/file.txt", suffix: "/d0/file.txt", want: true},
+		{glob: "**/alias0/d0/file.txt", suffix: "/file.txt", want: true},
+		// a literal that matches must not be pruned
+		{glob: "**/d0/file.txt", suffix: "/d0/file.txt", want: true},
+		// nothing to constrain
+		{glob: "**/missing/file.txt", suffix: "", want: true},
+		// rooted globs (parseGlob's normalized form): the literal prefix constrains the unknown leading
+		// path only existentially, so these stay conservative; a suffix whose own literal segments
+		// contradict the glob's trailing literals is still pruned
+		{glob: "/a/**/suffix", suffix: "/a", want: false},
+		{glob: "/a/**/suffix", suffix: "/suffix", want: true},
+		{glob: "/a/**/suffix/a", suffix: "/a", want: true},
+		{glob: "/a/b", suffix: "/b", want: true},
+		{glob: "/a/b", suffix: "/c/b", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.glob+"|"+tt.suffix, func(t *testing.T) {
+			assert.Equal(t, tt.want, globCouldMatchSuffix(tt.glob, tt.suffix))
+		})
+	}
+}
+
+func Test_globCouldMatchSuffix_neverSeesEscapedOrRawGlobs(t *testing.T) {
+	// the helper's contract covers only parseGlob's normalized output: escaped patterns are routed to a
+	// full tree walk, and unrooted globs are rooted by cleanGlob before any index-backed search
+	for _, g := range []string{`**/star\*file.txt`, `**/secret\.key`} {
+		requests := parseGlob(g)
+		require.Len(t, requests, 1)
+		assert.Equal(t, searchByGlob, requests[0].searchBasis)
+	}
+	assert.Equal(t, "/a/**/suffix", parseGlob("a/**/suffix")[0].glob)
+	// cleanGlob trims trailing slashes before any index-backed search, and a **-only remainder routes to a
+	// full tree walk, so the helper only ever sees the normalized form
+	for _, g := range []string{"a/**", "a/**/", "/a/**/"} {
+		requests := parseGlob(g)
+		require.Len(t, requests, 1)
+		assert.Equal(t, searchByGlob, requests[0].searchBasis)
+		assert.Equal(t, "/a/**", requests[0].glob)
+	}
+	assert.True(t, globCouldMatchSuffix("/a/**", "/a"))
+}
+
+func Test_searchContext_SearchByGlob_negativeGlobDirLinkFanout(t *testing.T) {
+	// regression test for https://github.com/anchore/stereoscope/issues/774: with one directory reached by
+	// many symlinks, an index-backed glob whose literal parent matches nothing used to re-expand the whole
+	// link fan-out for every basename candidate (quadratic); with 1000 files and 1000 links that query
+	// takes seconds, while the positive control returns instantly.
+	tr := New()
+	idx := NewIndex()
+
+	const num = 1000
+	realDirRef, err := tr.AddDir("/real")
+	require.NoError(t, err)
+	idx.Add(*realDirRef, file.Metadata{Type: file.TypeDirectory})
+
+	var pkgPaths []string
+	for i := 0; i < num; i++ {
+		realPath := fmt.Sprintf("/real/d%d/file.txt", i)
+		pkgPaths = append(pkgPaths, realPath)
+		r, err := tr.AddFile(file.Path(realPath))
+		require.NoError(t, err)
+		idx.Add(*r, file.Metadata{Type: file.TypeRegular})
+	}
+	for i := 0; i < num; i++ {
+		r, err := tr.AddSymLink(file.Path(fmt.Sprintf("/alias%d", i)), "/real")
+		require.NoError(t, err)
+		idx.Add(*r, file.Metadata{Type: file.TypeSymLink})
+	}
+
+	sc := NewSearchContext(tr, idx)
+
+	t.Run("absent parent returns nothing", func(t *testing.T) {
+		refs, err := sc.SearchByGlob("**/missing/file.txt")
+		require.NoError(t, err)
+		require.Empty(t, refs)
+	})
+
+	t.Run("positive control returns every file", func(t *testing.T) {
+		refs, err := sc.SearchByGlob("**/file.txt")
+		require.NoError(t, err)
+		require.ElementsMatch(t, pkgPaths, realPaths(refs))
+	})
+
+	t.Run("file is still returned through a matching link path", func(t *testing.T) {
+		refs, err := sc.SearchByGlob("**/alias0/d0/file.txt")
+		require.NoError(t, err)
+		require.Len(t, refs, 1)
+		assert.Equal(t, file.Path("/alias0/d0/file.txt"), refs[0].RequestPath)
+		assert.Equal(t, file.Path("/real/d0/file.txt"), refs[0].Reference.RealPath)
+	})
+}
+
+func Test_searchContext_SearchByGlob_linkDirectlyToParentDir(t *testing.T) {
+	// a link pointing at the parent dir itself must still surface the file when only the link path matches
+	tr := New()
+	idx := NewIndex()
+
+	fileRef, err := tr.AddFile("/real/d0/file.txt")
+	require.NoError(t, err)
+	idx.Add(*fileRef, file.Metadata{Type: file.TypeRegular})
+
+	linkRef, err := tr.AddSymLink("/missing", "/real/d0")
+	require.NoError(t, err)
+	idx.Add(*linkRef, file.Metadata{Type: file.TypeSymLink})
+
+	sc := NewSearchContext(tr, idx)
+	refs, err := sc.SearchByGlob("**/missing/file.txt")
+	require.NoError(t, err)
+	require.Len(t, refs, 1)
+	assert.Equal(t, file.Path("/missing/file.txt"), refs[0].RequestPath)
+	assert.Equal(t, file.Path("/real/d0/file.txt"), refs[0].Reference.RealPath)
+}
