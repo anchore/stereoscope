@@ -104,9 +104,9 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		return nil, err
 	}
 
-	ref, err := name.ParseReference(p.imageStr, prepareReferenceOptions(p.registryOptions)...)
+	ref, err := ParseRegistryReference(p.imageStr, p.registryOptions)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse registry reference=%q: %+v", p.imageStr, err)
+		return nil, fmt.Errorf("unable to parse registry reference=%q: %w", p.imageStr, err)
 	}
 
 	platform := defaultPlatformIfNil(p.platform)
@@ -116,23 +116,26 @@ func (p *registryImageProvider) Provide(ctx context.Context) (*image.Image, erro
 		p.effectiveTransport = newEffectiveURLTransport(nil)
 	}
 
-	options := prepareRemoteOptions(ctx, ref, p.registryOptions, platform, p.effectiveTransport)
+	options, err := prepareRemoteOptions(ctx, ref, p.registryOptions, platform, p.effectiveTransport)
+	if err != nil {
+		return nil, err
+	}
 
 	descriptor, err := remote.Get(ref, options...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image descriptor from registry: %+v", err)
+		return nil, fmt.Errorf("failed to get image descriptor from registry: %w", err)
 	}
 
 	p.finalizePlatform(descriptor, &platform)
 
 	img, err := descriptor.Image()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image from registry: %+v", err)
+		return nil, fmt.Errorf("failed to get image from registry: %w", err)
 	}
 
 	c, err := img.ConfigFile()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image config from registry: %+v", err)
+		return nil, fmt.Errorf("failed to get image config from registry: %w", err)
 	}
 
 	if err := validatePlatform(platform, c.OS, c.Architecture, c.Variant); err != nil {
@@ -206,7 +209,7 @@ func prepareReferenceOptions(registryOptions image.RegistryOptions) []name.Optio
 	return options
 }
 
-func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform, effectiveTransport *effectiveURLTransport) (options []remote.Option) {
+func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptions image.RegistryOptions, p *image.Platform, effectiveTransport *effectiveURLTransport) (options []remote.Option, err error) {
 	options = append(options, remote.WithContext(ctx))
 
 	// Set the user agent to indicate what binary is making the request
@@ -231,6 +234,12 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 		options = append(options, remote.WithAuth(authenticator))
 	case keychain != nil:
 		options = append(options, remote.WithAuthFromKeychain(keychain))
+	case registryOptions.DisableDefaultKeychain:
+		// set here rather than left to go-containerregistry's own default, so that a resumed blob is
+		// reissued anonymously as well instead of resolving against a nil keychain
+		log.Debugf("no registry credentials configured for %q, using anonymous access", registryName)
+		authenticator = authn.Anonymous
+		options = append(options, remote.WithAuth(authenticator))
 	default:
 		// use the Keychain specified from a docker config file.
 		log.Debugf("no registry credentials configured for %q, using the default keychain", registryName)
@@ -240,11 +249,15 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 
 	tlsConfig, err := registryOptions.TLSConfig(registryName)
 	if err != nil {
-		log.Warnf("unable to configure TLS transport: %v", err)
+		// carrying on would verify the registry against the system roots alone and present no client
+		// certificate, which is not what was asked for and at best fails later with an x509 or 401
+		// error that hides the real cause
+		return nil, fmt.Errorf("unable to configure TLS transport for registry %q: %w", registryName, err)
 	}
 
 	// one base transport, so the pull and any resume share a connection pool
 	baseTransport := getTransport(tlsConfig)
+	applyTransportTimeouts(baseTransport, registryOptions)
 
 	// a resumed blob is reissued through its own client, authenticated the same way as the pull
 	var reopen reopenClientFunc
@@ -260,8 +273,9 @@ func prepareRemoteOptions(ctx context.Context, ref name.Reference, registryOptio
 	// Use our custom transport that captures effective URLs after redirects
 	rt := getTransportWithEffectiveURL(baseTransport, effectiveTransport, reopen)
 	options = append(options, remote.WithTransport(rt))
+	options = append(options, retryOptions(registryOptions)...)
 
-	return options
+	return options, nil
 }
 
 // reopenClient lazily builds the client a resumed blob request is reissued through. it authenticates
