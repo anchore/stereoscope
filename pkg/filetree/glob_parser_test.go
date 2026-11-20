@@ -616,6 +616,53 @@ func Test_cleanGlob(t *testing.T) {
 	}
 }
 
+func Test_isCleanGlob(t *testing.T) {
+	tests := []struct {
+		glob string
+		want bool
+	}{
+		{glob: "/", want: true},
+		{glob: "**", want: true},
+		{glob: "**/*.jar", want: true},
+		{glob: "/usr/lib/os-release", want: true},
+		{glob: "**/var/lib/dpkg/{status,status.d/*}", want: true},
+		{glob: "**/specifications/**/*.gemspec", want: true},
+		{glob: "/opt/**", want: true},
+		{glob: "", want: false},                    // gains a leading slash
+		{glob: "foo/bar.txt", want: false},         // relative: gains a leading slash
+		{glob: "/**/vcpkg.json", want: false},      // leading slash is dropped
+		{glob: "/foo/", want: false},               // trailing slash is dropped
+		{glob: "/foo//bar", want: false},           // double slash is collapsed
+		{glob: "**/**/foo", want: false},           // repeated recursion is collapsed
+		{glob: "**/***.txt", want: false},          // runs of asterisks are collapsed
+		{glob: "**/bar**/foo.txt", want: false},    // "**" within a segment becomes "*"
+		{glob: "/foo/** ", want: false},            // edge whitespace is trimmed
+		{glob: "/café/*.txt", want: false},         // non-ASCII is left to normalizeGlob
+		{glob: "/foo/\xff/*.txt", want: false},     // so is invalid UTF-8
+		{glob: "**/{**,bar}/foo.txt", want: false}, // "**" that is not a whole segment
+	}
+	for _, tt := range tests {
+		t.Run(tt.glob, func(t *testing.T) {
+			assert.Equal(t, tt.want, isCleanGlob(tt.glob))
+		})
+	}
+}
+
+// Fuzz_cleanGlob checks that the isCleanGlob fast path never changes what cleanGlob returns.
+func Fuzz_cleanGlob(f *testing.F) {
+	seeds := append([]string{
+		"", "/", "//", "**", "/**", "**/", "***", "**/**", "/a/**", "/a**", "a/**/b", " /a", "/a ", "/café", "/a/\xff",
+	}, benchmarkGlobs...)
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, glob string) {
+		if got, want := cleanGlob(glob), normalizeGlob(glob); got != want {
+			t.Errorf("cleanGlob(%q) = %q, normalizeGlob gives %q", glob, got, want)
+		}
+	})
+}
+
 func Test_removeRedundantCountGlob(t *testing.T) {
 	type args struct {
 		glob  string
@@ -732,5 +779,39 @@ func Test_simplifyGlobRecursion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equalf(t, tt.want, simplifyGlobRecursion(tt.glob), "simplifyGlobRecursion(%v)", tt.glob)
 		})
+	}
+}
+
+// benchmarkGlobs is a sample of the globs syft's catalogers search with: recursive extension, basename and
+// basename-glob searches, alternations, parent globs and absolute paths.
+var benchmarkGlobs = []string{
+	"**/*.jar",
+	"**/*.tar.gz",
+	"**/package.json",
+	"**/pyvenv.cfg",
+	"**/var/lib/dpkg/status",
+	"**/var/lib/dpkg/{status,status.d/*}",
+	"**/lib/dpkg/status.d/*",
+	"**/*dist-info/METADATA",
+	"**/specifications/**/*.gemspec",
+	"**/lib/modules/**/*.ko",
+	"**/libpython*.so*",
+	"**/{java,jvm}/*/release",
+	"**/{go,go.exe}",
+	"**/python*",
+	"**/.github/workflows/*.yml",
+	"**/Cellar/*/*/.brew/*.rb",
+	"/opt/bitnami/**/.spdx-*.spdx",
+	"/usr/lib/os-release",
+	"/**/vcpkg.json",
+	"**/*",
+}
+
+func Benchmark_parseGlob(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, glob := range benchmarkGlobs {
+			parseGlob(glob)
+		}
 	}
 }

@@ -3,6 +3,7 @@ package filetree
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 )
@@ -249,6 +250,43 @@ func parseBasenameAltAndClassGlobSections(basenameInput, glob string) []searchRe
 }
 
 func cleanGlob(glob string) string {
+	if isCleanGlob(glob) {
+		return glob
+	}
+	return normalizeGlob(glob)
+}
+
+// isCleanGlob reports whether glob is already in the form normalizeGlob produces, so normalizing it would return
+// it unchanged. Most globs callers pass are, and checking is far cheaper than normalizing. It is conservative:
+// anything it does not vouch for (non-ASCII, edge whitespace, a "**" that is not a whole path segment) is left to
+// normalizeGlob.
+func isCleanGlob(glob string) bool {
+	if !strings.HasPrefix(glob, "/") && !strings.HasPrefix(glob, "**") {
+		return false
+	}
+	if strings.HasPrefix(glob, "/**") || (len(glob) > 1 && strings.HasSuffix(glob, "/")) {
+		return false
+	}
+	if strings.TrimSpace(glob) != glob || strings.Contains(glob, "//") || strings.Contains(glob, "**/**") {
+		return false
+	}
+	for i := 0; i < len(glob); i++ {
+		if glob[i] >= utf8.RuneSelf {
+			return false
+		}
+		if glob[i] != '*' || i+1 == len(glob) || glob[i+1] != '*' {
+			continue
+		}
+		// a "**" must be a whole path segment, which also rules out longer runs of asterisks
+		if (i > 0 && glob[i-1] != '/') || (i+2 < len(glob) && glob[i+2] != '/') {
+			return false
+		}
+		i++
+	}
+	return true
+}
+
+func normalizeGlob(glob string) string {
 	glob = strings.TrimSpace(glob)
 	glob = removeRedundantCountGlob(glob, '/', 1)
 	glob = removeRedundantCountGlob(glob, '*', 2)
