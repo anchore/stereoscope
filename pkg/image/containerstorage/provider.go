@@ -216,9 +216,9 @@ func (p *containersStorageProvider) systemContext(bigFilesDir string) *types.Sys
 // create the graph/run root directories as a side effect of what is, for auto-resolution of a plain image
 // reference, meant to be a read-only "is this available locally" check.
 func openDefaultStore() (storage.Store, error) {
-	storeOptions, err := storage.DefaultStoreOptions()
+	storeOptions, err := defaultStoreOptions()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load default containers-storage options: %w", err)
+		return nil, err
 	}
 
 	if _, err := os.Stat(storeOptions.GraphRoot); err != nil {
@@ -230,6 +230,25 @@ func openDefaultStore() (storage.Store, error) {
 		return nil, fmt.Errorf("failed to open containers-storage store: %w", err)
 	}
 	return store, nil
+}
+
+// defaultStoreOptions returns the containers-storage options for the current process/user. Inside `podman unshare`
+// the computed defaults can point at the rootful store, so the store location podman exports for the session
+// (CONTAINERS_GRAPHROOT / CONTAINERS_RUNROOT, see podman-unshare(1)) takes precedence when set.
+func defaultStoreOptions() (storage.StoreOptions, error) {
+	storeOptions, err := storage.DefaultStoreOptions()
+	if err != nil {
+		return storage.StoreOptions{}, fmt.Errorf("failed to load default containers-storage options: %w", err)
+	}
+
+	if graphRoot := os.Getenv("CONTAINERS_GRAPHROOT"); graphRoot != "" {
+		storeOptions.GraphRoot = graphRoot
+	}
+	if runRoot := os.Getenv("CONTAINERS_RUNROOT"); runRoot != "" {
+		storeOptions.RunRoot = runRoot
+	}
+
+	return storeOptions, nil
 }
 
 // newInsecurePolicyContext returns a policy context that accepts any image. This is appropriate because copying an

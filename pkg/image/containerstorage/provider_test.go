@@ -115,6 +115,57 @@ func TestProvider_systemContext(t *testing.T) {
 	})
 }
 
+func Test_defaultStoreOptions(t *testing.T) {
+	// defaults depend on the user running the tests
+	defaults, err := storage.DefaultStoreOptions()
+	require.NoError(t, err)
+
+	tests := []struct {
+		name          string
+		graphRootEnv  string
+		runRootEnv    string
+		wantGraphRoot string
+		wantRunRoot   string
+	}{
+		{
+			name:          "no overrides uses the containers-storage defaults",
+			wantGraphRoot: defaults.GraphRoot,
+			wantRunRoot:   defaults.RunRoot,
+		},
+		{
+			name:          "podman unshare session overrides both roots",
+			graphRootEnv:  "/home/user/.local/share/containers/storage",
+			runRootEnv:    "/run/user/1000/containers",
+			wantGraphRoot: "/home/user/.local/share/containers/storage",
+			wantRunRoot:   "/run/user/1000/containers",
+		},
+		{
+			name:          "graph root only",
+			graphRootEnv:  "/custom/graph",
+			wantGraphRoot: "/custom/graph",
+			wantRunRoot:   defaults.RunRoot,
+		},
+		{
+			name:          "run root only",
+			runRootEnv:    "/custom/run",
+			wantGraphRoot: defaults.GraphRoot,
+			wantRunRoot:   "/custom/run",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("CONTAINERS_GRAPHROOT", tt.graphRootEnv)
+			t.Setenv("CONTAINERS_RUNROOT", tt.runRootEnv)
+
+			got, err := defaultStoreOptions()
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantGraphRoot, got.GraphRoot)
+			assert.Equal(t, tt.wantRunRoot, got.RunRoot)
+			assert.Equal(t, defaults.GraphDriverName, got.GraphDriverName)
+		})
+	}
+}
+
 func TestNewInsecurePolicyContext(t *testing.T) {
 	pc, err := newInsecurePolicyContext()
 	require.NoError(t, err)
