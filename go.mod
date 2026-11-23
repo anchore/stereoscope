@@ -13,14 +13,14 @@ require (
 	github.com/containerd/containerd/v2 v2.4.2
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/platforms v1.0.0-rc.5
-	github.com/docker/cli v29.9.2+incompatible
+	github.com/docker/cli v29.10.0+incompatible
 	github.com/docker/go-connections v0.8.2
 	github.com/gabriel-vasile/mimetype v1.4.16
 	github.com/gkampitakis/go-snaps v0.5.25
 	github.com/go-test/deep v1.1.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.22.1
-	github.com/moby/moby/client v0.6.2
+	github.com/moby/moby/client v0.6.3
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml/v2 v2.4.3
@@ -33,14 +33,14 @@ require (
 	github.com/sylabs/squashfs v1.0.6
 	github.com/wagoodman/go-partybus v0.0.0-20200526224238-eb215533f07d
 	github.com/wagoodman/go-progress v0.0.0-20260303201901-10176f79b2c0
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 )
 
 require (
 	github.com/anchore/go-sync v0.1.2
-	go.podman.io/image/v5 v5.42.0
-	go.podman.io/storage v1.65.0
-	golang.org/x/sys v0.49.0
+	go.podman.io/image/v5 v5.42.1
+	go.podman.io/storage v1.65.1
+	golang.org/x/sys v0.50.0
 	golang.org/x/tools v0.52.0
 )
 
@@ -115,7 +115,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
-	github.com/moby/moby/api v1.56.1 // indirect
+	github.com/moby/moby/api v1.57.0 // indirect
 	github.com/moby/sys/capability v0.4.0 // indirect
 	github.com/moby/sys/mountinfo v0.7.2 // indirect
 	github.com/moby/sys/signal v0.7.1 // indirect
@@ -151,17 +151,18 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
-	go.opentelemetry.io/otel v1.46.0 // indirect
-	go.opentelemetry.io/otel/metric v1.46.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
-	go.opentelemetry.io/otel/trace v1.46.0 // indirect
+	go.opentelemetry.io/otel v1.47.0 // indirect
+	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
+	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.42.0 // indirect
-	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/term v0.47.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/term v0.48.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
