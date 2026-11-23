@@ -1,6 +1,7 @@
 package image
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -103,6 +104,11 @@ type Layer struct {
 	knownDiffID string
 	// contentPath is where Fetch materialized the uncompressed layer
 	contentPath string
+	// contentInPlace is set when contentPath is the image source's own uncompressed blob rather than a copy in
+	// the cache directory. That file belongs to the source: it must never be written, moved or removed.
+	contentInPlace bool
+	// blobLocator, when set, finds the layer's blob on local disk so an uncompressed one can be indexed in place
+	blobLocator LayerBlobLocator
 	// readMonitor reports indexing progress for this layer
 	readMonitor *progress.Manual
 	// deferredHardLinks are this layer's hardlinks naming a file that is not in this layer, and those naming
@@ -113,15 +119,16 @@ type Layer struct {
 
 // NewLayer provides a new, unread layer object.
 func NewLayer(layer v1.Layer) *Layer {
-	return newLayer(layer, "")
+	return newLayer(layer, "", nil)
 }
 
 // newLayer provides a new, unread layer object with the diff ID the image already knows for it,
 // if any. See Layer.knownDiffID.
-func newLayer(layer v1.Layer, knownDiffID string) *Layer {
+func newLayer(layer v1.Layer, knownDiffID string, blobLocator LayerBlobLocator) *Layer {
 	return &Layer{
 		layer:       layer,
 		knownDiffID: knownDiffID,
+		blobLocator: blobLocator,
 	}
 }
 
@@ -130,7 +137,7 @@ func newLayer(layer v1.Layer, knownDiffID string) *Layer {
 // The image config already records every layer's diff ID, which saves each layer computing its own
 // (for an OCI layout that means decompressing the entire layer just to hash it). When the config
 // does not list exactly one per layer we cannot line them up, so let each layer answer for itself.
-func newLayers(v1Layers []v1.Layer, diffIDs []v1.Hash) []*Layer {
+func newLayers(v1Layers []v1.Layer, diffIDs []v1.Hash, blobLocator LayerBlobLocator) []*Layer {
 	if len(diffIDs) != len(v1Layers) {
 		diffIDs = nil
 	}
@@ -141,7 +148,7 @@ func newLayers(v1Layers []v1.Layer, diffIDs []v1.Hash) []*Layer {
 		if diffIDs != nil {
 			knownDiffID = diffIDs[idx].String()
 		}
-		layers[idx] = newLayer(v1Layer, knownDiffID)
+		layers[idx] = newLayer(v1Layer, knownDiffID, blobLocator)
 	}
 	return layers
 }
@@ -241,6 +248,12 @@ func (l *Layer) fetch(idx int, uncompressedLayersCacheDir string) error {
 	}
 
 	log.WithFields("index", l.Metadata.Index, "digest", l.Metadata.Digest, "mediaType", l.Metadata.MediaType).Trace("fetching image layer")
+	if blobPath, ok := l.inPlacePath(); ok {
+		log.WithFields("index", l.Metadata.Index, "path", blobPath).Trace("indexing uncompressed layer blob in place")
+		l.contentPath, l.contentInPlace = blobPath, true
+		return nil
+	}
+	l.contentInPlace = false
 	l.contentPath, err = l.uncompressedCache(uncompressedLayersCacheDir)
 	return err
 }
@@ -715,4 +728,85 @@ func trackReadProgress(metadata LayerMetadata) *progress.Manual {
 	})
 
 	return p
+}
+
+// uncompressedTarMediaTypes are the layer media types whose blob is a plain tar, so the blob as stored is
+// already what the tar indexer reads.
+var uncompressedTarMediaTypes = strset.New(
+	string(types.OCIUncompressedLayer),
+	string(types.OCIUncompressedRestrictedLayer),
+	string(types.DockerUncompressedLayer),
+)
+
+// inPlacePath returns the path of the layer's own blob when it can be indexed where it is, skipping the copy
+// into the cache directory. Every check here is a reason to fall back to the copy, never an error: the copy
+// path handles anything this does not recognise exactly as it did before.
+func (l *Layer) inPlacePath() (string, bool) {
+	if l.blobLocator == nil || !uncompressedTarMediaTypes.Has(string(l.Metadata.MediaType)) {
+		return "", false
+	}
+	fields := []any{"index", l.Metadata.Index, "digest", l.Metadata.Digest}
+	digest, err := l.layer.Digest()
+	if err != nil {
+		log.WithFields(append(fields, "error", err)...).Debug("not indexing layer in place: no blob digest")
+		return "", false
+	}
+	blobPath, ok := l.blobLocator(digest)
+	if !ok {
+		log.WithFields(fields...).Debug("not indexing layer in place: blob not found locally")
+		return "", false
+	}
+	// the media type is only what the manifest claims, so confirm it against the bytes before trusting it
+	isTar, err := looksLikeUncompressedTar(blobPath)
+	if err != nil || !isTar {
+		log.WithFields(append(fields, "path", blobPath, "error", err)...).Debug("not indexing layer in place: blob does not look like an uncompressed tar")
+		return "", false
+	}
+	return blobPath, true
+}
+
+// compressionMagics are the leading bytes of the compression formats a layer blob may use.
+var compressionMagics = [][]byte{
+	{0x1f, 0x8b},                     // gzip
+	{0x28, 0xb5, 0x2f, 0xfd},         // zstd
+	{'B', 'Z', 'h'},                  // bzip2
+	{0xfd, '7', 'z', 'X', 'Z', 0x00}, // xz
+}
+
+// looksLikeUncompressedTar reports whether the file at path starts like an uncompressed tar: no compression
+// magic, and either a ustar header (ustar, GNU and PAX all carry "ustar" at offset 257) or nothing but zeroes
+// (an empty tar is just its two zero end-of-archive blocks). A pre-POSIX v7 tar has no magic and is rejected,
+// which only costs it the copy it would have had anyway.
+func looksLikeUncompressedTar(path string) (bool, error) {
+	fh, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer fh.Close()
+
+	buf := make([]byte, 512)
+	n, err := io.ReadFull(fh, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return false, err
+	}
+	buf = buf[:n]
+
+	for _, magic := range compressionMagics {
+		if bytes.HasPrefix(buf, magic) {
+			return false, nil
+		}
+	}
+	if len(buf) >= 262 && string(buf[257:262]) == "ustar" {
+		return true, nil
+	}
+	return allZero(buf), nil
+}
+
+func allZero(b []byte) bool {
+	for _, c := range b {
+		if c != 0 {
+			return false
+		}
+	}
+	return true
 }
