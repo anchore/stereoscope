@@ -39,6 +39,8 @@ type Image struct {
 	tmpDirGen *file.TempDirGenerator
 	// contentCacheDir is where all layer tar cache is stored.
 	contentCacheDir string
+	// layerCache is the persistent layer cache the last Read used (see WithLayerCache), or nil
+	layerCache *persistentLayerCache
 	// Metadata contains select image attributes
 	Metadata Metadata
 	// Layers contains the rich layer objects in build order
@@ -243,6 +245,14 @@ func (i *Image) Read(ctx context.Context) error {
 	// this rebuilds every layer, so release what a previous Read left open. Done here rather than
 	// at the top of Read so that a failure before this point leaves the existing layers usable
 	i.releasePreviousLayers()
+
+	// taken from the context of each Read, so the same Image can be read with and without one
+	i.layerCache = newPersistentLayerCache(ctx)
+	if i.layerCache != nil {
+		// evict before adding: a cache over its cap from a previous run makes room for this one
+		i.layerCache.evict()
+		defer i.layerCache.logSummary()
+	}
 
 	fileCatalog := NewFileCatalog()
 
@@ -454,7 +464,7 @@ func (i *Image) readLayers(ctx context.Context, layers []*Layer, fileCatalog *Fi
 					gates.done(idx, false)
 					return idx, nil
 				}
-				if err := layers[idx].fetch(idx, i.contentCacheDir); err != nil {
+				if err := layers[idx].fetch(idx, i.contentCacheDir, i.layerCache); err != nil {
 					// the index stage will never see this layer, so open its gate here
 					gates.done(idx, false)
 					// reported through recordErr rather than back to Collect, so that what Collect
@@ -861,13 +871,22 @@ func (i *Image) Cleanup() error {
 			errs = append(errs, err)
 		}
 
-		if i.contentCacheDir != "" {
+		switch {
+		case i.contentCacheDir == "":
+		case i.layerCache != nil && i.layerCache.contains(i.contentCacheDir):
+			// never delete a persistent cache (or anything holding one) as if it were scratch space
+			log.WithFields("contentCacheDir", i.contentCacheDir, "layerCacheDir", i.layerCache.root).Warn("not removing the layer content directory: it is inside the persistent layer cache")
+		default:
 			if _, err := os.Stat(i.contentCacheDir); !os.IsNotExist(err) {
 				if err := os.RemoveAll(i.contentCacheDir); err != nil {
 					errs = append(errs, err)
 				}
 			}
 		}
+	}
+	if i.layerCache != nil {
+		// after closeLayers, so on Windows this image's own entries are deletable again
+		i.layerCache.evict()
 	}
 	return errors.Join(errs...)
 }

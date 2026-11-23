@@ -625,7 +625,7 @@ func TestImage_squashLayers_reportsAnUnindexedLayer(t *testing.T) {
 
 	i := testImage(t, layers)
 	// layer 0 needs a tree for its squash to copy
-	require.NoError(t, layers[0].fetch(0, i.contentCacheDir))
+	require.NoError(t, layers[0].fetch(0, i.contentCacheDir, nil))
 	require.NoError(t, layers[0].index(NewFileCatalog()))
 
 	err := i.squashLayers(context.Background(), layers, gates, &progress.Manual{}, true)
@@ -642,7 +642,7 @@ func TestImage_squashLayers_stopsWhenCancelled(t *testing.T) {
 	i := testImage(t, layers)
 	catalog := NewFileCatalog()
 	for idx, l := range layers {
-		require.NoError(t, l.fetch(idx, i.contentCacheDir))
+		require.NoError(t, l.fetch(idx, i.contentCacheDir, nil))
 		require.NoError(t, l.index(catalog))
 		gates.done(idx, true)
 	}
