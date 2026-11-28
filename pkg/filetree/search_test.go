@@ -801,6 +801,59 @@ func Test_searchContext_SearchByGlob_parentDirUnderRelinkedAncestor(t *testing.T
 			want:          []hit{{"/b/status.d/y", "/b/status.d/y"}, {"/a/status.d/z", "/c/dpkg/z"}},
 			walkFindsMore: true,
 		},
+		// a parent written out in full is resolved directly instead of through the index
+		{
+			name:           "literal parent at its real path",
+			indexTargetDir: true,
+			link:           "/a",
+			target:         "/b",
+			glob:           "/b/status.d/*",
+			want:           []hit{{"/b/status.d/y", "/b/status.d/y"}},
+		},
+		{
+			name:   "literal parent at its real path, target dir implicit",
+			link:   "/a",
+			target: "/b",
+			glob:   "/b/status.d/*",
+			want:   []hit{{"/b/status.d/y", "/b/status.d/y"}},
+		},
+		{
+			name:   "literal parent through a relinked ancestor",
+			link:   "/a",
+			target: "/b",
+			glob:   "/a/status.d/*",
+			want:   []hit{{"/a/status.d/y", "/b/status.d/y"}},
+		},
+		{
+			name:           "literal parent itself relinked",
+			indexTargetDir: true,
+			link:           "/a/status.d",
+			target:         "/c/dpkg",
+			glob:           "/a/status.d/*",
+			want:           []hit{{"/a/status.d/z", "/c/dpkg/z"}},
+		},
+		{
+			name:           "literal parent is a dead link",
+			indexTargetDir: true,
+			link:           "/a/status.d",
+			target:         "/nowhere",
+			glob:           "/a/status.d/*",
+		},
+		{
+			// /c/dpkg has no index entry of its own, so it could only be found by walking the tree
+			name:   "literal parent dir implicit",
+			link:   "/a",
+			target: "/b",
+			glob:   "/c/dpkg/*",
+			want:   []hit{{"/c/dpkg/z", "/c/dpkg/z"}},
+		},
+		{
+			name:           "literal parent does not exist",
+			indexTargetDir: true,
+			link:           "/a",
+			target:         "/b",
+			glob:           "/e/status.d/*",
+		},
 		// the stale /a/status.d entry is kept on purpose, so prove a directory that is really gone stays gone
 		{
 			name:           "ancestor whited out",
@@ -903,6 +956,46 @@ func addIndexedLink(t *testing.T, idx Index, tr *FileTree, p, target file.Path) 
 	require.NoError(t, err)
 	idx.Add(*ref, file.Metadata{Type: file.TypeSymLink})
 	return ref
+}
+
+// Test_parentGlobSymlinkPerformance models a pnpm workspace: store packages that each ship a nested directory with
+// the same basename, linked from every project, with the projects also linked to each other. Listing every directory
+// that shares the parent's basename (and walking back through every link for each child) would essentially hang.
+func Test_parentGlobSymlinkPerformance(t *testing.T) {
+	tr := New()
+	idx := NewIndex()
+
+	numPkgs, numProjects := 50, 25
+
+	for k := range numPkgs {
+		for _, name := range []string{"dist", "dist/esm"} {
+			addIndexed(t, idx, tr, file.Path(fmt.Sprintf("/store/pkg-%d/%s", k, name)), file.Metadata{Type: file.TypeDirectory})
+		}
+		for _, name := range []string{"package.json", "dist/esm/package.json", "dist/esm/index.js"} {
+			addIndexed(t, idx, tr, file.Path(fmt.Sprintf("/store/pkg-%d/%s", k, name)), file.Metadata{Type: file.TypeRegular})
+		}
+	}
+	for p := range numProjects {
+		addIndexed(t, idx, tr, file.Path(fmt.Sprintf("/projects/proj-%d/package.json", p)), file.Metadata{Type: file.TypeRegular})
+		for k := range numPkgs {
+			addIndexedLink(t, idx, tr, file.Path(fmt.Sprintf("/projects/proj-%d/node_modules/pkg-%d", p, k)), file.Path(fmt.Sprintf("/store/pkg-%d", k)))
+		}
+		for q := range numProjects {
+			if q != p {
+				addIndexedLink(t, idx, tr, file.Path(fmt.Sprintf("/projects/proj-%d/node_modules/proj-%d", p, q)), file.Path(fmt.Sprintf("/projects/proj-%d", q)))
+			}
+		}
+	}
+
+	sc := NewSearchContext(tr, idx)
+	for k := range numPkgs {
+		got, err := sc.SearchByGlob(fmt.Sprintf("/store/pkg-%d/dist/esm/*", k), FollowBasenameLinks)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{
+			fmt.Sprintf("/store/pkg-%d/dist/esm/index.js", k),
+			fmt.Sprintf("/store/pkg-%d/dist/esm/package.json", k),
+		}, realPaths(got))
+	}
 }
 
 func Test_complexSymlinkPerformance(t *testing.T) {
